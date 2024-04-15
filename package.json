@@ -1,12 +1,12 @@
 {
   "name": "w-web-sso",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "dist/w-web-sso.umd.js",
   "dependencies": {
     "@mdi/js": "^7.4.47",
     "axios": "^1.6.8",
     "json5": "^2.2.3",
-    "lodash": "^4.17.21",
+    "lodash-es": "^4.17.21",
     "w-component-vue": "^2.3.87",
     "w-data-collector": "^1.0.22",
     "w-serv-hapi": "^1.0.13",
