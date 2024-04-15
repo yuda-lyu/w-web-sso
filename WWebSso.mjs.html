@@ -555,6 +555,7 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
         //         return 'someAPI'
         //     },
         // },
+
         {
             method: 'GET',
             path: '/getWebInfor',
@@ -562,80 +563,138 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
                 return getWebInfor()
             },
         },
+
         {
             method: 'GET',
-            path: '/api/getUserByToken', //名稱getUserByToken為w-ui-loginout預設值, 若要更改兩邊須同時修改
+            path: '/api/logoutSsoUser',
             handler: async function (req, res) {
-                // console.log('getUserByToken', req)
+                // console.log('logoutSsoUser', req)
 
-                // async function core() {
-                //     //提供對象為browser使用者, 須先檢測token是否有效, 確認後回傳該使用者之資訊物件
+                async function core() {
 
-                //     //token
-                //     let token = get(req, 'query.token', '')
-                //     // console.log('token', token)
+                    //token
+                    let token = get(req, 'query.token', '')
+                    // console.log('token', token)
 
-                //     //getAndVerifyBrowserTokenUser
-                //     let userSelf = await getAndVerifyBrowserTokenUser(token, 'getUserByToken')
-                //     // console.log('userSelf', userSelf)
+                    //logOutByToken
+                    let b = await p.logOutByToken(token)
+                    // console.log('b', b)
 
-                //     //check
-                //     if (!iseobj(userSelf)) {
-                //         console.log('token', token)
-                //         console.log('[API]getUserByToken/check userSelf: invalid userSelf')
-                //         console.log(`token does not have permission`)
-                //         return Promise.reject(`token does not have permission`)
-                //     }
+                    return b
+                }
 
-                //     return userSelf
-                // }
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                // console.log('logoutSsoUser', r)
 
-                // //pm2resolve core
-                // let r = await pm2resolve(core)() //w-ui-loginout接收已預設格式用pm2resolve轉過, 須另提取state進行判斷
-                // // console.log('getUserByToken', r)
-
-                // return r
-
-                return null
+                return r
             },
         },
+
         {
             method: 'GET',
-            path: '/api/getUsersByToken', //名稱getUserByToken為w-ui-loginout預設值, 若要更改兩邊須同時修改
+            path: '/api/checkToken',
             handler: async function (req, res) {
-                // console.log('getUsersByToken', req)
+                // console.log('checkToken', req)
 
-                // async function core() {
-                //     //提供對象為browser使用者, 須先檢測token是否有效, 確認後回傳該使用者之資訊物件
+                async function core() {
 
-                //     //token
-                //     let token = get(req, 'query.token', '')
-                //     // console.log('token', token)
+                    //token
+                    let token = get(req, 'query.token', '')
+                    // console.log('token', token)
 
-                //     //getAndVerifyBrowserTokenUser
-                //     let userSelf = await getAndVerifyBrowserTokenUser(token, 'getUsersByToken')
-                //     // console.log('userSelf', userSelf)
+                    //checkToken
+                    let b = await p.checkToken(token)
+                    // console.log('b', b)
 
-                //     //check
-                //     if (!iseobj(userSelf)) {
-                //         console.log('token', token)
-                //         console.log('[API]getUserByToken/check userSelf: invalid userSelf')
-                //         console.log(`token does not have permission`)
-                //         return Promise.reject(`token does not have permission`)
-                //     }
+                    return b
+                }
 
-                //     return userSelf
-                // }
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                // console.log('checkToken', r)
 
-                // //pm2resolve core
-                // let r = await pm2resolve(core)() //w-ui-loginout接收已預設格式用pm2resolve轉過, 須另提取state進行判斷
-                // // console.log('getUserByToken', r)
-
-                // return r
-
-                return null
+                return r
             },
         },
+
+        {
+            method: 'GET',
+            path: '/api/getSsoUsersList',
+            handler: async function (req, res) {
+                // console.log('getSsoUsersList', req)
+
+                async function core() {
+
+                    //token
+                    let token = get(req, 'query.token', '')
+                    // console.log('token', token)
+
+                    //getUsersList
+                    let us = await p.getUsersList(token)
+                    // console.log('us', us)
+
+                    return us
+                }
+
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                // console.log('getSsoUsersList', r)
+
+                return r
+            },
+        },
+
+        {
+            method: 'GET',
+            path: '/api/getSsoUserInfor',
+            handler: async function (req, res) {
+                // console.log('getSsoUserInfor', req)
+
+                async function core() {
+
+                    //token
+                    let token = get(req, 'query.token', '')
+                    // console.log('token', token)
+
+                    //key
+                    let key = get(req, 'query.key', '')
+                    // console.log('key', key)
+
+                    //value
+                    let value = get(req, 'query.value', '')
+                    // console.log('value', value)
+
+                    //userTarget
+                    let userTarget = null
+                    if (key === 'token') {
+                        userTarget = await p.getUserByToken(value)
+                        // console.log('getUserByToken userTarget', userTarget)
+                    }
+                    else {
+                        userTarget = await p.getUserInfor(token, key, value)
+                        // console.log('getUserInfor userTarget', userTarget)
+                    }
+
+                    //check
+                    if (!iseobj(userTarget)) {
+                        console.log('token', token)
+                        console.log('key', key, 'value', value)
+                        console.log(`token does not have permission`)
+                        return Promise.reject(`token does not have permission`)
+                    }
+
+                    return userTarget
+                }
+
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                // console.log('getSsoUserInfor', r)
+
+                return r
+            },
+        },
+
     ]
 
 
@@ -708,7 +767,7 @@ export default WWebSso
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.2</a> on Mon Apr 15 2024 15:51:53 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.2</a> on Mon Apr 15 2024 22:10:38 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
