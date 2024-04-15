@@ -1,0 +1,70 @@
+{
+  "name": "w-web-sso",
+  "version": "1.0.0",
+  "main": "dist/w-web-sso.umd.js",
+  "dependencies": {
+    "@mdi/js": "^7.4.47",
+    "axios": "^1.6.8",
+    "json5": "^2.2.3",
+    "lodash": "^4.17.21",
+    "w-component-vue": "^2.3.87",
+    "w-data-collector": "^1.0.22",
+    "w-serv-hapi": "^1.0.13",
+    "w-serv-orm": "^1.0.10",
+    "w-ui-loginout": "^1.0.8",
+    "wsemi": "^1.7.49"
+  },
+  "devDependencies": {
+    "@vue/cli-plugin-babel": "^5.0.8",
+    "@vue/cli-plugin-eslint": "^5.0.8",
+    "@vue/cli-service": "^5.0.8",
+    "eslint": "^8.37.0",
+    "eslint-config-standard": "^17.0.0",
+    "eslint-friendly-formatter": "^4.0.1",
+    "eslint-plugin-import": "^2.27.5",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^6.1.1",
+    "eslint-plugin-standard": "^4.1.0",
+    "eslint-plugin-vue": "^9.10.0",
+    "vue": "^2.6.14",
+    "vuex": "^3.6.2",
+    "w-orm-mongodb": "^1.1.32",
+    "w-package-tools": "^1.0.75"
+  },
+  "scripts": {
+    "serve": "vue-cli-service serve",
+    "build": "vue-cli-service build",
+    "test": "mocha --parallel --timeout 60000 --experimental-modules",
+    "lint": "vue-cli-service lint",
+    "deploy": "gh-pages -d docs"
+  },
+  "eslintConfig": {
+    "root": true,
+    "env": {
+      "node": true
+    },
+    "extends": [
+      "plugin:vue/essential",
+      "eslint:recommended"
+    ],
+    "rules": {},
+    "parserOptions": {
+      "parser": "babel-eslint"
+    }
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yuda-lyu/w-web-sso"
+  },
+  "keywords": [
+    "web",
+    "service",
+    "sso"
+  ],
+  "author": "yuda-lyu(semisphere)",
+  "license": "MIT"
+}

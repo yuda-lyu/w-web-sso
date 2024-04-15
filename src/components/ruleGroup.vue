@@ -1,0 +1,645 @@
+<template>
+    <div
+        :changeGroup="changeGroup"
+        v-if="treeBlocks!==null"
+    >
+
+        <div
+            style=""
+            v-domresize
+            @domresize="resizeHead"
+            v-if="showHead"
+        >
+
+            <div
+                style="padding:15px; border-bottom:1px solid #ddd;"
+                v-if="editable"
+            >
+
+                <div style="padding:5px 0px; display:flex; align-items:center;">
+                    <div style="padding-right:5px; font-size:0.9rem; color:#888;">
+                        {{$t('name')}}:
+                    </div>
+                    <div style="">
+                        <WText
+                            style="width:300px;"
+                            :value="getName(group)"
+                            @input="(v)=>{updateProp('name',v)}"
+                        ></WText>
+                    </div>
+                </div>
+
+                <div style="padding:5px 0px; display:flex; align-items:center;">
+                    <div style="padding-right:5px; font-size:0.9rem; color:#888;">
+                        {{$t('description')}}:
+                    </div>
+                    <div style="">
+                        <WText
+                            style="width:300px;"
+                            :value="getDescription(group)"
+                            @input="(v)=>{updateProp('description',v)}"
+                        ></WText>
+                    </div>
+                </div>
+
+            </div>
+
+            <div
+                style="padding:15px; border-bottom:1px solid #ddd;"
+                v-else
+            >
+
+                <div style="font-size:1.2rem; white-space:nowrap;">
+                    {{group.name}}
+                </div>
+
+                <div style="color:#888; font-size:0.8rem; white-space:nowrap;">
+                    {{getDescription(group)}}
+                </div>
+
+            </div>
+
+            <div
+                style="display:flex; align-items:center; padding:20px 15px 15px 15px; background:#eee; border-bottom:1px solid #ddd;"
+                v-if="false"
+            >
+
+                <div style="margin-right:10px;">{{$t('allDefaults')}}:</div>
+
+                <div style="margin-right:10px; display:flex; align-items:center;">
+                    <div style="margin-right:5px;">{{$t('show')}}</div>
+                    <div>
+                        <WSwitch
+                            :value="defaultShow"
+                            @input="(b)=>{setDefaultShow(b)}"
+                        ></WSwitch>
+                    </div>
+                </div>
+
+                <div style="margin-right:10px; display:flex; align-items:center;">
+                    <div style="margin-right:5px;">{{$t('active')}}</div>
+                    <div>
+                        <WSwitch
+                            :value="defaultActive"
+                            @input="(b)=>{setDefaultActive(b)}"
+                        ></WSwitch>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+        <WTree
+            :viewHeightMax="treeHeight"
+            :indent="0.5"
+            :iconToggleColor="'#666'"
+            :iconToggleBackgroundColor="'transparent'"
+            :iconToggleBackgroundColorHover="'transparent'"
+            :data="treeBlocks"
+        >
+            <template v-slot:item="props">
+                <div style="display:flex; align-items:center; min-height:34px;">
+
+                    <div style="">
+                        {{props.data.text}}
+                    </div>
+
+                </div>
+                <div style="position:absolute; top:5px; right:15px;">
+
+                    <div style="margin-left:10px; display:inline-block;" v-if="editable">
+
+                        <WButtonCircle
+                            :icon="mdiEyeCheck"
+                            :iconSize="18"
+                            :paddingStyle="{v:4,h:4}"
+                            :shadow="false"
+                            :tooltip="$t('showChildren')"
+                            :backgroundColor="'rgba(200,200,200,0.2)'"
+                            :backgroundColorHover="'rgba(255,150,100,0.2)'"
+                            :backgroundColorFocus="'rgba(255,150,100,0.2)'"
+                            :iconColor="'#444'"
+                            :iconColorHover="'#EF6C00'"
+                            :iconColorFocus="'#EF6C00'"
+                            @click="treeToogleShowAndActive(props.data,true,'show')"
+                        ></WButtonCircle>
+
+                        <WButtonCircle
+                            :icon="mdiEyeOff"
+                            :iconSize="18"
+                            :paddingStyle="{v:4,h:4}"
+                            :shadow="false"
+                            :tooltip="$t('hideChildren')"
+                            :backgroundColor="'rgba(200,200,200,0.2)'"
+                            :backgroundColorHover="'rgba(255,150,100,0.2)'"
+                            :backgroundColorFocus="'rgba(255,150,100,0.2)'"
+                            :iconColor="'#444'"
+                            :iconColorHover="'#EF6C00'"
+                            :iconColorFocus="'#EF6C00'"
+                            @click="treeToogleShowAndActive(props.data,false,'show')"
+                        ></WButtonCircle>
+
+                        <WButtonCircle
+                            :icon="mdiEyedropper"
+                            :iconSize="18"
+                            :paddingStyle="{v:4,h:4}"
+                            :shadow="false"
+                            :tooltip="$t('activateChildren')"
+                            :backgroundColor="'rgba(200,200,200,0.2)'"
+                            :backgroundColorHover="'rgba(255,150,100,0.2)'"
+                            :backgroundColorFocus="'rgba(255,150,100,0.2)'"
+                            :iconColor="'#444'"
+                            :iconColorHover="'#EF6C00'"
+                            :iconColorFocus="'#EF6C00'"
+                            @click="treeToogleShowAndActive(props.data,true,'active')"
+                        ></WButtonCircle>
+
+                        <WButtonCircle
+                            :icon="mdiEyedropperOff"
+                            :iconSize="18"
+                            :paddingStyle="{v:4,h:4}"
+                            :shadow="false"
+                            :tooltip="$t('deactivateChildren')"
+                            :backgroundColor="'rgba(200,200,200,0.2)'"
+                            :backgroundColorHover="'rgba(255,150,100,0.2)'"
+                            :backgroundColorFocus="'rgba(255,150,100,0.2)'"
+                            :iconColor="'#444'"
+                            :iconColorHover="'#EF6C00'"
+                            :iconColorFocus="'#EF6C00'"
+                            @click="treeToogleShowAndActive(props.data,false,'active')"
+                        ></WButtonCircle>
+
+                    </div>
+
+                    <div style="margin-left:10px; display:inline-block;">
+                        <div style="display:flex; align-items:center;">
+                            <div style="margin-right:3px; font-size:0.8rem;">{{$t('show')}}</div>
+                            <WCheckbox
+                                :checkedIconColor="'yellow darken-4'"
+                                :uncheckedIconColor="'yellow darken-4'"
+                                :value="getShow(props.data)"
+                                :editable="editable"
+                                @input="toogleShow(props.data)"
+                            ></WCheckbox>
+                        </div>
+                    </div>
+
+                    <div style="margin-left:10px; display:inline-block;">
+                        <div style="display:flex; align-items:center;">
+                            <div style="margin-right:3px; font-size:0.8rem;">{{$t('active')}}</div>
+                            <WCheckbox
+                                :checkedIconColor="'yellow darken-4'"
+                                :uncheckedIconColor="'yellow darken-4'"
+                                :value="getActive(props.data)"
+                                :editable="editable"
+                                @input="toogleActive(props.data)"
+                            ></WCheckbox>
+                        </div>
+                    </div>
+
+                </div>
+            </template>
+        >
+        </WTree>
+
+    </div>
+</template>
+
+<script>
+import { mdiEyeCheck, mdiEyeOff, mdiEyedropper, mdiEyedropperOff } from '@mdi/js/mdi.js'
+import JSON5 from 'json5'
+import get from 'lodash-es/get.js'
+import set from 'lodash-es/set.js'
+import each from 'lodash-es/each.js'
+import size from 'lodash-es/size.js'
+import cloneDeep from 'lodash-es/cloneDeep.js'
+import iseobj from 'wsemi/src/iseobj.mjs'
+import isobj from 'wsemi/src/isobj.mjs'
+import isestr from 'wsemi/src/isestr.mjs'
+import haskey from 'wsemi/src/haskey.mjs'
+import debounce from 'wsemi/src/debounce.mjs'
+import WButtonCircle from 'w-component-vue/src/components/WButtonCircle.vue'
+import WTree from 'w-component-vue/src/components/WTree.vue'
+import WCheckbox from 'w-component-vue/src/components/WCheckbox.vue'
+import WText from 'w-component-vue/src/components/WText.vue'
+import { getTreeBlocks } from '../plugins/mShare.mjs'
+
+
+export default {
+    components: {
+        WButtonCircle,
+        WTree,
+        WCheckbox,
+        WText,
+    },
+    props: {
+        height: {
+            type: Number,
+            default: 100,
+        },
+        group: {
+            type: Object,
+            default: () => {},
+        },
+        showHead: {
+            type: Boolean,
+            default: true,
+        },
+        editable: {
+            type: Boolean,
+            default: false,
+        },
+    },
+    data: function() {
+        return {
+            dbc: debounce(),
+
+            mdiEyeCheck,
+            mdiEyeOff,
+            mdiEyedropper,
+            mdiEyedropperOff,
+
+            headHeight: 100,
+
+            groupTrans: null,
+
+        }
+    },
+    computed: {
+
+        changeGroup: function() {
+            // console.log('computed changeGroup')
+
+            let vo = this
+
+            //save
+            let group = cloneDeep(vo.group)
+
+            //save rules
+            let rules = JSON5.parse(group.crules)
+            group.rules = rules
+            // console.log('rules', rules)
+
+            //delete
+            delete group.crules
+
+            //save
+            vo.groupTrans = group
+            // console.log('group', group)
+
+            return ''
+        },
+
+        treeHeight: function() {
+            let vo = this
+
+            //h
+            let h = vo.height - vo.headHeight
+            h = Math.max(h, 0)
+
+            return h
+        },
+
+        targets: function() {
+            return get(this, `$store.state.targets`)
+        },
+
+        treeBlocks: function() {
+            // console.log('computed treeBlocks')
+
+            let vo = this
+
+            //check
+            if (size(vo.targets) === 0) {
+                return null
+            }
+
+            //getTreeBlocks
+            let r = getTreeBlocks(vo.targets)
+
+            return r
+        },
+
+        defaultShow: function() {
+            let r = get(this.groupTrans, 'rules.___all___.show', 'n')
+            return r === 'y'
+        },
+
+        defaultActive: function() {
+            let r = get(this.groupTrans, 'rules.___all___.active', 'n')
+            return r === 'y'
+        },
+
+    },
+    methods: {
+
+        resizeHead: function(msg) {
+            // console.log('methods resizeHead', msg)
+
+            let vo = this
+
+            //headHeight
+            vo.headHeight = msg.snew.offsetHeight
+
+        },
+
+        getName: function(g) {
+            // console.log('methods getName', g)
+
+            //r
+            let r = get(g, 'name', '')
+
+            //check
+            if (!isestr(r)) {
+                r = '無名稱'
+            }
+
+            return r
+        },
+
+        getDescription: function(g) {
+            // console.log('methods getDescription', g)
+
+            //r
+            let r = get(g, 'description', '')
+
+            //check
+            if (!isestr(r)) {
+                r = '無說明'
+            }
+
+            return r
+        },
+
+        setDefaultShow: function(b) {
+            let r = b ? 'y' : 'n'
+            return set(this.groupTrans, 'rules.___all___.show', r)
+        },
+
+        setDefaultActive: function(b) {
+            let r = b ? 'y' : 'n'
+            return set(this.groupTrans, 'rules.___all___.active', r)
+        },
+
+        getShowAndActive: function(item, key, def) {
+            // console.log('getShowAndActive', item, key, def)
+
+            let vo = this
+
+            //rules
+            let rules = get(vo.groupTrans, 'rules', null)
+
+            //rule
+            let rule = null
+            if (haskey(rules, item.id)) {
+                rule = rules[item.id]
+            }
+
+            //r
+            let r = get(rule, key, null)
+            // console.log(item.id, r, def)
+
+            //b
+            let b = def
+            if (r === 'y' || r === 'n') { //若權限內有定義則優先使用(覆蓋)
+                b = r === 'y'
+            }
+
+            return b
+        },
+
+        getShow: function(item) {
+            // console.log('getShow', item)
+
+            let vo = this
+
+            //def
+            let def = vo.defaultShow
+
+            //getShowAndActive
+            let b = vo.getShowAndActive(item, 'show', def)
+
+            return b
+        },
+
+        getActive: function(item) {
+            // console.log('getActive', item)
+
+            let vo = this
+
+            //def
+            let def = vo.defaultActive
+
+            //getShowAndActive
+            let b = vo.getShowAndActive(item, 'active', def)
+
+            return b
+        },
+
+        getDefaultShowAndActive: function(key) {
+            if (key === 'show') {
+                return this.defaultShow
+            }
+            return this.defaultActive
+        },
+
+        toogleShowAndActive: function(id, b, key) {
+            // console.log('toogleShowAndActive', id, b, key)
+
+            let vo = this
+
+            //def
+            let def = vo.getDefaultShowAndActive(key)
+
+            //groupTrans
+            let groupTrans = cloneDeep(vo.groupTrans)
+
+            //cb
+            let cb = b ? 'y' : 'n'
+
+            //rules
+            let rules = get(vo.groupTrans, 'rules', null)
+
+            //rule
+            let rule = null
+            if (haskey(rules, id)) {
+                rule = rules[id]
+            }
+
+            //r
+            let r = get(rule, key, null)
+
+            //toogle
+            if (r === 'y' || r === 'n') { //若權限內有定義則優先使用(覆蓋)
+                // console.log('權限內有定義')
+
+                //check
+                if (b === def) { //欲切換值與預設值相同
+
+                    //delete
+                    delete rule[key]
+
+                }
+                else {
+
+                    //save rule
+                    rule[key] = cb
+
+                }
+
+            }
+            else {
+                // console.log('權限內無定義')
+
+                //check
+                if (b === def) { //欲切換值與預設值相同,  不變更
+                    // console.log('不變更')
+                }
+                else {
+
+                    //save rule
+                    if (isobj(rule)) {
+                        rule[key] = cb
+                    }
+                    else {
+                        rule = {
+                            [key]: cb,
+                        }
+                    }
+
+                }
+
+            }
+
+            //check
+            if (iseobj(rule)) {
+
+                //save rule
+                groupTrans.rules[id] = rule
+
+            }
+            else {
+
+                //delete rule
+                delete groupTrans.rules[id]
+
+            }
+
+            //save groupTrans
+            vo.groupTrans = groupTrans
+            // console.log('groupTrans', cloneDeep(vo.groupTrans))
+
+            //emitGroupDebounce
+            vo.emitGroupDebounce()
+
+        },
+
+        toogleShow: function(item) {
+            // console.log('toogleShow', item)
+
+            let vo = this
+
+            //check
+            if (!vo.editable) {
+                return
+            }
+
+            //b
+            let b = !vo.getShow(item)
+
+            //toogleShowAndActive
+            vo.toogleShowAndActive(item.id, b, 'show')
+
+        },
+
+        toogleActive: function(item) {
+            // console.log('toogleActive', item)
+
+            let vo = this
+
+            //check
+            if (!vo.editable) {
+                return
+            }
+
+            //b
+            let b = !vo.getActive(item)
+
+            //toogleShowAndActive
+            vo.toogleShowAndActive(item.id, b, 'active')
+
+        },
+
+        treeToogleShowAndActive: function(item, b, key) {
+            // console.log('treeToogleShowAndActive', item, b, key)
+
+            let vo = this
+
+            //self
+            vo.toogleShowAndActive(item.id, b, key)
+
+            //children
+            each(item.children, (v) => {
+                vo.treeToogleShowAndActive(v, b, key)
+            })
+
+        },
+
+        updateProp: function(key, value) {
+            // console.log('methods updateProp', key, value)
+
+            let vo = this
+
+            //groupTrans
+            let groupTrans = cloneDeep(vo.groupTrans)
+
+            //save value
+            groupTrans[key] = value
+
+            //save groupTrans
+            vo.groupTrans = groupTrans
+            // console.log('groupTrans', cloneDeep(vo.groupTrans))
+
+            //emitGroupDebounce
+            vo.emitGroupDebounce()
+
+        },
+
+        emitGroupDebounce: function() {
+            //console.log('methods emitGroupDebounce')
+
+            let vo = this
+
+            //dbc
+            vo.dbc(() => {
+
+                //emitGroup
+                vo.emitGroup()
+
+            })
+
+        },
+
+        emitGroup: function() {
+            //console.log('methods emitGroup')
+
+            let vo = this
+
+            //groupTrans
+            let groupTrans = cloneDeep(vo.groupTrans)
+
+            //save crules
+            groupTrans.crules = JSON.stringify(vo.groupTrans.rules)
+
+            //emit
+            vo.$emit('update', groupTrans)
+
+        },
+
+    }
+}
+</script>
+
+<style scoped>
+</style>
