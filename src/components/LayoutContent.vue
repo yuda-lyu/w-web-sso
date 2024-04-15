@@ -156,7 +156,7 @@ export default {
             let ms = [
                 {
                     key: 'users',
-                    text: 'bbb',
+                    text: 'abc',
                     icon: mdiAccountGroupOutline,
                 },
             ]

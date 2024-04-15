@@ -55,7 +55,7 @@ let getUserByToken = async (token) => {
         }
     }
     console.log('invalid token', token)
-    console.log('於生產環境時得加入SSO等驗證token機制')
+    console.log('於生產環境時得加入驗證token機制')
     return {}
 }
 

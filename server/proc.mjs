@@ -201,8 +201,8 @@ function proc(woItems, { salt, timeExpired }) {
         //check
         if (ntks === 0) {
             console.log(`token`, token)
-            console.log(`can not find the token`)
-            return Promise.reject(`can not find the token`)
+            console.log(`invalid token`)
+            return Promise.reject(`invalid token`)
         }
 
         //check
@@ -236,8 +236,8 @@ function proc(woItems, { salt, timeExpired }) {
         //check
         if (ntks === 0) {
             console.log(`token`, token)
-            console.log(`can not find the token`)
-            return Promise.reject(`can not find the token`)
+            console.log(`invalid token`)
+            return Promise.reject(`invalid token`)
         }
 
         //check
@@ -311,8 +311,8 @@ function proc(woItems, { salt, timeExpired }) {
         //check
         if (ntks === 0) {
             console.log(`token`, token)
-            console.log(`can not find the token`)
-            return Promise.reject(`can not find the token`)
+            console.log(`invalid token`)
+            return Promise.reject(`invalid token`)
         }
 
         //check
@@ -395,8 +395,8 @@ function proc(woItems, { salt, timeExpired }) {
         //check
         if (ntks === 0) {
             console.log(`token`, token)
-            console.log(`can not find the token`)
-            return Promise.reject(`can not find the token`)
+            console.log(`invalid token`)
+            return Promise.reject(`invalid token`)
         }
 
         //check
@@ -513,9 +513,51 @@ function proc(woItems, { salt, timeExpired }) {
 
     //getUsersList
     let getUsersList = async (token) => {
-        //bbb
-        // let rs = await woItems.users.select() //isActive為y或n都需要提供, 給前端編輯
-        // return rs
+
+        //checkToken
+        await checkToken(token)
+
+        //select
+        let us = await woItems.users.select() //isActive為y或n都需要提供, 給前或後端使用
+
+        return us
+    }
+
+
+    //getUserInfor
+    let getUserInfor = async (token, key, value) => {
+
+        //checkToken
+        await checkToken(token)
+
+        //select
+        let us = await woItems.users.select({ [key]: value, isActive: 'y' }) //僅提供isActive為y
+
+        //u
+        let u = get(us, 0, {})
+
+        //check
+        if (!iseobj(u)) {
+            console.log(`token`, token)
+            console.log(`key`, key, `value`, value)
+            console.log(`Can not find user`)
+            return Promise.reject(`Can not find user`)
+        }
+
+        //r
+        let r = {
+            account: u.account,
+            name: u.name,
+            email: u.email,
+            description: u.description,
+            from: u.from,
+            ruleGroupsIds: u.ruleGroupsIds,
+            redir: u.redir,
+            isAdmin: u.isAdmin,
+            token,
+        }
+
+        return r
     }
 
 
@@ -533,6 +575,7 @@ function proc(woItems, { salt, timeExpired }) {
         AuthUser,
         EmailUser,
         getUsersList,
+        getUserInfor,
     }
 
 

@@ -338,15 +338,16 @@ export default {
             url = url.replaceAll('{token}', token)
 
             //href
-            if (isDev()) {
-                console.log('60s後重導至:', url)
-                setTimeout(() => {
-                    window.location.href = url
-                }, 60 * 1000)
-            }
-            else {
-                window.location.href = url
-            }
+            // if (isDev()) {
+            //     console.log('60s後重導至:', url)
+            //     setTimeout(() => {
+            //         window.location.href = url
+            //     }, 60 * 1000)
+            // }
+            // else {
+            //     window.location.href = url
+            // }
+            window.location.href = url
 
         },
 
@@ -418,9 +419,10 @@ export default {
 
                 //goUrl
                 vo.goUrl(redir, token)
+                // console.log('goUrl', redir, 'token', token)
 
                 //autoLogining
-                vo.autoLogining = false
+                vo.autoLogining = true //不能false, 會因馬上連動變更成登入頁, 使用者體驗不佳
 
             }
 
@@ -495,6 +497,7 @@ export default {
 
                 //goUrl
                 vo.goUrl(redir, token)
+                // console.log('goUrl', redir, 'token', token)
 
             }
 
