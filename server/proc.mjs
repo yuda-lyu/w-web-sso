@@ -114,6 +114,7 @@ function proc(woItems, { salt, timeExpired }) {
 
         //r
         let r = {
+            id: u.id,
             account: u.account,
             name: u.name,
             email: u.email,
@@ -367,6 +368,7 @@ function proc(woItems, { salt, timeExpired }) {
 
         //r
         let r = {
+            id: u.id,
             account: u.account,
             name: u.name,
             email: u.email,
@@ -546,6 +548,7 @@ function proc(woItems, { salt, timeExpired }) {
 
         //r
         let r = {
+            id: u.id,
             account: u.account,
             name: u.name,
             email: u.email,
