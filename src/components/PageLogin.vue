@@ -339,10 +339,10 @@ export default {
 
             //href
             // if (isDev()) {
-            //     console.log('60s後重導至:', url)
+            //     console.log('10s後重導至:', url)
             //     setTimeout(() => {
             //         window.location.href = url
-            //     }, 60 * 1000)
+            //     }, 10 * 1000)
             // }
             // else {
             //     window.location.href = url

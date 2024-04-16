@@ -417,17 +417,26 @@ function proc(woItems, { salt, timeExpired }) {
         // console.log('userId', userId)
 
         //del
-        await woItems.tokens.del({ token })
+        let r = await woItems.tokens.del({ id: tk.id })
             .catch((err) => {
                 errTemp = err
             })
+        // console.log('r', r)
 
         //check
         if (errTemp) {
             console.log(errTemp)
             console.log(`token`, token)
-            console.log(`Failed to delete key`)
-            return Promise.reject(`Failed to delete key`)
+            console.log(`Failed to delete token`)
+            return Promise.reject(`Failed to delete token`)
+        }
+
+        //check
+        r = get(r, '0.nDeleted', 0)
+        if (r !== 1) {
+            console.log(`token`, token)
+            console.log(`Can not delete the token`)
+            return Promise.reject(`Can not delete the token`)
         }
 
         //bbb 待加入創建usersRecs儲存使用者登出紀錄
@@ -469,7 +478,7 @@ function proc(woItems, { salt, timeExpired }) {
             await pmSeries(tks, async (tk) => {
 
                 //del
-                await woItems.tokens.del({ token: tk.token })
+                await woItems.tokens.del({ id: tk.id })
                     .catch(() => { })
 
                 //bbb 待加入創建usersRecs儲存使用者登出紀錄
@@ -485,31 +494,31 @@ function proc(woItems, { salt, timeExpired }) {
 
     //createUser
     let createUser = async () => {
-    //bbb
+    //bbb 待開發createUser
     }
 
 
     //ModifyUser
     let ModifyUser = async () => {
-    //bbb
+    //bbb 待開發ModifyUser
     }
 
 
     //DeleteUser
     let DeleteUser = async () => {
-    //bbb
+    //bbb 待開發DeleteUser
     }
 
 
     //AuthUser
     let AuthUser = async () => {
-    //bbb
+    //bbb 待開發AuthUser
     }
 
 
     //EmailUser
     let EmailUser = async () => {
-    //bbb
+    //bbb 待開發 EmailUser
     }
 
 
