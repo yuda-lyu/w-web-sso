@@ -19,7 +19,7 @@ async function initialData() {
             description: '',
             from: '',
             ruleGroupsIds: 'id-for-viewer',
-            redir: 'http://localhost:8080/?token={token}', //給予{token}使前端自動取代成真實token
+            redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
             isAdmin: 'n',
         },
         {
@@ -31,7 +31,7 @@ async function initialData() {
             description: '',
             from: '',
             ruleGroupsIds: 'id-for-basic',
-            redir: 'http://localhost:8080/?token={token}', //給予{token}使前端自動取代成真實token
+            redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
             isAdmin: 'n',
         },
         {
@@ -43,7 +43,7 @@ async function initialData() {
             description: '',
             from: '',
             ruleGroupsIds: 'id-for-admin',
-            redir: 'http://localhost:8080/?token={token}', //給予{token}使前端自動取代成真實token
+            redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
             isAdmin: 'n',
         },
     ]

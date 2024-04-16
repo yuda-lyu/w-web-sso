@@ -123,6 +123,7 @@ function proc(woItems, { salt, timeExpired }) {
             ruleGroupsIds: u.ruleGroupsIds,
             redir: u.redir,
             isAdmin: u.isAdmin,
+            isActive: u.isActive,
             token,
         }
 
@@ -139,6 +140,10 @@ function proc(woItems, { salt, timeExpired }) {
             userId,
         })
         // console.log('funNew', t)
+
+        //timeEnd, 依照timeExpired(min)更新到期時間
+        t.timeEnd = ot().add(timeExpired, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+        // console.log('timeEnd', t.timeEnd)
 
         //token
         let token = get(t, 'token', '')
@@ -181,7 +186,7 @@ function proc(woItems, { salt, timeExpired }) {
         //check
         if (dmin > timeExpired) {
             console.log(`tk`, tk)
-            console.log(`dmin`, dmin, `dmitimeExpiredn`, timeExpired)
+            console.log(`dmin`, dmin, `timeExpired`, timeExpired)
             console.log(`token expired`)
             return Promise.reject(`token expired`)
         }
@@ -377,6 +382,7 @@ function proc(woItems, { salt, timeExpired }) {
             ruleGroupsIds: u.ruleGroupsIds,
             redir: u.redir,
             isAdmin: u.isAdmin,
+            isActive: u.isActive,
             token,
         }
 
@@ -566,6 +572,7 @@ function proc(woItems, { salt, timeExpired }) {
             ruleGroupsIds: u.ruleGroupsIds,
             redir: u.redir,
             isAdmin: u.isAdmin,
+            isActive: u.isActive,
             token,
         }
 
