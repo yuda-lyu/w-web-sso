@@ -16,7 +16,6 @@ let opt = {
 
     serverPort: 11007,
     subfolder: '', //msso
-    urlRedirect: 'https://www.google.com/', //本機測試時得先編譯, 再瀏覽: http://localhost:11007/
 
     webName: {
         'eng': 'Single Sign-On System',

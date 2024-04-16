@@ -48,7 +48,6 @@ import proc from './proc.mjs'
  * @param {Object} [opt.webDescription={}] 輸入站台描述物件，至少包含語系eng與cht鍵的名稱，預設{}
  * @param {String} [opt.webLogo=''] 輸入站台logo字串，採base64格式，預設''
  * @param {String} [opt.subfolder=''] 輸入站台所在子目錄字串，提供站台位於內網採反向代理進行服務時，故需支援位於子目錄情形，預設''
- * @param {String} [opt.urlRedirect=''] 輸入錯誤時自動轉址字串，提供站台例如無法登入或驗證失敗時須自動轉址，預設''
  * @param {String} [opt.mappingBy='email'] 輸入外部系統識別使用者token後所提供之資料物件，與權限系統之使用者資料物件，兩者間查找之對應欄位，可選'id'、'email'、'name'，預設'email'
  * @returns {Object} 回傳物件，其內server為hapi伺服器實體，wsrv為w-converhp的伺服器事件物件，wsds為w-serv-webdata的伺服器事件物件，可監聽error事件
  * @example
@@ -165,10 +164,6 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
             subfolder = `/${subfolder}`
         }
     }
-
-
-    //urlRedirect
-    let urlRedirect = get(opt, 'urlRedirect', '')
 
 
     //mappingBy
@@ -486,7 +481,6 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
         let c = fs.readFileSync(fpEntryIn, 'utf8')
         c = replace(c, '/msso/', '{sfd}/') //方法同genEntry
         c = replace(c, '{sfd}', subfolder)
-        c = replace(c, '{urlRedirect}', urlRedirect)
         fs.writeFileSync(fpEntryOut, c, 'utf8')
     }
     catch (err) {
