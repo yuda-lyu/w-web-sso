@@ -396,6 +396,10 @@ export default {
                     })
                 if (errTemp) {
                     vo.autoLogining = false
+
+                    //setItem, 清空token
+                    await localStorage.setItem(key, '')
+
                     return
                 }
 
@@ -471,7 +475,7 @@ export default {
                 let u = await vo.$fapi.loginByAccountAndPassword(vo.account, vo.password)
                 // console.log('u', u)
 
-                //setItem
+                //setItem, 清空token
                 await localStorage.setItem(key, '')
 
                 //token
