@@ -432,17 +432,26 @@ export default {
 
             //core
             core()
+                .then(() => {
+
+                    // //hide loading, 登入成功不能先隱藏loading, 開始轉址到轉跳會有一段時間, 持續顯示loading不隱藏, 避免使用者誤會登入失敗
+                    // vo.$ui.updateLoading(false)
+
+                })
                 .catch((err) => {
                     console.log('autoLogin', err)
 
                     //alert
                     vo.$alert(vo.$t('failedLoginForCatch'), { type: 'error' })
 
+                    //hide loading, 登入失敗才隱藏loading
+                    vo.$ui.updateLoading(false)
+
                 })
                 .finally(() => {
 
-                    //hide loading
-                    vo.$ui.updateLoading(false)
+                    // //hide loading
+                    // vo.$ui.updateLoading(false)
 
                 })
 
@@ -507,17 +516,26 @@ export default {
 
             //core
             core()
+                .then(() => {
+
+                    // //hide loading, 登入成功不能先隱藏loading, 開始轉址到轉跳會有一段時間, 持續顯示loading不隱藏, 避免使用者誤會登入失敗
+                    // vo.$ui.updateLoading(false)
+
+                })
                 .catch((err) => {
                     console.log('login', err)
 
                     //alert
                     vo.$alert(vo.$t('failedLoginForCatch'), { type: 'error' })
 
+                    //hide loading, 登入失敗才隱藏loading
+                    vo.$ui.updateLoading(false)
+
                 })
                 .finally(() => {
 
-                    //hide loading
-                    vo.$ui.updateLoading(false)
+                    // //hide loading
+                    // vo.$ui.updateLoading(false)
 
                 })
 
