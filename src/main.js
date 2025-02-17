@@ -39,7 +39,7 @@ Vue.prototype.$t = ui.getKpText
 Vue.prototype.$s = s
 Vue.prototype.$dssm = dssm
 // Vue.prototype.$dspt = dspt
-// Vue.prototype.$ds = ds
+Vue.prototype.$ds = ds
 Vue.prototype.$dg = {}
 
 //directive
@@ -48,7 +48,7 @@ Vue.directive('dommutation', domMutation())
 Vue.directive('domdragdrop', domDragDrop())
 
 //WServHapiClient
-let bFirstSync = false
+// let bFirstSync = false
 WServHapiClient({
     showLog: false,
     getUrl: () => {
@@ -56,37 +56,44 @@ WServHapiClient({
     },
     useWaitToken: false,
     getToken: () => {
-        // let token = get(Vue.prototype, `$store.state.userToken`, '')
+        let token = get(Vue.prototype, `$store.state.userToken`, '')
         // console.log('getToken', token)
-        // return token
-        return ''
+        return token
     },
     getServerMethods: (_fapi) => {
-        console.log('$fapi', _fapi)
+        // console.log('$fapi', _fapi)
+
+        //save $fapi
         Vue.prototype.$fapi = _fapi
+
+        //getWebInfor
         _fapi.getWebInfor() //已有fapi時優先取得web資訊
             .then((wi) => {
-                console.log('$fapi getWebInfor', wi)
+                // console.log('$fapi getWebInfor', wi)
                 Vue.prototype.$store.commit(Vue.prototype.$store.types.UpdateWebInfor, wi)
-                ui.setLang() //因更新webInfor得要重刷語系才能依照語言取得顯示文字
+                ui.setLang(null, 'get webInfor') //因更新webInfor可取得webName與webDescription, 得要重刷語系才能依照語言取得顯示文字
             })
             .catch((err) => {
                 console.log(err)
             })
+
+        //commit syncState
+        Vue.prototype.$store.commit(Vue.prototype.$store.types.UpdateSyncState, true)
+
     },
     recvData: (r) => {
-        console.log('sync data', r.tableName, r.data)
+        // console.log('sync data', r.tableName, r.data)
         Vue.prototype.$store.commit(Vue.prototype.$store.types.UpdateTableData, r)
     },
-    getAfterUpdateTableTags: (r) => {
-        // console.log('getAfterUpdateTableTags', r, 'needToRefresh', JSON.stringify(r.oldTableTags) !== JSON.stringify(r.newTableTags))
-        if (bFirstSync) {
-            return
-        }
-        bFirstSync = true
-        console.log('first-sync')
-        Vue.prototype.$store.commit(Vue.prototype.$store.types.UpdateSyncState, true)
-    },
+    // getAfterUpdateTableTags: (r) => {
+    //     // console.log('getAfterUpdateTableTags', r, 'needToRefresh', JSON.stringify(r.oldTableTags) !== JSON.stringify(r.newTableTags))
+    //     if (bFirstSync) {
+    //         return
+    //     }
+    //     bFirstSync = true
+    //     // console.log('first-sync')
+    //     Vue.prototype.$store.commit(Vue.prototype.$store.types.UpdateSyncState, true)
+    // },
 })
 
 //new

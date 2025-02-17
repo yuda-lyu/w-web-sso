@@ -3,37 +3,49 @@
         :style="`position:absolute; top:0px; left:0px; width:100%; height:100%; transition:all 0.5s linear; display:flex; align-items:center; justify-content:center;`"
     >
 
-        <template v-if="connState==='已連線' || connState==='連線中...'">
+        <template v-if="connState==='csIng'">
 
             <img style="width:100px; height:100px;" :src="img_connection">
 
             <div style="margin-left:10px;">
                 <div style="color:#aaa;">
-                    {{connState}}
+                    {{$t('csIng')}}
                 </div>
             </div>
 
         </template>
 
-        <template v-else-if="connState==='已登出'">
+        <template v-else-if="connState==='csLogin'">
+
+            <img style="width:100px; height:100px;" :src="img_connection">
+
+            <div style="margin-left:10px;">
+                <div style="color:#aaa;">
+                    {{$t('csLogin')}}
+                </div>
+            </div>
+
+        </template>
+
+        <template v-else-if="connState==='csLogout'">
 
             <img style="width:75px; height:75px;" :src="img_logout">
 
             <div style="margin-left:10px;">
                 <div style="color:#aaa;">
-                    {{connState}}
+                    {{$t('csLogout')}}
                 </div>
             </div>
 
         </template>
 
-        <template v-else-if="connState==='無法連線'">
+        <template v-else-if="connState==='csErrConn'">
 
             <img style="width:75px; height:75px;" :src="img_dissconnection">
 
             <div style="margin-left:10px;">
                 <div style="color:#aaa;">
-                    {{connState}}
+                    {{$t('csErrConn')}}
                 </div>
             </div>
 
@@ -45,7 +57,7 @@
 
             <div style="margin-left:10px;">
                 <div style="color:#aaa;">
-                    {{connState}}
+                    {{$t('csErrLogin')}}
                 </div>
             </div>
 

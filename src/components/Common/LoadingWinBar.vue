@@ -14,7 +14,7 @@
 
                     <span v-if="msg!==''">{{msg}}</span>
 
-                    <span v-else>處理中請稍後...</span>
+                    <span v-else>{{$t('processing')}}</span>
 
                 </div>
 

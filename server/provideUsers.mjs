@@ -18,8 +18,8 @@ async function provideUsers(url, from, users) {
         'email',
         'description',
         'from',
-        'ruleGroupsIds',
         'isAdmin',
+        //bbb
         'userId',
         'timeCreate',
         'userIdUpdate',

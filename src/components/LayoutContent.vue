@@ -40,21 +40,21 @@
                         ></WListVertical>
 
                         <div
-                            :style="`position:absolute; top:1px; right:4px;`"
+                            :style="`position:absolute; top:2px; right:4px;`"
                             v-if="drawer"
                         >
                             <WButtonCircle
-                                :paddingStyle="{v:3,h:3}"
-                                :icon="'mdi-arrow-left'"
-                                :iconSize="16"
-                                :backgroundColor="'#fff'"
-                                :backgroundColorHover="'#eee'"
-                                :backgroundColorFocus="'#fff'"
+                                :paddingStyle="{h:2,v:2}"
+                                :icon="mdiArrowLeftBoldHexagonOutline"
+                                :iconSize="20"
+                                :backgroundColor="'rgba(255,255,255,0.1)'"
+                                :backgroundColorHover="'rgba(255,255,255,0.4)'"
+                                :backgroundColorFocus="'rgba(255,255,255,0.7)'"
                                 :borderColor="'transparent'"
-                                :borderColorHover="'#eee'"
-                                :borderColorFocus="'#eee'"
-                                :tooltip="$t('menuTreeHide')"
-                                :shadow="true"
+                                :borderColorHover="'transparent'"
+                                :borderColorFocus="'transparent'"
+                                _tooltip="$t('menuTreeHide')"
+                                :shadow="false"
                                 @click="drawer=false"
                             ></WButtonCircle>
                         </div>
@@ -67,28 +67,36 @@
 
                         <template>
 
+                            <LayoutContentInfor
+                                v-if="menuKey==='mmUserInfor'"
+                            ></LayoutContentInfor>
+
                             <LayoutContentUsers
-                                v-if="menuKey==='users'"
+                                v-if="menuKey==='mmUsersList'"
                             ></LayoutContentUsers>
+
+                            <LayoutContentSettings
+                                v-if="menuKey==='mmSettings'"
+                            ></LayoutContentSettings>
 
                         </template>
 
                         <div
-                            :style="`position:absolute; top:1px; left:4px;`"
+                            :style="`position:absolute; top:3px; left:5px;`"
                             v-if="!drawer"
                         >
                             <WButtonCircle
-                                :paddingStyle="{v:3,h:3}"
-                                :icon="'mdi-arrow-right'"
-                                :iconSize="16"
-                                :backgroundColor="'#fff'"
-                                :backgroundColorHover="'#eee'"
-                                :backgroundColorFocus="'#fff'"
+                                :paddingStyle="{h:2,v:2}"
+                                :icon="mdiArrowRightBoldHexagonOutline"
+                                :iconSize="20"
+                                :backgroundColor="'rgba(255,255,255,0.1)'"
+                                :backgroundColorHover="'rgba(255,255,255,0.4)'"
+                                :backgroundColorFocus="'rgba(255,255,255,0.7)'"
                                 :borderColor="'transparent'"
-                                :borderColorHover="'#eee'"
-                                :borderColorFocus="'#eee'"
-                                :tooltip="$t('menuTreeShow')"
-                                :shadow="true"
+                                :borderColorHover="'transparent'"
+                                :borderColorFocus="'transparent'"
+                                _tooltip="$t('menuTreeShow')"
+                                :shadow="false"
                                 @click="drawer=true"
                             ></WButtonCircle>
                         </div>
@@ -100,25 +108,26 @@
 
         </template>
 
-        <template v-else>
-            <div
-                style="padding:20px; font-size:0.9rem;"
-            >
-                {{$t('waitingData')}}
-            </div>
-        </template>
+        <div
+            style="padding:20px; font-size:0.9rem;"
+            v-else
+        >
+            {{$t('waitingData')}}
+        </div>
 
     </div>
 </template>
 
 <script>
-import { mdiGamepadCircle, mdiStackOverflow, mdiAccountGroupOutline } from '@mdi/js/mdi.js'
+import { mdiInformationVariantCircleOutline, mdiCogOutline, mdiCellphoneKey, mdiLockOpenRemoveOutline, mdiShieldKeyOutline, mdiArrowLeftBoldHexagonOutline, mdiArrowRightBoldHexagonOutline, mdiGamepadCircle, mdiStackOverflow, mdiAccountGroupOutline } from '@mdi/js/mdi.js'
 import get from 'lodash-es/get.js'
 import find from 'lodash-es/find.js'
 import WDrawer from 'w-component-vue/src/components/WDrawer.vue'
 import WButtonCircle from 'w-component-vue/src/components/WButtonCircle.vue'
 import WListVertical from 'w-component-vue/src/components/WListVertical.vue'
+import LayoutContentInfor from './LayoutContentInfor.vue'
 import LayoutContentUsers from './LayoutContentUsers.vue'
+import LayoutContentSettings from './LayoutContentSettings.vue'
 
 
 export default {
@@ -126,38 +135,73 @@ export default {
         WDrawer,
         WButtonCircle,
         WListVertical,
+        LayoutContentInfor,
         LayoutContentUsers,
+        LayoutContentSettings,
     },
     props: {
     },
     data: function() {
         return {
+            mdiInformationVariantCircleOutline,
+            mdiCogOutline,
+            mdiCellphoneKey,
+            mdiLockOpenRemoveOutline,
+            mdiShieldKeyOutline,
+            mdiArrowLeftBoldHexagonOutline,
+            mdiArrowRightBoldHexagonOutline,
 
-            menuKey: 'targets',
+            menuKey: 'mmUserInfor',
 
             panelWidth: 0,
             panelHeight: 0,
 
             drawer: true,
-            drawerWidth: 180,
+            drawerWidth: 220,
             drawerWidthMin: 150,
-            drawerWidthMax: 300,
+            drawerWidthMax: 350,
 
         }
     },
     computed: {
 
         syncState: function() {
-            return get(this, '$store.state.syncState')
+            let vo = this
+            return get(vo, '$store.state.syncState')
         },
 
         menus: function() {
             let vo = this
             let ms = [
                 {
-                    key: 'users',
-                    text: 'abc',
+                    key: 'mmUserInfor',
+                    text: vo.$t('mmUserInfor'),
+                    icon: mdiInformationVariantCircleOutline,
+                },
+                {
+                    key: 'mmUsersList',
+                    text: vo.$t('mmUsersList'),
                     icon: mdiAccountGroupOutline,
+                },
+                {
+                    key: 'mmSettings',
+                    text: vo.$t('mmSettings'),
+                    icon: mdiCogOutline,
+                },
+                {
+                    key: 'nowActiveTokensList',
+                    text: vo.$t('nowActiveTokensList'),
+                    icon: mdiCellphoneKey,
+                },
+                {
+                    key: 'nowBlockList',
+                    text: vo.$t('nowBlockList'),
+                    icon: mdiLockOpenRemoveOutline,
+                },
+                {
+                    key: 'systemTokenList',
+                    text: vo.$t('systemTokenList'),
+                    icon: mdiShieldKeyOutline,
                 },
             ]
             return ms

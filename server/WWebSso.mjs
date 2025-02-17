@@ -1,5 +1,6 @@
 import path from 'path'
 import fs from 'fs'
+import JSON5 from 'json5'
 import ot from 'dayjs'
 import get from 'lodash-es/get.js'
 import each from 'lodash-es/each.js'
@@ -25,7 +26,8 @@ import replace from 'wsemi/src/replace.mjs'
 import WServHapiServer from 'w-serv-hapi/src/WServHapiServer.mjs'
 import WServOrm from 'w-serv-orm/src/WServOrm.mjs'
 import ds from '../src/schema/index.mjs'
-import proc from './proc.mjs'
+import procCore from './procCore.mjs'
+import procSettings from './procSettings.mjs'
 // import { getUserRules } from '../src/plugins/mShare.mjs'
 
 
@@ -39,23 +41,14 @@ import proc from './proc.mjs'
  * @param {Function} getUserByToken 輸入處理函數，函數會傳入使用者token，通過此函數處理後並回傳使用者資訊物件，並至少須提供'id'、'email'、'name'、'isAdmin'欄位，且'isAdmin'限輸入'y'或'n'，且輸入'y'時會複寫權限系統該使用者之'isAdmin'欄位值
  * @param {Function} verifyBrowserUser 輸入驗證瀏覽使用者身份之處理函數，函數會傳入使用者資訊物件，通過此函數識別後回傳布林值，允許使用者回傳true，反之回傳false
  * @param {Function} verifyAppUser 輸入驗證應用程序使用者身份之處理函數，函數會傳入使用者資訊物件，通過此函數識別後回傳布林值，允許使用者回傳true，反之回傳false
- * @param {Object} [opt={}] 輸入設定物件，預設{}
- * @param {Integer} [opt.serverPort=11007] 輸入伺服器通訊port，預設11006
- * @param {Boolean} [opt.bCheckUser=false] 輸入是否檢查使用者資訊布林值，預設false
- * @param {Function} [opt.getUserById=null] 輸入當bCheckUser=true時依照使用者ID取得使用者資訊物件函數，預設null
- * @param {Boolean} [opt.bExcludeWhenNotAdmin=false] 輸入使用ORM的select方法時是否自動刪除數據內isActive欄位之布林值，預設false
- * @param {Object} [opt.webName={}] 輸入站台名稱物件，至少包含語系eng與cht鍵的名稱，預設{}
- * @param {Object} [opt.webDescription={}] 輸入站台描述物件，至少包含語系eng與cht鍵的名稱，預設{}
- * @param {String} [opt.webLogo=''] 輸入站台logo字串，採base64格式，預設''
- * @param {String} [opt.subfolder=''] 輸入站台所在子目錄字串，提供站台位於內網採反向代理進行服務時，故需支援位於子目錄情形，預設''
- * @param {String} [opt.mappingBy='email'] 輸入外部系統識別使用者token後所提供之資料物件，與權限系統之使用者資料物件，兩者間查找之對應欄位，可選'id'、'email'、'name'，預設'email'
+ * @param {String} [pathSettings='./settings'] 輸入設定檔案路徑字串，預設'./settings'
  * @returns {Object} 回傳物件，其內server為hapi伺服器實體，wsrv為w-converhp的伺服器事件物件，wsds為w-serv-webdata的伺服器事件物件，可監聽error事件
  * @example
  *
  *
  *
  */
-function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser, opt = {}) {
+function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser, pathSettings) {
     let instWServHapiServer = null
 
 
@@ -99,6 +92,30 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
         console.log('invalid verifyAppUser', verifyAppUser)
         throw new Error('invalid verifyAppUser')
     }
+
+
+    //check pathSettings
+    if (!fsIsFile(pathSettings)) {
+        pathSettings = './settings.json'
+    }
+
+
+    //setFilepath
+    procSettings.setFilepath(pathSettings)
+
+
+    //getSettings
+    let opt = procSettings.getSettings()
+    // * @param {Object|String} [opt={}] 輸入設定物件或設定檔檔案路徑字串，若給予檔案路徑則會預設檔案為json格式且讀入成為opt物件，預設{}
+    // * @param {Integer} [opt.serverPort=11007] 輸入伺服器通訊port，預設11006
+    // * @param {Boolean} [opt.bCheckUser=false] 輸入是否檢查使用者資訊布林值，預設false
+    // * @param {Function} [opt.getUserById=null] 輸入當bCheckUser=true時依照使用者ID取得使用者資訊物件函數，預設null
+    // * @param {Boolean} [opt.bExcludeWhenNotAdmin=false] 輸入使用ORM的select方法時是否自動刪除數據內isActive欄位之布林值，預設false
+    // * @param {Object} [opt.webName={}] 輸入站台名稱物件，至少包含語系eng與cht鍵的名稱，預設{}
+    // * @param {Object} [opt.webDescription={}] 輸入站台描述物件，至少包含語系eng與cht鍵的名稱，預設{}
+    // * @param {String} [opt.webLogo=''] 輸入站台logo字串，採base64格式，預設''
+    // * @param {String} [opt.subfolder=''] 輸入站台所在子目錄字串，提供站台位於內網採反向代理進行服務時，故需支援位於子目錄情形，預設''
+    // * @param {String} [opt.mappingBy='email'] 輸入外部系統識別使用者token後所提供之資料物件，與權限系統之使用者資料物件，兩者間查找之對應欄位，可選'id'、'email'、'name'，預設'email'
 
 
     //serverPort
@@ -166,12 +183,42 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
     }
 
 
+    //params
+    let showLanguage = get(opt, 'showLanguage', 'n')
+    let language = get(opt, 'language', 'eng')
+    let showModeEditUsers = get(opt, 'showModeEditUsers', 'n')
+    let modeEditUsers = get(opt, 'modeEditUsers', 'n')
+
+    //是否可於登入頁提供申請註冊使用者按鈕 bbb
+    //是否使用圖形驗證碼模組
+
+    // - 使用者成功登入後產生token之有效(過期)時間m(30)分鐘
+    // - 使用者n(10)分鐘內最大登入失敗次數m(3)，若觸發則進入封鎖狀態p(30)分鐘
+    // - 使用者n(10)分鐘內最大調用API次數m(1000)，若觸發則進入封鎖狀態p(30)分鐘
+    // - IP使用者n(10)分鐘內最大調用API次數m(10000)，若觸發則IP進入封鎖狀態p(30)分鐘
+    // - 清除(移動至備份表)紀錄使用者與IP連線log機制，偵測時間n(1)天，保留最新資料時間m(60)天
+
+    //是否啟用要求使用者定期更換密碼
+    // 若是，預設6個月更換密碼，是否允許使用同樣密碼
+
+    //email模板
+    // 註冊驗證信模板
+    // 變更使用者密碼驗證信模板
+    // 註冊請求通知(給SSO系統管理員)信模板
+    // 註冊核可成功通知信模板
+    // 變更使用者資訊通知信模板
+
+
     //mappingBy
     let mappingBy = get(opt, 'mappingBy', '')
     if (mappingBy !== 'id' && mappingBy !== 'email' && mappingBy !== 'name') {
         mappingBy = 'email'
     }
     // console.log('mappingBy', mappingBy)
+
+
+    //kpLangExt
+    let kpLangExt = get(opt, 'kpLangExt', null)
 
 
     //WServOrm
@@ -193,17 +240,27 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
     //getWebInfor
     let getWebInfor = (_t) => {
         return {
+
             webName,
             webDescription,
             webLogo,
             webBackgoundGradientColors,
             webKey,
+
+            showLanguage,
+            language,
+
+            showModeEditUsers,
+            modeEditUsers,
+
+            kpLangExt,
+
         }
     }
 
 
-    //proc
-    let p = proc(woItems, { salt, timeExpired })
+    //procCore
+    let p = procCore(woItems, procOrm, { salt, timeExpired })
 
 
     //detect
@@ -481,6 +538,7 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
         let c = fs.readFileSync(fpEntryIn, 'utf8')
         c = replace(c, '/msso/', '{sfd}/') //方法同genEntry
         c = replace(c, '{sfd}', subfolder)
+        c = replace(c, '{language}', language)
         fs.writeFileSync(fpEntryOut, c, 'utf8')
     }
     catch (err) {
@@ -645,12 +703,12 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
     ]
 
 
-    //tableNamesExec, tableNamesSync
-    let tableNamesExec = keys(ds)
-    // let tableNamesSync = filter(tableNamesExec, (v) => {
-    //     return strright(v, 5) !== 'Items'//不同步數據
-    // })
-    let tableNamesSync = []
+    // //tableNamesExec, tableNamesSync
+    // let tableNamesExec = [] //keys(ds)
+    // // let tableNamesSync = filter(tableNamesExec, (v) => {
+    // //     return strright(v, 5) !== 'Items'//不同步數據
+    // // })
+    // let tableNamesSync = []
 
 
     //WServHapiServer
@@ -661,12 +719,12 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
         getUserIDFromToken: async (token) => { //可使用async或sync函數
             return ''
         },
-        useDbORM: true,
-        dbORMs: woItems,
-        operORM: procOrm, //procOrm的輸入為: userId, tableName, methodName, input
-        tableNamesExec,
-        methodsExec: ['select', 'insert', 'save', 'del', 'delAll'], //mix需於procOrm內註冊以提供
-        tableNamesSync,
+        useDbORM: false,
+        // dbORMs: woItems,
+        // operORM: procOrm, //procOrm的輸入為: userId, tableName, methodName, input
+        tableNamesExec: [],
+        methodsExec: [], //['select', 'insert', 'save', 'del', 'delAll'],
+        tableNamesSync: [],
         extFuncs: { //接收參數第1個為userId, 之後才是前端給予參數
             getWebInfor,
             getUserByToken: (_t, token) => {
@@ -686,6 +744,23 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
             },
             getUsersList: (_t, token) => {
                 return p.getUsersList(token)
+            },
+            updateUsersList: (_t, token, rows) => {
+                return p.updateUsersList(token, rows)
+            },
+            getSettings: async (_t, token,) => {
+
+                //checkToken
+                await p.checkToken(token)
+
+                return procSettings.getSettings()
+            },
+            updateSettings: async (_t, token, st) => {
+
+                //checkToken
+                await p.checkToken(token)
+
+                return procSettings.setSettings(st)
             },
             //...
         },

@@ -3,6 +3,7 @@ import fs from 'fs'
 import ot from 'dayjs'
 import get from 'lodash-es/get.js'
 import each from 'lodash-es/each.js'
+import map from 'lodash-es/map.js'
 import size from 'lodash-es/size.js'
 import keys from 'lodash-es/keys.js'
 import iseobj from 'wsemi/src/iseobj.mjs'
@@ -17,13 +18,17 @@ import j2o from 'wsemi/src/j2o.mjs'
 import strleft from 'wsemi/src/strleft.mjs'
 import strright from 'wsemi/src/strright.mjs'
 import strdelright from 'wsemi/src/strdelright.mjs'
+import ltdtDiffByKey from 'wsemi/src/ltdtDiffByKey.mjs'
+import ltdtmapping from 'wsemi/src/ltdtmapping.mjs'
+import haskey from 'wsemi/src/haskey.mjs'
+import arrHas from 'wsemi/src/arrHas.mjs'
 import pm2resolve from 'wsemi/src/pm2resolve.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from './hashPassword.mjs'
 
 
-function proc(woItems, { salt, timeExpired }) {
+function proc(woItems, procOrm, { salt, timeExpired }) {
 
 
     //getGenUserByKV
@@ -44,23 +49,23 @@ function proc(woItems, { salt, timeExpired }) {
     }
 
 
-    // //getGenUserByUserId
-    // let getGenUserByUserId = async(userId) => {
+    //getGenUserByUserId
+    let getGenUserByUserId = async(userId) => {
 
-    //     //u
-    //     let u = await getGenUserByKV('id', userId)
+        //u
+        let u = await getGenUserByKV('id', userId)
 
-    //     //check
-    //     if (!iseobj(u)) {
-    //         return null
-    //     }
+        //check
+        if (!iseobj(u)) {
+            return null
+        }
 
-    //     return u
-    // }
+        return u
+    }
 
 
-    //getGenUserByUserAc
-    let getGenUserByUserAc = async(account) => {
+    //getGenUserByAccount
+    let getGenUserByAccount = async(account) => {
 
         //u
         let u = await getGenUserByKV('account', account)
@@ -82,8 +87,8 @@ function proc(woItems, { salt, timeExpired }) {
         // console.log('password', password, 'salt', salt)
         // console.log('passwordTest', passwordTest)
 
-        //getGenUserByUserAc
-        let u = await getGenUserByUserAc(account)
+        //getGenUserByAccount
+        let u = await getGenUserByAccount(account)
         // console.log('u', u)
 
         //check
@@ -120,7 +125,6 @@ function proc(woItems, { salt, timeExpired }) {
             email: u.email,
             description: u.description,
             from: u.from,
-            ruleGroupsIds: u.ruleGroupsIds,
             redir: u.redir,
             isAdmin: u.isAdmin,
             isActive: u.isActive,
@@ -337,7 +341,7 @@ function proc(woItems, { salt, timeExpired }) {
         // console.log('userId', userId)
 
         //us
-        let us = await woItems.users.select({ id: userId })
+        let us = await woItems.users.select({ id: userId, isActive: 'y' })
             .catch((err) => {
                 errTemp = err
             })
@@ -379,9 +383,11 @@ function proc(woItems, { salt, timeExpired }) {
             email: u.email,
             description: u.description,
             from: u.from,
-            ruleGroupsIds: u.ruleGroupsIds,
             redir: u.redir,
             isAdmin: u.isAdmin,
+            timeVerified: u.timeVerified,
+            timeExpired: u.timeExpired,
+            timeBlocked: u.timeBlocked,
             isActive: u.isActive,
             token,
         }
@@ -528,16 +534,142 @@ function proc(woItems, { salt, timeExpired }) {
     }
 
 
+    //updateTabItems
+    let updateTabItems = async (woName, rows, keyDetect) => {
+        // console.log('updateTabItems', woName, rows.length, keyDetect)
+
+        //ltdtmapping
+        rows = ltdtmapping(rows, ds[woName].keys)
+        // console.log('ltdtmapping rows', rows)
+
+        //重給order
+        rows = map(rows, (r, k) => {
+            r.order = k + 1
+            return r
+        })
+
+        //ckKey
+        let ckKey = (rows, key) => {
+            let err = null
+
+            //check
+            let kp = {}
+            each(rows, (v, k) => {
+
+                //value
+                let value = get(v, key, '')
+
+                //check
+                if (!isestr(value)) {
+                    err = `rows[${k}].${key} is not an effective string`
+                    return false //跳出
+                }
+
+                //check
+                if (haskey(kp, value)) {
+                    err = `rows[${k}].${key}[${value}] is duplicate`
+                    return false //跳出
+                }
+
+                //kp
+                kp[value] = true
+
+            })
+
+            return err
+        }
+
+        //偵測未給予或重複
+        let err = null
+        if (true) {
+            if (arrHas(woName, ['users'])) { //users可重複name
+                err = ckKey(rows, 'id')
+                if (err !== null) {
+                    return Promise.reject(err)
+                }
+                err = ckKey(rows, 'email')
+                if (err !== null) {
+                    return Promise.reject(err)
+                }
+            }
+        }
+
+        //ltdtDiffByKey
+        let ltdtOld = await woItems[woName].select()
+        let ltdtNew = rows
+        let r = ltdtDiffByKey(ltdtOld, ltdtNew, keyDetect)
+        // console.log('ltdtDiffByKey r', r)
+
+        //del
+        if (size(r.del) > 0) {
+            await procOrm('', woName, 'del', r.del) //須使用procOrm才有辦法自動給予相關欄位, 且不使用外部給予userId
+            // .catch((err) => {
+            //     console.log('woItems[woName].del err', err)
+            // })
+        }
+
+        //add
+        if (size(r.add) > 0) {
+            await procOrm('', woName, 'insert', r.add) //須使用procOrm才有辦法自動給予相關欄位, 且不使用外部給予userId
+            // .catch((err) => {
+            //     console.log('woItems[woName].insert err', err)
+            // })
+        }
+
+        //diff
+        if (size(r.diff) > 0) {
+            await procOrm('', woName, 'save', r.diff) //須使用procOrm才有辦法自動給予相關欄位, 且不使用外部給予userId
+            // .catch((err) => {
+            //     console.log('woItems[woName].save err', err)
+            // })
+        }
+
+        return ltdtNew
+    }
+
+
     //getUsersList
-    let getUsersList = async (token) => {
+    let getUsersList = async (token, needActive = false) => {
 
         //checkToken
         await checkToken(token)
 
+        //opt
+        let opt = {}
+        if (needActive) {
+            opt = { isActive: 'y' }
+        }
+
         //select
-        let us = await woItems.users.select() //isActive為y或n都需要提供, 給前或後端使用
+        let us = await woItems.users.select(opt)
+
+        //us
+        us = map(us, (v, k) => {
+            delete v.password
+            return v
+        })
 
         return us
+    }
+
+
+    //getActiveUsersList
+    let getActiveUsersList = async (token) => {
+        let us = await getUsersList(token, true)
+        return us
+    }
+
+
+    //updateUsersList
+    let updateUsersList = async (token, rows) => {
+
+        //checkToken
+        await checkToken(token)
+
+        //updateTabItems
+        rows = await updateTabItems('users', rows, 'id')
+
+        return rows
     }
 
 
@@ -569,9 +701,11 @@ function proc(woItems, { salt, timeExpired }) {
             email: u.email,
             description: u.description,
             from: u.from,
-            ruleGroupsIds: u.ruleGroupsIds,
             redir: u.redir,
             isAdmin: u.isAdmin,
+            timeVerified: u.timeVerified,
+            timeExpired: u.timeExpired,
+            timeBlocked: u.timeBlocked,
             isActive: u.isActive,
             token,
         }
@@ -593,8 +727,10 @@ function proc(woItems, { salt, timeExpired }) {
         DeleteUser,
         AuthUser,
         EmailUser,
-        getUsersList,
         getUserInfor,
+        getUsersList,
+        getActiveUsersList,
+        updateUsersList,
     }
 
 

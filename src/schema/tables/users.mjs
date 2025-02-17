@@ -46,16 +46,40 @@ let settings = {
         name: '來源',
         type: 'STRING',
     },
-    ruleGroupsIds: {
-        name: '所屬權限群組主鍵', //多主鍵用分號區隔
-        type: 'STRING',
-    },
+    // ruleGroupsIds: {
+    //     name: '所屬權限群組主鍵', //多主鍵用分號區隔
+    //     type: 'STRING',
+    // },
     redir: {
         name: '登入後轉址',
         type: 'STRING',
     },
     isAdmin: {
         name: '是否為系統管理員',
+        type: 'STRING',
+    },
+    isVerified: {
+        name: '帳號是否驗證',
+        type: 'STRING',
+    },
+    timeVerified: {
+        name: '驗證時間',
+        type: 'STRING',
+    },
+    // isExpired: {
+    //     name: '帳號是否過期',
+    //     type: 'STRING',
+    // },
+    timeExpired: {
+        name: '過期時間',
+        type: 'STRING',
+    },
+    // isBlocked: {
+    //     name: '帳號是否封鎖',
+    //     type: 'STRING',
+    // },
+    timeBlocked: {
+        name: '封鎖時間',
         type: 'STRING',
     },
     userId: {

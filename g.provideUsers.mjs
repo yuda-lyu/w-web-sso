@@ -10,16 +10,15 @@ async function provide() {
     let from = `pd`
 
     let rs = [
-        ['pd-viewer', 'pd-普通瀏覽者', 'id-for-pd-權限群組1'],
-        ['pd-basic', 'pd-一般使用者', 'id-for-pd-權限群組2'],
-        ['pd-admin', 'pd-系統管理者', 'id-for-pd-權限群組3'],
+        ['pd-viewer', 'pd-普通瀏覽者'],
+        ['pd-basic', 'pd-一般使用者'],
+        ['pd-admin', 'pd-系統管理者'],
     ]
-    rs = map(rs, ([key, name, ruleGroupsIds], k) => {
+    rs = map(rs, ([key, name], k) => {
         let v = ds.users.funNew({
             order: 1000 + k,
             name,
             email: `${key}@example.com`,
-            ruleGroupsIds,
             userId: 'id-for-admin',
             from,
         })

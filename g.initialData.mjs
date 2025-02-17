@@ -16,11 +16,16 @@ async function initialData() {
             password: hashPassword('pw-viewer', salt),
             name: 'viewer',
             email: 'viewer@example.com',
-            description: '',
-            from: '',
-            ruleGroupsIds: 'id-for-viewer',
+            description: 'description-for-viewer',
+            from: 'SSO',
             redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
             isAdmin: 'n',
+            isVerified: 'y',
+            timeVerified: '2025-01-01T00:00:00+08:00',
+            timeExpired: '2030-01-01T00:00:00+08:00',
+            timeBlocked: '',
+            isActive: 'y',
+
         },
         {
             id: 'id-for-basic',
@@ -28,11 +33,15 @@ async function initialData() {
             password: hashPassword('pw-basic', salt),
             name: 'basic',
             email: 'basic@example.com',
-            description: '',
-            from: '',
-            ruleGroupsIds: 'id-for-basic',
+            description: 'description-for-basic',
+            from: 'SSO',
             redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
             isAdmin: 'n',
+            isVerified: 'y',
+            timeVerified: '2025-01-01T00:00:00+08:00',
+            timeExpired: '2030-01-01T00:00:00+08:00',
+            timeBlocked: '',
+            isActive: 'y',
         },
         {
             id: 'id-for-admin',
@@ -40,11 +49,15 @@ async function initialData() {
             password: hashPassword('pw-admin', salt),
             name: 'admin',
             email: 'admin@example.com',
-            description: '',
-            from: '',
-            ruleGroupsIds: 'id-for-admin',
+            description: 'description-for-admin',
+            from: 'SSO',
             redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
-            isAdmin: 'n',
+            isAdmin: 'y',
+            isVerified: 'y',
+            timeVerified: '2025-01-01T00:00:00+08:00',
+            timeExpired: '2030-01-01T00:00:00+08:00',
+            timeBlocked: '',
+            isActive: 'y',
         },
     ]
     rs = map(rs, (u, k) => {
@@ -52,7 +65,8 @@ async function initialData() {
             order: k,
             ...u,
         })
-        v.id = u.id
+        v.id = u.id //id會重產故須重存
+        v.isAdmin = u.isAdmin //isAdmin會重置回n故須重存
         return v
     })
     await woItems.users.delAll()
@@ -85,7 +99,7 @@ async function initialData() {
         v.id = `id-for-${token}`
         v.token = token
         if (t.isApp) {
-            v.timeEnd = '3000-00-00T00:00:00+08:00'
+            v.timeEnd = '2030-00-00T00:00:00+08:00'
         }
         return v
     })

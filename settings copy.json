@@ -1,0 +1,32 @@
+{ 
+
+    bCheckUser: false,
+    getUserById: null,
+    bExcludeWhenNotAdmin: false,
+
+    serverPort: 11007,
+    subfolder: '', //msso
+
+    showLanguage: 'y', //'n',
+    language: 'eng', //'eng', 'cht'
+
+    showModeEditUsers: 'y',
+    modeEditUsers: 'y',
+
+    webName: {
+        'eng': 'Single Sign-On System',
+        'cht': '單一登入系統',
+    },
+    webDescription: {
+        'eng': 'A web service package for Single Sign-On.',
+        'cht': '建構精簡框架之使用者及資訊管理來提供使用者單一登入之功能',
+    },
+    webLogo: 'data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiA/PjxzdmcgaWQ9Ikljb25zIiB2aWV3Qm94PSIwIDAgMjQgMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiPjxkZWZzPjxzdHlsZT4uY2xzLTF7ZmlsbDp1cmwoI2xpbmVhci1ncmFkaWVudCk7fS5jbHMtMntmaWxsOnVybCgjbGluZWFyLWdyYWRpZW50LTIpO30uY2xzLTN7ZmlsbDojM2QzYzQ0O30uY2xzLTR7ZmlsbDp1cmwoI2xpbmVhci1ncmFkaWVudC0zKTt9PC9zdHlsZT48bGluZWFyR3JhZGllbnQgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiIGlkPSJsaW5lYXItZ3JhZGllbnQiIHgxPSIxMiIgeDI9IjEyIiB5MT0iMC4xOTEiIHkyPSI4Ljk4NCI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjNWQ1YzY2Ii8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjNDg0NzRmIi8+PC9saW5lYXJHcmFkaWVudD48bGluZWFyR3JhZGllbnQgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiIGlkPSJsaW5lYXItZ3JhZGllbnQtMiIgeDE9IjEyIiB4Mj0iMTIiIHkxPSI5LjA4NSIgeTI9IjIzLjAwMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjZmZmNjUwIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjZmZhYjE3Ii8+PC9saW5lYXJHcmFkaWVudD48bGluZWFyR3JhZGllbnQgaWQ9ImxpbmVhci1ncmFkaWVudC0zIiB4Mj0iMTIiIHhsaW5rOmhyZWY9IiNsaW5lYXItZ3JhZGllbnQiIHkxPSIxMi45MTUiIHkyPSIxNy4wOTYiLz48L2RlZnM+PHBhdGggY2xhc3M9ImNscy0xIiBkPSJNMTcsMTBhMSwxLDAsMCwxLTEtMVY2QTQsNCwwLDAsMCw4LDZWOUExLDEsMCwwLDEsNiw5VjZBNiw2LDAsMCwxLDE4LDZWOUExLDEsMCwwLDEsMTcsMTBaIi8+PHJlY3QgY2xhc3M9ImNscy0yIiBoZWlnaHQ9IjE0IiByeD0iMyIgd2lkdGg9IjE4IiB4PSIzIiB5PSI5Ii8+PHBhdGggY2xhc3M9ImNscy0zIiBkPSJNMTIsMjBhMSwxLDAsMCwxLTEtMVYxNmExLDEsMCwwLDEsMiwwdjNBMSwxLDAsMCwxLDEyLDIwWiIvPjxjaXJjbGUgY2xhc3M9ImNscy00IiBjeD0iMTIiIGN5PSIxNSIgcj0iMiIvPjwvc3ZnPg==',
+    webBackgoundGradientColors: ['#FFE0B2', '#FFCC80', '#FFF59D', 'rgba(255, 224, 178, 0.5)', 'rgba(240, 220, 190, 0.7)'],
+    webKey: 'ksso',
+
+    salt: '{salt}',
+
+    timeExpired: 30, //min
+
+}
