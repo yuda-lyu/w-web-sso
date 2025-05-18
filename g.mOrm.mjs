@@ -14,8 +14,8 @@ let db = st.dbName
 //WServOrm
 let opt = {
     getUserById: null,
-    bCheckUser: false,
-    bExcludeWhenNotAdmin: false,
+    useCheckUser: false,
+    useExcludeWhenNotAdmin: false,
 }
 let r = WServOrm(ds, WOrm, url, db, opt)
 let { woItems, procOrm } = r

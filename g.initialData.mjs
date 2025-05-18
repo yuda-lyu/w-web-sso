@@ -116,4 +116,4 @@ initialData()
 
 
 //重建資料庫
-//node --experimental-modules g.initialData.mjs
+//node g.initialData.mjs

@@ -18,4 +18,4 @@ initialTestData()
 
 
 //刪除舊檔與重建測試資料庫
-//node --experimental-modules g.initialTestData.mjs
+//node g.initialTestData.mjs

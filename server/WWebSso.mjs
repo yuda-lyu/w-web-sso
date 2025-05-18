@@ -108,9 +108,9 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
     let opt = procSettings.getSettings()
     // * @param {Object|String} [opt={}] 輸入設定物件或設定檔檔案路徑字串，若給予檔案路徑則會預設檔案為json格式且讀入成為opt物件，預設{}
     // * @param {Integer} [opt.serverPort=11007] 輸入伺服器通訊port，預設11006
-    // * @param {Boolean} [opt.bCheckUser=false] 輸入是否檢查使用者資訊布林值，預設false
-    // * @param {Function} [opt.getUserById=null] 輸入當bCheckUser=true時依照使用者ID取得使用者資訊物件函數，預設null
-    // * @param {Boolean} [opt.bExcludeWhenNotAdmin=false] 輸入使用ORM的select方法時是否自動刪除數據內isActive欄位之布林值，預設false
+    // * @param {Boolean} [opt.useCheckUser=false] 輸入是否檢查使用者資訊布林值，預設false
+    // * @param {Function} [opt.getUserById=null] 輸入當useCheckUser=true時依照使用者ID取得使用者資訊物件函數，預設null
+    // * @param {Boolean} [opt.useExcludeWhenNotAdmin=false] 輸入使用ORM的select方法時是否自動刪除數據內isActive欄位之布林值，預設false
     // * @param {Object} [opt.webName={}] 輸入站台名稱物件，至少包含語系eng與cht鍵的名稱，預設{}
     // * @param {Object} [opt.webDescription={}] 輸入站台描述物件，至少包含語系eng與cht鍵的名稱，預設{}
     // * @param {String} [opt.webLogo=''] 輸入站台logo字串，採base64格式，預設''
@@ -126,16 +126,16 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
     serverPort = cint(serverPort)
 
 
-    //bCheckUser
-    let bCheckUser = get(opt, 'bCheckUser', false)
+    //useCheckUser
+    let useCheckUser = get(opt, 'useCheckUser', false)
 
 
     //getUserById
     let getUserById = get(opt, 'getUserById', null)
 
 
-    //bExcludeWhenNotAdmin
-    let bExcludeWhenNotAdmin = get(opt, 'bExcludeWhenNotAdmin', false)
+    //useExcludeWhenNotAdmin
+    let useExcludeWhenNotAdmin = get(opt, 'useExcludeWhenNotAdmin', false)
 
 
     //webName
@@ -223,9 +223,9 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
 
     //WServOrm
     let optWServOrm = {
-        bCheckUser,
+        useCheckUser,
         getUserById,
-        bExcludeWhenNotAdmin,
+        useExcludeWhenNotAdmin,
     }
     let wp = {}
     try {
@@ -716,16 +716,16 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
         port: opt.serverPort,
         pathStaticFiles,
         apis,
-        getUserIDFromToken: async (token) => { //可使用async或sync函數
+        getUserIdByToken: async (token) => { //可使用async或sync函數
             return ''
         },
-        useDbORM: false,
-        // dbORMs: woItems,
-        // operORM: procOrm, //procOrm的輸入為: userId, tableName, methodName, input
+        useDbOrm: false,
+        // kpOrm: woItems,
+        // operOrm: procOrm, //procOrm的輸入為: userId, tableName, methodName, input
         tableNamesExec: [],
         methodsExec: [], //['select', 'insert', 'save', 'del', 'delAll'],
         tableNamesSync: [],
-        extFuncs: { //接收參數第1個為userId, 之後才是前端給予參數
+        kpFunExt: { //接收參數第1個為userId, 之後才是前端給予參數
             getWebInfor,
             getUserByToken: (_t, token) => {
                 return p.getUserByToken(token)
@@ -764,8 +764,6 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
             },
             //...
         },
-        hookBefores: null,
-        hookAfters: null,
         fnTableTags: 'tableTags-web-sso.json',
     })
 

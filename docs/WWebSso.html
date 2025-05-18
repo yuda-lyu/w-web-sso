@@ -64,7 +64,7 @@
 
     
 
-    <h4 class="name" id="WWebSso"><span class="type-signature"></span>new WWebSso<span class="signature">(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser, opt<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+    <h4 class="name" id="WWebSso"><span class="type-signature"></span>new WWebSso<span class="signature">(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser, pathSettings<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
 
     
 
@@ -80,7 +80,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WWebSso.mjs.html">WWebSso.mjs</a>, <a href="WWebSso.mjs.html#line58">line 58</a>
+        <a href="WWebSso.mjs.html">WWebSso.mjs</a>, <a href="WWebSso.mjs.html#line51">line 51</a>
     </li></ul></dd>
     
 
@@ -377,310 +377,7 @@
 
         <tr>
             
-                <td class="name"><code>opt</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object</span>
-
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                    <code>{}</code>
-                
-                </td>
-            
-
-            <td class="description last"><p>輸入設定物件，預設{}</p>
-                <h6>Properties</h6>
-                
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-        <th>Attributes</th>
-        
-
-        
-        <th>Default</th>
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>serverPort</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Integer</span>
-
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                    <code>11007</code>
-                
-                </td>
-            
-
-            <td class="description last"><p>輸入伺服器通訊port，預設11006</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>bCheckUser</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Boolean</span>
-
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                    <code>false</code>
-                
-                </td>
-            
-
-            <td class="description last"><p>輸入是否檢查使用者資訊布林值，預設false</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>getUserById</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">function</span>
-
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                    <code>null</code>
-                
-                </td>
-            
-
-            <td class="description last"><p>輸入當bCheckUser=true時依照使用者ID取得使用者資訊物件函數，預設null</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>bExcludeWhenNotAdmin</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Boolean</span>
-
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                    <code>false</code>
-                
-                </td>
-            
-
-            <td class="description last"><p>輸入使用ORM的select方法時是否自動刪除數據內isActive欄位之布林值，預設false</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>webName</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object</span>
-
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                    <code>{}</code>
-                
-                </td>
-            
-
-            <td class="description last"><p>輸入站台名稱物件，至少包含語系eng與cht鍵的名稱，預設{}</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>webDescription</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object</span>
-
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                    <code>{}</code>
-                
-                </td>
-            
-
-            <td class="description last"><p>輸入站台描述物件，至少包含語系eng與cht鍵的名稱，預設{}</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>webLogo</code></td>
+                <td class="name"><code>pathSettings</code></td>
             
 
             <td class="type">
@@ -708,99 +405,12 @@
             
                 <td class="default">
                 
-                    <code>''</code>
+                    <code>'./settings'</code>
                 
                 </td>
             
 
-            <td class="description last"><p>輸入站台logo字串，採base64格式，預設''</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>subfolder</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">String</span>
-
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                    <code>''</code>
-                
-                </td>
-            
-
-            <td class="description last"><p>輸入站台所在子目錄字串，提供站台位於內網採反向代理進行服務時，故需支援位於子目錄情形，預設''</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>mappingBy</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">String</span>
-
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                    <code>'email'</code>
-                
-                </td>
-            
-
-            <td class="description last"><p>輸入外部系統識別使用者token後所提供之資料物件，與權限系統之使用者資料物件，兩者間查找之對應欄位，可選'id'、'email'、'name'，預設'email'</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-            </td>
+            <td class="description last"><p>輸入設定檔案路徑字串，預設'./settings'</p></td>
         </tr>
 
     
@@ -885,7 +495,7 @@
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.2</a> on Sun Nov 03 2024 12:10:39 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.2</a> on Sun May 18 2025 21:52:00 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>

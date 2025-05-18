@@ -5,4 +5,4 @@ import genIndex from 'w-data-collector/src/genIndex.mjs'
 genIndex('./src/schema/tables', './src/schema')
 
 
-//node --experimental-modules ./src/schema/gi.mjs
+//node src/schema/gi.mjs

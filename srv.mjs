@@ -57,4 +57,4 @@ instWWebSso.on('error', (err) => {
 
 //http://localhost:8080/?view=backstage
 
-//node --experimental-modules srv.mjs
+//node srv.mjs

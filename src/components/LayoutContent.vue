@@ -15,7 +15,9 @@
                 :drawerWidthMax="drawerWidthMax"
                 :mode="'from-left'"
                 :dragDrawerWidth="true"
-                :autoSwitch="true"
+                :autoSwitchToHide="true"
+                :autoSwitchToShow="true"
+                :autoSwitchToFloat="true"
                 :switchWidth="drawerWidth*2.3"
             >
 

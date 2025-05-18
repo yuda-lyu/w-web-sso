@@ -7,4 +7,4 @@ getDb.backup(woItems)
 
 
 //備份資料重與由備份資料重建資料庫
-//node --experimental-modules g.backupDb.mjs
+//node g.backupDb.mjs
