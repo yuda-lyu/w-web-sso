@@ -51,10 +51,9 @@ Vue.directive('domdragdrop', domDragDrop())
 // let bFirstSync = false
 WServHapiClient({
     showLog: false,
-    getUrl: () => {
-        return window.location.origin + window.location.pathname
-    },
+    url: window.location.origin + window.location.pathname,
     useWaitToken: false,
+    apiName: 'api',
     getToken: () => {
         let token = get(Vue.prototype, `$store.state.userToken`, '')
         // console.log('getToken', token)

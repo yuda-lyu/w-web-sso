@@ -552,13 +552,13 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
         //     },
         // },
 
-        {
-            method: 'GET',
-            path: '/getWebInfor',
-            handler: async function (req, res) {
-                return getWebInfor()
-            },
-        },
+        // {
+        //     method: 'GET',
+        //     path: '/getWebInfor',
+        //     handler: async function (req, res) {
+        //         return getWebInfor() //bbb 應該已不用, 前端載入通訊器後由$fapi.getWebInfor呼叫
+        //     },
+        // },
 
         {
             method: 'GET',
@@ -707,9 +707,13 @@ function WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser
         port: opt.serverPort,
         pathStaticFiles,
         apis,
+        verifyConn: () => {
+            return true
+        },
         getUserIdByToken: async (token) => { //可使用async或sync函數
             return ''
         },
+        corsOrigins: ['*'],
         useDbOrm: false,
         // kpOrm: woItems,
         // operOrm: procOrm, //procOrm的輸入為: userId, tableName, methodName, input
