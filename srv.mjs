@@ -1,4 +1,4 @@
-import WOrm from 'w-orm-mongodb/src/WOrmMongodb.mjs' //自行選擇引用ORM, 使用Mongodb測試
+import WOrm from 'w-orm-lmdb/src/WOrmLmdb.mjs'
 import WWebSso from './server/WWebSso.mjs'
 import getSettings from './g.getSettings.mjs'
 
@@ -6,9 +6,9 @@ import getSettings from './g.getSettings.mjs'
 //st
 let st = getSettings()
 
-let url = `mongodb://${st.dbUsername}:${st.dbPassword}@${st.dbIP}:${st.dbPort}` //使用Mongodb測試
+let url = st.dbUrl
 let db = st.dbName
-let opt = './settings.json'
+let pathSettings = './settings.json'
 
 let getUserByToken = async (token) => {
     // return {} //測試無法登入
@@ -48,7 +48,7 @@ let verifyAppUser = (user, caller) => {
 }
 
 //WWebSso
-let instWWebSso = WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser, opt)
+let instWWebSso = WWebSso(WOrm, url, db, getUserByToken, verifyBrowserUser, verifyAppUser, pathSettings)
 
 instWWebSso.on('error', (err) => {
     console.log(err)

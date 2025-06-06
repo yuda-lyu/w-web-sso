@@ -1,25 +1,17 @@
 import path from 'path'
 import fs from 'fs'
-import JSON5 from 'json5'
-import ot from 'dayjs'
 import get from 'lodash-es/get.js'
-import each from 'lodash-es/each.js'
-import size from 'lodash-es/size.js'
-import keys from 'lodash-es/keys.js'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
 import ispint from 'wsemi/src/ispint.mjs'
 import isearr from 'wsemi/src/isearr.mjs'
 import ispnum from 'wsemi/src/ispnum.mjs'
 import isfun from 'wsemi/src/isfun.mjs'
-import ispm from 'wsemi/src/ispm.mjs'
 import cint from 'wsemi/src/cint.mjs'
-import j2o from 'wsemi/src/j2o.mjs'
 import strleft from 'wsemi/src/strleft.mjs'
 import strright from 'wsemi/src/strright.mjs'
 import strdelright from 'wsemi/src/strdelright.mjs'
 import pm2resolve from 'wsemi/src/pm2resolve.mjs'
-import pmSeries from 'wsemi/src/pmSeries.mjs'
 import fsIsFolder from 'wsemi/src/fsIsFolder.mjs'
 import fsIsFile from 'wsemi/src/fsIsFile.mjs'
 import replace from 'wsemi/src/replace.mjs'
@@ -28,7 +20,6 @@ import WServOrm from 'w-serv-orm/src/WServOrm.mjs'
 import ds from '../src/schema/index.mjs'
 import procCore from './procCore.mjs'
 import procSettings from './procSettings.mjs'
-// import { getUserRules } from '../src/plugins/mShare.mjs'
 
 
 /**
@@ -36,7 +27,7 @@ import procSettings from './procSettings.mjs'
  *
  * @class
  * @param {Function} WOrm 輸入資料庫ORM函數
- * @param {String} url 輸入資料庫連線字串，例如'mongodb://sername:password@$127.0.0.1:27017'
+ * @param {String} url 輸入資料庫連線字串，例如w-orm-lmdb為'./db'，或w-orm-mongodb為'mongodb://sername:password@$127.0.0.1:27017'
  * @param {String} db 輸入資料庫名稱字串
  * @param {Function} getUserByToken 輸入處理函數，函數會傳入使用者token，通過此函數處理後並回傳使用者資訊物件，並至少須提供'id'、'email'、'name'、'isAdmin'欄位，且'isAdmin'限輸入'y'或'n'，且輸入'y'時會複寫權限系統該使用者之'isAdmin'欄位值
  * @param {Function} verifyBrowserUser 輸入驗證瀏覽使用者身份之處理函數，函數會傳入使用者資訊物件，通過此函數識別後回傳布林值，允許使用者回傳true，反之回傳false

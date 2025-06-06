@@ -1,6 +1,6 @@
 {
   "name": "w-web-sso",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "main": "dist/w-web-sso.umd.js",
   "dependencies": {
     "@mdi/js": "^7.4.47",
@@ -28,7 +28,7 @@
     "eslint-plugin-vue": "^9.10.0",
     "vue": "^2.6.14",
     "vuex": "^3.6.2",
-    "w-orm-mongodb": "^1.1.33",
+    "w-orm-lmdb": "^1.0.1",
     "w-package-tools": "^1.1.2"
   },
   "scripts": {

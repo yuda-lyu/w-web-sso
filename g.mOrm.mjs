@@ -1,4 +1,4 @@
-import WOrm from 'w-orm-mongodb/src/WOrmMongodb.mjs'
+import WOrm from 'w-orm-lmdb/src/WOrmLmdb.mjs'
 import WServOrm from 'w-serv-orm/src/WServOrm.mjs'
 import ds from './src/schema/index.mjs'
 import getSettings from './g.getSettings.mjs'
@@ -8,7 +8,7 @@ import getSettings from './g.getSettings.mjs'
 let st = getSettings()
 
 //url, db
-let url = `mongodb://${st.dbUsername}:${st.dbPassword}@${st.dbIP}:${st.dbPort}`
+let url = st.dbUrl
 let db = st.dbName
 
 //WServOrm

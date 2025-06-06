@@ -1,9 +1,5 @@
 { 
 
-    bCheckUser: false,
-    getUserById: null,
-    bExcludeWhenNotAdmin: false,
-
     serverPort: 11007,
     subfolder: '', //msso
 
