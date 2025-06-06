@@ -1,6 +1,6 @@
 {
   "name": "w-web-sso",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "main": "dist/w-web-sso.umd.js",
   "dependencies": {
     "@mdi/js": "^7.4.47",
@@ -9,7 +9,7 @@
     "lodash-es": "^4.17.21",
     "w-component-vue": "^2.4.20",
     "w-data-collector": "^1.0.22",
-    "w-serv-hapi": "^1.0.55",
+    "w-serv-hapi": "^1.0.56",
     "w-serv-orm": "^1.0.26",
     "w-ui-loginout": "^1.0.9",
     "wsemi": "^1.7.92"
