@@ -70,10 +70,9 @@
                                 :icon="mdiTableHeadersEye"
                                 :backgroundColor="'#fff'"
                                 :backgroundColorHover="'#f2f2f2'"
-                                _textColor="'#eee'"
-                                _textColorHover="'#fff'"
                                 :iconColor="'#444'"
                                 :iconColorHover="'#222'"
+                                :iconColorFocus="'#222'"
                                 :shadow="false"
                                 _click=""
                             ></WButtonCircle>
@@ -116,10 +115,9 @@
                         :icon="mdiPlus"
                         :backgroundColor="'#fff'"
                         :backgroundColorHover="'#f2f2f2'"
-                        _textColor="'#eee'"
-                        _textColorHover="'#fff'"
                         :iconColor="'#444'"
                         :iconColorHover="'#222'"
+                        :iconColorFocus="'#222'"
                         :shadow="false"
                         @click="addItem"
                     ></WButtonCircle>
@@ -136,10 +134,9 @@
                         :icon="mdiContentCopy"
                         :backgroundColor="'#fff'"
                         :backgroundColorHover="'#f2f2f2'"
-                        _textColor="'#eee'"
-                        _textColorHover="'#fff'"
                         :iconColor="'#444'"
                         :iconColorHover="'#222'"
+                        :iconColorFocus="'#222'"
                         :shadow="false"
                         @click="copyItem"
                     ></WButtonCircle>
@@ -156,10 +153,9 @@
                         :icon="mdiTrashCanOutline"
                         :backgroundColor="'#fff'"
                         :backgroundColorHover="'#f2f2f2'"
-                        _textColor="'#eee'"
-                        _textColorHover="'#fff'"
                         :iconColor="'#444'"
                         :iconColorHover="'#222'"
+                        :iconColorFocus="'#222'"
                         :shadow="false"
                         @click="deleteItemsCheck"
                     ></WButtonCircle>
@@ -176,10 +172,9 @@
                         :icon="mdiCloudUploadOutline"
                         :backgroundColor="'rgba(255,0,50,0.7)'"
                         :backgroundColorHover="'rgba(255,0,50,0.8)'"
-                        :textColor="'#eee'"
-                        :textColorHover="'#fff'"
                         :iconColor="'#eee'"
                         :iconColorHover="'#fff'"
+                        :iconColorFocus="'#fff'"
                         :shadow="false"
                         @click="saveUsers"
                     ></WButtonCircle>
@@ -219,8 +214,7 @@
 </template>
 
 <script>
-import { mdiAccountGroupOutline, mdiVectorPolylinePlus, mdiCheckboxMarkedCircle, mdiCloudUploadOutline, mdiTrashCanOutline, mdiTableHeadersEye, mdiPlus, mdiPencilOutline, mdiContentCopy } from '@mdi/js/mdi.js'
-import JSON5 from 'json5'
+import { mdiAccountGroupOutline, mdiCloudUploadOutline, mdiTrashCanOutline, mdiTableHeadersEye, mdiPlus, mdiContentCopy } from '@mdi/js/mdi.js'
 import ot from 'dayjs'
 import get from 'lodash-es/get.js'
 import set from 'lodash-es/set.js'
@@ -232,11 +226,8 @@ import cloneDeep from 'lodash-es/cloneDeep.js'
 import haskey from 'wsemi/src/haskey.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
-import isnum from 'wsemi/src/isnum.mjs'
-import istime from 'wsemi/src/istime.mjs'
-import istimeTZ from 'wsemi/src/istimeTZ.mjs'
+import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
 import isEmail from 'wsemi/src/isEmail.mjs'
-import cdbl from 'wsemi/src/cdbl.mjs'
 import cstr from 'wsemi/src/cstr.mjs'
 import arrPull from 'wsemi/src/arrPull.mjs'
 import domShowInputDatatime from 'wsemi/src/domShowInputDatatime.mjs'
@@ -266,16 +257,11 @@ export default {
     data: function() {
         return {
             mdiAccountGroupOutline,
-            mdiVectorPolylinePlus,
-            mdiCheckboxMarkedCircle,
             mdiCloudUploadOutline,
             mdiTrashCanOutline,
             mdiTableHeadersEye,
             mdiPlus,
-            mdiPencilOutline,
             mdiContentCopy,
-
-            ttt: '',
 
             panelWidth: 100,
             panelHeight: 100,
@@ -626,9 +612,9 @@ export default {
                 'redir': vo.$t('redir'),
                 'isAdmin': vo.$t('isAdmin'),
                 'isVerified': vo.$t('isVerified'),
-                'timeVerified': vo.$t('timeVerified'),
-                'timeExpired': vo.$t('timeExpired'),
-                'timeBlocked': vo.$t('timeBlocked'),
+                'timeVerified': vo.$t('userTimeVerified'),
+                'timeExpired': vo.$t('userTimeExpired'),
+                'timeBlocked': vo.$t('userTimeBlocked'),
                 'userId': vo.$t('userId'),
                 'timeCreate': vo.$t('timeCreate'),
                 'userIdUpdate': vo.$t('userIdUpdate'),
@@ -909,9 +895,9 @@ export default {
                             //vv, vm
                             let vv = ''
                             let vm = vo.$t('userTimeEmpty')
-                            if (istimeTZ(v)) { //原始數據為timeTZ格式
+                            if (istimemsTZ(v)) { //原始數據為timemsTZ格式
                                 let vt = ot(v)
-                                vv = vt.format('YYYY-MM-DDTHH:mm')
+                                vv = vt.format('YYYY-MM-DDTHH:mm:ss.SSSZ')
                                 vm = vt.format('YYYY-MM-DD HH:mm')
                             }
                             // console.log('vv', vv)
@@ -936,9 +922,9 @@ export default {
                             //vv, vm
                             let vv = ''
                             let vm = vo.$t('userTimeEmpty')
-                            if (istimeTZ(v)) { //原始數據為timeTZ格式
+                            if (istimemsTZ(v)) { //原始數據為timemsTZ格式
                                 let vt = ot(v)
-                                vv = vt.format('YYYY-MM-DDTHH:mm')
+                                vv = vt.format('YYYY-MM-DDTHH:mm:ss.SSSZ')
                                 vm = vt.format('YYYY-MM-DD HH:mm')
                             }
                             // console.log('vv', vv)
@@ -963,9 +949,9 @@ export default {
                             //vv, vm
                             let vv = ''
                             let vm = vo.$t('userTimeEmpty')
-                            if (istimeTZ(v)) { //原始數據為timeTZ格式
+                            if (istimemsTZ(v)) { //原始數據為timemsTZ格式
                                 let vt = ot(v)
-                                vv = vt.format('YYYY-MM-DDTHH:mm')
+                                vv = vt.format('YYYY-MM-DDTHH:mm:ss.SSSZ')
                                 vm = vt.format('YYYY-MM-DD HH:mm')
                             }
                             // console.log('vv', vv)
@@ -1174,11 +1160,12 @@ export default {
                 return
             }
 
-            //timePrev
+            //timePrev, 須給予秒時間, 要滿足istime才能展示初始值
             let timePrev = ''
-            if (istime(t)) {
-                timePrev = t
+            if (istimemsTZ(t)) {
+                timePrev = ot(t).format('YYYY-MM-DDTHH:mm:ss')
             }
+            // console.log('timePrev', timePrev)
 
             //domShowInputDatatime
             let type = 'datetime-local' //'datetime-local', 'date'
@@ -1208,7 +1195,7 @@ export default {
 
                     //v
                     let vt = ot(timeNew, 'YYYY-MM-DDTHH:mm') //domShowInputDatatime數據為年月日時分
-                    let v = vt.format('YYYY-MM-DDTHH:mm:ssZ') //轉回原始數據為timeTZ格式
+                    let v = vt.format('YYYY-MM-DDTHH:mm:ss.SSSZ') //轉回原始數據為timemsTZ格式
                     // console.log('v', v)
 
                     //set

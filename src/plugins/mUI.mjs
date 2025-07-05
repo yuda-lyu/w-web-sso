@@ -53,9 +53,9 @@ function setVo(vObj) {
 }
 
 
-function updateConnState(connState) {
-    vo.$store.commit(vo.$store.types.UpdateConnState, connState)
-}
+// function updateConnState(connState) {
+//     vo.$store.commit(vo.$store.types.UpdateConnState, connState)
+// }
 
 
 function updateLoading(loading) {
@@ -363,7 +363,7 @@ function goUrl(url, token) {
 
 function login(account, password, opt = {}) {
 
-    //測試
+    //login測試
     //http://localhost:8080/ => 登入後轉至指定頁
     //http://localhost:8080/?token=sys => 網址給予token但不使用, 登入後轉至指定頁
     //http://localhost:8080/?view=backstage => 登入後轉至後台
@@ -399,20 +399,16 @@ function login(account, password, opt = {}) {
             return
         }
 
-        //key
-        let key = `${$keyLS}:userToken`
-        // console.log('key', key)
-
         //loginByAccountAndPassword
         let u = await vo.$fapi.loginByAccountAndPassword(account, password)
         // console.log('u', u)
 
-        //setItem, 清空token
-        await localStorage.setItem(key, '')
+        //key
+        let key = `${$keyLS}:userToken`
+        // console.log('key', key)
 
-        //token
-        let token = get(u, 'token', '')
-        // console.log('token', token)
+        //setItem, 須先清空token
+        await localStorage.setItem(key, '')
 
         //check
         if (!iseobj(u)) {
@@ -423,6 +419,10 @@ function login(account, password, opt = {}) {
 
             return
         }
+
+        //token
+        let token = get(u, 'token', '')
+        // console.log('token', token)
 
         //check
         if (!isestr(token)) {
@@ -505,7 +505,7 @@ function login(account, password, opt = {}) {
 
 function autoLogin(opt = {}) {
 
-    //測試
+    //autoLogin測試
     //http://localhost:8080/ => 無token須轉至登入頁
     //http://localhost:8080/?token=sys => 雖網址有token但cache無token, 須轉至登入頁
     //http://localhost:8080/?view=backstage => 無token須轉至登入頁
@@ -567,12 +567,13 @@ function autoLogin(opt = {}) {
         }
 
         //checkToken
-        await vo.$fapi.checkToken(token)
+        await vo.$fapi.checkToken(token) //斷線有重試機制, resolve僅回傳true, reject代表無效token或檢測token發生錯誤
             .catch((err) => {
-                // console.log('checkToken error', err)
+                // console.log('checkToken catch', err)
                 errTemp = err
-                //無有效token改為提供使用者進行帳密登入
             })
+
+        //check
         if (errTemp) {
 
             //setItem, 清空token
@@ -721,7 +722,7 @@ let mUI = {
 
     setVo,
 
-    updateConnState,
+    // updateConnState,
     updateLoading,
     updateViewState,
     updateUserToken,

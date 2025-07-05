@@ -4,14 +4,18 @@
         <!-- menu top, 因窄版導致名稱換行故須使用overflow-y:hidden -->
         <div :style="`height:${heightToolbar}px; overflow-y:hidden; padding:0px 10px; background:#fff; border-bottom:1px solid #ccc; display:flex; align-items:center;`">
 
-            <div style="padding-left:5px; white-space:nowrap">
+            <div style="padding-left:5px;">
                 <div style="display:flex; align-items:center;">
 
-                    <div style="padding-right:10px; display:flex; align-items:center;" v-if="webLogo">
-                        <img style="width:36px; height:36px;" :src="webLogo" />
+                    <div
+                        style="padding-right:10px; display:flex; align-items:center;"
+                        v-if="webLogo"
+                    >
+                        <!-- 因chrome渲染機制變更須添加min-width避免被壓縮至無寬度 -->
+                        <img style="width:36px; min-width:36px; height:36px;" :src="webLogo" />
                     </div>
 
-                    <div>
+                    <div style="white-space:nowrap;">
                         <div style="font-size:1.2rem; color:#000;">{{webName}}</div>
                         <div style="font-size:0.8rem; color:#666;">{{$t('webDescription')}}</div>
                     </div>
@@ -21,7 +25,10 @@
 
             <div style="width:100%;"></div>
 
-            <div style="padding-right:10px; white-space:nowrap;">
+            <div
+                style="padding-right:10px; white-space:nowrap;"
+                v-if="showLangSelect"
+            >
                 <WTextSelect
                     style="width:100px;"
                     :items="keysLang"
@@ -37,7 +44,7 @@
                 </WTextSelect>
             </div>
 
-            <div style="padding-right:10px;">
+            <div style="padding-right:10px; display:flex; align-items:center;">
 
                 <WPopup
                     :isolated="true"
@@ -120,6 +127,8 @@ export default {
             mdiAccountCircleOutline,
             mdiLogoutVariant,
 
+            t: null,
+
             firstSetting: true,
 
             showLangSelect: false,
@@ -137,8 +146,8 @@ export default {
 
         }
     },
-    beforeMount: function() {
-        // console.log('beforeMount')
+    mounted: function() {
+        // console.log('mounted')
 
         let vo = this
 
@@ -154,6 +163,42 @@ export default {
             vo.firstSetting = false
         }
 
+        //setInterval
+        vo.t = setInterval(() => {
+            if (isestr(vo.userToken)) {
+
+                // console.log('refreshToken...', vo.userToken)
+                // vo.$fapi.refreshToken(vo.userToken)
+                //     .then((timeEnd) => {
+                //         console.log('refreshToken then', timeEnd)
+                //     })
+                //     .catch((err) => {
+                //         console.log('refreshToken catch', err)
+
+                //         //logOut, 登出與轉跳登入頁
+                //         vo.logOut()
+
+                //     })
+
+                // console.log('checkToken...', vo.userToken)
+                vo.$fapi.checkToken(vo.userToken) //斷線有重試機制, resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+                    .catch((err) => {
+                        console.log('checkToken catch', err)
+                        vo.logOut() //登出與轉跳登入頁
+                    })
+
+            }
+        }, 1 * 1000) //每1min更新
+
+    },
+    beforeDestroy: function() {
+        // console.log('beforeDestroy')
+
+        let vo = this
+
+        //clearInterval
+        clearInterval(vo.t)
+
     },
     computed: {
 
@@ -165,6 +210,16 @@ export default {
         heightToolbar: function() {
             let vo = this
             return get(vo, `$store.state.heightToolbar`, 0)
+        },
+
+        userToken: function() {
+            let vo = this
+            return get(vo, `$store.state.userToken`)
+        },
+
+        webInfor: function() {
+            let wi = get(this, `$store.state.webInfor`)
+            return wi
         },
 
         webName: {

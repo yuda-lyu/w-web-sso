@@ -46,10 +46,6 @@ let settings = {
         name: '來源',
         type: 'STRING',
     },
-    // ruleGroupsIds: {
-    //     name: '所屬權限群組主鍵', //多主鍵用分號區隔
-    //     type: 'STRING',
-    // },
     redir: {
         name: '登入後轉址',
         type: 'STRING',
@@ -66,18 +62,10 @@ let settings = {
         name: '驗證時間',
         type: 'STRING',
     },
-    // isExpired: {
-    //     name: '帳號是否過期',
-    //     type: 'STRING',
-    // },
     timeExpired: {
         name: '過期時間',
         type: 'STRING',
     },
-    // isBlocked: {
-    //     name: '帳號是否封鎖',
-    //     type: 'STRING',
-    // },
     timeBlocked: {
         name: '封鎖時間',
         type: 'STRING',
@@ -107,9 +95,9 @@ let settings = {
 let funNew = (ndata = {}) => {
     let o = dtmapping(ndata, keys(settings))
     o.id = `${now2strp()}-${genID()}`
-    o.isAdmin = 'n'
-    o.userIdUpdate = o.userId
     o.timeCreate = nowms2str()
+    // o.userId = o.userId
+    o.userIdUpdate = o.userId
     o.timeUpdate = o.timeCreate
     o.isActive = 'y'
     return o

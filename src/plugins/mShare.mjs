@@ -1,5 +1,4 @@
 //前後端共用函數區
-import JSON5 from 'json5'
 import get from 'lodash-es/get.js'
 import each from 'lodash-es/each.js'
 import map from 'lodash-es/map.js'

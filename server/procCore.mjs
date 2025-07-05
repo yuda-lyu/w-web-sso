@@ -6,11 +6,14 @@ import each from 'lodash-es/each.js'
 import map from 'lodash-es/map.js'
 import size from 'lodash-es/size.js'
 import keys from 'lodash-es/keys.js'
+import filter from 'lodash-es/filter.js'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
 import ispint from 'wsemi/src/ispint.mjs'
 import isearr from 'wsemi/src/isearr.mjs'
 import ispnum from 'wsemi/src/ispnum.mjs'
+import isbol from 'wsemi/src/isbol.mjs'
+import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
 import isfun from 'wsemi/src/isfun.mjs'
 import ispm from 'wsemi/src/ispm.mjs'
 import cint from 'wsemi/src/cint.mjs'
@@ -28,22 +31,50 @@ import ds from '../src/schema/index.mjs'
 import hashPassword from './hashPassword.mjs'
 
 
-function proc(woItems, procOrm, { salt, timeExpired }) {
+function proc(woItems, procOrm, { salt, minExpired }) {
 
 
     //getGenUserByKV
     let getGenUserByKV = async(keyUser, valueUser) => {
+        let errTemp = null
 
         //us
         let us = await woItems.users.select({ [keyUser]: valueUser, isActive: 'y' })
-
-        //u
-        let u = get(us, 0, null)
+            .catch((err) => {
+                errTemp = err
+            })
 
         //check
-        if (!iseobj(u)) {
-            return null
+        if (errTemp) {
+            console.log(errTemp)
+            console.log('keyUser', keyUser)
+            console.log('valueUser', valueUser)
+            console.log(`failed to find user`)
+            return Promise.reject(`failed to find user`)
         }
+
+        //nus
+        let nus = size(us)
+
+        //check
+        if (nus === 0) {
+            console.log('keyUser', keyUser)
+            console.log('valueUser', valueUser)
+            console.log(`can not find the user by ${keyUser}`)
+            return Promise.reject(`can not find the user by ${keyUser}`)
+        }
+
+        //check
+        if (nus >= 2) {
+            console.log('keyUser', keyUser)
+            console.log('valueUser', valueUser)
+            console.log(`duplicate ${keyUser}`)
+            return Promise.reject(`duplicate ${keyUser}`)
+        }
+
+        //u
+        let u = us[0] //get(us, 0, null) 前面已檢測故一定有[0]
+        // console.log('u', u)
 
         return u
     }
@@ -55,10 +86,10 @@ function proc(woItems, procOrm, { salt, timeExpired }) {
         //u
         let u = await getGenUserByKV('id', userId)
 
-        //check
-        if (!iseobj(u)) {
-            return null
-        }
+        // //check, 不用檢測, 若resolve必定有u, 若reject則由外部處理
+        // if (!iseobj(u)) {
+        //     return null
+        // }
 
         return u
     }
@@ -70,12 +101,104 @@ function proc(woItems, procOrm, { salt, timeExpired }) {
         //u
         let u = await getGenUserByKV('account', account)
 
-        //check
-        if (!iseobj(u)) {
-            return null
-        }
+        // //check, 不用檢測, 若resolve必定有u, 若reject則由外部處理
+        // if (!iseobj(u)) {
+        //     return null
+        // }
 
         return u
+    }
+
+
+    //getTokenByKV
+    let getTokenByKV = async(keyToken, valueToken) => {
+        let errTemp = null
+
+        //ts
+        let ts = await woItems.tokens.select({ [keyToken]: valueToken })
+            .catch((err) => {
+                errTemp = err
+            })
+
+        //check
+        if (errTemp) {
+            console.log(errTemp)
+            console.log('keyToken', keyToken)
+            console.log('valueToken', valueToken)
+            console.log(`failed to find token`)
+            return Promise.reject(`failed to find token`)
+        }
+
+        //nts
+        let nts = size(ts)
+
+        //check
+        if (nts === 0) {
+            // console.log('keyToken', keyToken)
+            // console.log('valueToken', valueToken)
+            // console.log(`can not find the token by keyToken[${keyToken}]`)
+            return Promise.reject(`can not find the token by keyToken[${keyToken}]`)
+        }
+
+        //check
+        if (nts >= 2) {
+            console.log('keyToken', keyToken)
+            console.log('valueToken', valueToken)
+            console.log(`duplicate token by keyToken[${keyToken}]`)
+            return Promise.reject(`duplicate token by keyToken[${keyToken}]`)
+        }
+
+        //t
+        let t = ts[0] //get(ts, 0, null) 前面已檢測故一定有[0]
+        // console.log('t', t)
+
+        return t
+    }
+
+
+    //getIpByKV
+    let getIpByKV = async(keyIp, valueIp) => {
+        let errTemp = null
+
+        //oips
+        let oips = await woItems.ips.select({ [keyIp]: valueIp })
+            .catch((err) => {
+                errTemp = err
+            })
+
+        //check
+        if (errTemp) {
+            console.log(errTemp)
+            console.log('keyIp', keyIp)
+            console.log('valueIp', valueIp)
+            console.log(`failed to find ip`)
+            return Promise.reject(`failed to find ip`)
+        }
+
+        //noips
+        let noips = size(oips)
+
+        //check
+        if (noips === 0) {
+            // console.log('keyIp', keyIp)
+            // console.log('valueIp', valueIp)
+            // console.log(`can not find the ip by keyIp[${keyIp}]`)
+            return Promise.reject(`can not find the ip by keyIp[${keyIp}]`)
+        }
+
+        //check
+        if (noips >= 2) {
+            console.log('keyIp', keyIp)
+            console.log('valueIp', valueIp)
+            console.log(`duplicate ip by keyIp[${keyIp}]`)
+            return Promise.reject(`duplicate ip by keyIp[${keyIp}]`)
+        }
+
+        //oip
+        let oip = oips[0] //get(oips, 0, null) 前面已檢測故一定有[0]
+        // console.log('oip', oip)
+
+        return oip
     }
 
 
@@ -91,12 +214,12 @@ function proc(woItems, procOrm, { salt, timeExpired }) {
         let u = await getGenUserByAccount(account)
         // console.log('u', u)
 
-        //check
-        if (!iseobj(u)) {
-            console.log(`account`, account)
-            console.log(`can not find the user from account`)
-            return Promise.reject(`can not find the user from account`)
-        }
+        // //check, 不用檢測, 若resolve必定有u, 若reject則由外部處理
+        // if (!iseobj(u)) {
+        //     console.log(`account`, account)
+        //     console.log(`can not find the user from account`)
+        //     return Promise.reject(`can not find the user from account`)
+        // }
 
         //passwordTrue
         let passwordTrue = get(u, 'password', '')
@@ -139,14 +262,21 @@ function proc(woItems, procOrm, { salt, timeExpired }) {
     let createToken = async (userId) => {
         let errTemp = null
 
+        //check
+        if (!ispnum(minExpired)) {
+            console.log(`minExpired`, minExpired)
+            console.log(`invalid minExpired`)
+            return Promise.reject(`invalid minExpired`)
+        }
+
         //t
         let t = ds.tokens.funNew({
             userId,
         })
         // console.log('funNew', t)
 
-        //timeEnd, 依照timeExpired(min)更新到期時間
-        t.timeEnd = ot().add(timeExpired, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+        //timeEnd, 依照minExpired(min)更新到期時間
+        t.timeEnd = ot().add(minExpired, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
         // console.log('timeEnd', t.timeEnd)
 
         //token
@@ -162,48 +292,44 @@ function proc(woItems, procOrm, { salt, timeExpired }) {
         if (errTemp) {
             console.log(errTemp)
             console.log(`token`, token)
-            console.log(`Can not create a token from userId`)
-            return Promise.reject(`Can not create a token from userId`)
+            console.log(`can not create a token from userId`)
+            return Promise.reject(`can not create a token from userId`)
         }
 
         return token
     }
 
 
-    //checkTokenCore
-    let checkTokenCore = async (tk) => {
+    //_checkTokenByObj
+    let _checkTokenByObj = async (tk) => {
 
         //timeEnd
         let timeEnd = get(tk, 'timeEnd', '')
 
-        //tt
-        let tt = ot(timeEnd, 'YYYY-MM-DDTHH:mm:ss.SSSZ')
-        // console.log('tt', tt)
-
-        //tn
-        let tn = ot()
-
-        //dmin
-        let dmin = tt.diff(tn, 'minutes')
-        // console.log('dmin', dmin)
-
         //check
-        if (dmin > timeExpired) {
+        if (!istimemsTZ(timeEnd)) {
             console.log(`tk`, tk)
-            console.log(`dmin`, dmin, `timeExpired`, timeExpired)
-            console.log(`token expired`)
-            return Promise.reject(`token expired`)
+            console.log(`timeEnd`, timeEnd)
+            console.log(`invalid timeEnd`)
+            return Promise.reject(`invalid timeEnd`)
         }
 
-        return true
+        //tn
+        let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+        // console.log('tn     ', tn)
+        // console.log('timeEnd', timeEnd)
+        // console.log('tn < timeEnd', tn < timeEnd)
+
+        return tn < timeEnd //現在時間<到期時間, 代表尚未到期
     }
 
 
-    //checkToken
-    let checkToken = async (token) => {
+    //_checkToken
+    let _checkToken = async (token) => {
 
         //tks
         let tks = await woItems.tokens.select({ token })
+        // console.log('tks', tks)
 
         //ntks
         let ntks = size(tks)
@@ -226,10 +352,63 @@ function proc(woItems, procOrm, { salt, timeExpired }) {
         let tk = get(tks, 0, '')
         // console.log('tk', tk)
 
-        //checkTokenCore
-        await checkTokenCore(tk)
+        //_checkTokenByObj
+        let b = await _checkTokenByObj(tk)
 
-        return true
+        //logshow
+        if (!b) {
+            console.log(`block token[${token}]`) //[tag:測試:顯示被封鎖token]
+        }
+
+        return b
+    }
+
+
+    //checkTokenByObj
+    let checkTokenByObj = async (tk) => {
+        let errTemp = null
+
+        //_checkTokenByObj
+        await _checkTokenByObj(tk)
+            .then((res) => {
+                if (res === false) {
+                    errTemp = 'token expired'
+                }
+            })
+            .catch((err) => {
+                errTemp = err
+            })
+
+        //check
+        if (errTemp !== null) {
+            return Promise.reject(errTemp)
+        }
+
+        return true //resolve只回傳true, reject代表無效tk.token與錯誤
+    }
+
+
+    //checkToken
+    let checkToken = async (token) => {
+        let errTemp = null
+
+        //_checkToken
+        await _checkToken(token)
+            .then((res) => {
+                if (res === false) {
+                    errTemp = 'token expired'
+                }
+            })
+            .catch((err) => {
+                errTemp = err
+            })
+
+        //check
+        if (errTemp !== null) {
+            return Promise.reject(errTemp)
+        }
+
+        return true //resolve只回傳true, reject代表無效token與錯誤
     }
 
 
@@ -264,27 +443,28 @@ function proc(woItems, procOrm, { salt, timeExpired }) {
         //timeEnd
         let timeEnd = get(tk, 'timeEnd', '')
 
-        //tt
-        let tt = ot(timeEnd, 'YYYY-MM-DDTHH:mm:ss.SSSZ')
-        // console.log('tt', tt)
+        //check
+        if (!istimemsTZ(timeEnd)) {
+            console.log(`token`, token)
+            console.log(`timeEnd`, timeEnd)
+            console.log(`invalid timeEnd`)
+            return Promise.reject(`invalid timeEnd`)
+        }
 
         //tn
-        let tn = ot()
-
-        //dmin
-        let dmin = tt.diff(tn, 'minutes')
-        // console.log('dmin', dmin)
+        let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
 
         //check
-        if (dmin > timeExpired) {
+        if (tn >= timeEnd) { //現在時間>=到期時間, 代表已到期, 禁止更新token
             console.log(`token`, token)
-            console.log(`dmin`, dmin, `timeExpired`, timeExpired)
+            console.log(`tn`, tn)
+            console.log(`timeEnd`, timeEnd)
             console.log(`token expired`)
             return Promise.reject(`token expired`)
         }
 
-        //timeEndNew
-        let timeEndNew = tn.format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+        //timeEndNew, 依照minExpired(min)更新到期時間
+        let timeEndNew = ot().add(minExpired, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
         // console.log('timeEndNew', timeEndNew)
 
         //save
@@ -300,99 +480,11 @@ function proc(woItems, procOrm, { salt, timeExpired }) {
         if (errTemp) {
             console.log(errTemp)
             console.log(`token`, token)
-            console.log(`Can not update time for token`)
-            return Promise.reject(`Can not update time for token`)
+            console.log(`can not update timeEnd for token`)
+            return Promise.reject(`can not update timeEnd for token`)
         }
 
-        return true
-    }
-
-
-    //getUserByToken
-    let getUserByToken = async(token) => {
-        let errTemp = null
-
-        //tks
-        let tks = await woItems.tokens.select({ token })
-
-        //ntks
-        let ntks = size(tks)
-
-        //check
-        if (ntks === 0) {
-            console.log(`token`, token)
-            console.log(`invalid token`)
-            return Promise.reject(`invalid token`)
-        }
-
-        //check
-        if (ntks >= 2) {
-            console.log(`token`, token)
-            console.log(`duplicate tokens`)
-            return Promise.reject(`duplicate tokens`)
-        }
-
-        //tk
-        let tk = get(tks, 0, '')
-        // console.log('tk', tk)
-
-        //userId
-        let userId = get(tk, 'userId', '')
-        // console.log('userId', userId)
-
-        //us
-        let us = await woItems.users.select({ id: userId, isActive: 'y' })
-            .catch((err) => {
-                errTemp = err
-            })
-
-        //check
-        if (errTemp) {
-            console.log(errTemp)
-            console.log(`userId`, userId)
-            console.log(`Failed to find user`)
-            return Promise.reject(`Failed to find user`)
-        }
-
-        //nus
-        let nus = size(us)
-
-        //check
-        if (nus === 0) {
-            console.log(`userId`, userId)
-            console.log(`can not find the user by userId`)
-            return Promise.reject(`can not find the user by userId`)
-        }
-
-        //check
-        if (nus >= 2) {
-            console.log(`userId`, userId)
-            console.log(`duplicate userId`)
-            return Promise.reject(`duplicate userId`)
-        }
-
-        //u
-        let u = get(us, 0, '')
-        // console.log('u', u)
-
-        //r
-        let r = {
-            id: u.id,
-            account: u.account,
-            name: u.name,
-            email: u.email,
-            description: u.description,
-            from: u.from,
-            redir: u.redir,
-            isAdmin: u.isAdmin,
-            timeVerified: u.timeVerified,
-            timeExpired: u.timeExpired,
-            timeBlocked: u.timeBlocked,
-            isActive: u.isActive,
-            token,
-        }
-
-        return r
+        return timeEndNew
     }
 
 
@@ -439,16 +531,16 @@ function proc(woItems, procOrm, { salt, timeExpired }) {
         if (errTemp) {
             console.log(errTemp)
             console.log(`token`, token)
-            console.log(`Failed to delete token`)
-            return Promise.reject(`Failed to delete token`)
+            console.log(`failed to delete token`)
+            return Promise.reject(`failed to delete token`)
         }
 
         //check
         r = get(r, '0.nDeleted', 0)
         if (r !== 1) {
             console.log(`token`, token)
-            console.log(`Can not delete the token`)
-            return Promise.reject(`Can not delete the token`)
+            console.log(`can not delete the token`)
+            return Promise.reject(`can not delete the token`)
         }
 
         //bbb 待加入創建usersRecs儲存使用者登出紀錄
@@ -459,94 +551,51 @@ function proc(woItems, procOrm, { salt, timeExpired }) {
     }
 
 
-    //cleanTokens
-    let cleanTokens = async () => {
-
-        //tks
-        let tks = await woItems.tokens.select()
-        // console.log('tks', tks)
-
-        //tksDels
-        let tksDels = []
-        await pmSeries(tks, async (tk) => {
-
-            //checkTokenCore
-            let errTemp = null
-            await checkTokenCore(tk)
-                .catch((err) => {
-                    errTemp = err
-                })
-
-            //check
-            if (errTemp) {
-                tksDels.push(tk)
-            }
-
-        })
-
-        //check
-        if (size(tksDels) > 0) {
-
-            await pmSeries(tks, async (tk) => {
-
-                //del
-                await woItems.tokens.del({ id: tk.id })
-                    .catch(() => { })
-
-                //bbb 待加入創建usersRecs儲存使用者登出紀錄
-
-                //bbb 待加入通知程序(訂閱者,監聽器)之使用者登出訊息
-
-            })
-
-        }
-
-    }
-
-
     //createUser
     let createUser = async () => {
     //bbb 待開發createUser
     }
 
 
-    //ModifyUser
-    let ModifyUser = async () => {
-    //bbb 待開發ModifyUser
+    //modifyUser
+    let modifyUser = async () => {
+    //bbb 待開發 modifyUser
     }
 
 
-    //DeleteUser
-    let DeleteUser = async () => {
-    //bbb 待開發DeleteUser
+    //deleteUser
+    let deleteUser = async () => {
+    //bbb 待開發 deleteUser
     }
 
 
-    //AuthUser
-    let AuthUser = async () => {
-    //bbb 待開發AuthUser
-    }
-
-
-    //EmailUser
-    let EmailUser = async () => {
-    //bbb 待開發 EmailUser
+    //emailUser
+    let emailUser = async () => {
+    //bbb 待開發 emailUser
     }
 
 
     //updateTabItems
-    let updateTabItems = async (woName, rows, keyDetect) => {
+    let updateTabItems = async (woName, rows, keyDetect, opt = {}) => {
         // console.log('updateTabItems', woName, rows.length, keyDetect)
+
+        //resetOrder
+        let resetOrder = get(opt, 'resetOrder')
+        if (!isbol(resetOrder)) {
+            resetOrder = false
+        }
 
         //ltdtmapping
         rows = ltdtmapping(rows, ds[woName].keys)
         // console.log('ltdtmapping rows', rows)
 
         //重給order
-        rows = map(rows, (r, k) => {
-            r.order = k + 1
-            return r
-        })
+        if (resetOrder) {
+            rows = map(rows, (r, k) => {
+                r.order = k + 1
+                return r
+            })
+        }
 
         //ckKey
         let ckKey = (rows, key) => {
@@ -628,11 +677,175 @@ function proc(woItems, procOrm, { salt, timeExpired }) {
     }
 
 
-    //getUsersList
-    let getUsersList = async (token, needActive = false) => {
+    //getUserByToken
+    let getUserByToken = async(token) => {
+
+        //tks
+        let tks = await woItems.tokens.select({ token })
+
+        //ntks
+        let ntks = size(tks)
+
+        //check
+        if (ntks === 0) {
+            console.log(`token`, token)
+            console.log(`invalid token`)
+            return Promise.reject(`invalid token`)
+        }
+
+        //check
+        if (ntks >= 2) {
+            console.log(`token`, token)
+            console.log(`duplicate tokens`)
+            return Promise.reject(`duplicate tokens`)
+        }
+
+        //tk
+        let tk = get(tks, 0, null)
+        // console.log('tk', tk)
+
+        //isApp
+        let isApp = get(tk, 'isApp', '')
+        // console.log('isApp', isApp)
+
+        //u
+        let u = null
+        if (isApp !== 'y') {
+
+            //userId
+            let userId = get(tk, 'userId', '')
+            // console.log('userId', userId)
+
+            //getGenUserByUserId
+            u = await getGenUserByUserId(userId)
+
+        }
+        else {
+            //token來自應用系統, 另外提供虛擬使用者資訊
+
+            //userId
+            let userId = get(tk, 'userId', '')
+            // console.log('userId', userId)
+
+            //check
+            if (!isestr(userId)) {
+                console.log(`tk`, tk)
+                console.log(`invalid userId from token`)
+                return Promise.reject(`invalid userId from token`)
+            }
+
+            // //timeEnd
+            // let timeEnd = get(tk, 'timeEnd', '')
+            // // console.log('timeEnd', timeEnd)
+
+            // //check
+            // if (!istimemsTZ(timeEnd)) {
+            //     console.log(`timeEnd`, timeEnd)
+            //     console.log(`invalid timeEnd`)
+            //     return Promise.reject(`invalid timeEnd`)
+            // }
+
+            //u
+            u = {
+                id: userId,
+                account: 'no account',
+                name: 'no name',
+                email: 'no email',
+                description: 'no description',
+                from: 'no from',
+                redir: 'no redir',
+                isAdmin: 'y', //應用系統代表為系統管理員
+                timeVerified: '',
+                timeExpired: '',
+                timeBlocked: '',
+                isActive: 'y',
+            }
+
+        }
+
+        //uu
+        let uu = {
+            id: u.id,
+            account: u.account,
+            name: u.name,
+            email: u.email,
+            description: u.description,
+            from: u.from,
+            redir: u.redir,
+            isApp: isApp === 'y' ? 'y' : 'n',
+            isAdmin: u.isAdmin,
+            timeVerified: u.timeVerified,
+            timeExpired: u.timeExpired,
+            timeBlocked: u.timeBlocked,
+            isActive: u.isActive,
+        }
+
+        return uu
+    }
+
+
+    //checkTokenAndGetUserByToken
+    let checkTokenAndGetUserByToken = async(tokenSelf, tokenTarget) => {
 
         //checkToken
-        await checkToken(token)
+        await checkToken(tokenSelf) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+
+        //getUserByToken
+        let u = await getUserByToken(tokenTarget)
+
+        return u
+    }
+
+
+    //getUserInfor
+    let getUserInfor = async (key, value) => {
+
+        //select
+        let us = await woItems.users.select({ [key]: value, isActive: 'y' }) //僅提供isActive為y
+
+        //u
+        let u = get(us, 0, null)
+
+        //check
+        if (!iseobj(u)) {
+            return null
+        }
+
+        //r
+        let r = {
+            id: u.id,
+            account: u.account,
+            name: u.name,
+            email: u.email,
+            description: u.description,
+            from: u.from,
+            redir: u.redir,
+            isAdmin: u.isAdmin,
+            timeVerified: u.timeVerified,
+            timeExpired: u.timeExpired,
+            timeBlocked: u.timeBlocked,
+            isActive: u.isActive,
+        }
+
+        return r
+    }
+
+
+    //checkTokenAndGetUserInfor
+    let checkTokenAndGetUserInfor = async (token, key, value) => {
+
+        //checkToken
+        await checkToken(token) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+
+        //getUserInfor
+        let r = await getUserInfor(key, value)
+
+        return r
+    }
+
+
+    //getUsersList
+    let getUsersList = async (needActive = false) => {
 
         //opt
         let opt = {}
@@ -653,84 +866,264 @@ function proc(woItems, procOrm, { salt, timeExpired }) {
     }
 
 
-    //getActiveUsersList
-    let getActiveUsersList = async (token) => {
-        let us = await getUsersList(token, true)
+    //checkTokenAndGetUsersList
+    let checkTokenAndGetUsersList = async (token, needActive = false) => {
+
+        //checkToken
+        await checkToken(token) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+
+        //getUsersList
+        let us = await getUsersList(needActive)
+
+        return us
+    }
+
+
+    //checkTokenAndGetActiveUsersList
+    let checkTokenAndGetActiveUsersList = async (token) => {
+
+        //checkTokenAndGetUsersList
+        let us = await checkTokenAndGetUsersList(token, true)
+
         return us
     }
 
 
     //updateUsersList
-    let updateUsersList = async (token, rows) => {
-
-        //checkToken
-        await checkToken(token)
+    let updateUsersList = async (rows) => {
 
         //updateTabItems
-        rows = await updateTabItems('users', rows, 'id')
+        rows = await updateTabItems('users', rows, 'id', { resetOrder: true })
 
         return rows
     }
 
 
-    //getUserInfor
-    let getUserInfor = async (token, key, value) => {
+    //checkTokenAndUpdateUsersList
+    let checkTokenAndUpdateUsersList = async (token, rows) => {
 
         //checkToken
-        await checkToken(token)
+        await checkToken(token) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
-        //select
-        let us = await woItems.users.select({ [key]: value, isActive: 'y' }) //僅提供isActive為y
+        //updateUsersList
+        rows = await updateUsersList(rows)
 
-        //u
-        let u = get(us, 0, {})
+        return rows
+    }
+
+
+    //cleanTokens
+    let cleanTokens = async () => {
+
+        //tks
+        let tks = await woItems.tokens.select()
+        // console.log('tks', tks)
+
+        //tksDels
+        let tksDels = []
+        await pmSeries(tks, async (tk) => {
+
+            //checkTokenByObj
+            let errTemp = null
+            await checkTokenByObj(tk)
+                .catch((err) => {
+                    // console.log('checkTokenByObj catch', err)
+                    errTemp = err
+                })
+
+            //check
+            if (errTemp) {
+                tksDels.push(tk)
+            }
+
+        })
 
         //check
-        if (!iseobj(u)) {
-            console.log(`token`, token)
-            console.log(`key`, key, `value`, value)
-            console.log(`Can not find user`)
-            return Promise.reject(`Can not find user`)
+        if (size(tksDels) > 0) {
+            // console.log('tksDels', tksDels)
+
+            await pmSeries(tksDels, async (tk) => {
+
+                //del
+                await woItems.tokens.del({ id: tk.id })
+                    .catch((err) => {
+                        console.log('tokens.del catch', err)
+                    })
+
+                //bbb 待加入創建usersRecs儲存使用者登出紀錄
+
+                //bbb 待加入通知程序(訂閱者,監聽器)之使用者登出訊息
+
+            })
+
         }
 
-        //r
-        let r = {
-            id: u.id,
-            account: u.account,
-            name: u.name,
-            email: u.email,
-            description: u.description,
-            from: u.from,
-            redir: u.redir,
-            isAdmin: u.isAdmin,
-            timeVerified: u.timeVerified,
-            timeExpired: u.timeExpired,
-            timeBlocked: u.timeBlocked,
-            isActive: u.isActive,
-            token,
-        }
+    }
 
-        return r
+
+    //timer, 清除無效token
+    let lockingForCleanTokens = false
+    setInterval(async() => {
+
+        //check
+        if (lockingForCleanTokens) {
+            return
+        }
+        lockingForCleanTokens = true
+
+        //cleanTokens
+        await cleanTokens()
+            .finally(() => {
+                lockingForCleanTokens = false
+            })
+
+    }, 2000)
+
+
+    //getTokensList
+    let getTokensList = async () => {
+
+        //select
+        let ts = await woItems.tokens.select()
+
+        // //needNoEnd
+        // if (needNoEnd) {
+
+        //     //tn
+        //     let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+        //     // console.log('tn', tn)
+
+        //     //filter
+        //     ts = filter(ts, (v) => {
+        //         return v.timeEnd >= tn //tn<=到期時間, 代表有效
+        //     })
+
+        // }
+
+        return ts
+    }
+
+
+    //checkTokenAndGetTokensList
+    let checkTokenAndGetTokensList = async (token, needNoEnd = false) => {
+
+        //checkToken
+        await checkToken(token) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+
+        //getTokensList
+        let us = await getTokensList(needNoEnd)
+
+        return us
+    }
+
+
+    //updateTokensList
+    let updateTokensList = async (rows) => {
+
+        //updateTabItems
+        rows = await updateTabItems('tokens', rows, 'id', { resetOrder: false })
+
+        return rows
+    }
+
+
+    //checkTokenAndUpdateTokensList
+    let checkTokenAndUpdateTokensList = async (token, rows) => {
+
+        //checkToken
+        await checkToken(token) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+
+        //updateTokensList
+        rows = await updateTokensList(rows)
+
+        return rows
+    }
+
+
+    //getIpsList
+    let getIpsList = async () => {
+
+        //select
+        let oips = await woItems.ips.select()
+
+        return oips
+    }
+
+
+    //checkTokenAndGetIpsList
+    let checkTokenAndGetIpsList = async (token, needNoEnd = false) => {
+
+        //checkToken
+        await checkToken(token) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+
+        //getIpsList
+        let oips = await getIpsList(needNoEnd)
+
+        return oips
+    }
+
+
+    //updateIpsList
+    let updateIpsList = async (rows) => {
+
+        //updateTabItems
+        rows = await updateTabItems('ips', rows, 'id', { resetOrder: false })
+
+        return rows
+    }
+
+
+    //checkTokenAndUpdateIpsList
+    let checkTokenAndUpdateIpsList = async (token, rows) => {
+
+        //checkToken
+        await checkToken(token) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+
+        //updateIpsList
+        rows = await updateIpsList(rows)
+
+        return rows
     }
 
 
     //p
     let p = {
+
+        getTokenByKV,
+
+        getIpByKV,
+
+        getGenUserByKV,
+        getGenUserByUserId,
+        getGenUserByAccount,
+
         loginByAccountAndPassword,
+        logOutByToken,
+
         checkToken,
         refreshToken,
+
+
         getUserByToken,
-        logOutByToken,
-        cleanTokens,
-        createUser,
-        ModifyUser,
-        DeleteUser,
-        AuthUser,
-        EmailUser,
+        checkTokenAndGetUserByToken,
+
         getUserInfor,
+        checkTokenAndGetUserInfor,
+
         getUsersList,
-        getActiveUsersList,
+        checkTokenAndGetUsersList,
+        checkTokenAndGetActiveUsersList,
         updateUsersList,
+        checkTokenAndUpdateUsersList,
+
+        getTokensList,
+        checkTokenAndGetTokensList,
+        checkTokenAndUpdateTokensList,
+
+        getIpsList,
+        checkTokenAndGetIpsList,
+        checkTokenAndUpdateIpsList,
+
     }
 
 

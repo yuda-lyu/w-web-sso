@@ -28,6 +28,10 @@ let kpLang = {
         cht: 'zh-tw',
     },
 
+    id: {
+        eng: 'ID',
+        cht: '主鍵',
+    },
     systemMessage: {
         eng: 'System message',
         cht: '系統確認訊息',
@@ -55,6 +59,18 @@ let kpLang = {
     empty: {
         eng: 'Empty',
         cht: '無',
+    },
+    to: {
+        eng: 'To',
+        cht: '至',
+    },
+    at: {
+        eng: 'At',
+        cht: '於',
+    },
+    unknow: {
+        eng: `Unknow`,
+        cht: `未知`,
     },
     waitingData: {
         eng: 'Waiting data...',
@@ -97,11 +113,44 @@ let kpLang = {
         eng: `Failed to get data, please try again later`,
         cht: `取得數據失敗，請稍後再試`,
     },
-    unknow: {
-        eng: `Unknow`,
-        cht: `未知`,
-    },
 
+    userIdCreate: {
+        eng: `ID of the created user`,
+        cht: '創建使用者主鍵',
+    },
+    timeCreate: {
+        eng: `Created time`,
+        cht: '創建時間',
+    },
+    userIdUpdate: {
+        eng: `ID of the updated user`,
+        cht: '最新變更使用者主鍵',
+    },
+    timeUpdate: {
+        eng: `Updated time`,
+        cht: '最新變更時間',
+    },
+    // timeVerified: {
+    //     eng: `Verified time`,
+    //     cht: `驗證時間`,
+    // },
+    // timeExpired: {
+    //     eng: `Expired time`,
+    //     cht: `帳號過期時間`,
+    // },
+    // timeBlocked: {
+    //     eng: `Blocked time`,
+    //     cht: `封鎖時間`,
+    // },
+    // timeEnd: {
+    //     eng: 'End time',
+    //     cht: '到期時間',
+    // },
+
+    userId: {
+        eng: `ID of the user`,
+        cht: '使用者主鍵',
+    },
     account: {
         eng: `Account`,
         cht: `帳號`,
@@ -171,26 +220,35 @@ let kpLang = {
         cht: `使用者清單`,
     },
     mmUsersListMsg: {
-        eng: `Provides a list of users, which can be added, edited, deleted, etc.`,
+        eng: `Provide a list of users, which can be added, edited, deleted, etc.`,
         cht: `提供目前使用者資料清單，可進行新增、編輯、刪除等作業。`,
     },
 
-    mmSettings: {
-        eng: `Settings`,
-        cht: `設定`,
+    mmTokensList: {
+        eng: `Tokens list`,
+        cht: `金鑰清單`,
     },
-    mmSettingsMsg: {
-        eng: `Provides important settings of the current system, such as detection and blocking settings, various email templates, etc.`,
-        cht: `提供目前系統重要設定，例如偵測與封鎖設定、各類寄信Email模板等。`,
+    mmTokensListMsg: {
+        eng: `Provide a list of tokens, which can be deleted, etc.`,
+        cht: `提供目前金鑰資料清單，可進行強制登出等作業。`,
     },
 
-    nowActiveTokensList: {
-        eng: `Active tokens list`,
-        cht: `當前token登入清單`,
+    mmIpsList: {
+        eng: `Ips list`,
+        cht: `IP清單`,
+    },
+    mmIpsListMsg: {
+        eng: `Provide a list of tokens, which can be deleted, etc.`,
+        cht: `提供目前存取IP清單，可進行封鎖等作業。`,
+    },
+
+    nowTokensList: {
+        eng: `Tokens list`,
+        cht: `金鑰清單`,
     },
     nowBlockList: {
         eng: `Block list`,
-        cht: `當前封鎖清單`,
+        cht: `封鎖清單`,
     },
     systemTokenList: {
         eng: `System token list`,
@@ -223,6 +281,11 @@ let kpLang = {
         cht: `使用者登出失敗`,
     },
 
+    userStatus: {
+        eng: `Status`,
+        cht: `帳號狀態`,
+    },
+
     isVerified: {
         eng: `Verified`,
         cht: `帳號是否驗證`,
@@ -235,9 +298,13 @@ let kpLang = {
         eng: `Not verified`,
         cht: `帳號未驗證`,
     },
-    timeVerified: {
+    userTimeVerified: {
         eng: `Verified time`,
         cht: `帳號驗證時間`,
+    },
+    isVerifiedWaiting: {
+        eng: `Waiting for verification`,
+        cht: `等待驗證中`,
     },
 
     isExpired: {
@@ -252,9 +319,17 @@ let kpLang = {
         eng: `Not expired`,
         cht: `帳號未過期`,
     },
-    timeExpired: {
+    userTimeExpired: {
         eng: `Expired time`,
         cht: `帳號過期時間`,
+    },
+    isExpiredDeny: {
+        eng: `Account login prohibited`,
+        cht: `禁止帳號登入`,
+    },
+    isExpiredNever: {
+        eng: `Never expires`,
+        cht: `永不過期`,
     },
 
     isBlocked: {
@@ -269,9 +344,13 @@ let kpLang = {
         eng: `Not blocked`,
         cht: `帳號未被封鎖`,
     },
-    timeBlocked: {
+    userTimeBlocked: {
         eng: `Blocked time`,
-        cht: `帳號被封鎖時間`,
+        cht: `帳號封鎖時間`,
+    },
+    isBlockedNormalStatus: {
+        eng: `Normal status`,
+        cht: `狀態正常`,
     },
 
     isAdmin: {
@@ -286,6 +365,18 @@ let kpLang = {
         eng: `Non-System Administrator`,
         cht: `非系統管理者`,
     },
+    userRole: {
+        eng: `Role`,
+        cht: `角色`,
+    },
+    userRoleAdmin: {
+        eng: `Administrator`,
+        cht: `系統管理者`,
+    },
+    userRoleGeneral: {
+        eng: `General`,
+        cht: `一般使用者`,
+    },
 
     isActive: {
         eng: 'Active',
@@ -295,9 +386,17 @@ let kpLang = {
         eng: 'Active',
         cht: '帳號有效',
     },
+    isActiveMsgY: {
+        eng: 'Enabling',
+        cht: '啟用中',
+    },
     isActiveN: {
         eng: 'Inactive',
         cht: '帳號無效',
+    },
+    isActiveMsgN: {
+        eng: 'Deactivated',
+        cht: '已停用',
     },
 
     errInNames: {
@@ -328,7 +427,7 @@ let kpLang = {
 
     userList: {
         eng: `User list`,
-        cht: `使用者分類清單`,
+        cht: `使用者清單`,
     },
     userName: {
         eng: `Name of user`,
@@ -368,7 +467,7 @@ let kpLang = {
     },
     userTimeEmpty: {
         eng: `Invalid time`,
-        cht: `尚未給予時間`,
+        cht: `無`,
     },
     userAddEmpty: {
         eng: `No user`,
@@ -423,22 +522,93 @@ let kpLang = {
         cht: `無法找到使用者數據`,
     },
 
-    userId: {
-        eng: `ID of the created user`,
-        cht: '創建使用者主鍵',
+    token: {
+        eng: 'Token',
+        cht: '金鑰',
     },
-    timeCreate: {
+    isApp: {
+        eng: 'For app',
+        cht: '是否為應用系統金鑰',
+    },
+    tokenTimeCreate: {
         eng: `Created time`,
-        cht: '創建時間',
+        cht: '金鑰創建時間',
     },
-    userIdUpdate: {
-        eng: `ID of the updated user`,
-        cht: '最新變更使用者主鍵',
+    tokenTimeEnd: {
+        eng: 'End time',
+        cht: '金鑰到期時間',
     },
-    timeUpdate: {
-        eng: `Updated time`,
-        cht: '更新時間',
+    tokenTimeUpdate: {
+        eng: 'End time',
+        cht: '金鑰更新時間',
     },
+    tokenDeleteCheckTokens: {
+        eng: `Delete token(s)`,
+        cht: `刪除勾選金鑰`,
+    },
+    tokenTimeEmpty: {
+        eng: `Invalid time`,
+        cht: `無`,
+    },
+    tokenEditNoTokenId: {
+        eng: `Can not find the id of token`,
+        cht: `無法找到金鑰Id`,
+    },
+    tokenEditNoTokenData: {
+        eng: `Can not find the data of token`,
+        cht: `無法找到金鑰數據`,
+    },
+    // tokenAddEmpty: {
+    //     eng: `No token`,
+    //     cht: `尚未新增金鑰資料`,
+    // },
+    tokenSaveTokensFail: {
+        eng: `Failed to save tokens`,
+        cht: `儲存金鑰數據失敗`,
+    },
+    tokenSaveTokensSuccess: {
+        eng: `Save tokens successfully`,
+        cht: `儲存金鑰數據成功`,
+    },
+
+    ip: {
+        eng: 'IP',
+        cht: 'IP',
+    },
+    ipTimeBlocked: {
+        eng: `Blocked time`,
+        cht: `IP封鎖時間`,
+    },
+    ipDeleteCheckIps: {
+        eng: `Delete checked IP(s)`,
+        cht: `刪除勾選IP`,
+    },
+    ipTimeEmpty: {
+        eng: `Invalid time`,
+        cht: `無`,
+    },
+    ipEditNoIpId: {
+        eng: `Can not find the id of IP`,
+        cht: `無法找到IP Id`,
+    },
+    ipEditNoIpData: {
+        eng: `Can not find the data of IP`,
+        cht: `無法找到IP數據`,
+    },
+    // apAddEmpty: {
+    //     eng: `No ip`,
+    //     cht: `尚未新增IP資料`,
+    // },
+    ipSaveIpsFail: {
+        eng: `Failed to save IPs`,
+        cht: `儲存IP數據失敗`,
+    },
+    ipSaveIpsSuccess: {
+        eng: `Save IPs successfully`,
+        cht: `儲存IP數據成功`,
+    },
+
+    //bbb 以下尚未使用
 
     dayCreate: {
         eng: 'Create day',

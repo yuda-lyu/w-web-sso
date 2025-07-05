@@ -77,9 +77,13 @@
                                 v-if="menuKey==='mmUsersList'"
                             ></LayoutContentUsers>
 
-                            <LayoutContentSettings
-                                v-if="menuKey==='mmSettings'"
-                            ></LayoutContentSettings>
+                            <LayoutContentTokens
+                                v-if="menuKey==='mmTokensList'"
+                            ></LayoutContentTokens>
+
+                            <LayoutContentIps
+                                v-if="menuKey==='mmIpsList'"
+                            ></LayoutContentIps>
 
                         </template>
 
@@ -121,7 +125,7 @@
 </template>
 
 <script>
-import { mdiInformationVariantCircleOutline, mdiCogOutline, mdiCellphoneKey, mdiLockOpenRemoveOutline, mdiShieldKeyOutline, mdiArrowLeftBoldHexagonOutline, mdiArrowRightBoldHexagonOutline, mdiGamepadCircle, mdiStackOverflow, mdiAccountGroupOutline } from '@mdi/js/mdi.js'
+import { mdiInformationVariantCircleOutline, mdiIpNetwork, mdiShieldKeyOutline, mdiArrowLeftBoldHexagonOutline, mdiArrowRightBoldHexagonOutline, mdiAccountGroupOutline } from '@mdi/js/mdi.js'
 import get from 'lodash-es/get.js'
 import find from 'lodash-es/find.js'
 import WDrawer from 'w-component-vue/src/components/WDrawer.vue'
@@ -129,7 +133,8 @@ import WButtonCircle from 'w-component-vue/src/components/WButtonCircle.vue'
 import WListVertical from 'w-component-vue/src/components/WListVertical.vue'
 import LayoutContentInfor from './LayoutContentInfor.vue'
 import LayoutContentUsers from './LayoutContentUsers.vue'
-import LayoutContentSettings from './LayoutContentSettings.vue'
+import LayoutContentTokens from './LayoutContentTokens.vue'
+import LayoutContentIps from './LayoutContentIps.vue'
 
 
 export default {
@@ -139,17 +144,13 @@ export default {
         WListVertical,
         LayoutContentInfor,
         LayoutContentUsers,
-        LayoutContentSettings,
+        LayoutContentTokens,
+        LayoutContentIps,
     },
     props: {
     },
     data: function() {
         return {
-            mdiInformationVariantCircleOutline,
-            mdiCogOutline,
-            mdiCellphoneKey,
-            mdiLockOpenRemoveOutline,
-            mdiShieldKeyOutline,
             mdiArrowLeftBoldHexagonOutline,
             mdiArrowRightBoldHexagonOutline,
 
@@ -186,24 +187,14 @@ export default {
                     icon: mdiAccountGroupOutline,
                 },
                 {
-                    key: 'mmSettings',
-                    text: vo.$t('mmSettings'),
-                    icon: mdiCogOutline,
-                },
-                {
-                    key: 'nowActiveTokensList',
-                    text: vo.$t('nowActiveTokensList'),
-                    icon: mdiCellphoneKey,
-                },
-                {
-                    key: 'nowBlockList',
-                    text: vo.$t('nowBlockList'),
-                    icon: mdiLockOpenRemoveOutline,
-                },
-                {
-                    key: 'systemTokenList',
-                    text: vo.$t('systemTokenList'),
+                    key: 'mmTokensList',
+                    text: vo.$t('mmTokensList'),
                     icon: mdiShieldKeyOutline,
+                },
+                {
+                    key: 'mmIpsList',
+                    text: vo.$t('mmIpsList'),
+                    icon: mdiIpNetwork,
                 },
             ]
             return ms

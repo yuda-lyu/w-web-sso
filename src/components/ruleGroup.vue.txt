@@ -208,7 +208,6 @@
 
 <script>
 import { mdiEyeCheck, mdiEyeOff, mdiEyedropper, mdiEyedropperOff } from '@mdi/js/mdi.js'
-import JSON5 from 'json5'
 import get from 'lodash-es/get.js'
 import set from 'lodash-es/set.js'
 import each from 'lodash-es/each.js'

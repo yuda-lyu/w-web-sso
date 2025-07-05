@@ -21,8 +21,8 @@ async function initialData() {
             redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
             isAdmin: 'n',
             isVerified: 'y',
-            timeVerified: '2025-01-01T00:00:00+08:00',
-            timeExpired: '2030-01-01T00:00:00+08:00',
+            timeVerified: '2025-01-01T00:00:00.000+08:00',
+            timeExpired: '2030-01-01T00:00:00.000+08:00',
             timeBlocked: '',
             isActive: 'y',
 
@@ -38,8 +38,8 @@ async function initialData() {
             redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
             isAdmin: 'n',
             isVerified: 'y',
-            timeVerified: '2025-01-01T00:00:00+08:00',
-            timeExpired: '2030-01-01T00:00:00+08:00',
+            timeVerified: '2025-01-01T00:00:00.000+08:00',
+            timeExpired: '2030-01-01T00:00:00.000+08:00',
             timeBlocked: '',
             isActive: 'y',
         },
@@ -54,8 +54,8 @@ async function initialData() {
             redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
             isAdmin: 'y',
             isVerified: 'y',
-            timeVerified: '2025-01-01T00:00:00+08:00',
-            timeExpired: '2030-01-01T00:00:00+08:00',
+            timeVerified: '2025-01-01T00:00:00.000+08:00',
+            timeExpired: '2030-01-01T00:00:00.000+08:00',
             timeBlocked: '',
             isActive: 'y',
         },
@@ -88,7 +88,7 @@ async function initialData() {
         {
             token: 'token-for-app',
             userId: 'id-for-app',
-            isApp: true,
+            isApp: 'y',
         },
     ]
     ts = map(ts, (t, k) => {
@@ -98,9 +98,7 @@ async function initialData() {
         })
         v.id = `id-for-${token}`
         v.token = token
-        if (t.isApp) {
-            v.timeEnd = '2030-00-00T00:00:00+08:00'
-        }
+        v.timeEnd = '2030-01-01T00:00:00.000+08:00' //測試各token皆給予超長時效
         return v
     })
     await woItems.tokens.delAll()

@@ -48,12 +48,13 @@ Vue.directive('dommutation', domMutation())
 Vue.directive('domdragdrop', domDragDrop())
 
 //WServHapiClient
-// let bFirstSync = false
+// let bFirstSync = false //不需要bFirstSync, 由getWebInfor結束代表第1次完成同步
 WServHapiClient({
     showLog: false,
     url: window.location.origin + window.location.pathname,
     useWaitToken: false,
     apiName: 'api',
+    tokenType: 'Bearer',
     getToken: () => {
         let token = get(Vue.prototype, `$store.state.userToken`, '')
         // console.log('getToken', token)
@@ -69,30 +70,23 @@ WServHapiClient({
         _fapi.getWebInfor() //已有fapi時優先取得web資訊
             .then((wi) => {
                 // console.log('$fapi getWebInfor', wi)
+
                 Vue.prototype.$store.commit(Vue.prototype.$store.types.UpdateWebInfor, wi)
                 ui.setLang(null, 'get webInfor') //因更新webInfor可取得webName與webDescription, 得要重刷語系才能依照語言取得顯示文字
+
+                //commit syncState
+                Vue.prototype.$store.commit(Vue.prototype.$store.types.UpdateSyncState, true)
+
             })
             .catch((err) => {
                 console.log(err)
             })
-
-        //commit syncState
-        Vue.prototype.$store.commit(Vue.prototype.$store.types.UpdateSyncState, true)
 
     },
     recvData: (r) => {
         // console.log('sync data', r.tableName, r.data)
         Vue.prototype.$store.commit(Vue.prototype.$store.types.UpdateTableData, r)
     },
-    // getAfterUpdateTableTags: (r) => {
-    //     // console.log('getAfterUpdateTableTags', r, 'needToRefresh', JSON.stringify(r.oldTableTags) !== JSON.stringify(r.newTableTags))
-    //     if (bFirstSync) {
-    //         return
-    //     }
-    //     bFirstSync = true
-    //     // console.log('first-sync')
-    //     Vue.prototype.$store.commit(Vue.prototype.$store.types.UpdateSyncState, true)
-    // },
 })
 
 //new

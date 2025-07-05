@@ -1,6 +1,5 @@
 // import path from 'path'
 // import fs from 'fs'
-// import JSON5 from 'json5'
 
 
 function getSettings() {

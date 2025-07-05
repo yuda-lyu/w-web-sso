@@ -54,9 +54,9 @@ export let mutations = {
         state.kpText = kpText
     },
 
-    [types.UpdateConnState] (state, connState) {
-        state.connState = connState
-    },
+    // [types.UpdateConnState] (state, connState) {
+    //     state.connState = connState
+    // },
 
     [types.UpdateSyncState] (state, syncState) {
         state.syncState = syncState

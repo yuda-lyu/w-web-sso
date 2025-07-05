@@ -19,7 +19,6 @@ async function provideUsers(url, from, users) {
         'description',
         'from',
         'isAdmin',
-        //bbb
         'userId',
         'timeCreate',
         'userIdUpdate',

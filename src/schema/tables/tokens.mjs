@@ -27,6 +27,10 @@ let settings = {
         name: '使用者主鍵',
         type: 'STRING',
     },
+    isApp: {
+        name: '是否為應用系統',
+        type: 'STRING',
+    },
     timeCreate: {
         name: '創建時間',
         type: 'STRING',
@@ -46,7 +50,7 @@ let funNew = (ndata = {}) => {
     o.id = `${now2strp()}-${genID()}`
     o.token = `${now2strp()}-${genID()}`
     o.timeCreate = nowms2str()
-    o.timeEnd = ot().add(30, 'minute').format() //預設30min
+    o.timeEnd = ot().add(30, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ') //預設30min
     o.timeUpdate = o.timeCreate
     return o
 }

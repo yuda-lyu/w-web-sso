@@ -22,10 +22,6 @@ let settings = {
         name: 'IP',
         type: 'STRING',
     },
-    isBlocked: {
-        name: '帳號是否封鎖',
-        type: 'STRING',
-    },
     timeBlocked: {
         name: '封鎖時間',
         type: 'STRING',
@@ -35,11 +31,6 @@ let settings = {
 let funNew = (ndata = {}) => {
     let o = dtmapping(ndata, keys(settings))
     o.id = `${now2strp()}-${genID()}`
-    o.isAdmin = 'n'
-    o.userIdUpdate = o.userId
-    o.timeCreate = nowms2str()
-    o.timeUpdate = o.timeCreate
-    o.isActive = 'y'
     return o
 }
 

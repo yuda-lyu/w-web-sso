@@ -191,7 +191,7 @@ export default {
             showPassword: false,
             password: '',
 
-            //申請註冊使用者 bbb
+            //待加入 申請註冊使用者 bbb
 
         }
     },
