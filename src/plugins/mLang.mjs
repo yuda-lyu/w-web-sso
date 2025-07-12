@@ -210,6 +210,15 @@ let kpLang = {
         cht: `隱藏選單`,
     },
 
+    mmStaInfor: {
+        eng: `Statistics information`,
+        cht: `統計資訊`,
+    },
+    mmStaInforMsg: {
+        eng: `Provides important statistical information such as the current system user login frequency, key usage frequency, IP connection frequency, etc.`,
+        cht: `提供目前系統使用者登入頻率、金鑰使用頻率、IP連線頻率等重要統計資訊。`,
+    },
+
     mmUserInfor: {
         eng: `User information`,
         cht: `使用者資訊`,
@@ -606,6 +615,160 @@ let kpLang = {
     ipSaveIpsSuccess: {
         eng: `Save IPs successfully`,
         cht: `儲存IP數據成功`,
+    },
+
+    statisticsInformation: {
+        eng: 'Statistics Information',
+        cht: '統計資訊',
+    },
+    statisticsInformationDescription: {
+        eng: 'Provides an overview of system usage and security metrics.',
+        cht: '提供系統使用情況和安全指標的總覽。',
+    },
+    userGroupInfor: {
+        eng: 'User Information',
+        cht: '使用者資訊區',
+    },
+    totalUsers: {
+        eng: 'Total Users',
+        cht: '總使用者',
+    },
+    activeUsers: {
+        eng: 'Active Users',
+        cht: '活躍使用者',
+    },
+    blockedUsers: {
+        eng: 'Blocked Users',
+        cht: '已封鎖使用者',
+    },
+    expiredUsers: {
+        eng: 'Expired Users',
+        cht: '已過期使用者',
+    },
+    accessActivityMonitoring: {
+        eng: 'Access Activity Monitoring',
+        cht: '存取活動監測',
+    },
+    userLoginFrequency: {
+        eng: 'User Login Frequency',
+        cht: '使用者登入頻率',
+    },
+    last7Days: {
+        eng: 'Last 7 days',
+        cht: '最近7天',
+    },
+    tokenUsageFrequency: {
+        eng: 'Token Usage Frequency',
+        cht: '金鑰使用頻率',
+    },
+    ipConnectionFrequency: {
+        eng: 'IP Connection Frequency',
+        cht: 'IP 連線頻率',
+    },
+    controlStatus: {
+        eng: 'Control Status',
+        cht: '管控狀態',
+    },
+    tokenCharacteristic: {
+        eng: 'Token Characteristic',
+        cht: '金鑰狀態',
+    },
+    activeTokens: {
+        eng: 'Active Tokens',
+        cht: '有效金鑰數量',
+    },
+    createdLast24h: {
+        eng: 'Created in last 24h',
+        cht: '最近24小時內創建',
+    },
+    endingNext24h: {
+        eng: 'Ending in next 24h',
+        cht: '未來24小時內到期',
+    },
+    endedTokens: {
+        eng: 'Ended Tokens',
+        cht: '已到期金鑰數量',
+    },
+    ipCharacteristic: {
+        eng: 'IP Characteristic',
+        cht: 'IP狀態',
+    },
+    conn24h: {
+        eng: 'Connections in last 24h',
+        cht: '最近24小時內連線數量',
+    },
+    blockedIps: {
+        eng: 'Blocked IPs',
+        cht: '當前已封鎖IP數量',
+    },
+    selectItem1hr: {
+        eng: '1 hour',
+        cht: '1小時',
+    },
+    selectItem4hr: {
+        eng: '4 hour',
+        cht: '4小時',
+    },
+    selectItem8hr: {
+        eng: '8 hour',
+        cht: '8小時',
+    },
+    selectItem1day: {
+        eng: '1 day',
+        cht: '1日',
+    },
+    countAttempt: {
+        eng: 'Attempt',
+        cht: '嘗試登入',
+    },
+    countSuccess: {
+        eng: 'Success',
+        cht: '登入成功',
+    },
+    countError: {
+        eng: 'Error',
+        cht: '登入失敗',
+    },
+    count: {
+        eng: 'Count',
+        cht: '總次數',
+    },
+
+    showIndividually: {
+        eng: 'Show individually',
+        cht: '個別顯示',
+    },
+    numberOrder: {
+        eng: 'No.',
+        cht: '排序',
+    },
+    total: {
+        eng: 'Total',
+        cht: '總計',
+    },
+    last1Day: {
+        eng: 'Last 1 day',
+        cht: '最近1天',
+    },
+    last8Hour: {
+        eng: 'Last 8 hour',
+        cht: '最近8小時',
+    },
+    last4Hour: {
+        eng: 'Last 4 hour',
+        cht: '最近4小時',
+    },
+    last1Hour: {
+        eng: 'Last 1 hour',
+        cht: '最近1小時',
+    },
+    showMax5: {
+        eng: 'Show max 5 rows',
+        cht: '顯示前5筆',
+    },
+    showAll: {
+        eng: 'Show all',
+        cht: '顯示全部',
     },
 
     //bbb 以下尚未使用

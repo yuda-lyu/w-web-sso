@@ -71,7 +71,7 @@
 
                             <div
                                 style="display:flex; align-items:center; white-space:nowrap; user-select:none; cursor:pointer;"
-                                @click="logOut"
+                                @click="logout"
                             >
                                 <div style="padding-top:2px;">
                                     <WIcon
@@ -175,8 +175,8 @@ export default {
                 //     .catch((err) => {
                 //         console.log('refreshToken catch', err)
 
-                //         //logOut, 登出與轉跳登入頁
-                //         vo.logOut()
+                //         //logout, 登出與轉跳登入頁
+                //         vo.logout()
 
                 //     })
 
@@ -184,7 +184,7 @@ export default {
                 vo.$fapi.checkToken(vo.userToken) //斷線有重試機制, resolve僅回傳true, reject代表無效token或檢測token發生錯誤
                     .catch((err) => {
                         console.log('checkToken catch', err)
-                        vo.logOut() //登出與轉跳登入頁
+                        vo.logout() //登出與轉跳登入頁
                     })
 
             }
@@ -282,22 +282,22 @@ export default {
 
         },
 
-        logOut: function() {
-            // console.log('methods logOut')
+        logout: function() {
+            // console.log('methods logout')
 
             let vo = this
 
-            //logOut
-            vo.$ui.logOut()
+            //logout
+            vo.$ui.logout()
                 .then(() => {
 
                     //登出時提交變更viewState返回登入頁
                     vo.$ui.updateViewState('login')
-                    console.log(`logOut, goto view['login'] page`)
+                    console.log(`logout, goto view['login'] page`)
 
                 })
                 .catch((err) => {
-                    console.log(`logOut err[${err}]`)
+                    console.log(`logout err[${err}]`)
                 })
 
         },

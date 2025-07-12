@@ -655,7 +655,7 @@ function autoLogin(opt = {}) {
 }
 
 
-function logOut() {
+function logout() {
 
     //pm
     let pm = genPm()
@@ -678,6 +678,14 @@ function logOut() {
         let key = `${$keyLS}:userToken`
         // console.log('key', key)
 
+        //getItem
+        let token = await localStorage.getItem(key)
+        // console.log('token', token)
+
+        //logoutByToken
+        await vo.$fapi.logoutByToken(token)
+            .catch(() => {}) //屏蔽伺服器端logout失敗訊息, 避免斷線時無限報錯
+
         //setItem, 清空token
         await localStorage.setItem(key, '')
 
@@ -692,7 +700,7 @@ function logOut() {
 
         })
         .catch((err) => {
-            // console.log('logOut', err)
+            // console.log('logout', err)
 
             //alert
             vo.$alert(vo.$t('failedLogoutForCatch'), { type: 'error' })
@@ -743,7 +751,7 @@ let mUI = {
 
     login,
     autoLogin,
-    logOut,
+    logout,
 
     getIcon,
 

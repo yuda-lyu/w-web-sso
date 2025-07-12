@@ -69,9 +69,13 @@
 
                         <template>
 
-                            <LayoutContentInfor
+                            <LayoutContentStaInfor
+                                v-if="menuKey==='mmStaInfor'"
+                            ></LayoutContentStaInfor>
+
+                            <LayoutContentUserInfor
                                 v-if="menuKey==='mmUserInfor'"
-                            ></LayoutContentInfor>
+                            ></LayoutContentUserInfor>
 
                             <LayoutContentUsers
                                 v-if="menuKey==='mmUsersList'"
@@ -125,13 +129,14 @@
 </template>
 
 <script>
-import { mdiInformationVariantCircleOutline, mdiIpNetwork, mdiShieldKeyOutline, mdiArrowLeftBoldHexagonOutline, mdiArrowRightBoldHexagonOutline, mdiAccountGroupOutline } from '@mdi/js/mdi.js'
+import { mdiChartBar, mdiInformationVariantCircleOutline, mdiIpNetwork, mdiShieldKeyOutline, mdiArrowLeftBoldHexagonOutline, mdiArrowRightBoldHexagonOutline, mdiAccountGroupOutline } from '@mdi/js/mdi.js'
 import get from 'lodash-es/get.js'
 import find from 'lodash-es/find.js'
 import WDrawer from 'w-component-vue/src/components/WDrawer.vue'
 import WButtonCircle from 'w-component-vue/src/components/WButtonCircle.vue'
 import WListVertical from 'w-component-vue/src/components/WListVertical.vue'
-import LayoutContentInfor from './LayoutContentInfor.vue'
+import LayoutContentStaInfor from './LayoutContentStaInfor.vue'
+import LayoutContentUserInfor from './LayoutContentUserInfor.vue'
 import LayoutContentUsers from './LayoutContentUsers.vue'
 import LayoutContentTokens from './LayoutContentTokens.vue'
 import LayoutContentIps from './LayoutContentIps.vue'
@@ -142,7 +147,8 @@ export default {
         WDrawer,
         WButtonCircle,
         WListVertical,
-        LayoutContentInfor,
+        LayoutContentStaInfor,
+        LayoutContentUserInfor,
         LayoutContentUsers,
         LayoutContentTokens,
         LayoutContentIps,
@@ -154,13 +160,13 @@ export default {
             mdiArrowLeftBoldHexagonOutline,
             mdiArrowRightBoldHexagonOutline,
 
-            menuKey: 'mmUserInfor',
+            menuKey: 'mmStaInfor',
 
             panelWidth: 0,
             panelHeight: 0,
 
             drawer: true,
-            drawerWidth: 220,
+            drawerWidth: 230,
             drawerWidthMin: 150,
             drawerWidthMax: 350,
 
@@ -176,6 +182,11 @@ export default {
         menus: function() {
             let vo = this
             let ms = [
+                {
+                    key: 'mmStaInfor',
+                    text: vo.$t('mmStaInfor'),
+                    icon: mdiChartBar,
+                },
                 {
                     key: 'mmUserInfor',
                     text: vo.$t('mmUserInfor'),

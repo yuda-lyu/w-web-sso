@@ -1,4 +1,5 @@
 //前後端共用函數區
+import ot from 'dayjs'
 import get from 'lodash-es/get.js'
 import each from 'lodash-es/each.js'
 import map from 'lodash-es/map.js'
@@ -11,6 +12,7 @@ import sortBy from 'lodash-es/sortBy.js'
 import sep from 'wsemi/src/sep.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
+import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
 import haskey from 'wsemi/src/haskey.mjs'
 import composeToTree from 'wsemi/src/composeToTree.mjs'
 
@@ -253,11 +255,148 @@ function getNameNew(rows, key = 'name', nameBase = '', nameExt = '') {
 // }
 
 
+function getIsVerified(v) {
+
+    //timeVerified
+    let timeVerified = get(v, 'timeVerified', '')
+    // console.log('timeVerified', timeVerified)
+
+    // //check
+    // if (istimemsTZ(timeVerified)) {
+    //     return true //有驗證時間, 代表已驗證
+    // }
+
+    // //tt
+    // let tt = ot(timeVerified, 'YYYY-MM-DDTHH:mm:ss.SSSZ')
+    // // console.log('tt', tt)
+
+    // //tn
+    // let tn = ot()
+
+    // //tds
+    // let tds = tt.diff(tn, 'second')
+    // // console.log('tds', tds)
+
+    // //check
+    // if (tds > 0) {
+    //     return false
+    // }
+
+    return istimemsTZ(timeVerified) //有驗證時間, 代表已驗證
+}
+
+
+function getIsExpired(v) {
+
+    //timeExpired
+    let timeExpired = get(v, 'timeExpired', '')
+    // console.log('timeExpired', timeExpired)
+
+    //check
+    if (!istimemsTZ(timeExpired)) {
+        return false //無過期時間, 代表未過期
+    }
+
+    // //tt
+    // let tt = ot(timeExpired, 'YYYY-MM-DDTHH:mm:ss.SSSZ')
+    // // console.log('tt', tt)
+
+    //tn
+    let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+
+    // //tds
+    // let tds = tt.diff(tn, 'second')
+    // // console.log('tds', tds)
+
+    // //check
+    // if (tn > timeExpired) {
+    //     return true
+    // }
+
+    return tn >= timeExpired //現在時間>=過期時間, 代表已過期
+}
+
+
+function getIsBlocked(v) {
+
+    //timeBlocked
+    let timeBlocked = get(v, 'timeBlocked', '')
+    // console.log('timeBlocked', timeBlocked)
+
+    //check
+    if (!istimemsTZ(timeBlocked)) {
+        return false //無封鎖時間, 代表未封鎖
+    }
+
+    // //tt
+    // let tt = ot(timeBlocked, 'YYYY-MM-DDTHH:mm:ss.SSSZ')
+    // // console.log('tt', tt)
+
+    //tn
+    let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+
+    // //tds
+    // let tds = tt.diff(tn, 'second')
+    // // console.log('tds', tds)
+
+    // //check
+    // if (tn > timeBlocked) {
+    //     return false
+    // }
+
+    return tn <= timeBlocked //現在時間<=封鎖時間, 代表封鎖中
+}
+
+
+function getIsEnded(v) {
+
+    //timeEnd
+    let timeEnd = get(v, 'timeEnd', '')
+    // console.log('timeEnd', timeEnd)
+
+    //check
+    if (!istimemsTZ(timeEnd)) {
+        return false //無到期時間, 代表未失效
+    }
+
+    //tn
+    let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+
+    return tn > timeEnd //現在時間>到期時間, 代表失效
+}
+
+
+function getIsAdmin(v) {
+
+    //isAdmin
+    let isAdmin = get(v, 'isAdmin', '')
+    // console.log('isAdmin', isAdmin)
+
+    return isAdmin === 'y'
+}
+
+
+function getIsActive(v) {
+
+    //isActive
+    let isActive = get(v, 'isActive', '')
+    // console.log('isActive', isActive)
+
+    return isActive === 'y'
+}
+
+
 export {
-    getNameNew
+    getNameNew,
     // getAllBlocks,
     // getTreeBlocks
     // getUserGroups,
     // getTargetsByGroup,
-    // getUserRules
+    // getUserRules,
+    getIsVerified,
+    getIsExpired,
+    getIsBlocked,
+    getIsEnded,
+    getIsAdmin,
+    getIsActive
 }

@@ -50,7 +50,7 @@ let funNew = (ndata = {}) => {
     o.id = `${now2strp()}-${genID()}`
     o.token = `${now2strp()}-${genID()}`
     o.timeCreate = nowms2str()
-    o.timeEnd = ot().add(30, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ') //預設30min
+    o.timeEnd = ot().add(30, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ') //預設30min, 可由創建處再依照設定更新
     o.timeUpdate = o.timeCreate
     return o
 }

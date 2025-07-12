@@ -236,7 +236,7 @@ function proc(woItems, p, opt = {}) {
             if (nrecs > numForAccountLoginFailed) {
                 // console.log(`account[${account}]: nrecs[${nrecs}] > numForAccountLoginFailed[${numForAccountLoginFailed}]`)
 
-                //blockAccount
+                //blockAccount, 封鎖使用者, 亦會直接刪除使用userId之token
                 await blockAccount(account)
                     .catch((err) => {
                         console.log(err)
@@ -373,7 +373,7 @@ function proc(woItems, p, opt = {}) {
             if (nrecs > numForTokenCallApi) {
                 // console.log(`token[${token}]: nrecs[${nrecs}] > numForTokenCallApi[${numForTokenCallApi}]`)
 
-                //blockAccountByToken
+                //blockAccountByToken, 沒封鎖token, 是通過封鎖使用者且直接刪除使用userId之token
                 await blockAccountByToken(token)
                     .catch((err) => {
                         console.log(err)

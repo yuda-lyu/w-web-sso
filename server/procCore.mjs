@@ -27,22 +27,34 @@ import haskey from 'wsemi/src/haskey.mjs'
 import arrHas from 'wsemi/src/arrHas.mjs'
 import pm2resolve from 'wsemi/src/pm2resolve.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
+import waitFun from 'wsemi/src/waitFun.mjs'
+import delay from 'wsemi/src/delay.mjs'
+import cache from 'wsemi/src/cache.mjs'
 import ds from '../src/schema/index.mjs'
+import * as s from '../src/plugins/mShare.mjs'
 import hashPassword from './hashPassword.mjs'
+import srlog from './srlog.mjs'
 
 
 function proc(woItems, procOrm, { salt, minExpired }) {
 
 
-    //getGenUserByKV
-    let getGenUserByKV = async(keyUser, valueUser) => {
+    //_getGenUserByKV
+    let _getGenUserByKV = async(keyUser, valueUser, opt = {}) => {
         let errTemp = null
+
+        //deletePassword
+        let deletePassword = get(opt, 'deletePassword')
+        if (!isbol(deletePassword)) {
+            deletePassword = true
+        }
 
         //us
         let us = await woItems.users.select({ [keyUser]: valueUser, isActive: 'y' })
             .catch((err) => {
                 errTemp = err
             })
+        //console.log(`...users.select`)
 
         //check
         if (errTemp) {
@@ -51,6 +63,14 @@ function proc(woItems, procOrm, { salt, minExpired }) {
             console.log('valueUser', valueUser)
             console.log(`failed to find user`)
             return Promise.reject(`failed to find user`)
+        }
+
+        //delete password, 無錯誤取得後即先刪除, 避免調整程式時意外洩漏hash後密碼
+        if (deletePassword) {
+            us = map(us, (u) => {
+                delete u.password
+                return u
+            })
         }
 
         //nus
@@ -80,11 +100,21 @@ function proc(woItems, procOrm, { salt, minExpired }) {
     }
 
 
-    //getGenUserByUserId
-    let getGenUserByUserId = async(userId) => {
+    //getGenUserByKV
+    let getGenUserByKV = async(keyUser, valueUser) => {
 
         //u
-        let u = await getGenUserByKV('id', userId)
+        let u = await _getGenUserByKV(keyUser, valueUser)
+
+        return u
+    }
+
+
+    //getGenUserByUserId
+    let getGenUserByUserId = async(userId, opt = {}) => {
+
+        //u
+        let u = await getGenUserByKV('id', userId, opt)
 
         // //check, 不用檢測, 若resolve必定有u, 若reject則由外部處理
         // if (!iseobj(u)) {
@@ -96,10 +126,10 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
 
     //getGenUserByAccount
-    let getGenUserByAccount = async(account) => {
+    let getGenUserByAccount = async(account, opt = {}) => {
 
         //u
-        let u = await getGenUserByKV('account', account)
+        let u = await getGenUserByKV('account', account, opt)
 
         // //check, 不用檢測, 若resolve必定有u, 若reject則由外部處理
         // if (!iseobj(u)) {
@@ -119,6 +149,7 @@ function proc(woItems, procOrm, { salt, minExpired }) {
             .catch((err) => {
                 errTemp = err
             })
+        //console.log(`...tokens.select`)
 
         //check
         if (errTemp) {
@@ -165,6 +196,7 @@ function proc(woItems, procOrm, { salt, minExpired }) {
             .catch((err) => {
                 errTemp = err
             })
+        //console.log(`...ips.select`)
 
         //check
         if (errTemp) {
@@ -211,7 +243,7 @@ function proc(woItems, procOrm, { salt, minExpired }) {
         // console.log('passwordTest', passwordTest)
 
         //getGenUserByAccount
-        let u = await getGenUserByAccount(account)
+        let u = await _getGenUserByKV('account', account, { deletePassword: false }) //不能使用getGenUserByAccount, 會刪除密碼無法比對
         // console.log('u', u)
 
         // //check, 不用檢測, 若resolve必定有u, 若reject則由外部處理
@@ -237,8 +269,6 @@ function proc(woItems, procOrm, { salt, minExpired }) {
         //createToken
         let token = await createToken(userId)
         // console.log('token', token)
-
-        //bbb 待加入創建usersRecs儲存使用者登入資訊與紀錄
 
         //r
         let r = {
@@ -301,7 +331,7 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
 
     //_checkTokenByObj
-    let _checkTokenByObj = async (tk) => {
+    let _checkTokenByObj = async (tk, opt = {}) => {
 
         //timeEnd
         let timeEnd = get(tk, 'timeEnd', '')
@@ -314,21 +344,44 @@ function proc(woItems, procOrm, { salt, minExpired }) {
             return Promise.reject(`invalid timeEnd`)
         }
 
+        //fun
+        let fun = get(opt, 'fun', null)
+
         //tn
         let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
         // console.log('tn     ', tn)
         // console.log('timeEnd', timeEnd)
         // console.log('tn < timeEnd', tn < timeEnd)
 
-        return tn < timeEnd //現在時間<到期時間, 代表尚未到期
+        let b1 = tn < timeEnd //現在時間<到期時間, 代表尚未到期
+        let b2 = true
+        if (isfun(fun)) {
+
+            //userId
+            let userId = get(tk, 'userId', '')
+
+            //getGenUserByUserId
+            let u = await getGenUserByUserId(userId)
+
+            //fun
+            b2 = fun(tk, u)
+            if (ispm(b2)) {
+                b2 = await b2
+            }
+
+        }
+        let b = b1 && b2
+
+        return b
     }
 
 
     //_checkToken
-    let _checkToken = async (token) => {
+    let _checkToken = async (token, opt = {}) => {
 
         //tks
         let tks = await woItems.tokens.select({ token })
+        //console.log(`...tokens.select`)
         // console.log('tks', tks)
 
         //ntks
@@ -352,8 +405,14 @@ function proc(woItems, procOrm, { salt, minExpired }) {
         let tk = get(tks, 0, '')
         // console.log('tk', tk)
 
+        //userId
+        let userId = get(tk, 'userId', '')
+
         //_checkTokenByObj
-        let b = await _checkTokenByObj(tk)
+        let b = await _checkTokenByObj(tk, opt)
+
+        //info
+        srlog.info({ event: 'fun-checkToken', token, userId, res: b })
 
         //logshow
         if (!b) {
@@ -365,11 +424,11 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
 
     //checkTokenByObj
-    let checkTokenByObj = async (tk) => {
+    let checkTokenByObj = async (tk, opt = {}) => {
         let errTemp = null
 
         //_checkTokenByObj
-        await _checkTokenByObj(tk)
+        await _checkTokenByObj(tk, opt)
             .then((res) => {
                 if (res === false) {
                     errTemp = 'token expired'
@@ -389,11 +448,11 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
 
     //checkToken
-    let checkToken = async (token) => {
+    let checkToken = async (token, opt = {}) => {
         let errTemp = null
 
         //_checkToken
-        await _checkToken(token)
+        await _checkToken(token, opt)
             .then((res) => {
                 if (res === false) {
                     errTemp = 'token expired'
@@ -418,6 +477,7 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
         //tks
         let tks = await woItems.tokens.select({ token })
+        //console.log(`...tokens.select`)
 
         //ntks
         let ntks = size(tks)
@@ -467,10 +527,14 @@ function proc(woItems, procOrm, { salt, minExpired }) {
         let timeEndNew = ot().add(minExpired, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
         // console.log('timeEndNew', timeEndNew)
 
+        //timeUpdate
+        let timeUpdate = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+
         //save
         await woItems.tokens.save({
             id: tk.id,
             timeEnd: timeEndNew,
+            timeUpdate,
         })
             .catch((err) => {
                 errTemp = err
@@ -488,12 +552,13 @@ function proc(woItems, procOrm, { salt, minExpired }) {
     }
 
 
-    //logOutByToken
-    let logOutByToken = async(token) => {
+    //logoutByToken
+    let logoutByToken = async(token) => {
         let errTemp = null
 
         //tks
         let tks = await woItems.tokens.select({ token })
+        //console.log(`...tokens.select`)
 
         //ntks
         let ntks = size(tks)
@@ -517,7 +582,7 @@ function proc(woItems, procOrm, { salt, minExpired }) {
         // console.log('tk', tk)
 
         //userId
-        let userId = get(tk, 'userId', '') //bbb 先保留userId供後續功能使用
+        let userId = get(tk, 'userId', '')
         // console.log('userId', userId)
 
         //del
@@ -543,9 +608,8 @@ function proc(woItems, procOrm, { salt, minExpired }) {
             return Promise.reject(`can not delete the token`)
         }
 
-        //bbb 待加入創建usersRecs儲存使用者登出紀錄
-
-        //bbb 待加入通知程序(訂閱者,監聽器)之使用者登出訊息
+        //info
+        srlog.info({ event: 'fun-logout', token, userId })
 
         return true
     }
@@ -645,6 +709,7 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
         //ltdtDiffByKey
         let ltdtOld = await woItems[woName].select()
+        //console.log(`...woName[${woName}].select`)
         let ltdtNew = rows
         let r = ltdtDiffByKey(ltdtOld, ltdtNew, keyDetect)
         // console.log('ltdtDiffByKey r', r)
@@ -682,6 +747,7 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
         //tks
         let tks = await woItems.tokens.select({ token })
+        //console.log(`...tokens.select`)
 
         //ntks
         let ntks = size(tks)
@@ -785,10 +851,10 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
 
     //checkTokenAndGetUserByToken
-    let checkTokenAndGetUserByToken = async(tokenSelf, tokenTarget) => {
+    let checkTokenAndGetUserByToken = async(tokenSelf, tokenTarget, opt = {}) => {
 
         //checkToken
-        await checkToken(tokenSelf) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+        await checkToken(tokenSelf, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
         //getUserByToken
         let u = await getUserByToken(tokenTarget)
@@ -798,13 +864,10 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
 
     //getUserInfor
-    let getUserInfor = async (key, value) => {
-
-        //select
-        let us = await woItems.users.select({ [key]: value, isActive: 'y' }) //僅提供isActive為y
+    let getUserInfor = async (key, value, opt = {}) => {
 
         //u
-        let u = get(us, 0, null)
+        let u = await getGenUserByKV(key, value, opt)
 
         //check
         if (!iseobj(u)) {
@@ -832,10 +895,10 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
 
     //checkTokenAndGetUserInfor
-    let checkTokenAndGetUserInfor = async (token, key, value) => {
+    let checkTokenAndGetUserInfor = async (token, key, value, opt = {}) => {
 
         //checkToken
-        await checkToken(token) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+        await checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
         //getUserInfor
         let r = await getUserInfor(key, value)
@@ -845,45 +908,68 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
 
     //getUsersList
-    let getUsersList = async (needActive = false) => {
+    let getUsersList = async (opt = {}) => {
 
-        //opt
-        let opt = {}
+        //needActive
+        let needActive = get(opt, 'needActive')
+        if (!isbol(needActive)) {
+            needActive = false
+        }
+
+        //deletePassword
+        let deletePassword = get(opt, 'deletePassword')
+        if (!isbol(deletePassword)) {
+            deletePassword = true
+        }
+
+        //optSelect
+        let optSelect = {}
         if (needActive) {
-            opt = { isActive: 'y' }
+            optSelect = { isActive: 'y' }
         }
 
         //select
-        let us = await woItems.users.select(opt)
+        let us = await woItems.users.select(optSelect)
+        //console.log(`...users.select`)
 
-        //us
-        us = map(us, (v, k) => {
-            delete v.password
-            return v
-        })
+        //delete password, 無錯誤取得後即先刪除, 避免調整程式時意外洩漏hash後密碼
+        if (deletePassword) {
+            us = map(us, (u) => {
+                delete u.password
+                return u
+            })
+        }
 
         return us
     }
 
 
+    //getUsersListCache
+    let ocGetUsersList = cache()
+    let getUsersListCache = async () => {
+        let r = await ocGetUsersList.getProxy('fun', { fun: getUsersList, inputs: null, timeExpired: 30 * 1000 }) //快取30秒
+        return r
+    }
+
+
     //checkTokenAndGetUsersList
-    let checkTokenAndGetUsersList = async (token, needActive = false) => {
+    let checkTokenAndGetUsersList = async (token, opt = {}) => {
 
         //checkToken
-        await checkToken(token) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+        await checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
         //getUsersList
-        let us = await getUsersList(needActive)
+        let us = await getUsersList(opt)
 
         return us
     }
 
 
     //checkTokenAndGetActiveUsersList
-    let checkTokenAndGetActiveUsersList = async (token) => {
+    let checkTokenAndGetActiveUsersList = async (token, opt = {}) => {
 
         //checkTokenAndGetUsersList
-        let us = await checkTokenAndGetUsersList(token, true)
+        let us = await checkTokenAndGetUsersList(token, { ...opt, needActive: true })
 
         return us
     }
@@ -900,10 +986,10 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
 
     //checkTokenAndUpdateUsersList
-    let checkTokenAndUpdateUsersList = async (token, rows) => {
+    let checkTokenAndUpdateUsersList = async (token, rows, opt = {}) => {
 
         //checkToken
-        await checkToken(token) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+        await checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
         //updateUsersList
         rows = await updateUsersList(rows)
@@ -912,72 +998,50 @@ function proc(woItems, procOrm, { salt, minExpired }) {
     }
 
 
-    //cleanTokens
-    let cleanTokens = async () => {
+    // //cleanTokens
+    // let cleanTokens = async (opt = {}) => {
 
-        //tks
-        let tks = await woItems.tokens.select()
-        // console.log('tks', tks)
+    //     //tks
+    //     let tks = await woItems.tokens.select()
+    //     //console.log(`...tokens.select`)
+    //     // console.log('tks', tks)
 
-        //tksDels
-        let tksDels = []
-        await pmSeries(tks, async (tk) => {
+    //     //tksDels
+    //     let tksDels = []
+    //     await pmSeries(tks, async (tk) => {
 
-            //checkTokenByObj
-            let errTemp = null
-            await checkTokenByObj(tk)
-                .catch((err) => {
-                    // console.log('checkTokenByObj catch', err)
-                    errTemp = err
-                })
+    //         //checkTokenByObj
+    //         let errTemp = null
+    //         await checkTokenByObj(tk, opt)
+    //             .catch((err) => {
+    //                 // console.log('checkTokenByObj catch', err)
+    //                 errTemp = err
+    //             })
 
-            //check
-            if (errTemp) {
-                tksDels.push(tk)
-            }
+    //         //check
+    //         if (errTemp) {
+    //             tksDels.push(tk)
+    //         }
 
-        })
+    //     })
 
-        //check
-        if (size(tksDels) > 0) {
-            // console.log('tksDels', tksDels)
+    //     //check
+    //     if (size(tksDels) > 0) {
+    //         // console.log('tksDels', tksDels)
 
-            await pmSeries(tksDels, async (tk) => {
+    //         await pmSeries(tksDels, async (tk) => {
 
-                //del
-                await woItems.tokens.del({ id: tk.id })
-                    .catch((err) => {
-                        console.log('tokens.del catch', err)
-                    })
+    //             //del
+    //             await woItems.tokens.del({ id: tk.id })
+    //                 .catch((err) => {
+    //                     console.log('tokens.del catch', err)
+    //                 })
 
-                //bbb 待加入創建usersRecs儲存使用者登出紀錄
+    //         })
 
-                //bbb 待加入通知程序(訂閱者,監聽器)之使用者登出訊息
+    //     }
 
-            })
-
-        }
-
-    }
-
-
-    //timer, 清除無效token
-    let lockingForCleanTokens = false
-    setInterval(async() => {
-
-        //check
-        if (lockingForCleanTokens) {
-            return
-        }
-        lockingForCleanTokens = true
-
-        //cleanTokens
-        await cleanTokens()
-            .finally(() => {
-                lockingForCleanTokens = false
-            })
-
-    }, 2000)
+    // }
 
 
     //getTokensList
@@ -985,6 +1049,7 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
         //select
         let ts = await woItems.tokens.select()
+        //console.log(`...tokens.select`)
 
         // //needNoEnd
         // if (needNoEnd) {
@@ -1004,14 +1069,22 @@ function proc(woItems, procOrm, { salt, minExpired }) {
     }
 
 
+    //getTokensListCache
+    let ocGetTokensList = cache()
+    let getTokensListCache = async () => {
+        let r = await ocGetTokensList.getProxy('fun', { fun: getTokensList, inputs: null, timeExpired: 30 * 1000 }) //快取30秒
+        return r
+    }
+
+
     //checkTokenAndGetTokensList
-    let checkTokenAndGetTokensList = async (token, needNoEnd = false) => {
+    let checkTokenAndGetTokensList = async (token, opt = {}) => {
 
         //checkToken
-        await checkToken(token) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+        await checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
         //getTokensList
-        let us = await getTokensList(needNoEnd)
+        let us = await getTokensList()
 
         return us
     }
@@ -1028,10 +1101,10 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
 
     //checkTokenAndUpdateTokensList
-    let checkTokenAndUpdateTokensList = async (token, rows) => {
+    let checkTokenAndUpdateTokensList = async (token, rows, opt = {}) => {
 
         //checkToken
-        await checkToken(token) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+        await checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
         //updateTokensList
         rows = await updateTokensList(rows)
@@ -1045,19 +1118,28 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
         //select
         let oips = await woItems.ips.select()
+        //console.log(`...ips.select`)
 
         return oips
     }
 
 
+    //getIpsListCache
+    let ocGetIpsList = cache()
+    let getIpsListCache = async () => {
+        let r = await ocGetIpsList.getProxy('fun', { fun: getIpsList, inputs: null, timeExpired: 30 * 1000 }) //快取30秒
+        return r
+    }
+
+
     //checkTokenAndGetIpsList
-    let checkTokenAndGetIpsList = async (token, needNoEnd = false) => {
+    let checkTokenAndGetIpsList = async (token, opt = {}) => {
 
         //checkToken
-        await checkToken(token) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+        await checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
         //getIpsList
-        let oips = await getIpsList(needNoEnd)
+        let oips = await getIpsList()
 
         return oips
     }
@@ -1074,16 +1156,133 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
 
     //checkTokenAndUpdateIpsList
-    let checkTokenAndUpdateIpsList = async (token, rows) => {
+    let checkTokenAndUpdateIpsList = async (token, rows, opt = {}) => {
 
         //checkToken
-        await checkToken(token) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+        await checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
         //updateIpsList
         rows = await updateIpsList(rows)
 
         return rows
     }
+
+
+    // //timer, 清除已過期(timeEnd)的token, 不使用避免無法展延金鑰
+    // let lockingForCleanTokens = false
+    // setInterval(async() => {
+
+    //     //check
+    //     if (lockingForCleanTokens) {
+    //         return
+    //     }
+    //     lockingForCleanTokens = true
+
+    //     //cleanTokens
+    //     await cleanTokens()
+    //         .finally(() => {
+    //             lockingForCleanTokens = false
+    //         })
+
+    // }, 2000)
+
+
+    //cleanUsers
+    let cleanUsers = async() => {
+
+        //getUsersList
+        let us = await getUsersList({})
+
+        //clean
+        await pmSeries(us, async(u) => {
+
+            //b
+            let b1 = !s.getIsBlocked(u) //未封鎖
+            let b2 = isestr(u.timeBlocked) //有值
+            let b = b1 && b2
+
+            //check
+            if (!b) {
+                return
+            }
+
+            //清除timeBlocked
+            await woItems.users.save({
+                id: u.id,
+                timeBlocked: '',
+            })
+
+        })
+
+    }
+
+
+    //timer, 清理user的timeBlocked
+    let lockingForCleanUsers = false
+    setInterval(async() => {
+
+        //check
+        if (lockingForCleanUsers) {
+            return
+        }
+        lockingForCleanUsers = true
+
+        //cleanUsers
+        await cleanUsers()
+            .finally(() => {
+                lockingForCleanUsers = false
+            })
+
+    }, 2000)
+
+
+    //cleanIps
+    let cleanIps = async() => {
+
+        //getIpsList
+        let oips = await getIpsList({})
+
+        //clean
+        await pmSeries(oips, async(oip) => {
+
+            //b
+            let b1 = !s.getIsBlocked(oip) //未封鎖
+            let b2 = isestr(oip.timeBlocked) //有值
+            let b = b1 && b2
+
+            //check
+            if (!b) {
+                return
+            }
+
+            //清除timeBlocked
+            await woItems.ips.save({
+                id: oip.id,
+                timeBlocked: '',
+            })
+
+        })
+
+    }
+
+
+    //timer, 清理ip的timeBlocked
+    let lockingForCleanIps = false
+    setInterval(async() => {
+
+        //check
+        if (lockingForCleanIps) {
+            return
+        }
+        lockingForCleanIps = true
+
+        //cleanIps
+        await cleanIps()
+            .finally(() => {
+                lockingForCleanIps = false
+            })
+
+    }, 2000)
 
 
     //p
@@ -1098,11 +1297,10 @@ function proc(woItems, procOrm, { salt, minExpired }) {
         getGenUserByAccount,
 
         loginByAccountAndPassword,
-        logOutByToken,
+        logoutByToken,
 
         checkToken,
         refreshToken,
-
 
         getUserByToken,
         checkTokenAndGetUserByToken,
@@ -1111,16 +1309,19 @@ function proc(woItems, procOrm, { salt, minExpired }) {
         checkTokenAndGetUserInfor,
 
         getUsersList,
+        getUsersListCache,
         checkTokenAndGetUsersList,
         checkTokenAndGetActiveUsersList,
         updateUsersList,
         checkTokenAndUpdateUsersList,
 
         getTokensList,
+        getTokensListCache,
         checkTokenAndGetTokensList,
         checkTokenAndUpdateTokensList,
 
         getIpsList,
+        getIpsListCache,
         checkTokenAndGetIpsList,
         checkTokenAndUpdateIpsList,
 
