@@ -836,7 +836,7 @@ function proc(woItems, procOrm, { salt, minExpired }) {
                 from: 'no from',
                 redir: 'no redir',
                 isAdmin: 'y', //應用系統代表為系統管理員
-                timeVerified: 'y', //應用系統代表為已驗證
+                timeVerified: '2000-01-01T00:00:00.000+08:00', //應用系統代表為已驗證
                 timeExpired: '',
                 timeBlocked: '',
                 isActive: 'y',
