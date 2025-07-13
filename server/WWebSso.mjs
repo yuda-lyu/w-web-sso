@@ -577,8 +577,8 @@ function WWebSso(WOrm, url, db, pathSettings) {
         let b1 = s.getIsVerified(u) //須已驗證
         let b2 = !s.getIsExpired(u) //不能過期
         let b3 = !s.getIsBlocked(u) //不能封鎖中
-        let b4 = s.getIsAdmin(u)
-        let b5 = s.getIsActive(u)
+        let b4 = s.getIsAdmin(u) //須為系統管理員
+        let b5 = s.getIsActive(u) //須有效
         let b = b1 && b2 && b3 && b4 && b5
         // console.log('fun', 'tk', tk, 'u', u, b)
         return b

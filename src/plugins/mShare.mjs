@@ -261,27 +261,6 @@ function getIsVerified(v) {
     let timeVerified = get(v, 'timeVerified', '')
     // console.log('timeVerified', timeVerified)
 
-    // //check
-    // if (istimemsTZ(timeVerified)) {
-    //     return true //有驗證時間, 代表已驗證
-    // }
-
-    // //tt
-    // let tt = ot(timeVerified, 'YYYY-MM-DDTHH:mm:ss.SSSZ')
-    // // console.log('tt', tt)
-
-    // //tn
-    // let tn = ot()
-
-    // //tds
-    // let tds = tt.diff(tn, 'second')
-    // // console.log('tds', tds)
-
-    // //check
-    // if (tds > 0) {
-    //     return false
-    // }
-
     return istimemsTZ(timeVerified) //有驗證時間, 代表已驗證
 }
 
@@ -297,21 +276,8 @@ function getIsExpired(v) {
         return false //無過期時間, 代表未過期
     }
 
-    // //tt
-    // let tt = ot(timeExpired, 'YYYY-MM-DDTHH:mm:ss.SSSZ')
-    // // console.log('tt', tt)
-
     //tn
     let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-
-    // //tds
-    // let tds = tt.diff(tn, 'second')
-    // // console.log('tds', tds)
-
-    // //check
-    // if (tn > timeExpired) {
-    //     return true
-    // }
 
     return tn >= timeExpired //現在時間>=過期時間, 代表已過期
 }
@@ -328,21 +294,8 @@ function getIsBlocked(v) {
         return false //無封鎖時間, 代表未封鎖
     }
 
-    // //tt
-    // let tt = ot(timeBlocked, 'YYYY-MM-DDTHH:mm:ss.SSSZ')
-    // // console.log('tt', tt)
-
     //tn
     let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-
-    // //tds
-    // let tds = tt.diff(tn, 'second')
-    // // console.log('tds', tds)
-
-    // //check
-    // if (tn > timeBlocked) {
-    //     return false
-    // }
 
     return tn <= timeBlocked //現在時間<=封鎖時間, 代表封鎖中
 }
