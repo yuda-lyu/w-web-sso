@@ -347,11 +347,11 @@ let kpLang = {
     },
     isBlockedY: {
         eng: `Blocked`,
-        cht: `帳號已被封鎖`,
+        cht: `帳號已封鎖`,
     },
     isBlockedN: {
         eng: `Not blocked`,
-        cht: `帳號未被封鎖`,
+        cht: `帳號未封鎖`,
     },
     userTimeBlocked: {
         eng: `Blocked time`,

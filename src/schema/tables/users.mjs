@@ -54,10 +54,6 @@ let settings = {
         name: '是否為系統管理員',
         type: 'STRING',
     },
-    isVerified: {
-        name: '帳號是否驗證',
-        type: 'STRING',
-    },
     timeVerified: {
         name: '驗證時間',
         type: 'STRING',

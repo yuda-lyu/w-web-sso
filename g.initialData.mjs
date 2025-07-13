@@ -20,7 +20,6 @@ async function initialData() {
             from: 'SSO',
             redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
             isAdmin: 'n',
-            isVerified: 'y',
             timeVerified: '2025-01-01T00:00:00.000+08:00',
             timeExpired: '2030-01-01T00:00:00.000+08:00',
             timeBlocked: '',
@@ -37,8 +36,7 @@ async function initialData() {
             from: 'SSO',
             redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
             isAdmin: 'n',
-            isVerified: 'y',
-            timeVerified: '2025-01-01T00:00:00.000+08:00',
+            timeVerified: '', //未驗證
             timeExpired: '2030-01-01T00:00:00.000+08:00',
             timeBlocked: '',
             isActive: 'y',
@@ -53,7 +51,6 @@ async function initialData() {
             from: 'SSO',
             redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
             isAdmin: 'y',
-            isVerified: 'y',
             timeVerified: '2025-01-01T00:00:00.000+08:00',
             timeExpired: '2030-01-01T00:00:00.000+08:00',
             timeBlocked: '',

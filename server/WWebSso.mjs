@@ -574,7 +574,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //funCheckAdmin
     let funCheckAdmin = (tk, u) => {
         // console.log('tk', tk, 'u', u)
-        let b1 = s.getIsVerified(u)
+        let b1 = s.getIsVerified(u) //須已驗證
         let b2 = !s.getIsExpired(u) //不能過期
         let b3 = !s.getIsBlocked(u) //不能封鎖中
         let b4 = s.getIsAdmin(u)

@@ -344,6 +344,10 @@ function proc(woItems, procOrm, { salt, minExpired }) {
             return Promise.reject(`invalid timeEnd`)
         }
 
+        //isApp
+        let isApp = get(tk, 'isApp', '')
+        // console.log('isApp', isApp)
+
         //fun
         let fun = get(opt, 'fun', null)
 
@@ -355,21 +359,31 @@ function proc(woItems, procOrm, { salt, minExpired }) {
 
         let b1 = tn < timeEnd //現在時間<到期時間, 代表尚未到期
         let b2 = true
-        if (isfun(fun)) {
+        if (isApp !== 'y') {
+            //token來自使用者
 
-            //userId
-            let userId = get(tk, 'userId', '')
+            if (isfun(fun)) {
+                //有給定驗證fun才執行取得使用者資訊供驗證
 
-            //getGenUserByUserId
-            let u = await getGenUserByUserId(userId)
+                //userId
+                let userId = get(tk, 'userId', '')
 
-            //fun
-            b2 = fun(tk, u)
-            if (ispm(b2)) {
-                b2 = await b2
+                //getGenUserByUserId
+                let u = await getGenUserByUserId(userId)
+
+                //fun
+                b2 = fun(tk, u)
+                if (ispm(b2)) {
+                    b2 = await b2
+                }
+
             }
 
         }
+        else {
+            //token來自應用系統, 因無使用者資訊即便有給fun也略過
+        }
+
         let b = b1 && b2
 
         return b
@@ -777,6 +791,7 @@ function proc(woItems, procOrm, { salt, minExpired }) {
         //u
         let u = null
         if (isApp !== 'y') {
+            //token來自使用者
 
             //userId
             let userId = get(tk, 'userId', '')
@@ -821,7 +836,7 @@ function proc(woItems, procOrm, { salt, minExpired }) {
                 from: 'no from',
                 redir: 'no redir',
                 isAdmin: 'y', //應用系統代表為系統管理員
-                timeVerified: '',
+                timeVerified: 'y', //應用系統代表為已驗證
                 timeExpired: '',
                 timeBlocked: '',
                 isActive: 'y',

@@ -284,7 +284,7 @@ export default {
                 'from',
                 'redir',
                 'isAdmin',
-                'isVerified',
+                // 'isVerified',
                 'timeVerified',
                 'timeExpired',
                 'timeBlocked',
@@ -303,7 +303,7 @@ export default {
                 'from',
                 'redir',
                 'isAdmin',
-                'isVerified',
+                // 'isVerified',
                 'timeVerified',
                 'timeExpired',
                 'timeBlocked',
@@ -322,7 +322,7 @@ export default {
                 'from',
                 'redir',
                 'isAdmin',
-                'isVerified',
+                // 'isVerified',
                 'timeVerified',
                 'timeExpired',
                 'timeBlocked',
@@ -351,7 +351,7 @@ export default {
 
         //註冊至$dg供使用
         vo.$dg.toggleItemIsAdminById = vo.toggleItemIsAdminById
-        vo.$dg.toggleItemIsVerifiedById = vo.toggleItemIsVerifiedById
+        // vo.$dg.toggleItemIsVerifiedById = vo.toggleItemIsVerifiedById
         vo.$dg.toggleItemIsActiveById = vo.toggleItemIsActiveById
         vo.$dg.modifyItemPasswordById = vo.modifyItemPasswordById
         vo.$dg.modifyItemTimeVerifiedById = vo.modifyItemTimeVerifiedById
@@ -611,7 +611,7 @@ export default {
                 'from': vo.$t('from'),
                 'redir': vo.$t('redir'),
                 'isAdmin': vo.$t('isAdmin'),
-                'isVerified': vo.$t('isVerified'),
+                // 'isVerified': vo.$t('isVerified'),
                 'timeVerified': vo.$t('userTimeVerified'),
                 'timeExpired': vo.$t('userTimeExpired'),
                 'timeBlocked': vo.$t('userTimeBlocked'),
@@ -731,6 +731,9 @@ export default {
                         // 'email': isnum(vo.widthUsersEmail) ? cdbl(vo.widthUsersEmail) : 300,
                         // 'description': isnum(vo.widthUsersDescription) ? cdbl(vo.widthUsersDescription) : 300,
                         // 'cgrups': 300,
+                        'timeVerified': 250,
+                        'timeExpired': 250,
+                        'timeBlocked': 250,
                         // 'isAdmin': 100,
                         // 'isActive': 100,
                         // 'timeCreate': 220,
@@ -747,7 +750,7 @@ export default {
                         'from': 'text',
                         'redir': 'text',
                         'isAdmin': 'text',
-                        'isVerified': 'text',
+                        // 'isVerified': 'text',
                         'timeVerified': 'text',
                         'timeExpired': 'text',
                         'timeBlocked': 'text',
@@ -859,19 +862,19 @@ export default {
 
                             return t
                         },
-                        'isVerified': (v, k, r) => {
-                            // console.log('kpCellRender isAdmin', v, k, r)
+                        // 'isVerified': (v, k, r) => {
+                        //     // console.log('kpCellRender isAdmin', v, k, r)
 
-                            //id
-                            let id = get(r, 'id', '')
-                            // console.log('id', id, k, r)
+                        //     //id
+                        //     let id = get(r, 'id', '')
+                        //     // console.log('id', id, k, r)
 
-                            let t = `
-                                <input type="checkbox" ${v === 'y' ? 'checked' : ''} onclick="$vo.$dg.toggleItemIsVerifiedById('${id}')" ${vo.isEditable ? '' : 'disabled'} />
-                            `
+                        //     let t = `
+                        //         <input type="checkbox" ${v === 'y' ? 'checked' : ''} onclick="$vo.$dg.toggleItemIsVerifiedById('${id}')" ${vo.isEditable ? '' : 'disabled'} />
+                        //     `
 
-                            return t
-                        },
+                        //     return t
+                        // },
                         'isActive': (v, k, r) => {
                             // console.log('kpCellRender isActive', v, k, r)
 
@@ -903,10 +906,23 @@ export default {
                             // console.log('vv', vv)
                             // console.log('vm', vm)
 
-                            // `
+                            //isVerified
+                            let isVerified = vo.$s.getIsVerified(r)
+
+                            //h
+                            let iconColor = isVerified ? 'green' : 'red'
+                            let text = isVerified ? vo.$t('isVerifiedY') : vo.$t('isVerifiedN')
+                            let h = `
+                                <div style="width:90px; display:inline-flex; align-items:center; vertical-align:middle; color:${iconColor}; ">
+                                    <i class="mdi ${isVerified ? 'mdi-check-bold' : 'mdi-close-thick'}"></i>
+                                    <span style="padding-left:2px;">${text}</span>
+                                </div>
+                            `
+
                             let t = `
-                                <div onclick="event.stopPropagation();event.preventDefault();" onmousedown="event.stopPropagation();event.preventDefault();">
-                                    <button style="width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" onclick="$vo.$dg.modifyItemTimeVerifiedById(this,'${vv}','${id}')" ${vo.isEditable ? '' : 'disabled'}>${vm}</button>
+                                <div onclick="event.stopPropagation();event.preventDefault();" onmousedown="event.stopPropagation();event.preventDefault();" style="display:flex; align-items:center;">
+                                    ${h}
+                                    <button style="width:126px; min-width:126px;" onclick="$vo.$dg.modifyItemTimeVerifiedById(this,'${vv}','${id}')" ${vo.isEditable ? '' : 'disabled'}>${vm}</button>
                                 </div>
                             `
 
@@ -930,10 +946,23 @@ export default {
                             // console.log('vv', vv)
                             // console.log('vm', vm)
 
-                            // `
+                            //isExpired
+                            let isExpired = vo.$s.getIsExpired(r)
+
+                            //h
+                            let iconColor = !isExpired ? 'green' : 'red'
+                            let text = isExpired ? vo.$t('isExpiredY') : vo.$t('isExpiredN')
+                            let h = `
+                                <div style="width:90px; display:inline-flex; align-items:center; vertical-align:middle; color:${iconColor}; ">
+                                    <i class="mdi ${!isExpired ? 'mdi-check-bold' : 'mdi-close-thick'}"></i>
+                                    <span style="padding-left:2px;">${text}</span>
+                                </div>
+                            `
+
                             let t = `
-                                <div onclick="event.stopPropagation();event.preventDefault();" onmousedown="event.stopPropagation();event.preventDefault();">
-                                    <button style="width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" onclick="$vo.$dg.modifyItemTimeExpiredById(this,'${vv}','${id}')" ${vo.isEditable ? '' : 'disabled'}>${vm}</button>
+                                <div onclick="event.stopPropagation();event.preventDefault();" onmousedown="event.stopPropagation();event.preventDefault();" style="display:flex; align-items:center;">
+                                    ${h}
+                                    <button style="width:126px; min-width:126px;" onclick="$vo.$dg.modifyItemTimeExpiredById(this,'${vv}','${id}')" ${vo.isEditable ? '' : 'disabled'}>${vm}</button>
                                 </div>
                             `
 
@@ -957,10 +986,23 @@ export default {
                             // console.log('vv', vv)
                             // console.log('vm', vm)
 
-                            // `
+                            //isBlocked
+                            let isBlocked = vo.$s.getIsBlocked(r)
+
+                            //h
+                            let iconColor = !isBlocked ? 'green' : 'red'
+                            let text = isBlocked ? vo.$t('isBlockedY') : vo.$t('isBlockedN')
+                            let h = `
+                                <div style="width:90px; display:inline-flex; align-items:center; vertical-align:middle; color:${iconColor}; ">
+                                    <i class="mdi ${!isBlocked ? 'mdi-check-bold' : 'mdi-close-thick'}"></i>
+                                    <span style="padding-left:2px;">${text}</span>
+                                </div>
+                            `
+
                             let t = `
-                                <div onclick="event.stopPropagation();event.preventDefault();" onmousedown="event.stopPropagation();event.preventDefault();">
-                                    <button style="width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" onclick="$vo.$dg.modifyItemTimeBlockedById(this,'${vv}','${id}')" ${vo.isEditable ? '' : 'disabled'}>${vm}</button>
+                                <div onclick="event.stopPropagation();event.preventDefault();" onmousedown="event.stopPropagation();event.preventDefault();" style="display:flex; align-items:center;">
+                                    ${h}
+                                    <button style="width:126px; min-width:126px;" onclick="$vo.$dg.modifyItemTimeBlockedById(this,'${vv}','${id}')" ${vo.isEditable ? '' : 'disabled'}>${vm}</button>
                                 </div>
                             `
 
@@ -1129,15 +1171,15 @@ export default {
 
         },
 
-        toggleItemIsVerifiedById: function(id) {
-            // console.log('toggleItemIsVerifiedById', id)
+        // toggleItemIsVerifiedById: function(id) {
+        //     // console.log('toggleItemIsVerifiedById', id)
 
-            let vo = this
+        //     let vo = this
 
-            //toggleItemByKeyAndId
-            vo.toggleItemByKeyAndId('isVerified', id)
+        //     //toggleItemByKeyAndId
+        //     vo.toggleItemByKeyAndId('isVerified', id)
 
-        },
+        // },
 
         toggleItemIsActiveById: function(id) {
             // console.log('toggleItemIsActiveById', id)
