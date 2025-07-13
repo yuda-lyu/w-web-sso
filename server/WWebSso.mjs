@@ -879,11 +879,11 @@ function WWebSso(WOrm, url, db, pathSettings) {
         apiName: 'api',
         apis,
         tokenType: 'Bearer',
-        verifyConn: async ({ apiType, authorization, headers, query }) => {
+        verifyConn: async ({ apiType, authorization, query, headers, req }) => {
             // console.log('headers', headers)
 
             //getIpByHeaders
-            let ip = pp.getIpByHeaders(headers)
+            let ip = pp.getIpByHeaders(req)
             // console.log('ip', ip)
 
             //origin
@@ -925,7 +925,6 @@ function WWebSso(WOrm, url, db, pathSettings) {
             if (!b) {
                 console.log(`block ip[${ip}]`) //[tag:測試:顯示被封鎖ip]
             }
-            // b = true //強制通行
 
             return b
         },

@@ -394,12 +394,64 @@ function proc(woItems, p, opt = {}) {
 
 
     //getIpByHeaders
-    let getIpByHeaders = (headers) => {
+    let getIpByHeaders = (req) => {
+
+        //本機local開發階段
+        // 請求直接從瀏覽器送到server, 沒有Proxy會沒有x-forwarded-for
+        // 須靠 req.socket.remoteAddress 或 req.info.remoteAddress 來取得真實IP, 通常是 127.0.0.1 或 ::1
+
+        //外網直接連入(無Proxy)
+        // 例如用ngrok, 公網IP, 或直接暴露port, 請求會直接到達server不會有x-forwarded-for
+        // 須靠 req.socket.remoteAddress 取得用戶真實IP, 例如 123.45.xxx.xxx
+
+        //外網經Proxy(如Nginx, Cloudflare, 或其他反向代理)
+        // 通常為生產環境, 真實IP會寫入x-forwarded-for
+        // 須優先讀x-forwarded-for, 再fallback到remoteAddress
+
+        //headers
+        let headers = get(req, 'headers')
+
+        //ip
+        let ip = ''
+
         //x-forwarded-for, 內容為client, proxy1, proxy2,...要取第1個
-        let c = get(headers, 'x-forwarded-for', '')
-        let s = sep(c, ',')
-        let ip = get(s, 0, '')
-        ip = trim(ip)
+        if (!isestr(ip)) {
+            let c = get(headers, 'x-forwarded-for', '')
+            let s = sep(c, ',')
+            ip = get(s, 0, '')
+            ip = trim(ip)
+        }
+
+        //info.remoteAddress
+        if (!isestr(ip)) {
+            if (req && req.info && req.info.remoteAddress) {
+                ip = req.info.remoteAddress
+                ip = trim(ip)
+            }
+        }
+
+        //socket.remoteAddress
+        if (!isestr(ip)) {
+            if (req && req.socket && req.socket.remoteAddress) {
+                ip = req.socket.remoteAddress
+                ip = trim(ip)
+            }
+        }
+
+        //connection.remoteAddress
+        if (!isestr(ip)) {
+            if (req && req.connection && req.connection.remoteAddress) {
+                ip = req.connection.remoteAddress
+                ip = trim(ip)
+            }
+        }
+
+        //logshow
+        if (!isestr(ip)) {
+            console.log('headers', headers)
+            console.log('can not get ip of user')
+        }
+
         return ip
     }
 
