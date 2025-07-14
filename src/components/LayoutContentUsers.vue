@@ -284,7 +284,6 @@ export default {
                 'from',
                 'redir',
                 'isAdmin',
-                // 'isVerified',
                 'timeVerified',
                 'timeExpired',
                 'timeBlocked',
@@ -303,7 +302,6 @@ export default {
                 'from',
                 'redir',
                 'isAdmin',
-                // 'isVerified',
                 'timeVerified',
                 'timeExpired',
                 'timeBlocked',
@@ -322,7 +320,6 @@ export default {
                 'from',
                 'redir',
                 'isAdmin',
-                // 'isVerified',
                 'timeVerified',
                 'timeExpired',
                 'timeBlocked',
@@ -611,7 +608,6 @@ export default {
                 'from': vo.$t('from'),
                 'redir': vo.$t('redir'),
                 'isAdmin': vo.$t('isAdmin'),
-                // 'isVerified': vo.$t('isVerified'),
                 'timeVerified': vo.$t('userTimeVerified'),
                 'timeExpired': vo.$t('userTimeExpired'),
                 'timeBlocked': vo.$t('userTimeBlocked'),
@@ -727,17 +723,9 @@ export default {
                     },
                     defHeadMinWidth: 150,
                     kpHeadWidth: {
-                        // 'name': isnum(vo.widthUsersName) ? cdbl(vo.widthUsersName) : 200,
-                        // 'email': isnum(vo.widthUsersEmail) ? cdbl(vo.widthUsersEmail) : 300,
-                        // 'description': isnum(vo.widthUsersDescription) ? cdbl(vo.widthUsersDescription) : 300,
-                        // 'cgrups': 300,
                         'timeVerified': 250,
                         'timeExpired': 250,
                         'timeBlocked': 250,
-                        // 'isAdmin': 100,
-                        // 'isActive': 100,
-                        // 'timeCreate': 220,
-                        // 'timeUpdate': 220,
                     },
                     kpHeadFilterType: {
                         'id': 'text',
@@ -750,7 +738,6 @@ export default {
                         'from': 'text',
                         'redir': 'text',
                         'isAdmin': 'text',
-                        // 'isVerified': 'text',
                         'timeVerified': 'text',
                         'timeExpired': 'text',
                         'timeBlocked': 'text',
@@ -862,19 +849,6 @@ export default {
 
                             return t
                         },
-                        // 'isVerified': (v, k, r) => {
-                        //     // console.log('kpCellRender isAdmin', v, k, r)
-
-                        //     //id
-                        //     let id = get(r, 'id', '')
-                        //     // console.log('id', id, k, r)
-
-                        //     let t = `
-                        //         <input type="checkbox" ${v === 'y' ? 'checked' : ''} onclick="$vo.$dg.toggleItemIsVerifiedById('${id}')" ${vo.isEditable ? '' : 'disabled'} />
-                        //     `
-
-                        //     return t
-                        // },
                         'isActive': (v, k, r) => {
                             // console.log('kpCellRender isActive', v, k, r)
 
@@ -1170,16 +1144,6 @@ export default {
             vo.toggleItemByKeyAndId('isAdmin', id)
 
         },
-
-        // toggleItemIsVerifiedById: function(id) {
-        //     // console.log('toggleItemIsVerifiedById', id)
-
-        //     let vo = this
-
-        //     //toggleItemByKeyAndId
-        //     vo.toggleItemByKeyAndId('isVerified', id)
-
-        // },
 
         toggleItemIsActiveById: function(id) {
             // console.log('toggleItemIsActiveById', id)

@@ -309,7 +309,7 @@ let kpLang = {
     },
     userTimeVerified: {
         eng: `Verified time`,
-        cht: `帳號驗證時間`,
+        cht: `帳號驗證狀態與時間`,
     },
     isVerifiedWaiting: {
         eng: `Waiting for verification`,
@@ -330,7 +330,7 @@ let kpLang = {
     },
     userTimeExpired: {
         eng: `Expired time`,
-        cht: `帳號過期時間`,
+        cht: `帳號過期狀態與時間`,
     },
     isExpiredDeny: {
         eng: `Account login prohibited`,
@@ -355,7 +355,7 @@ let kpLang = {
     },
     userTimeBlocked: {
         eng: `Blocked time`,
-        cht: `帳號封鎖時間`,
+        cht: `帳號封鎖狀態與時間`,
     },
     isBlockedNormalStatus: {
         eng: `Normal status`,
