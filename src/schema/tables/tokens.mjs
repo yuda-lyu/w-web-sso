@@ -1,6 +1,6 @@
 import map from 'lodash-es/map.js'
 import keys from 'lodash-es/keys.js'
-import genID from 'wsemi/src/genID.mjs'
+import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import dtmapping from 'wsemi/src/dtmapping.mjs'
 import dtpick from 'wsemi/src/dtpick.mjs'
 import nowms2str from 'wsemi/src/nowms2str.mjs'
@@ -47,8 +47,8 @@ let settings = {
 
 let funNew = (ndata = {}) => {
     let o = dtmapping(ndata, keys(settings))
-    o.id = `${now2strp()}-${genID()}`
-    o.token = `${now2strp()}-${genID()}`
+    o.id = `${genIDSeq()}`
+    o.token = `${genIDSeq()}`
     o.timeCreate = nowms2str()
     o.timeEnd = ot().add(30, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ') //預設30min, 可由創建處再依照設定更新
     o.timeUpdate = o.timeCreate

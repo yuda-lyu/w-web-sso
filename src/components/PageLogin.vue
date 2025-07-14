@@ -124,7 +124,11 @@
         </div>
 
         <div style="position:absolute; top:10px; right:10px;">
-            <div style="_white-space:nowrap">
+
+            <div
+                style="white-space:nowrap;"
+                v-if="showLangSelect"
+            >
                 <WTextSelect
                     style="width:100px;"
                     :items="keysLang"
@@ -139,6 +143,7 @@
                     </template>
                 </WTextSelect>
             </div>
+
         </div>
 
     </div>
@@ -195,6 +200,24 @@ export default {
 
         }
     },
+    mounted: function() {
+        // console.log('mounted')
+
+        let vo = this
+
+        //firstSetting
+        if (vo.firstSetting) {
+            // console.log('webInfor', vo.webInfor)
+            let showLanguage = get(vo, 'webInfor.showLanguage', '')
+            // console.log('showLanguage', showLanguage)
+            vo.showLangSelect = showLanguage === 'y'
+            let language = get(vo, 'webInfor.language', '')
+            // console.log('language', language)
+            vo.$ui.setLang(language, 'layout mounted')
+            vo.firstSetting = false
+        }
+
+    },
     computed: {
 
         webName: {
@@ -214,14 +237,19 @@ export default {
             // },
         },
 
+        webInfor: function() {
+            let wi = get(this, `$store.state.webInfor`)
+            return wi
+        },
+
         webLogo: function() {
             let vo = this
-            return get(vo, `$store.state.webInfor.webLogo`, '')
+            return get(vo, `webInfor.webLogo`, '')
         },
 
         webBackgoundGradientColors: function() {
             let vo = this
-            return get(vo, `$store.state.webInfor.webBackgoundGradientColors`, [])
+            return get(vo, `webInfor.webBackgoundGradientColors`, [])
         },
 
         c1: function() {

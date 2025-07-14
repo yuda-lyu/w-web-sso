@@ -1,6 +1,6 @@
 import map from 'lodash-es/map.js'
 import keys from 'lodash-es/keys.js'
-import genID from 'wsemi/src/genID.mjs'
+import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import dtmapping from 'wsemi/src/dtmapping.mjs'
 import dtpick from 'wsemi/src/dtpick.mjs'
 import nowms2str from 'wsemi/src/nowms2str.mjs'
@@ -90,7 +90,7 @@ let settings = {
 
 let funNew = (ndata = {}) => {
     let o = dtmapping(ndata, keys(settings))
-    o.id = `${now2strp()}-${genID()}`
+    o.id = `${genIDSeq()}`
     o.timeCreate = nowms2str()
     // o.userId = o.userId
     o.userIdUpdate = o.userId

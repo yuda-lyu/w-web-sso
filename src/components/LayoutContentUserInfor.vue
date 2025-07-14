@@ -859,7 +859,7 @@ export default {
 
         //         //u
         //         let u = {
-        //             id: genID(),
+        //             id: genIDSeq(),
         //             name: vo.$t('newUser'),
         //             from: '',
         //             isAdmin: 'n',
