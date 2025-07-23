@@ -7,7 +7,7 @@ import ispm from 'wsemi/src/ispm.mjs'
 
 
 async function getUserByUserId(url, tokenSelf, userIdTar, opt = {}) {
-    //url: http://localhost:11007/api/getSsoUserInfor
+    //url: http://localhost:11007/api/getSsoUserInfor?token={sysToken}&key=userId&value={userId}
     let errTemp = null
 
     //check
@@ -25,7 +25,9 @@ async function getUserByUserId(url, tokenSelf, userIdTar, opt = {}) {
     let funConvertUser = get(opt, 'funConvertUser')
 
     //url
-    url = `${url}?token={sysToken}&key=userId&value={userId}`
+    if (url.indexOf('token={sysToken}') < 0 && url.indexOf('key=userId') < 0 && url.indexOf('value={userId}') < 0) {
+        return Promise.reject(`no 'token={sysToken}', 'key=userId', 'value={userId}' in url`)
+    }
     url = url.replaceAll('{sysToken}', tokenSelf) //系統介接用ssoToken
     url = url.replaceAll('{userId}', userIdTar)
     // console.log('getUserByUserId: url', url)

@@ -9,7 +9,7 @@ import pmSeries from 'wsemi/src/pmSeries.mjs'
 
 
 async function getUsersByToken(url, tokenSelf, opt = {}) {
-    //url: http://localhost:11007/api/getSsoUsersList
+    //url: http://localhost:11007/api/getSsoUsersList?token={sysToken}
     let errTemp = null
 
     //check
@@ -24,7 +24,9 @@ async function getUsersByToken(url, tokenSelf, opt = {}) {
     let funConvertUser = get(opt, 'funConvertUser')
 
     //url
-    url = `${url}?token={sysToken}`
+    if (url.indexOf('token={sysToken}') < 0) {
+        return Promise.reject(`no 'token={sysToken}' in url`)
+    }
     url = url.replaceAll('{sysToken}', tokenSelf) //系統介接用ssoToken
     // console.log('getUsersByToken: url', url)
 
