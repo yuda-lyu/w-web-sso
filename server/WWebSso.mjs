@@ -519,13 +519,13 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         return Promise.reject(`invalid ${key} from inp`)
     //     }
 
-    //     //resave
-    //     inp = {
+    //     //r
+    //     let r = {
     //         from,
     //         [key]: vs,
     //     }
 
-    //     return inp
+    //     return r
     // }
 
 

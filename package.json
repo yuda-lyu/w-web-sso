@@ -1,6 +1,6 @@
 {
   "name": "w-web-sso",
-  "version": "1.0.21",
+  "version": "1.0.22",
   "main": "dist/w-web-sso.umd.js",
   "dependencies": {
     "@mdi/js": "^7.4.47",
@@ -12,8 +12,7 @@
     "w-serv-hapi": "^1.0.60",
     "w-serv-orm": "^1.0.29",
     "w-syslog": "^1.0.6",
-    "w-ui-loginout": "^1.0.9",
-    "wsemi": "^1.8.15"
+    "wsemi": "^1.8.16"
   },
   "devDependencies": {
     "@vue/cli-plugin-babel": "^5.0.8",
