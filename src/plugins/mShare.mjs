@@ -13,12 +13,6 @@ import sep from 'wsemi/src/sep.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
 import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
-import haskey from 'wsemi/src/haskey.mjs'
-import composeToTree from 'wsemi/src/composeToTree.mjs'
-
-
-// //dlm
-// let dlm = '/'
 
 
 function getNameNew(rows, key = 'name', nameBase = '', nameExt = '') {
@@ -339,6 +333,29 @@ function getIsActive(v) {
 }
 
 
+function checkUserBasic(u) {
+    //須保留, 供內外部調用
+    let b1 = getIsVerified(u) //須已驗證
+    let b2 = !getIsExpired(u) //不能過期
+    let b3 = !getIsBlocked(u) //不能封鎖中
+    let b4 = getIsActive(u) //須有效
+    let b = b1 && b2 && b3 && b4
+    return b
+}
+
+
+function checkUserAdmin(u) {
+    //須保留, 供內外部調用
+    let b1 = getIsVerified(u) //須已驗證
+    let b2 = !getIsExpired(u) //不能過期
+    let b3 = !getIsBlocked(u) //不能封鎖中
+    let b4 = getIsAdmin(u) //須為系統管理員
+    let b5 = getIsActive(u) //須有效
+    let b = b1 && b2 && b3 && b4 && b5
+    return b
+}
+
+
 export {
     getNameNew,
     // getAllBlocks,
@@ -351,5 +368,7 @@ export {
     getIsBlocked,
     getIsEnded,
     getIsAdmin,
-    getIsActive
+    getIsActive,
+    checkUserBasic,
+    checkUserAdmin
 }

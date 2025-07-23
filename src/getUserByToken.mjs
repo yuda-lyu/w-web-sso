@@ -12,13 +12,13 @@ async function getUserByToken(url, tokenSelf, tokenTar, opt = {}) {
 
     //check
     if (!isestr(url)) {
-        throw new Error('invalid url')
+        return Promise.reject('invalid url')
     }
     if (!isestr(tokenSelf)) {
-        throw new Error('invalid tokenSelf')
+        return Promise.reject('invalid tokenSelf')
     }
     if (!isestr(tokenTar)) {
-        throw new Error('invalid tokenTar')
+        return Promise.reject('invalid tokenTar')
     }
 
     //funConvertUser
@@ -73,13 +73,22 @@ async function getUserByToken(url, tokenSelf, tokenTar, opt = {}) {
         return Promise.reject(`no user data by url[${url}]`)
     }
 
-    //funConvertUser
+    //check
     if (isfun(funConvertUser)) {
+
+        //funConvertUser
         u = funConvertUser(u)
         if (ispm(u)) {
             u = await u
         }
         // console.log('getUserByToken u(funConvertUser)', u)
+
+        //check
+        if (!iseobj(u)) {
+            console.log(`no user data after funConvertUser`)
+            return Promise.reject(`no user data after funConvertUser`)
+        }
+
     }
 
     return u

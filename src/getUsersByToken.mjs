@@ -2,6 +2,7 @@ import axios from 'axios'
 import get from 'lodash-es/get.js'
 import size from 'lodash-es/size.js'
 import isestr from 'wsemi/src/isestr.mjs'
+import iseobj from 'wsemi/src/iseobj.mjs'
 import isfun from 'wsemi/src/isfun.mjs'
 import ispm from 'wsemi/src/ispm.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
@@ -13,10 +14,10 @@ async function getUsersByToken(url, tokenSelf, opt = {}) {
 
     //check
     if (!isestr(url)) {
-        throw new Error('invalid url')
+        return Promise.reject('invalid url')
     }
     if (!isestr(tokenSelf)) {
-        throw new Error('invalid tokenSelf')
+        return Promise.reject('invalid tokenSelf')
     }
 
     //funConvertUser
@@ -70,13 +71,22 @@ async function getUsersByToken(url, tokenSelf, opt = {}) {
         return Promise.reject(`no users data by url[${url}]`)
     }
 
-    //funConvertUser
+    //check
     if (isfun(funConvertUser)) {
         us = await pmSeries(us, async(u) => {
+
+            //funConvertUser
             u = funConvertUser(u)
             if (ispm(u)) {
                 u = await u
             }
+
+            //check
+            if (!iseobj(u)) {
+                console.log(`no user data after funConvertUser`)
+                return Promise.reject(`no user data after funConvertUser`)
+            }
+
             return u
         })
         // console.log('getUsersByToken us(funConvertUser)', us)
