@@ -7,9 +7,10 @@ import mapValues from 'lodash-es/mapValues.js'
 import merge from 'lodash-es/merge.js'
 import genPm from 'wsemi/src/genPm.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
-import randomIntRange from 'wsemi/src/randomIntRange.mjs'
+// import randomIntRange from 'wsemi/src/randomIntRange.mjs'
 import fsTreeFolder from 'wsemi/src/fsTreeFolder.mjs'
 import fsBuildReadStreamText from 'wsemi/src/fsBuildReadStreamText.mjs'
+
 
 async function staIp(timeLength = 7, timeInterval = 'hr', opt = {}) {
 

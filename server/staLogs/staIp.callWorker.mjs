@@ -1,6 +1,7 @@
 import { Worker } from 'worker_threads'
 import genPm from 'wsemi/src/genPm.mjs'
 
+
 async function staIp(timeLength = 7, timeInterval = 'hr', opt = {}) {
     let pm = genPm()
 
