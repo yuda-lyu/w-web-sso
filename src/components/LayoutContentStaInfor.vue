@@ -100,6 +100,13 @@
                                     v-if="optLogin"
                                 ></WEchartsVueDyn>
 
+                                <div
+                                    style="padding:0px; font-size:0.8rem; color:#777;"
+                                    v-else
+                                >
+                                    {{$t('waitingData')}}
+                                </div>
+
                             </div>
 
                             <!-- 金鑰使用頻率區塊 -->
@@ -126,6 +133,13 @@
                                     :options="optToken"
                                     v-if="optToken"
                                 ></WEchartsVueDyn>
+
+                                <div
+                                    style="padding:0px; font-size:0.8rem; color:#777;"
+                                    v-else
+                                >
+                                    {{$t('waitingData')}}
+                                </div>
 
                                 <!-- 金鑰對應使用者用量統計 -->
                                 <div v-if="tokenUsageSummary.length > 0" class="mt-4">
@@ -190,6 +204,13 @@
                                     :options="optIp"
                                     v-if="optIp"
                                 ></WEchartsVueDyn>
+
+                                <div
+                                    style="padding:0px; font-size:0.8rem; color:#777;"
+                                    v-else
+                                >
+                                    {{$t('waitingData')}}
+                                </div>
 
                                 <!-- IP 使用量統計 -->
                                 <div v-if="ipUsageSummary.length > 0" class="mt-4">
@@ -303,7 +324,7 @@ import size from 'lodash-es/size.js'
 import keys from 'lodash-es/keys.js'
 import groupBy from 'lodash-es/groupBy.js'
 import sumBy from 'lodash-es/sumBy.js'
-import cloneDeep from 'lodash-es/cloneDeep.js'
+// import cloneDeep from 'lodash-es/cloneDeep.js'
 import omit from 'lodash-es/omit.js'
 import reduce from 'lodash-es/reduce.js'
 import toPairs from 'lodash-es/toPairs.js'
@@ -313,6 +334,7 @@ import isearr from 'wsemi/src/isearr.mjs'
 import strright from 'wsemi/src/strright.mjs'
 import haskey from 'wsemi/src/haskey.mjs'
 import debounce from 'wsemi/src/debounce.mjs'
+// import delay from 'wsemi/src/delay.mjs'
 import WEchartsVueDyn from 'w-component-vue/src/components/WEchartsVueDyn.vue'
 
 
