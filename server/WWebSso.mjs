@@ -616,16 +616,11 @@ function WWebSso(WOrm, url, db, pathSettings) {
 
     //apis
     let apis = [
+
+        //sso不使用w-ui-loginout
         // {
         //     method: 'GET',
-        //     path: '/api/someAPI',
-        //     handler: async function (req, res) {
-
-        //         // //token
-        //         // let token = get(req, 'query.token', '')
-
-        //         return 'someAPI'
-        //     },
+        //     path: '/api/getUserByToken', //未登入主頁時需先檢測token, getUserByToken為w-ui-loginout預設值, 若要更改兩邊須同時修改
         // },
 
         {
