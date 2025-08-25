@@ -1,4 +1,3 @@
-
 import WSyslog from 'w-syslog/src/WSyslog.mjs'
 
 let srlog = WSyslog({
