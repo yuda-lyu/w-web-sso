@@ -1,4 +1,5 @@
 module.exports = {
+    productionSourceMap: false, //不產出map檔
     lintOnSave: false, //禁止eslint-loader於編譯時檢查語法
     devServer: {
         proxy: {
