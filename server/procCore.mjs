@@ -33,10 +33,9 @@ import cache from 'wsemi/src/cache.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
 import hashPassword from './hashPassword.mjs'
-import srlog from './srlog.mjs'
 
 
-function proc(woItems, procOrm, { salt, minExpired }) {
+function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
 
     //_getGenUserByKV
@@ -426,7 +425,7 @@ function proc(woItems, procOrm, { salt, minExpired }) {
         let b = await _checkTokenByObj(tk, opt)
 
         //info
-        srlog.info({ event: 'fun-checkToken', token, userId, res: b })
+        srLog.info({ event: 'fun-checkToken', token, userId, res: b })
 
         //logshow
         if (!b) {
@@ -623,7 +622,7 @@ function proc(woItems, procOrm, { salt, minExpired }) {
         }
 
         //info
-        srlog.info({ event: 'fun-logout', token, userId })
+        srLog.info({ event: 'fun-logout', token, userId })
 
         return true
     }

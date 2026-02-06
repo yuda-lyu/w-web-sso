@@ -46,4 +46,12 @@
     numForIpCallApi: 12000, //假設每ip每秒2次, 10分鐘須10*60*2=1200, 同網段ip使用者共10位, 須12000
     minBlockForIpCallApi: 30,
 
+    logFd: './_logs',
+    logInterval: 'hr',
+
+    'emSrcEmail': 'admin.example@gmail.com',
+    'emSrcPW': '{pw}', //bbb
+    'emSrcHost': 'smtp.gmail.com',
+    'emSrcPort': 465,
+
 }
