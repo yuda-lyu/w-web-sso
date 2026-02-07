@@ -10,6 +10,10 @@
 
             <Layout v-if="viewState==='backstage'"></Layout>
 
+            <PageUser v-if="viewState==='user'"></PageUser>
+
+
+
         </template>
 
         <div
@@ -41,6 +45,8 @@ import CheckYes from './components/Common/CheckYes.vue'
 // import LayoutState from './components/LayoutState.vue'
 import PageLogin from './components/PageLogin.vue'
 import Layout from './components/Layout.vue'
+import PageUser from './components/PageUser.vue'
+
 // import VeUser from './components/VeUser.vue'
 
 
@@ -52,6 +58,8 @@ export default {
         // LayoutState,
         PageLogin,
         Layout,
+        PageUser,
+
         // VeUser,
     },
     data: function() {
@@ -89,6 +97,8 @@ export default {
             //view
             let view = vo.$ui.getUrlView()
             // console.log('view', view)
+
+
 
             //autoLogin
             vo.$ui.autoLogin({ useRedir: view === 'login' })

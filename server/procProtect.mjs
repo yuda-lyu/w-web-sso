@@ -55,7 +55,7 @@ function proc(woItems, p, opt = {}) {
 
         //check
         if (!iseobj(u)) {
-            return Promise.reject(`invalid u`)
+            throw new Error(`invalid u`)
         }
 
         //timeBlocked
@@ -86,7 +86,7 @@ function proc(woItems, p, opt = {}) {
             return false //未有封鎖時間, 代表未封鎖
         }
 
-        return Promise.reject(`invalid timeBlocked[${timeBlocked}]`)
+        throw new Error(`invalid timeBlocked[${timeBlocked}]`)
     }
 
 
@@ -155,7 +155,7 @@ function proc(woItems, p, opt = {}) {
 
         //check
         if (blocked) {
-            return Promise.reject(`account blocked`)
+            throw new Error(`account blocked`)
         }
 
         //loginByAccountAndPassword
@@ -198,7 +198,7 @@ function proc(woItems, p, opt = {}) {
         if (r.state === 'success') {
             return r.msg
         }
-        return Promise.reject(r.msg)
+        throw new Error(r.msg)
     }
 
 
@@ -273,7 +273,7 @@ function proc(woItems, p, opt = {}) {
         if (!isestr(userId)) {
             console.log('token', token)
             console.log('t', t)
-            return Promise.reject(`invalid userId`)
+            throw new Error(`invalid userId`)
         }
 
         //getGenUserByUserId
@@ -461,7 +461,7 @@ function proc(woItems, p, opt = {}) {
 
         //check
         if (!iseobj(oip)) {
-            return Promise.reject(`invalid oip`)
+            throw new Error(`invalid oip`)
         }
 
         //timeBlocked
@@ -492,7 +492,7 @@ function proc(woItems, p, opt = {}) {
             return false //未有封鎖時間, 代表未封鎖
         }
 
-        return Promise.reject(`invalid timeBlocked[${timeBlocked}]`)
+        throw new Error(`invalid timeBlocked[${timeBlocked}]`)
     }
 
 
@@ -502,7 +502,7 @@ function proc(woItems, p, opt = {}) {
 
         //check
         if (!isestr(ip)) {
-            return Promise.reject(`invalid ip`)
+            throw new Error(`invalid ip`)
         }
 
         //getIpByKV
@@ -524,7 +524,7 @@ function proc(woItems, p, opt = {}) {
 
         //check
         if (errTemp !== null) {
-            return Promise.reject(errTemp)
+            throw new Error(errTemp)
         }
 
         //check
@@ -568,7 +568,7 @@ function proc(woItems, p, opt = {}) {
 
         //check
         if (errTemp !== null) {
-            return Promise.reject(errTemp)
+            throw new Error(errTemp)
         }
 
         //check
@@ -594,7 +594,7 @@ function proc(woItems, p, opt = {}) {
 
             //check
             if (errTemp !== null) {
-                return Promise.reject(errTemp)
+                throw new Error(errTemp)
             }
 
             return //跳出

@@ -237,6 +237,11 @@ export default {
             // },
         },
 
+        lang: function() {
+            let vo = this
+            return get(vo, '$store.state.lang', '')
+        },
+
         webInfor: function() {
             let wi = get(this, `$store.state.webInfor`)
             return wi
@@ -285,11 +290,6 @@ export default {
         webKey: function() {
             let vo = this
             return get(vo, '$store.state.webInfor.webKey', '')
-        },
-
-        lang: function() {
-            let vo = this
-            return get(vo, '$store.state.lang', '')
         },
 
         hasAcPw: function() {

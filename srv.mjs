@@ -22,6 +22,8 @@ instWWebSso.on('error', (err) => {
 //http://localhost:8080/?token=sys => 網址給予token但不使用, 登入後轉至指定頁
 //http://localhost:8080/?view=backstage => 登入後轉至後台
 //http://localhost:8080/?view=backstage&token=sys => 網址給予token但不使用, 登入後轉至後台
+//http://localhost:8080/?view=user => 登入後轉至使用者資訊頁
+//http://localhost:8080/?view=user&token=sys => 網址給予token但不使用, 登入後轉至使用者資訊頁
 
 //autoLogin測試
 //http://localhost:8080/ => 無token須轉至登入頁

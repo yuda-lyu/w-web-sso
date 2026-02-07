@@ -13,6 +13,7 @@ import strleft from 'wsemi/src/strleft.mjs'
 import strright from 'wsemi/src/strright.mjs'
 import strdelright from 'wsemi/src/strdelright.mjs'
 import pm2resolve from 'wsemi/src/pm2resolve.mjs'
+import j2o from 'wsemi/src/j2o.mjs'
 import fsIsFolder from 'wsemi/src/fsIsFolder.mjs'
 import fsIsFile from 'wsemi/src/fsIsFile.mjs'
 import replace from 'wsemi/src/replace.mjs'
@@ -249,7 +250,6 @@ function WWebSso(WOrm, url, db, pathSettings) {
         }
     }
 
-
     //params
     let showLanguage = get(opt, 'showLanguage', 'n')
     let language = get(opt, 'language', 'eng')
@@ -281,6 +281,11 @@ function WWebSso(WOrm, url, db, pathSettings) {
 
     //kpLangExt
     let kpLangExt = get(opt, 'kpLangExt', null)
+
+
+    //chpwEmTitle, chpwEmContent
+    let chpwEmTitle = get(opt, 'chpwEmTitle', '')
+    let chpwEmContent = get(opt, 'chpwEmContent', '')
 
 
     //srLog
@@ -335,7 +340,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
 
 
     //procCore, procProtect, procStaInfor
-    let p = procCore(woItems, procOrm, { srLog, salt, minExpired })
+    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chpwEmTitle, chpwEmContent })
     let pp = procProtect(woItems, p, {
         minForAccountLoginFailed,
         numForAccountLoginFailed,
@@ -379,7 +384,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //     if (!iseobj(userSelf)) {
     //         console.log(`token`, token)
     //         console.log(`can not find the user from token`)
-    //         return Promise.reject(`can not find the user from token`)
+    //         throw new Error(`can not find the user from token`)
     //     }
 
     //     //check userSelf
@@ -388,26 +393,26 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         if (!isestr(id)) {
     //             console.log('userSelf', userSelf)
     //             console.log('can not get the userId')
-    //             return Promise.reject(`can not get the userId`)
+    //             throw new Error(`can not get the userId`)
     //         }
     //         let email = get(userSelf, 'email', '')
     //         if (!isestr(email)) {
     //             console.log('userSelf', userSelf)
     //             console.log('can not get the email of user')
-    //             return Promise.reject(`can not get the email of user`)
+    //             throw new Error(`can not get the email of user`)
     //         }
     //         let name = get(userSelf, 'name', '')
     //         if (!isestr(name)) {
     //             console.log('userSelf', userSelf)
     //             console.log('can not get userName')
-    //             return Promise.reject(`can not get userName`)
+    //             throw new Error(`can not get userName`)
     //         }
     //         let isAdmin = get(userSelf, 'isAdmin', '')
     //         if (isAdmin !== 'y' && isAdmin !== 'n') {
     //             console.log('userSelf', userSelf)
     //             console.log('userSelf.isAdmin is not y or n', userSelf.isAdmin)
     //             console.log('can not get the role of user')
-    //             return Promise.reject(`can not get the role of user`)
+    //             throw new Error(`can not get the role of user`)
     //         }
     //     }
 
@@ -420,7 +425,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         console.log('userSelf', userSelf)
     //         console.log('mappingBy', mappingBy)
     //         console.log('can not get the prop of user by mappingBy')
-    //         return Promise.reject(`can not get the prop of user by mappingBy`)
+    //         throw new Error(`can not get the prop of user by mappingBy`)
     //     }
 
     //     //userFind
@@ -433,7 +438,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         console.log('userSelf', userSelf)
     //         console.log('mappingBy', mappingBy)
     //         console.log('can not get the user from sso')
-    //         return Promise.reject(`can not get the user from sso`)
+    //         throw new Error(`can not get the user from sso`)
     //     }
 
     //     //複寫isAdmin
@@ -464,7 +469,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //     if (!b) {
     //         console.log('userSelf', userSelf)
     //         console.log(`user does not have permission`)
-    //         return Promise.reject(`user does not have permission`)
+    //         throw new Error(`user does not have permission`)
     //     }
 
     //     return userSelf
@@ -487,7 +492,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //     if (!b) {
     //         console.log('userSelf', userSelf)
     //         console.log(`user does not have permission`)
-    //         return Promise.reject(`user does not have permission`)
+    //         throw new Error(`user does not have permission`)
     //     }
 
     //     return userSelf
@@ -509,7 +514,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //     if (!iseobj(inp)) {
     //         console.log('inp', inp)
     //         console.log('invalid inp from req')
-    //         return Promise.reject(`invalid inp from req`)
+    //         throw new Error(`invalid inp from req`)
     //     }
 
     //     //from
@@ -520,7 +525,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         console.log('inp', inp)
     //         console.log('from', from)
     //         console.log('invalid from from inp')
-    //         return Promise.reject(`invalid from from inp`)
+    //         throw new Error(`invalid from from inp`)
     //     }
 
 
@@ -532,7 +537,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         console.log('inp', inp)
     //         console.log(key, vs)
     //         console.log(`invalid ${key} from inp`)
-    //         return Promise.reject(`invalid ${key} from inp`)
+    //         throw new Error(`invalid ${key} from inp`)
     //     }
 
     //     //r
@@ -557,7 +562,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         console.log('params', params)
     //         console.log('from', from)
     //         console.log(`invalid from`)
-    //         return Promise.reject(`invalid from`)
+    //         throw new Error(`invalid from`)
     //     }
 
     //     //vs
@@ -569,7 +574,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         console.log('params', params)
     //         console.log(key, vs)
     //         console.log(`invalid ${key}`)
-    //         return Promise.reject(`invalid ${key}`)
+    //         throw new Error(`invalid ${key}`)
     //     }
 
     //     //save from
@@ -798,8 +803,8 @@ function WWebSso(WOrm, url, db, pathSettings) {
                     //callApiByToken
                     pp.callApiByToken(token)
 
-                    //checkTokenAndGetUsersList
-                    let us = await p.checkTokenAndGetUsersList(token)
+                    //getSsoUsersList
+                    let us = await p.checkTokenAndGetUsersList(token, {})
                     // console.log('us', us)
 
                     return us
@@ -858,7 +863,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
                         console.log('token', token)
                         console.log('key', key, 'value', value)
                         console.log(`token does not have permission`)
-                        return Promise.reject(`token does not have permission`)
+                        throw new Error(`token does not have permission`)
                     }
 
                     return userTarget
@@ -950,12 +955,12 @@ function WWebSso(WOrm, url, db, pathSettings) {
                 return getWebInfor()
             },
 
-            checkToken: async(_t, token) => { //sso前端通過$fapi.checkToken調用
+            checkToken: async (_t, token) => { //sso前端通過$fapi.checkToken調用
                 srLog.info({ event: 'kpfun-checkToken', token })
                 let r = await p.checkToken(token)
                 return r
             },
-            refreshToken: async(_t, token) => { //sso前端通過$fapi.refreshToken調用
+            refreshToken: async (_t, token) => { //sso前端通過$fapi.refreshToken調用
                 srLog.info({ event: 'kpfun-refreshToken', token })
                 let r = await p.refreshToken(token)
                 return r
@@ -986,7 +991,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
                 if (iseobj(u)) {
                     return u
                 }
-                return Promise.reject(msg)
+                throw new Error(msg)
             },
             logoutByToken: async (_t, token) => {
                 srLog.info({ event: 'kpfun-logoutByToken', token })
@@ -1005,6 +1010,13 @@ function WWebSso(WOrm, url, db, pathSettings) {
                 //console.log('call getUserInfor...')
                 let r = await p.checkTokenAndGetUserInfor(token, key, value)
                 //console.log('call getUserInfor end')
+                return r
+            },
+            changeUserPassword: async (_t, token, lang, pwOld, pwNew) => {
+                srLog.info({ event: 'kpfun-changeUserPassword', token, lang, pwOld, pwNew })
+                //console.log('call checkTokenAndChangePassword...')
+                let r = await p.checkTokenAndChangePassword(token, lang, pwOld, pwNew)
+                //console.log('call checkTokenAndChangePassword end')
                 return r
             },
 

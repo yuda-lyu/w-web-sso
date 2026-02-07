@@ -331,7 +331,7 @@ function getUrlView() {
     if (view === '') {
         view = 'login'
     }
-    if (view !== 'login' && view !== 'backstage') {
+    if (view !== 'login' && view !== 'backstage' && view !== 'user') {
         console.log(`invalid view[${view}]`)
         view = 'login'
     }
@@ -671,7 +671,7 @@ function logout() {
             //alert
             vo.$alert(vo.$t('failedLogoutForNoWebKey'), { type: 'error' })
 
-            return Promise.reject(`invalid $keyLS`)
+            throw new Error(`invalid $keyLS`)
         }
 
         //key
@@ -684,7 +684,7 @@ function logout() {
 
         //logoutByToken
         await vo.$fapi.logoutByToken(token)
-            .catch(() => {}) //屏蔽伺服器端logout失敗訊息, 避免斷線時無限報錯
+            .catch(() => { }) //屏蔽伺服器端logout失敗訊息, 避免斷線時無限報錯
 
         //setItem, 清空token
         await localStorage.setItem(key, '')

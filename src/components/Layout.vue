@@ -217,6 +217,11 @@ export default {
             return get(vo, `$store.state.userToken`)
         },
 
+        lang: function() {
+            let vo = this
+            return get(vo, `$store.state.lang`, '')
+        },
+
         webInfor: function() {
             let wi = get(this, `$store.state.webInfor`)
             return wi
@@ -242,11 +247,6 @@ export default {
         webLogo: function() {
             let vo = this
             return get(vo, `$store.state.webInfor.webLogo`, '')
-        },
-
-        lang: function() {
-            let vo = this
-            return get(vo, `$store.state.lang`, '')
         },
 
         userSelf: function() {

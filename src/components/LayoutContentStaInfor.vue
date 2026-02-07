@@ -395,11 +395,6 @@ export default {
     },
     computed: {
 
-        webInfor: function() {
-            let wi = get(this, `$store.state.webInfor`)
-            return wi
-        },
-
         userToken: function() {
             let vo = this
             return get(vo, `$store.state.userToken`)
@@ -408,6 +403,11 @@ export default {
         lang: function() {
             let vo = this
             return get(vo, `$store.state.lang`, '')
+        },
+
+        webInfor: function() {
+            let wi = get(this, `$store.state.webInfor`)
+            return wi
         },
 
         changeLang: function() {

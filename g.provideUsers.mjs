@@ -33,7 +33,7 @@ async function provide() {
     // let r = await provideTabs(url, from, rs)
     // console.log('r.msg', r.msg)
 
-    return Promise.reject(`incompleted`)
+    throw new Error(`incompleted`)
 }
 
 provide()

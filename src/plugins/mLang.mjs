@@ -97,6 +97,10 @@ let kpLang = {
         eng: `Close`,
         cht: `關閉`,
     },
+    send: {
+        eng: `Send`,
+        cht: `送出`,
+    },
     cancel: {
         eng: `Cancel`,
         cht: `取消`,
@@ -263,6 +267,11 @@ let kpLang = {
         eng: `System token list`,
         cht: `系統金鑰清單`,
     },
+
+    // invalidToken: {
+    //     eng: 'No valid token',
+    //     cht: '無有效金鑰',
+    // },
 
     failedLoginForNoWebKey: {
         eng: `Can not get the web key`,
@@ -531,6 +540,55 @@ let kpLang = {
         cht: `無法找到使用者數據`,
     },
 
+    userChangePassword: {
+        eng: 'Change Password',
+        cht: '變更密碼',
+    },
+    userChangePasswordOldPassword: {
+        eng: 'Old password',
+        cht: '舊密碼',
+    },
+    userChangePasswordNewPassword: {
+        eng: 'New password',
+        cht: '新密碼',
+    },
+    userChangePasswordConfirmPassword: {
+        eng: 'Confirm password',
+        cht: '確認新密碼',
+    },
+    userChangePasswordForNoOldPassword: {
+        eng: 'Please enter old password',
+        cht: '尚未給予舊密碼',
+    },
+    userChangePasswordForNoNewPassword: {
+        eng: 'Please enter new password',
+        cht: '尚未給予新密碼',
+    },
+    userChangePasswordForNoConfirmPassword: {
+        eng: 'Please enter confirm password',
+        cht: '尚未給予確認密碼',
+    },
+    userChangePasswordNotSame: {
+        eng: 'New password and confirm password do not match',
+        cht: '新密碼與確認密碼不一致',
+    },
+    userChangePasswordSuccess: {
+        eng: 'Password change successful, please log in again.',
+        cht: '密碼變更成功，請使用新密碼重新登入。',
+    },
+    userChangePasswordFail: {
+        eng: 'Password change failed.',
+        cht: '密碼變更失敗',
+    },
+    // msgSendChangePasswordEmailSuccess: {
+    //     eng: 'Verification email sent. Please check your inbox and click the link to change your password.',
+    //     cht: '驗證信已發送，請至信箱收取並點擊連結以變更密碼。',
+    // },
+    // msgSendChangePasswordEmailFail: {
+    //     eng: 'Send failed',
+    //     cht: '發送失敗',
+    // },
+
     token: {
         eng: 'Token',
         cht: '金鑰',
@@ -550,10 +608,6 @@ let kpLang = {
     tokenTimeUpdate: {
         eng: 'End time',
         cht: '金鑰更新時間',
-    },
-    tokenDeleteCheckTokens: {
-        eng: `Delete token(s)`,
-        cht: `刪除勾選金鑰`,
     },
     tokenTimeEmpty: {
         eng: `Invalid time`,

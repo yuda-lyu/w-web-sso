@@ -29,17 +29,19 @@ import pm2resolve from 'wsemi/src/pm2resolve.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
 import waitFun from 'wsemi/src/waitFun.mjs'
 import delay from 'wsemi/src/delay.mjs'
+import now2str from 'wsemi/src/now2str.mjs'
 import cache from 'wsemi/src/cache.mjs'
+import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
 import hashPassword from './hashPassword.mjs'
 
 
-function proc(woItems, procOrm, { srLog, salt, minExpired }) {
+function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chpwEmTitle, chpwEmContent }) {
 
 
     //_getGenUserByKV
-    let _getGenUserByKV = async(keyUser, valueUser, opt = {}) => {
+    let _getGenUserByKV = async (keyUser, valueUser, opt = {}) => {
         let errTemp = null
 
         //deletePassword
@@ -61,7 +63,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             console.log('keyUser', keyUser)
             console.log('valueUser', valueUser)
             console.log(`failed to find user`)
-            return Promise.reject(`failed to find user`)
+            throw new Error(`failed to find user`)
         }
 
         //delete password, 無錯誤取得後即先刪除, 避免調整程式時意外洩漏hash後密碼
@@ -80,7 +82,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             console.log('keyUser', keyUser)
             console.log('valueUser', valueUser)
             console.log(`can not find the user by ${keyUser}`)
-            return Promise.reject(`can not find the user by ${keyUser}`)
+            throw new Error(`can not find the user by ${keyUser}`)
         }
 
         //check
@@ -88,7 +90,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             console.log('keyUser', keyUser)
             console.log('valueUser', valueUser)
             console.log(`duplicate ${keyUser}`)
-            return Promise.reject(`duplicate ${keyUser}`)
+            throw new Error(`duplicate ${keyUser}`)
         }
 
         //u
@@ -100,7 +102,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
 
     //getGenUserByKV
-    let getGenUserByKV = async(keyUser, valueUser) => {
+    let getGenUserByKV = async (keyUser, valueUser) => {
 
         //u
         let u = await _getGenUserByKV(keyUser, valueUser)
@@ -110,7 +112,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
 
     //getGenUserByUserId
-    let getGenUserByUserId = async(userId, opt = {}) => {
+    let getGenUserByUserId = async (userId, opt = {}) => {
 
         //u
         let u = await getGenUserByKV('id', userId, opt)
@@ -125,7 +127,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
 
     //getGenUserByAccount
-    let getGenUserByAccount = async(account, opt = {}) => {
+    let getGenUserByAccount = async (account, opt = {}) => {
 
         //u
         let u = await getGenUserByKV('account', account, opt)
@@ -140,7 +142,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
 
     //getTokenByKV
-    let getTokenByKV = async(keyToken, valueToken) => {
+    let getTokenByKV = async (keyToken, valueToken) => {
         let errTemp = null
 
         //ts
@@ -156,7 +158,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             console.log('keyToken', keyToken)
             console.log('valueToken', valueToken)
             console.log(`failed to find token`)
-            return Promise.reject(`failed to find token`)
+            throw new Error(`failed to find token`)
         }
 
         //nts
@@ -167,7 +169,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             // console.log('keyToken', keyToken)
             // console.log('valueToken', valueToken)
             // console.log(`can not find the token by keyToken[${keyToken}]`)
-            return Promise.reject(`can not find the token by keyToken[${keyToken}]`)
+            throw new Error(`can not find the token by keyToken[${keyToken}]`)
         }
 
         //check
@@ -175,7 +177,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             console.log('keyToken', keyToken)
             console.log('valueToken', valueToken)
             console.log(`duplicate token by keyToken[${keyToken}]`)
-            return Promise.reject(`duplicate token by keyToken[${keyToken}]`)
+            throw new Error(`duplicate token by keyToken[${keyToken}]`)
         }
 
         //t
@@ -187,7 +189,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
 
     //getIpByKV
-    let getIpByKV = async(keyIp, valueIp) => {
+    let getIpByKV = async (keyIp, valueIp) => {
         let errTemp = null
 
         //oips
@@ -203,7 +205,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             console.log('keyIp', keyIp)
             console.log('valueIp', valueIp)
             console.log(`failed to find ip`)
-            return Promise.reject(`failed to find ip`)
+            throw new Error(`failed to find ip`)
         }
 
         //noips
@@ -214,7 +216,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             // console.log('keyIp', keyIp)
             // console.log('valueIp', valueIp)
             // console.log(`can not find the ip by keyIp[${keyIp}]`)
-            return Promise.reject(`can not find the ip by keyIp[${keyIp}]`)
+            throw new Error(`can not find the ip by keyIp[${keyIp}]`)
         }
 
         //check
@@ -222,7 +224,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             console.log('keyIp', keyIp)
             console.log('valueIp', valueIp)
             console.log(`duplicate ip by keyIp[${keyIp}]`)
-            return Promise.reject(`duplicate ip by keyIp[${keyIp}]`)
+            throw new Error(`duplicate ip by keyIp[${keyIp}]`)
         }
 
         //oip
@@ -234,7 +236,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
 
     //loginByAccountAndPassword
-    let loginByAccountAndPassword = async(account, password) => {
+    let loginByAccountAndPassword = async (account, password) => {
 
         //hashPassword
         let passwordTest = hashPassword(password, salt)
@@ -249,7 +251,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
         // if (!iseobj(u)) {
         //     console.log(`account`, account)
         //     console.log(`can not find the user from account`)
-        //     return Promise.reject(`can not find the user from account`)
+        //     throw new Error(`can not find the user from account`)
         // }
 
         //passwordTrue
@@ -258,7 +260,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
         //check
         if (passwordTest !== passwordTrue) {
-            return Promise.reject(`incorrect user account or password`)
+            throw new Error(`incorrect user account or password`)
         }
 
         //userId
@@ -295,7 +297,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
         if (!ispnum(minExpired)) {
             console.log(`minExpired`, minExpired)
             console.log(`invalid minExpired`)
-            return Promise.reject(`invalid minExpired`)
+            throw new Error(`invalid minExpired`)
         }
 
         //t
@@ -322,7 +324,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             console.log(errTemp)
             console.log(`token`, token)
             console.log(`can not create a token from userId`)
-            return Promise.reject(`can not create a token from userId`)
+            throw new Error(`can not create a token from userId`)
         }
 
         return token
@@ -340,7 +342,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             console.log(`tk`, tk)
             console.log(`timeEnd`, timeEnd)
             console.log(`invalid timeEnd`)
-            return Promise.reject(`invalid timeEnd`)
+            throw new Error(`invalid timeEnd`)
         }
 
         //isApp
@@ -404,14 +406,14 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
         if (ntks === 0) {
             console.log(`token`, token)
             console.log(`invalid token`)
-            return Promise.reject(`invalid token`)
+            throw new Error(`invalid token`)
         }
 
         //check
         if (ntks >= 2) {
             console.log(`token`, token)
             console.log(`duplicate tokens`)
-            return Promise.reject(`duplicate tokens`)
+            throw new Error(`duplicate tokens`)
         }
 
         //tk
@@ -453,7 +455,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
         //check
         if (errTemp !== null) {
-            return Promise.reject(errTemp)
+            throw new Error(errTemp)
         }
 
         return true //resolve只回傳true, reject代表無效tk.token與錯誤
@@ -477,7 +479,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
         //check
         if (errTemp !== null) {
-            return Promise.reject(errTemp)
+            throw new Error(errTemp)
         }
 
         return true //resolve只回傳true, reject代表無效token與錯誤
@@ -499,14 +501,14 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
         if (ntks === 0) {
             console.log(`token`, token)
             console.log(`invalid token`)
-            return Promise.reject(`invalid token`)
+            throw new Error(`invalid token`)
         }
 
         //check
         if (ntks >= 2) {
             console.log(`token`, token)
             console.log(`duplicate tokens`)
-            return Promise.reject(`duplicate tokens`)
+            throw new Error(`duplicate tokens`)
         }
 
         //tk
@@ -521,7 +523,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             console.log(`token`, token)
             console.log(`timeEnd`, timeEnd)
             console.log(`invalid timeEnd`)
-            return Promise.reject(`invalid timeEnd`)
+            throw new Error(`invalid timeEnd`)
         }
 
         //tn
@@ -533,7 +535,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             console.log(`tn`, tn)
             console.log(`timeEnd`, timeEnd)
             console.log(`token expired`)
-            return Promise.reject(`token expired`)
+            throw new Error(`token expired`)
         }
 
         //timeEndNew, 依照minExpired(min)更新到期時間
@@ -558,7 +560,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             console.log(errTemp)
             console.log(`token`, token)
             console.log(`can not update timeEnd for token`)
-            return Promise.reject(`can not update timeEnd for token`)
+            throw new Error(`can not update timeEnd for token`)
         }
 
         return timeEndNew
@@ -566,7 +568,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
 
     //logoutByToken
-    let logoutByToken = async(token) => {
+    let logoutByToken = async (token) => {
         let errTemp = null
 
         //tks
@@ -580,14 +582,14 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
         if (ntks === 0) {
             console.log(`token`, token)
             console.log(`invalid token`)
-            return Promise.reject(`invalid token`)
+            throw new Error(`invalid token`)
         }
 
         //check
         if (ntks >= 2) {
             console.log(`token`, token)
             console.log(`duplicate tokens`)
-            return Promise.reject(`duplicate tokens`)
+            throw new Error(`duplicate tokens`)
         }
 
         //tk
@@ -610,7 +612,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             console.log(errTemp)
             console.log(`token`, token)
             console.log(`failed to delete token`)
-            return Promise.reject(`failed to delete token`)
+            throw new Error(`failed to delete token`)
         }
 
         //check
@@ -618,7 +620,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
         if (r !== 1) {
             console.log(`token`, token)
             console.log(`can not delete the token`)
-            return Promise.reject(`can not delete the token`)
+            throw new Error(`can not delete the token`)
         }
 
         //info
@@ -630,25 +632,123 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
     //createUser
     let createUser = async () => {
-    //bbb 待開發createUser
+        //bbb 待開發createUser
     }
 
 
     //modifyUser
     let modifyUser = async () => {
-    //bbb 待開發 modifyUser
+        //bbb 待開發 modifyUser
     }
 
 
     //deleteUser
     let deleteUser = async () => {
-    //bbb 待開發 deleteUser
+        //bbb 待開發 deleteUser
     }
 
 
-    //emailUser
-    let emailUser = async () => {
-    //bbb 待開發 emailUser
+    //checkTokenAndChangePassword
+    let checkTokenAndChangePassword = async (token, lang, oldPassword, newPassword) => {
+
+        //checkToken
+        await checkToken(token)
+
+        //check
+        if (!isestr(lang)) {
+            lang = 'eng'
+        }
+
+        //check oldPassword
+        if (!isestr(oldPassword)) {
+            throw new Error(`invalid oldPassword`)
+        }
+
+        //check newPassword
+        if (!isestr(newPassword)) {
+            throw new Error(`invalid newPassword`)
+        }
+
+        //userId
+        let userId = ''
+        if (true) {
+            //getUserByToken
+            let u = await getUserByToken(token)
+            userId = get(u, 'id', '')
+        }
+
+        //getGenUserByUserId (with password)
+        let u = await _getGenUserByKV('id', userId, { deletePassword: false })
+
+        //passwordTrue
+        let passwordTrue = get(u, 'password', '')
+
+        //hashPassword
+        let passwordTest = hashPassword(oldPassword, salt)
+
+        //check
+        if (passwordTest !== passwordTrue) {
+            throw new Error(`incorrect old password`)
+        }
+
+        //email
+        let email = get(u, 'email', '')
+        if (!isestr(email)) {
+            console.log('token', token)
+            console.log('u', u)
+            throw new Error(`invalid email`)
+        }
+        // console.log('email', email)
+
+        //hash newPassword
+        let passwordNew = hashPassword(newPassword, salt)
+
+        //save
+        await woItems.users.save({
+            id: userId,
+            password: passwordNew,
+        })
+
+        //若已變更密碼, 但寄送email失敗時, 不能報錯中斷流程
+        try {
+
+            //sender
+            let sender = get(webName, lang, '')
+            if (!isestr(sender)) {
+                console.log('webName', webName)
+                console.log('lang', lang)
+                throw new Error(`invalid sender`)
+            }
+
+            //chpwEmTitle
+            let title = get(chpwEmTitle, lang, '')
+            if (!isestr(title)) {
+                console.log('chpwEmTitle', chpwEmTitle)
+                console.log('lang', lang)
+                throw new Error(`invalid title`)
+            }
+
+            //chpwEmContent
+            let content = get(chpwEmContent, lang, '')
+            if (!isestr(content)) {
+                console.log('chpwEmContent', chpwEmContent)
+                console.log('lang', lang)
+                throw new Error(`invalid content`)
+            }
+            content = content.replaceAll('{sender}', sender)
+
+            //send
+            await srEmail.send(sender, title, content, email)
+
+        }
+        catch (err) {
+            console.log(err)
+
+            //error
+            srLog.error({ event: 'fun-changePassword-sendEmail', token, lang, oldPassword, newPassword, err: getErrorMessage(err) })
+
+        }
+
     }
 
 
@@ -711,11 +811,11 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             if (arrHas(woName, ['users'])) { //users可重複name
                 err = ckKey(rows, 'id')
                 if (err !== null) {
-                    return Promise.reject(err)
+                    throw new Error(err)
                 }
                 err = ckKey(rows, 'email')
                 if (err !== null) {
-                    return Promise.reject(err)
+                    throw new Error(err)
                 }
             }
         }
@@ -756,7 +856,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
 
     //getUserByToken
-    let getUserByToken = async(token) => {
+    let getUserByToken = async (token) => {
 
         //tks
         let tks = await woItems.tokens.select({ token })
@@ -769,14 +869,14 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
         if (ntks === 0) {
             console.log(`token`, token)
             console.log(`invalid token`)
-            return Promise.reject(`invalid token`)
+            throw new Error(`invalid token`)
         }
 
         //check
         if (ntks >= 2) {
             console.log(`token`, token)
             console.log(`duplicate tokens`)
-            return Promise.reject(`duplicate tokens`)
+            throw new Error(`duplicate tokens`)
         }
 
         //tk
@@ -811,7 +911,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             if (!isestr(userId)) {
                 console.log(`tk`, tk)
                 console.log(`invalid userId from token`)
-                return Promise.reject(`invalid userId from token`)
+                throw new Error(`invalid userId from token`)
             }
 
             // //timeEnd
@@ -822,7 +922,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
             // if (!istimemsTZ(timeEnd)) {
             //     console.log(`timeEnd`, timeEnd)
             //     console.log(`invalid timeEnd`)
-            //     return Promise.reject(`invalid timeEnd`)
+            //     throw new Error(`invalid timeEnd`)
             // }
 
             //u
@@ -865,7 +965,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
 
     //checkTokenAndGetUserByToken
-    let checkTokenAndGetUserByToken = async(tokenSelf, tokenTarget, opt = {}) => {
+    let checkTokenAndGetUserByToken = async (tokenSelf, tokenTarget, opt = {}) => {
 
         //checkToken
         await checkToken(tokenSelf, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
@@ -1202,13 +1302,13 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
 
     //cleanUsers
-    let cleanUsers = async() => {
+    let cleanUsers = async () => {
 
         //getUsersList
         let us = await getUsersList({})
 
         //clean
-        await pmSeries(us, async(u) => {
+        await pmSeries(us, async (u) => {
 
             //b
             let b1 = !s.getIsBlocked(u) //未封鎖
@@ -1233,7 +1333,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
     //timer, 清理user的timeBlocked
     let lockingForCleanUsers = false
-    setInterval(async() => {
+    setInterval(async () => {
 
         //check
         if (lockingForCleanUsers) {
@@ -1251,13 +1351,13 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
 
     //cleanIps
-    let cleanIps = async() => {
+    let cleanIps = async () => {
 
         //getIpsList
         let oips = await getIpsList({})
 
         //clean
-        await pmSeries(oips, async(oip) => {
+        await pmSeries(oips, async (oip) => {
 
             //b
             let b1 = !s.getIsBlocked(oip) //未封鎖
@@ -1282,7 +1382,7 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
 
     //timer, 清理ip的timeBlocked
     let lockingForCleanIps = false
-    setInterval(async() => {
+    setInterval(async () => {
 
         //check
         if (lockingForCleanIps) {
@@ -1303,6 +1403,8 @@ function proc(woItems, procOrm, { srLog, salt, minExpired }) {
     let p = {
 
         getTokenByKV,
+
+        checkTokenAndChangePassword,
 
         getIpByKV,
 
