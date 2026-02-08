@@ -13,6 +13,7 @@ import ispint from 'wsemi/src/ispint.mjs'
 import isearr from 'wsemi/src/isearr.mjs'
 import ispnum from 'wsemi/src/ispnum.mjs'
 import isbol from 'wsemi/src/isbol.mjs'
+import isUserPW from 'wsemi/src/isUserPW.mjs'
 import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
 import isfun from 'wsemi/src/isfun.mjs'
 import ispm from 'wsemi/src/ispm.mjs'
@@ -37,7 +38,7 @@ import * as s from '../src/plugins/mShare.mjs'
 import hashPassword from './hashPassword.mjs'
 
 
-function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chpwEmTitle, chpwEmContent }) {
+function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpwEmTitle, chpwEmContent }) {
 
 
     //_getGenUserByKV
@@ -63,7 +64,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             console.log('keyUser', keyUser)
             console.log('valueUser', valueUser)
             console.log(`failed to find user`)
-            throw new Error(`failed to find user`)
+            return Promise.reject(`failed to find user`)
         }
 
         //delete password, 無錯誤取得後即先刪除, 避免調整程式時意外洩漏hash後密碼
@@ -82,7 +83,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             console.log('keyUser', keyUser)
             console.log('valueUser', valueUser)
             console.log(`can not find the user by ${keyUser}`)
-            throw new Error(`can not find the user by ${keyUser}`)
+            return Promise.reject(`can not find the user by ${keyUser}`)
         }
 
         //check
@@ -90,7 +91,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             console.log('keyUser', keyUser)
             console.log('valueUser', valueUser)
             console.log(`duplicate ${keyUser}`)
-            throw new Error(`duplicate ${keyUser}`)
+            return Promise.reject(`duplicate ${keyUser}`)
         }
 
         //u
@@ -158,7 +159,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             console.log('keyToken', keyToken)
             console.log('valueToken', valueToken)
             console.log(`failed to find token`)
-            throw new Error(`failed to find token`)
+            return Promise.reject(`failed to find token`)
         }
 
         //nts
@@ -169,7 +170,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             // console.log('keyToken', keyToken)
             // console.log('valueToken', valueToken)
             // console.log(`can not find the token by keyToken[${keyToken}]`)
-            throw new Error(`can not find the token by keyToken[${keyToken}]`)
+            return Promise.reject(`can not find the token by keyToken[${keyToken}]`)
         }
 
         //check
@@ -177,7 +178,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             console.log('keyToken', keyToken)
             console.log('valueToken', valueToken)
             console.log(`duplicate token by keyToken[${keyToken}]`)
-            throw new Error(`duplicate token by keyToken[${keyToken}]`)
+            return Promise.reject(`duplicate token by keyToken[${keyToken}]`)
         }
 
         //t
@@ -205,7 +206,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             console.log('keyIp', keyIp)
             console.log('valueIp', valueIp)
             console.log(`failed to find ip`)
-            throw new Error(`failed to find ip`)
+            return Promise.reject(`failed to find ip`)
         }
 
         //noips
@@ -216,7 +217,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             // console.log('keyIp', keyIp)
             // console.log('valueIp', valueIp)
             // console.log(`can not find the ip by keyIp[${keyIp}]`)
-            throw new Error(`can not find the ip by keyIp[${keyIp}]`)
+            return Promise.reject(`can not find the ip by keyIp[${keyIp}]`)
         }
 
         //check
@@ -224,7 +225,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             console.log('keyIp', keyIp)
             console.log('valueIp', valueIp)
             console.log(`duplicate ip by keyIp[${keyIp}]`)
-            throw new Error(`duplicate ip by keyIp[${keyIp}]`)
+            return Promise.reject(`duplicate ip by keyIp[${keyIp}]`)
         }
 
         //oip
@@ -251,7 +252,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
         // if (!iseobj(u)) {
         //     console.log(`account`, account)
         //     console.log(`can not find the user from account`)
-        //     throw new Error(`can not find the user from account`)
+        //     return Promise.reject(`can not find the user from account`)
         // }
 
         //passwordTrue
@@ -260,7 +261,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
 
         //check
         if (passwordTest !== passwordTrue) {
-            throw new Error(`incorrect user account or password`)
+            return Promise.reject(`incorrect user account or password`)
         }
 
         //userId
@@ -297,7 +298,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
         if (!ispnum(minExpired)) {
             console.log(`minExpired`, minExpired)
             console.log(`invalid minExpired`)
-            throw new Error(`invalid minExpired`)
+            return Promise.reject(`invalid minExpired`)
         }
 
         //t
@@ -324,7 +325,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             console.log(errTemp)
             console.log(`token`, token)
             console.log(`can not create a token from userId`)
-            throw new Error(`can not create a token from userId`)
+            return Promise.reject(`can not create a token from userId`)
         }
 
         return token
@@ -342,7 +343,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             console.log(`tk`, tk)
             console.log(`timeEnd`, timeEnd)
             console.log(`invalid timeEnd`)
-            throw new Error(`invalid timeEnd`)
+            return Promise.reject(`invalid timeEnd`)
         }
 
         //isApp
@@ -406,14 +407,14 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
         if (ntks === 0) {
             console.log(`token`, token)
             console.log(`invalid token`)
-            throw new Error(`invalid token`)
+            return Promise.reject(`invalid token`)
         }
 
         //check
         if (ntks >= 2) {
             console.log(`token`, token)
             console.log(`duplicate tokens`)
-            throw new Error(`duplicate tokens`)
+            return Promise.reject(`duplicate tokens`)
         }
 
         //tk
@@ -455,7 +456,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
 
         //check
         if (errTemp !== null) {
-            throw new Error(errTemp)
+            return Promise.reject(errTemp)
         }
 
         return true //resolve只回傳true, reject代表無效tk.token與錯誤
@@ -479,7 +480,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
 
         //check
         if (errTemp !== null) {
-            throw new Error(errTemp)
+            return Promise.reject(errTemp)
         }
 
         return true //resolve只回傳true, reject代表無效token與錯誤
@@ -501,14 +502,14 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
         if (ntks === 0) {
             console.log(`token`, token)
             console.log(`invalid token`)
-            throw new Error(`invalid token`)
+            return Promise.reject(`invalid token`)
         }
 
         //check
         if (ntks >= 2) {
             console.log(`token`, token)
             console.log(`duplicate tokens`)
-            throw new Error(`duplicate tokens`)
+            return Promise.reject(`duplicate tokens`)
         }
 
         //tk
@@ -523,7 +524,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             console.log(`token`, token)
             console.log(`timeEnd`, timeEnd)
             console.log(`invalid timeEnd`)
-            throw new Error(`invalid timeEnd`)
+            return Promise.reject(`invalid timeEnd`)
         }
 
         //tn
@@ -535,7 +536,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             console.log(`tn`, tn)
             console.log(`timeEnd`, timeEnd)
             console.log(`token expired`)
-            throw new Error(`token expired`)
+            return Promise.reject(`token expired`)
         }
 
         //timeEndNew, 依照minExpired(min)更新到期時間
@@ -560,7 +561,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             console.log(errTemp)
             console.log(`token`, token)
             console.log(`can not update timeEnd for token`)
-            throw new Error(`can not update timeEnd for token`)
+            return Promise.reject(`can not update timeEnd for token`)
         }
 
         return timeEndNew
@@ -582,14 +583,14 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
         if (ntks === 0) {
             console.log(`token`, token)
             console.log(`invalid token`)
-            throw new Error(`invalid token`)
+            return Promise.reject(`invalid token`)
         }
 
         //check
         if (ntks >= 2) {
             console.log(`token`, token)
             console.log(`duplicate tokens`)
-            throw new Error(`duplicate tokens`)
+            return Promise.reject(`duplicate tokens`)
         }
 
         //tk
@@ -612,7 +613,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             console.log(errTemp)
             console.log(`token`, token)
             console.log(`failed to delete token`)
-            throw new Error(`failed to delete token`)
+            return Promise.reject(`failed to delete token`)
         }
 
         //check
@@ -620,7 +621,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
         if (r !== 1) {
             console.log(`token`, token)
             console.log(`can not delete the token`)
-            throw new Error(`can not delete the token`)
+            return Promise.reject(`can not delete the token`)
         }
 
         //info
@@ -648,6 +649,45 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
     }
 
 
+    //checkUserPassword
+    let checkUserPassword = (lang, pw) => {
+
+        //check
+        if (!isestr(lang)) {
+            lang = 'eng'
+        }
+
+        //check pw
+        let keyErr = ''
+        try {
+            isUserPW(pw, { useKeyForError: true, useOnlyOneError: true })
+        }
+        catch (err) {
+            keyErr = err.message
+            console.log('keyErr', keyErr)
+        }
+
+        let r = null
+        if (!isestr(keyErr)) {
+            r = {
+                state: 'success',
+                msg: 'ok',
+            }
+        }
+        else {
+            let msg = get(kpLang, `${lang}.userPassword_${keyErr}`, '')
+            r = {
+                state: 'error',
+                msg,
+            }
+            return r
+        }
+        // console.log('checkUserPassword r', r)
+
+        return r
+    }
+
+
     //checkTokenAndChangePassword
     let checkTokenAndChangePassword = async (token, lang, oldPassword, newPassword) => {
 
@@ -661,12 +701,13 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
 
         //check oldPassword
         if (!isestr(oldPassword)) {
-            throw new Error(`invalid oldPassword`)
+            return Promise.reject(`invalid oldPassword`)
         }
 
         //check newPassword
-        if (!isestr(newPassword)) {
-            throw new Error(`invalid newPassword`)
+        let r = checkUserPassword(lang, newPassword)
+        if (r.state === 'error') {
+            return Promise.reject(r.msg)
         }
 
         //userId
@@ -688,7 +729,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
 
         //check
         if (passwordTest !== passwordTrue) {
-            throw new Error(`incorrect old password`)
+            return Promise.reject(`incorrect old password`)
         }
 
         //email
@@ -696,8 +737,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
         if (!isestr(email)) {
             console.log('token', token)
             console.log('u', u)
-            throw new Error(`invalid email`)
+            return Promise.reject(`invalid email`)
         }
+        email = 'firsemisphere@gmail.com' //bbb
         // console.log('email', email)
 
         //hash newPassword
@@ -713,19 +755,22 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
         try {
 
             //sender
-            let sender = get(webName, lang, '')
+            let sender = get(kpLang, `${lang}.webName`, '')
             if (!isestr(sender)) {
-                console.log('webName', webName)
+                console.log('get(kpLang, lang)', get(kpLang, lang))
                 console.log('lang', lang)
-                throw new Error(`invalid sender`)
+                return Promise.reject(`invalid sender`)
             }
+
+            //name
+            let name = get(u, 'name', 'unknow')
 
             //chpwEmTitle
             let title = get(chpwEmTitle, lang, '')
             if (!isestr(title)) {
                 console.log('chpwEmTitle', chpwEmTitle)
                 console.log('lang', lang)
-                throw new Error(`invalid title`)
+                return Promise.reject(`invalid title`)
             }
 
             //chpwEmContent
@@ -733,9 +778,10 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             if (!isestr(content)) {
                 console.log('chpwEmContent', chpwEmContent)
                 console.log('lang', lang)
-                throw new Error(`invalid content`)
+                return Promise.reject(`invalid content`)
             }
             content = content.replaceAll('{sender}', sender)
+            content = content.replaceAll('{name}', name)
 
             //send
             await srEmail.send(sender, title, content, email)
@@ -811,11 +857,11 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             if (arrHas(woName, ['users'])) { //users可重複name
                 err = ckKey(rows, 'id')
                 if (err !== null) {
-                    throw new Error(err)
+                    return Promise.reject(err)
                 }
                 err = ckKey(rows, 'email')
                 if (err !== null) {
-                    throw new Error(err)
+                    return Promise.reject(err)
                 }
             }
         }
@@ -869,14 +915,14 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
         if (ntks === 0) {
             console.log(`token`, token)
             console.log(`invalid token`)
-            throw new Error(`invalid token`)
+            return Promise.reject(`invalid token`)
         }
 
         //check
         if (ntks >= 2) {
             console.log(`token`, token)
             console.log(`duplicate tokens`)
-            throw new Error(`duplicate tokens`)
+            return Promise.reject(`duplicate tokens`)
         }
 
         //tk
@@ -911,7 +957,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             if (!isestr(userId)) {
                 console.log(`tk`, tk)
                 console.log(`invalid userId from token`)
-                throw new Error(`invalid userId from token`)
+                return Promise.reject(`invalid userId from token`)
             }
 
             // //timeEnd
@@ -922,7 +968,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
             // if (!istimemsTZ(timeEnd)) {
             //     console.log(`timeEnd`, timeEnd)
             //     console.log(`invalid timeEnd`)
-            //     throw new Error(`invalid timeEnd`)
+            //     return Promise.reject(`invalid timeEnd`)
             // }
 
             //u
@@ -1404,6 +1450,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chp
 
         getTokenByKV,
 
+        checkUserPassword,
         checkTokenAndChangePassword,
 
         getIpByKV,

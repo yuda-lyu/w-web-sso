@@ -1,3 +1,29 @@
+import get from 'lodash-es/get.js'
+import each from 'lodash-es/each.js'
+import map from 'lodash-es/map.js'
+import size from 'lodash-es/size.js'
+import keys from 'lodash-es/keys.js'
+import trim from 'lodash-es/trim.js'
+import iseobj from 'wsemi/src/iseobj.mjs'
+import isestr from 'wsemi/src/isestr.mjs'
+import ispint from 'wsemi/src/ispint.mjs'
+import isearr from 'wsemi/src/isearr.mjs'
+import ispnum from 'wsemi/src/ispnum.mjs'
+import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
+import isfun from 'wsemi/src/isfun.mjs'
+import ispm from 'wsemi/src/ispm.mjs'
+import cint from 'wsemi/src/cint.mjs'
+import sep from 'wsemi/src/sep.mjs'
+import j2o from 'wsemi/src/j2o.mjs'
+import strleft from 'wsemi/src/strleft.mjs'
+import strright from 'wsemi/src/strright.mjs'
+import strdelright from 'wsemi/src/strdelright.mjs'
+import ltdtDiffByKey from 'wsemi/src/ltdtDiffByKey.mjs'
+import ltdtmapping from 'wsemi/src/ltdtmapping.mjs'
+import haskey from 'wsemi/src/haskey.mjs'
+import arrHas from 'wsemi/src/arrHas.mjs'
+import pm2resolve from 'wsemi/src/pm2resolve.mjs'
+import pmSeries from 'wsemi/src/pmSeries.mjs'
 
 
 let kpLang = {
@@ -540,6 +566,27 @@ let kpLang = {
         cht: `無法找到使用者數據`,
     },
 
+    userPassword_keyLimNumLenMinOrMax: {
+        eng: 'The minimum password length is greater than the maximum length',
+        cht: '設定密碼最小長度大於最大長度',
+    },
+    userPassword_keyLimHasSpace: {
+        eng: 'Password must not contain whitespace characters',
+        cht: '密碼不可包含空白字元',
+    },
+    userPassword_keyLimNumLenMin: {
+        eng: 'Password length must be greater than 8 characters',
+        cht: '密碼長度須大於8個字元',
+    },
+    userPassword_keyLimNumLenMax: {
+        eng: 'Password length must be less than 30 characters',
+        cht: '密碼長度須小於30個字元',
+    },
+    userPassword_keyLimCombination: {
+        eng: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special characte',
+        cht: '密碼須包含大寫、小寫英文、數字、特殊符號各1個字元',
+    },
+
     userChangePassword: {
         eng: 'Change Password',
         cht: '變更密碼',
@@ -564,6 +611,10 @@ let kpLang = {
         eng: 'Please enter new password',
         cht: '尚未給予新密碼',
     },
+    // userChangePasswordForUnfmtNewPassword: {
+    //     eng: 'Passwords must contain one character each of uppercase and lowercase English letters, numbers, and special symbols.',
+    //     cht: '密碼須包含大寫、小寫英文、數字、特殊符號各1個字元',
+    // },
     userChangePasswordForNoConfirmPassword: {
         eng: 'Please enter confirm password',
         cht: '尚未給予確認密碼',
@@ -578,7 +629,11 @@ let kpLang = {
     },
     userChangePasswordFail: {
         eng: 'Password change failed.',
-        cht: '密碼變更失敗',
+        cht: '密碼變更失敗，請確認輸入密碼是否正確',
+    },
+    userChangePasswordForNetError: {
+        eng: 'Password validation failed. Please try again later.',
+        cht: '密碼檢測失敗，請稍後再試',
     },
     // msgSendChangePasswordEmailSuccess: {
     //     eng: 'Verification email sent. Please check your inbox and click the link to change your password.',
@@ -904,4 +959,89 @@ let kpLang = {
 }
 
 
-export default kpLang
+let init = (opt = {}) => {
+
+    //kpLangExt
+    let kpLangExt = get(opt, 'kpLangExt')
+    if (!iseobj(kpLangExt)) {
+        kpLangExt = {}
+    }
+
+    //webName
+    let webName = get(opt, 'webName')
+    if (!iseobj(webName)) {
+        webName = {}
+    }
+
+    //webDescription
+    let webDescription = get(opt, 'webDescription')
+    if (!iseobj(webDescription)) {
+        webDescription = {}
+    }
+
+    //kp
+    let kp = {}
+
+    //kpLang
+    kp = {
+        ...kp,
+        ...kpLang,
+    }
+
+    //ext kpLangExt
+    if (iseobj(kpLangExt)) {
+        // console.log('kpLangExt', kpLangExt)
+        kp = {
+            ...kp,
+            ...kpLangExt,
+        }
+    }
+
+    //webName
+    if (iseobj(webName)) {
+        // console.log('webName', webName)
+        kp = {
+            ...kp,
+            webName: {
+                ...webName,
+            },
+        }
+    }
+
+    //webDescription
+    if (iseobj(webDescription)) {
+        // console.log('webDescription', webDescription)
+        kp = {
+            ...kp,
+            webDescription: {
+                ...webDescription,
+            },
+        }
+    }
+
+    let langs = [
+        'eng',
+        'cht',
+    ]
+
+    let r = {}
+    each(langs, (lang) => {
+
+        //kpText
+        let kpText = {}
+        each(kp, (v, k) => {
+            kpText[k] = v[lang]
+        })
+        // console.log('kpText', kpText)
+
+        //save
+        r[lang] = kpText
+
+    })
+    // console.log('r', r)
+
+    return r
+}
+
+
+export default init

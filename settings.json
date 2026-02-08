@@ -49,8 +49,8 @@
     logFd: './_logs',
     logInterval: 'hr',
 
-    emSrcEmail: 'example@gmail.com', 
-    emSrcPW: '{pw}', 
+    emSrcEmail: 'yudalyusemisphere@gmail.com', //'example@gmail.com', 
+    emSrcPW: 'hapbrhbnimpoxorh', //'{pw}', 
     emSrcHost: 'smtp.gmail.com',
     emSrcPort: 465,
 
@@ -59,8 +59,8 @@
         cht: '密碼已進行變更',
     },
     chpwEmContent: {
-        eng: 'Dear User,<br><br>This is to inform you that the password for your {sender} account has been successfully changed.<br><br>If you did not perform this action or have any concerns regarding your account security, please contact the system administrator as soon as possible to ensure the safety of your account.<br><br>This is an automated system notification. Please do not reply to this email.<br><br>Sincerely,<br>Best regards',
-        cht: '親愛的使用者您好：<br><br>通知您，您於「{sender}」的密碼已成功變更。<br><br>若您未曾進行此操作，或對帳號安全有任何疑慮，請您儘速聯絡系統管理單位，以確保帳號安全。<br><br>此為系統自動通知信件，請勿直接回覆。<br><br>敬祝<br><br>順心平安'
+        eng: 'Dear User {name},<br><br>This is to inform you that the password for your {sender} account has been successfully changed.<br><br>If you did not perform this action or have any concerns regarding your account security, please contact the system administrator as soon as possible to ensure the safety of your account.<br><br>This is an automated system notification. Please do not reply to this email.',
+        cht: '使用者 {name} 您好：<br><br>您於「{sender}」的密碼已成功變更。<br><br>若您未曾進行此操作，或對帳號安全有任何疑慮，請您儘速聯絡系統管理單位，以確保帳號安全。<br><br>此為系統自動通知信件，請勿直接回覆。'
     },
 
 }

@@ -30,22 +30,22 @@ let init = (st) => {
     let send = async(srcName, emTitle, emContent, toEmails) => {
 
         if (!isestr(srcName)) {
-            throw new Error(`invalid srcName[${srcName}]`)
+            return Promise.reject(`invalid srcName[${srcName}]`)
         }
 
         if (!isestr(emTitle)) {
-            throw new Error(`invalid emTitle[${emTitle}]`)
+            return Promise.reject(`invalid emTitle[${emTitle}]`)
         }
 
         if (!isestr(emContent)) {
-            throw new Error(`invalid emContent[${emContent}]`)
+            return Promise.reject(`invalid emContent[${emContent}]`)
         }
 
         if (isestr(toEmails)) {
             toEmails = [toEmails]
         }
         if (!isearr(toEmails)) {
-            throw new Error(`invalid toEmails[${toEmails}]`)
+            return Promise.reject(`invalid toEmails[${toEmails}]`)
         }
 
         //opt

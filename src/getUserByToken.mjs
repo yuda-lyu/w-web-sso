@@ -12,13 +12,13 @@ async function getUserByToken(url, tokenSelf, tokenTar, opt = {}) {
 
     //check
     if (!isestr(url)) {
-        throw new Error('invalid url')
+        return Promise.reject('invalid url')
     }
     if (!isestr(tokenSelf)) {
-        throw new Error('invalid tokenSelf')
+        return Promise.reject('invalid tokenSelf')
     }
     if (!isestr(tokenTar)) {
-        throw new Error('invalid tokenTar')
+        return Promise.reject('invalid tokenTar')
     }
 
     //funConvertUser
@@ -26,7 +26,7 @@ async function getUserByToken(url, tokenSelf, tokenTar, opt = {}) {
 
     //url
     if (url.indexOf('token={sysToken}') < 0 && url.indexOf('key=token') < 0 && url.indexOf('value={token}') < 0) {
-        throw new Error(`no 'token={sysToken}', 'key=token', 'value={token}' in url`)
+        return Promise.reject(`no 'token={sysToken}', 'key=token', 'value={token}' in url`)
     }
     url = url.replaceAll('{sysToken}', tokenSelf) //系統介接用ssoToken
     url = url.replaceAll('{token}', tokenTar)
@@ -43,7 +43,7 @@ async function getUserByToken(url, tokenSelf, tokenTar, opt = {}) {
         console.log('res', res)
         console.log('errTemp', errTemp)
         console.log(`can not get user by url[${url}]`)
-        throw new Error(`can not get user by url[${url}]`) //由SSO取得使用者資訊錯誤
+        return Promise.reject(`can not get user by url[${url}]`) //由SSO取得使用者資訊錯誤
     }
 
     //data
@@ -62,7 +62,7 @@ async function getUserByToken(url, tokenSelf, tokenTar, opt = {}) {
         console.log('state', state)
         console.log('errTemp', msg)
         console.log(`can not get user data by url[${url}]`)
-        throw new Error(`can not get user data by url[${url}]`) //取得使用者資訊失敗
+        return Promise.reject(`can not get user data by url[${url}]`) //取得使用者資訊失敗
     }
 
     //u
@@ -72,7 +72,7 @@ async function getUserByToken(url, tokenSelf, tokenTar, opt = {}) {
     //check
     if (!iseobj(u)) {
         console.log(`no user data by url[${url}]`)
-        throw new Error(`no user data by url[${url}]`)
+        return Promise.reject(`no user data by url[${url}]`)
     }
 
     //check
@@ -88,7 +88,7 @@ async function getUserByToken(url, tokenSelf, tokenTar, opt = {}) {
         //check
         if (!iseobj(u)) {
             console.log(`no user data after funConvertUser`)
-            throw new Error(`no user data after funConvertUser`)
+            return Promise.reject(`no user data after funConvertUser`)
         }
 
     }

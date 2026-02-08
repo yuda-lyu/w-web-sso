@@ -43,10 +43,11 @@
                                             <div v-if="!showChangePassword">
                                                 <WButtonChip
                                                     :text="$t('userChangePassword')"
-                                                    :textFontSize="'0.9rem'"
+                                                    :textFontSize="'0.8rem'"
                                                     :paddingStyle="{v:4,h:15}"
                                                     :backgroundColor="'rgba(255,255,255,0.5)'"
                                                     :backgroundColorHover="'rgba(255,255,255,0.7)'"
+                                                    :borderRadius="4"
                                                     _shadow="false"
                                                     @click="clickChangePassword"
                                                 ></WButtonChip>
@@ -59,8 +60,14 @@
                                                         :bottomLineBorderColor="'#888'"
                                                         :bottomLineBorderColorHover="'#888'"
                                                         :bottomLineBorderColorFocus="'#888'"
-                                                        :password="true"
+                                                        :rightIcon="showOldPassword ? 'mdi-eye' : 'mdi-eye-off'"
+                                                        :rightIconColor="'#777'"
+                                                        :rightIconColorHover="'#666'"
+                                                        :rightIconColorFocus="'#555'"
+                                                        :rightIconTooltip="showOldPassword ? $t('toggleToHidePassword') : $t('toggleToShowPassword')"
+                                                        :password="!showOldPassword"
                                                         v-model="oldPassword"
+                                                        @click-right="showOldPassword=!showOldPassword"
                                                     ></WText>
                                                 </div>
                                                 <div style="margin-bottom:10px;">
@@ -70,8 +77,14 @@
                                                         :bottomLineBorderColor="'#888'"
                                                         :bottomLineBorderColorHover="'#888'"
                                                         :bottomLineBorderColorFocus="'#888'"
-                                                        :password="true"
+                                                        :rightIcon="showNewPassword ? 'mdi-eye' : 'mdi-eye-off'"
+                                                        :rightIconColor="'#777'"
+                                                        :rightIconColorHover="'#666'"
+                                                        :rightIconColorFocus="'#555'"
+                                                        :rightIconTooltip="showNewPassword ? $t('toggleToHidePassword') : $t('toggleToShowPassword')"
+                                                        :password="!showNewPassword"
                                                         v-model="newPassword"
+                                                        @click-right="showNewPassword=!showNewPassword"
                                                     ></WText>
                                                 </div>
                                                 <div style="margin-bottom:15px;">
@@ -81,8 +94,14 @@
                                                         :bottomLineBorderColor="'#888'"
                                                         :bottomLineBorderColorHover="'#888'"
                                                         :bottomLineBorderColorFocus="'#888'"
-                                                        :password="true"
+                                                        :rightIcon="showConfirmPassword ? 'mdi-eye' : 'mdi-eye-off'"
+                                                        :rightIconColor="'#777'"
+                                                        :rightIconColorHover="'#666'"
+                                                        :rightIconColorFocus="'#555'"
+                                                        :rightIconTooltip="showConfirmPassword ? $t('toggleToHidePassword') : $t('toggleToShowPassword')"
+                                                        :password="!showConfirmPassword"
                                                         v-model="confirmPassword"
+                                                        @click-right="showConfirmPassword=!showConfirmPassword"
                                                     ></WText>
                                                 </div>
                                                 <div style="display:flex; gap:10px;">
@@ -207,6 +226,9 @@ export default {
             oldPassword: '',
             newPassword: '',
             confirmPassword: '',
+            showOldPassword: false,
+            showNewPassword: false,
+            showConfirmPassword: false,
         }
     },
     mounted: function() {
@@ -334,6 +356,9 @@ export default {
             vo.oldPassword = ''
             vo.newPassword = ''
             vo.confirmPassword = ''
+            vo.showOldPassword = false
+            vo.showNewPassword = false
+            vo.showConfirmPassword = false
         },
 
         cancelChangePassword: function() {
@@ -344,46 +369,82 @@ export default {
         submitChangePassword: function() {
             let vo = this
 
-            //check oldPassword
-            if (!isestr(vo.oldPassword)) {
-                vo.$alert(vo.$t('userChangePasswordForNoOldPassword'), { type: 'error' })
-                return
-            }
+            let core = async () => {
 
-            //check newPassword
-            if (!isestr(vo.newPassword)) {
-                vo.$alert(vo.$t('userChangePasswordForNoNewPassword'), { type: 'error' })
-                return
-            }
+                //check oldPassword
+                if (!isestr(vo.oldPassword)) {
+                    vo.$alert(vo.$t('userChangePasswordForNoOldPassword'), { type: 'error' })
+                    return
+                }
 
-            //check confirmPassword
-            if (!isestr(vo.confirmPassword)) {
-                vo.$alert(vo.$t('userChangePasswordForNoConfirmPassword'), { type: 'error' })
-                return
-            }
+                //check newPassword
+                if (!isestr(vo.newPassword)) {
+                    vo.$alert(vo.$t('userChangePasswordForNoNewPassword'), { type: 'error' })
+                    return
+                }
 
-            //check same
-            if (vo.newPassword !== vo.confirmPassword) {
-                vo.$alert(vo.$t('userChangePasswordNotSame'), { type: 'error' })
-                return
+                //check confirmPassword
+                if (!isestr(vo.confirmPassword)) {
+                    vo.$alert(vo.$t('userChangePasswordForNoConfirmPassword'), { type: 'error' })
+                    return
+                }
+
+                //check same
+                if (vo.newPassword !== vo.confirmPassword) {
+                    vo.$alert(vo.$t('userChangePasswordNotSame'), { type: 'error' })
+                    return
+                }
+
+                //checkUserPassword
+                let bCkPw = false
+                await vo.$fapi.checkUserPassword(vo.lang, vo.newPassword)
+                    .then((res) => {
+                        if (res.state === 'success') {
+                            bCkPw = true
+                        }
+                        else if (res.state === 'error') {
+                            vo.$alert(res.msg, { type: 'error' })
+                        }
+                        else {
+                            console.log('error[res]', res)
+                            vo.$alert(vo.$t('userChangePasswordForNetError'), { type: 'error' })
+                        }
+                    })
+                    .catch((err) => {
+                        console.log('catch', err)
+                        vo.$alert(vo.$t('userChangePasswordForNetError'), { type: 'error' })
+                    })
+                if (!bCkPw) {
+                    return
+                }
+
+                //changeUserPassword
+                let bChPw = false
+                await vo.$fapi.changeUserPassword(vo.userToken, vo.lang, vo.oldPassword, vo.newPassword)
+                    .then((res) => {
+                        bChPw = true
+
+                        //cancelChangePassword
+                        vo.cancelChangePassword()
+
+                        vo.$alert(vo.$t('userChangePasswordSuccess'))
+                    })
+                    .catch((err) => {
+                        console.log('catch', err)
+                        vo.$alert(vo.$t('userChangePasswordFail'), { type: 'error' })
+                    })
+                if (!bChPw) {
+                    return
+                }
+
+                return 'ok'
             }
 
             //loading
             vo.$ui.updateLoading(true)
 
-            //changeUserPassword
-            vo.$fapi.changeUserPassword(vo.userToken, vo.lang, vo.oldPassword, vo.newPassword)
-                .then((res) => {
-
-                    //cancelChangePassword
-                    vo.cancelChangePassword()
-
-                    vo.$alert(vo.$t('userChangePasswordSuccess'))
-                })
-                .catch((err) => {
-                    console.log('catch', err)
-                    vo.$alert(vo.$t('userChangePasswordFail'), { type: 'error' })
-                })
+            //core
+            core()
                 .finally(() => {
 
                     //hide loading
@@ -394,8 +455,23 @@ export default {
         },
 
         logout: function() {
+            // console.log('methods logout')
+
             let vo = this
+
+            //logout
             vo.$ui.logout()
+                .then(() => {
+
+                    //登出時提交變更viewState返回登入頁
+                    vo.$ui.updateViewState('login')
+                    console.log(`logout, goto view['login'] page`)
+
+                })
+                .catch((err) => {
+                    console.log(`logout err[${err}]`)
+                })
+
         },
 
     }

@@ -13,7 +13,6 @@ import strleft from 'wsemi/src/strleft.mjs'
 import strright from 'wsemi/src/strright.mjs'
 import strdelright from 'wsemi/src/strdelright.mjs'
 import pm2resolve from 'wsemi/src/pm2resolve.mjs'
-import j2o from 'wsemi/src/j2o.mjs'
 import fsIsFolder from 'wsemi/src/fsIsFolder.mjs'
 import fsIsFile from 'wsemi/src/fsIsFile.mjs'
 import replace from 'wsemi/src/replace.mjs'
@@ -24,6 +23,7 @@ import * as s from '../src/plugins/mShare.mjs'
 import srLogInit from './srLog.mjs'
 import srEmailInit from './srEmail.mjs'
 import procCore from './procCore.mjs'
+import procLang from './procLang.mjs'
 import procProtect from './procProtect.mjs'
 import procStaInfor from './procStaInfor.mjs'
 import procSettings from './procSettings.mjs'
@@ -280,7 +280,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
 
 
     //kpLangExt
-    let kpLangExt = get(opt, 'kpLangExt', null)
+    let kpLangExt = get(opt, 'kpLangExt', {})
 
 
     //chpwEmTitle, chpwEmContent
@@ -294,6 +294,10 @@ function WWebSso(WOrm, url, db, pathSettings) {
 
     //srEmail
     let srEmail = srEmailInit(opt)
+
+
+    //kpLang
+    let kpLang = procLang({ kpLangExt, webName, webDescription })
 
 
     //WServOrm
@@ -316,8 +320,8 @@ function WWebSso(WOrm, url, db, pathSettings) {
     let getWebInfor = () => {
         return {
 
-            webName,
-            webDescription,
+            // webName, //已併入kpLang
+            // webDescription, //已併入kpLang
             webLogo,
             webBackgoundGradientColors,
             webKey,
@@ -325,6 +329,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
 
             showLanguage,
             language,
+            kpLang,
 
             showModeEditUsers,
             modeEditUsers,
@@ -333,14 +338,12 @@ function WWebSso(WOrm, url, db, pathSettings) {
             showModeEditIps,
             modeEditIps,
 
-            kpLangExt,
-
         }
     }
 
 
-    //procCore, procProtect, procStaInfor
-    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, webName, chpwEmTitle, chpwEmContent })
+    //procCore, procProtect, procStaInfor, procLang
+    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpwEmTitle, chpwEmContent })
     let pp = procProtect(woItems, p, {
         minForAccountLoginFailed,
         numForAccountLoginFailed,
@@ -352,8 +355,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
         numForIpCallApi,
         minBlockForIpCallApi,
     })
-    let pf = procStaInfor(woItems, p, {
-    })
+    let pf = procStaInfor(woItems, p, {})
 
 
     // //parseToken
@@ -863,7 +865,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
                         console.log('token', token)
                         console.log('key', key, 'value', value)
                         console.log(`token does not have permission`)
-                        throw new Error(`token does not have permission`)
+                        return Promise.reject(`token does not have permission`)
                     }
 
                     return userTarget
@@ -991,7 +993,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
                 if (iseobj(u)) {
                     return u
                 }
-                throw new Error(msg)
+                return Promise.reject(msg)
             },
             logoutByToken: async (_t, token) => {
                 srLog.info({ event: 'kpfun-logoutByToken', token })
@@ -1010,6 +1012,14 @@ function WWebSso(WOrm, url, db, pathSettings) {
                 //console.log('call getUserInfor...')
                 let r = await p.checkTokenAndGetUserInfor(token, key, value)
                 //console.log('call getUserInfor end')
+                return r
+            },
+
+            checkUserPassword: async (_t, lang, pw) => {
+                srLog.info({ event: 'kpfun-checkUserPassword', lang, pw })
+                //console.log('call checkUserPassword...')
+                let r = await p.checkUserPassword(lang, pw)
+                //console.log('call checkUserPassword end')
                 return r
             },
             changeUserPassword: async (_t, token, lang, pwOld, pwNew) => {

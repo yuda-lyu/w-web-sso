@@ -42,7 +42,6 @@ import replace from 'wsemi/src/replace.mjs'
 import timemsTZ2past from 'wsemi/src/timemsTZ2past.mjs'
 import convertToTree from 'wsemi/src/convertToTree.mjs'
 // import WUiDwload from 'w-ui-dwload/src/WUiDwload.mjs'
-import kpLang from './mLang.mjs'
 
 
 let vo = Vue.prototype
@@ -156,72 +155,19 @@ function setLang(lang = null, from = '') {
         }
     }
 
-    //genKpText, 切換lang得調用getKpLang重算kpText
-    genKpText(lang)
-
-    //forceUpdate
-    forceUpdate()
-
-}
-
-
-function genKpText(lang) {
-    // console.log('genKpText', lang)
-
-    //kp
-    let kp = {}
-
     //kpLang
-    kp = {
-        ...kp,
-        ...kpLang,
-    }
-
-    //kpLangExt
-    let kpLangExt = get(vo, '$store.state.webInfor.kpLangExt', {})
-    // console.log('kpLangExt', kpLangExt)
-    if (iseobj(kpLangExt)) {
-        kp = {
-            ...kp,
-            ...kpLangExt,
-        }
-    }
-
-    //webName
-    let webName = get(vo, '$store.state.webInfor.webName', {})
-    // console.log('webName', webName)
-    if (iseobj(webName)) {
-        kp = {
-            ...kp,
-            webName: {
-                ...webName,
-            },
-        }
-    }
-
-    //webDescription
-    let webDescription = get(vo, '$store.state.webInfor.webDescription', {})
-    // console.log('webDescription', webDescription)
-    if (iseobj(webDescription)) {
-        kp = {
-            ...kp,
-            webDescription: {
-                ...webDescription,
-            },
-        }
-    }
+    let kpLang = get(vo, '$store.state.webInfor.kpLang', {})
 
     //kpText
-    let kpText = {}
-    each(kp, (v, k) => {
-        kpText[k] = v[lang]
-    })
-    // console.log('kp', kp)
+    let kpText = get(kpLang, lang, {})
     // console.log('kpText', kpText)
 
     //commit
     vo.$store.commit(vo.$store.types.UpdateKpText, kpText)
     // console.log('commit kpText', kpText)
+
+    //forceUpdate
+    forceUpdate()
 
 }
 
@@ -671,7 +617,7 @@ function logout() {
             //alert
             vo.$alert(vo.$t('failedLogoutForNoWebKey'), { type: 'error' })
 
-            throw new Error(`invalid $keyLS`)
+            return Promise.reject(`invalid $keyLS`)
         }
 
         //key

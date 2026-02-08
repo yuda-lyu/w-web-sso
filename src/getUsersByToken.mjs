@@ -14,10 +14,10 @@ async function getUsersByToken(url, tokenSelf, opt = {}) {
 
     //check
     if (!isestr(url)) {
-        throw new Error('invalid url')
+        return Promise.reject('invalid url')
     }
     if (!isestr(tokenSelf)) {
-        throw new Error('invalid tokenSelf')
+        return Promise.reject('invalid tokenSelf')
     }
 
     //funConvertUser
@@ -25,7 +25,7 @@ async function getUsersByToken(url, tokenSelf, opt = {}) {
 
     //url
     if (url.indexOf('token={sysToken}') < 0) {
-        throw new Error(`no 'token={sysToken}' in url`)
+        return Promise.reject(`no 'token={sysToken}' in url`)
     }
     url = url.replaceAll('{sysToken}', tokenSelf) //系統介接用ssoToken
     // console.log('getUsersByToken: url', url)
@@ -41,7 +41,7 @@ async function getUsersByToken(url, tokenSelf, opt = {}) {
         console.log('res', res)
         console.log('errTemp', errTemp)
         console.log(`can not get users by url[${url}]`)
-        throw new Error(`can not get users by url[${url}]`) //由SSO取得使用者清單資訊錯誤
+        return Promise.reject(`can not get users by url[${url}]`) //由SSO取得使用者清單資訊錯誤
     }
 
     //data
@@ -60,7 +60,7 @@ async function getUsersByToken(url, tokenSelf, opt = {}) {
         console.log('state', state)
         console.log('errTemp', msg)
         console.log(`can not get users data by url[${url}]`)
-        throw new Error(`can not get users data by url[${url}]`) //取得使用者清單資訊失敗
+        return Promise.reject(`can not get users data by url[${url}]`) //取得使用者清單資訊失敗
     }
 
     //us
@@ -70,7 +70,7 @@ async function getUsersByToken(url, tokenSelf, opt = {}) {
     //check
     if (size(us) === 0) {
         console.log(`no users data by url[${url}]`)
-        throw new Error(`no users data by url[${url}]`)
+        return Promise.reject(`no users data by url[${url}]`)
     }
 
     //check
@@ -86,7 +86,7 @@ async function getUsersByToken(url, tokenSelf, opt = {}) {
             //check
             if (!iseobj(u)) {
                 console.log(`no user data after funConvertUser`)
-                throw new Error(`no user data after funConvertUser`)
+                return Promise.reject(`no user data after funConvertUser`)
             }
 
             return u

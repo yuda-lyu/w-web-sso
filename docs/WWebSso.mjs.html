@@ -67,8 +67,10 @@ import WServHapiServer from 'w-serv-hapi/src/WServHapiServer.mjs'
 import WServOrm from 'w-serv-orm/src/WServOrm.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
-import srlog from './srlog.mjs'
+import srLogInit from './srLog.mjs'
+import srEmailInit from './srEmail.mjs'
 import procCore from './procCore.mjs'
+import procLang from './procLang.mjs'
 import procProtect from './procProtect.mjs'
 import procStaInfor from './procStaInfor.mjs'
 import procSettings from './procSettings.mjs'
@@ -150,6 +152,13 @@ function WWebSso(WOrm, url, db, pathSettings) {
     // * @param {String} [opt.userLogo=''] 輸入使用者logo字串，採base64格式，預設''
     // * @param {String} [opt.subfolder=''] 輸入站台所在子目錄字串，提供站台位於內網採反向代理進行服務時，故需支援位於子目錄情形，預設''
     // * @param {String} [opt.mappingBy='email'] 輸入外部系統識別使用者token後所提供之資料物件，與權限系統之使用者資料物件，兩者間查找之對應欄位，可選'id'、'email'、'name'，預設'email'
+    // * @param {Object} [opt.kpLangExt={}] 輸入擴充前端語系物件，預設{}
+    // * @param {String} [opt.logFd='./_logs'] 輸入log紀錄儲存位置字串，預設'./_logs'
+    // * @param {String} [opt.logInterval='hr'] 輸入log紀錄檔案拆檔時長字串，預設'hr'
+    // * @param {String} [opt.emSrcEmail=null] 輸入email寄信用email字串，預設null
+    // * @param {String} [opt.emSrcPW=null] 輸入email寄信用密碼字串，預設null
+    // * @param {String} [opt.emSrcHost=null] 輸入email寄信用host字串，預設null
+    // * @param {String} [opt.emSrcPort=null] 輸入email寄信用port整數，預設null
 
 
     //serverPort
@@ -288,7 +297,6 @@ function WWebSso(WOrm, url, db, pathSettings) {
         }
     }
 
-
     //params
     let showLanguage = get(opt, 'showLanguage', 'n')
     let language = get(opt, 'language', 'eng')
@@ -319,7 +327,24 @@ function WWebSso(WOrm, url, db, pathSettings) {
 
 
     //kpLangExt
-    let kpLangExt = get(opt, 'kpLangExt', null)
+    let kpLangExt = get(opt, 'kpLangExt', {})
+
+
+    //chpwEmTitle, chpwEmContent
+    let chpwEmTitle = get(opt, 'chpwEmTitle', '')
+    let chpwEmContent = get(opt, 'chpwEmContent', '')
+
+
+    //srLog
+    let srLog = srLogInit(opt)
+
+
+    //srEmail
+    let srEmail = srEmailInit(opt)
+
+
+    //kpLang
+    let kpLang = procLang({ kpLangExt, webName, webDescription })
 
 
     //WServOrm
@@ -342,8 +367,8 @@ function WWebSso(WOrm, url, db, pathSettings) {
     let getWebInfor = () => {
         return {
 
-            webName,
-            webDescription,
+            // webName, //已併入kpLang
+            // webDescription, //已併入kpLang
             webLogo,
             webBackgoundGradientColors,
             webKey,
@@ -351,6 +376,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
 
             showLanguage,
             language,
+            kpLang,
 
             showModeEditUsers,
             modeEditUsers,
@@ -359,14 +385,12 @@ function WWebSso(WOrm, url, db, pathSettings) {
             showModeEditIps,
             modeEditIps,
 
-            kpLangExt,
-
         }
     }
 
 
-    //procCore, procProtect, procStaInfor
-    let p = procCore(woItems, procOrm, { salt, minExpired })
+    //procCore, procProtect, procStaInfor, procLang
+    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpwEmTitle, chpwEmContent })
     let pp = procProtect(woItems, p, {
         minForAccountLoginFailed,
         numForAccountLoginFailed,
@@ -378,8 +402,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
         numForIpCallApi,
         minBlockForIpCallApi,
     })
-    let pf = procStaInfor(woItems, p, {
-    })
+    let pf = procStaInfor(woItems, p, {})
 
 
     // //parseToken
@@ -410,7 +433,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //     if (!iseobj(userSelf)) {
     //         console.log(`token`, token)
     //         console.log(`can not find the user from token`)
-    //         return Promise.reject(`can not find the user from token`)
+    //         throw new Error(`can not find the user from token`)
     //     }
 
     //     //check userSelf
@@ -419,26 +442,26 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         if (!isestr(id)) {
     //             console.log('userSelf', userSelf)
     //             console.log('can not get the userId')
-    //             return Promise.reject(`can not get the userId`)
+    //             throw new Error(`can not get the userId`)
     //         }
     //         let email = get(userSelf, 'email', '')
     //         if (!isestr(email)) {
     //             console.log('userSelf', userSelf)
     //             console.log('can not get the email of user')
-    //             return Promise.reject(`can not get the email of user`)
+    //             throw new Error(`can not get the email of user`)
     //         }
     //         let name = get(userSelf, 'name', '')
     //         if (!isestr(name)) {
     //             console.log('userSelf', userSelf)
     //             console.log('can not get userName')
-    //             return Promise.reject(`can not get userName`)
+    //             throw new Error(`can not get userName`)
     //         }
     //         let isAdmin = get(userSelf, 'isAdmin', '')
     //         if (isAdmin !== 'y' &amp;&amp; isAdmin !== 'n') {
     //             console.log('userSelf', userSelf)
     //             console.log('userSelf.isAdmin is not y or n', userSelf.isAdmin)
     //             console.log('can not get the role of user')
-    //             return Promise.reject(`can not get the role of user`)
+    //             throw new Error(`can not get the role of user`)
     //         }
     //     }
 
@@ -451,7 +474,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         console.log('userSelf', userSelf)
     //         console.log('mappingBy', mappingBy)
     //         console.log('can not get the prop of user by mappingBy')
-    //         return Promise.reject(`can not get the prop of user by mappingBy`)
+    //         throw new Error(`can not get the prop of user by mappingBy`)
     //     }
 
     //     //userFind
@@ -464,7 +487,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         console.log('userSelf', userSelf)
     //         console.log('mappingBy', mappingBy)
     //         console.log('can not get the user from sso')
-    //         return Promise.reject(`can not get the user from sso`)
+    //         throw new Error(`can not get the user from sso`)
     //     }
 
     //     //複寫isAdmin
@@ -495,7 +518,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //     if (!b) {
     //         console.log('userSelf', userSelf)
     //         console.log(`user does not have permission`)
-    //         return Promise.reject(`user does not have permission`)
+    //         throw new Error(`user does not have permission`)
     //     }
 
     //     return userSelf
@@ -518,7 +541,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //     if (!b) {
     //         console.log('userSelf', userSelf)
     //         console.log(`user does not have permission`)
-    //         return Promise.reject(`user does not have permission`)
+    //         throw new Error(`user does not have permission`)
     //     }
 
     //     return userSelf
@@ -540,7 +563,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //     if (!iseobj(inp)) {
     //         console.log('inp', inp)
     //         console.log('invalid inp from req')
-    //         return Promise.reject(`invalid inp from req`)
+    //         throw new Error(`invalid inp from req`)
     //     }
 
     //     //from
@@ -551,7 +574,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         console.log('inp', inp)
     //         console.log('from', from)
     //         console.log('invalid from from inp')
-    //         return Promise.reject(`invalid from from inp`)
+    //         throw new Error(`invalid from from inp`)
     //     }
 
 
@@ -563,7 +586,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         console.log('inp', inp)
     //         console.log(key, vs)
     //         console.log(`invalid ${key} from inp`)
-    //         return Promise.reject(`invalid ${key} from inp`)
+    //         throw new Error(`invalid ${key} from inp`)
     //     }
 
     //     //r
@@ -588,7 +611,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         console.log('params', params)
     //         console.log('from', from)
     //         console.log(`invalid from`)
-    //         return Promise.reject(`invalid from`)
+    //         throw new Error(`invalid from`)
     //     }
 
     //     //vs
@@ -600,7 +623,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
     //         console.log('params', params)
     //         console.log(key, vs)
     //         console.log(`invalid ${key}`)
-    //         return Promise.reject(`invalid ${key}`)
+    //         throw new Error(`invalid ${key}`)
     //     }
 
     //     //save from
@@ -683,7 +706,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
                     // console.log('token', token)
 
                     //info
-                    srlog.info({ event: 'api/logoutSsoUser', token })
+                    srLog.info({ event: 'api/logoutSsoUser', token })
 
                     //logoutByToken
                     let b = await p.logoutByToken(token)
@@ -716,7 +739,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
                     // console.log('token', token)
 
                     //info
-                    srlog.info({ event: 'api/checkToken', token })
+                    srLog.info({ event: 'api/checkToken', token })
 
                     //callApiByToken
                     pp.callApiByToken(token)
@@ -752,7 +775,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
                     // console.log('token', token)
 
                     //info
-                    srlog.info({ event: 'api/refreshToken', token })
+                    srLog.info({ event: 'api/refreshToken', token })
 
                     //callApiByToken
                     pp.callApiByToken(token)
@@ -788,7 +811,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
                     // console.log('token', token)
 
                     //info
-                    srlog.info({ event: 'api/logoutByToken', token })
+                    srLog.info({ event: 'api/logoutByToken', token })
 
                     //callApiByToken
                     pp.callApiByToken(token)
@@ -824,13 +847,13 @@ function WWebSso(WOrm, url, db, pathSettings) {
                     // console.log('token', token)
 
                     //info
-                    srlog.info({ event: 'api/getSsoUsersList', token })
+                    srLog.info({ event: 'api/getSsoUsersList', token })
 
                     //callApiByToken
                     pp.callApiByToken(token)
 
-                    //checkTokenAndGetUsersList
-                    let us = await p.checkTokenAndGetUsersList(token)
+                    //getSsoUsersList
+                    let us = await p.checkTokenAndGetUsersList(token, {})
                     // console.log('us', us)
 
                     return us
@@ -868,7 +891,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
                     // console.log('value', value)
 
                     //info
-                    srlog.info({ event: 'api/getSsoUserInfor', token, key, value })
+                    srLog.info({ event: 'api/getSsoUserInfor', token, key, value })
 
                     //callApiByToken
                     pp.callApiByToken(token)
@@ -930,7 +953,7 @@ function WWebSso(WOrm, url, db, pathSettings) {
             let referer = get(headers, 'referer', '')
 
             //info
-            srlog.info({ event: 'verifyConn', ip, origin, referer })
+            srLog.info({ event: 'verifyConn', ip, origin, referer })
 
             //callApiByIp
             pp.callApiByIp(ip)
@@ -981,20 +1004,20 @@ function WWebSso(WOrm, url, db, pathSettings) {
                 return getWebInfor()
             },
 
-            checkToken: async(_t, token) => { //sso前端通過$fapi.checkToken調用
-                srlog.info({ event: 'kpfun-checkToken', token })
+            checkToken: async (_t, token) => { //sso前端通過$fapi.checkToken調用
+                srLog.info({ event: 'kpfun-checkToken', token })
                 let r = await p.checkToken(token)
                 return r
             },
-            refreshToken: async(_t, token) => { //sso前端通過$fapi.refreshToken調用
-                srlog.info({ event: 'kpfun-refreshToken', token })
+            refreshToken: async (_t, token) => { //sso前端通過$fapi.refreshToken調用
+                srLog.info({ event: 'kpfun-refreshToken', token })
                 let r = await p.refreshToken(token)
                 return r
             },
             loginByAccountAndPassword: async (_t, account, password) => {
 
                 //info, 使用者登入前
-                srlog.info({ event: 'kpfun-loginByAccountAndPassword-before', account })
+                srLog.info({ event: 'kpfun-loginByAccountAndPassword-before', account })
 
                 let u = null
                 let msg = ''
@@ -1008,10 +1031,10 @@ function WWebSso(WOrm, url, db, pathSettings) {
 
                 //info, 使用者登入成功或失敗
                 if (iseobj(u)) {
-                    srlog.info({ event: 'kpfun-loginByAccountAndPassword-success', account })
+                    srLog.info({ event: 'kpfun-loginByAccountAndPassword-success', account })
                 }
                 else {
-                    srlog.info({ event: 'kpfun-loginByAccountAndPassword-error', account, msg })
+                    srLog.info({ event: 'kpfun-loginByAccountAndPassword-error', account, msg })
                 }
 
                 if (iseobj(u)) {
@@ -1020,34 +1043,49 @@ function WWebSso(WOrm, url, db, pathSettings) {
                 return Promise.reject(msg)
             },
             logoutByToken: async (_t, token) => {
-                srlog.info({ event: 'kpfun-logoutByToken', token })
+                srLog.info({ event: 'kpfun-logoutByToken', token })
                 let r = await p.logoutByToken(token)
                 return r
             },
             getUserByToken: async (_t, token) => {
-                srlog.info({ event: 'kpfun-getUserByToken', token })
+                srLog.info({ event: 'kpfun-getUserByToken', token })
                 //console.log('call getUserByToken...')
                 let r = await p.checkTokenAndGetUserByToken(token, token)
                 //console.log('call getUserByToken end')
                 return r
             },
             getUserInfor: async (_t, token, key, value) => {
-                srlog.info({ event: 'kpfun-getUserInfor', token, key, value })
+                srLog.info({ event: 'kpfun-getUserInfor', token, key, value })
                 //console.log('call getUserInfor...')
                 let r = await p.checkTokenAndGetUserInfor(token, key, value)
                 //console.log('call getUserInfor end')
                 return r
             },
 
+            checkUserPassword: async (_t, lang, pw) => {
+                srLog.info({ event: 'kpfun-checkUserPassword', lang, pw })
+                //console.log('call checkUserPassword...')
+                let r = await p.checkUserPassword(lang, pw)
+                //console.log('call checkUserPassword end')
+                return r
+            },
+            changeUserPassword: async (_t, token, lang, pwOld, pwNew) => {
+                srLog.info({ event: 'kpfun-changeUserPassword', token, lang, pwOld, pwNew })
+                //console.log('call checkTokenAndChangePassword...')
+                let r = await p.checkTokenAndChangePassword(token, lang, pwOld, pwNew)
+                //console.log('call checkTokenAndChangePassword end')
+                return r
+            },
+
             getUsersList: async (_t, token) => {
-                srlog.info({ event: 'kpfun-getUsersList', token })
+                srLog.info({ event: 'kpfun-getUsersList', token })
                 //console.log('call getUsersList...')
                 let rs = await p.checkTokenAndGetUsersList(token, { fun: funCheckAdmin })
                 //console.log('call getUsersList end')
                 return rs
             },
             updateUsersList: async (_t, token, rows) => {
-                srlog.info({ event: 'kpfun-updateUsersList', token })
+                srLog.info({ event: 'kpfun-updateUsersList', token })
                 //console.log('call updateUsersList...')
                 let rs = await p.checkTokenAndUpdateUsersList(token, rows, { fun: funCheckAdmin })
                 //console.log('call updateUsersList end')
@@ -1055,14 +1093,14 @@ function WWebSso(WOrm, url, db, pathSettings) {
             },
 
             getTokensList: async (_t, token) => {
-                srlog.info({ event: 'kpfun-getTokensList', token })
+                srLog.info({ event: 'kpfun-getTokensList', token })
                 //console.log('call getTokensList...')
                 let rs = await p.checkTokenAndGetTokensList(token, { fun: funCheckAdmin })
                 //console.log('call getTokensList end')
                 return rs
             },
             updateTokensList: async (_t, token, rows) => {
-                srlog.info({ event: 'kpfun-updateTokensList', token })
+                srLog.info({ event: 'kpfun-updateTokensList', token })
                 //console.log('call updateTokensList...')
                 let rs = await p.checkTokenAndUpdateTokensList(token, rows, { fun: funCheckAdmin })
                 //console.log('call updateTokensList end')
@@ -1070,14 +1108,14 @@ function WWebSso(WOrm, url, db, pathSettings) {
             },
 
             getIpsList: async (_t, token) => {
-                srlog.info({ event: 'kpfun-getIpsList', token })
+                srLog.info({ event: 'kpfun-getIpsList', token })
                 //console.log('call getIpsList...')
                 let rs = await p.checkTokenAndGetIpsList(token, { fun: funCheckAdmin })
                 //console.log('call getIpsList end')
                 return rs
             },
             updateIpsList: async (_t, token, rows) => {
-                srlog.info({ event: 'kpfun-updateIpsList', token })
+                srLog.info({ event: 'kpfun-updateIpsList', token })
                 //console.log('call updateIpsList...')
                 let rs = await p.checkTokenAndUpdateIpsList(token, rows, { fun: funCheckAdmin })
                 //console.log('call updateIpsList end')
@@ -1085,21 +1123,21 @@ function WWebSso(WOrm, url, db, pathSettings) {
             },
 
             getStaUserSummary: async (_t, token) => {
-                srlog.info({ event: 'kpfun-getStaUserSummary', token })
+                srLog.info({ event: 'kpfun-getStaUserSummary', token })
                 //console.log('call getStaUserSummary...')
                 let r = await pf.getStaUserSummary(token, { fun: funCheckAdmin })
                 //console.log('call getStaUserSummary end')
                 return r
             },
             getStaTokenSummary: async (_t, token) => {
-                srlog.info({ event: 'kpfun-getStaTokenSummary', token })
+                srLog.info({ event: 'kpfun-getStaTokenSummary', token })
                 //console.log('call getStaTokenSummary...')
                 let r = await pf.getStaTokenSummary(token, { fun: funCheckAdmin })
                 //console.log('call getStaTokenSummary end')
                 return r
             },
             getStaIpSummary: async (_t, token) => {
-                srlog.info({ event: 'kpfun-getStaIpSummary', token })
+                srLog.info({ event: 'kpfun-getStaIpSummary', token })
                 //console.log('call getStaIpSummary...')
                 let r = await pf.getStaIpSummary(token, { fun: funCheckAdmin })
                 //console.log('call getStaIpSummary end')
@@ -1107,21 +1145,21 @@ function WWebSso(WOrm, url, db, pathSettings) {
             },
 
             getStaUserAccountLogin: async (_t, token) => {
-                srlog.info({ event: 'kpfun-getStaUserAccountLogin', token })
+                srLog.info({ event: 'kpfun-getStaUserAccountLogin', token })
                 //console.log('call getStaUserAccountLogin...')
                 let r = await pf.checkTokenAndGetStaUserAccountLogin(token, { fun: funCheckAdmin })
                 //console.log('call getStaUserAccountLogin end')
                 return r
             },
             getStaToken: async (_t, token) => {
-                srlog.info({ event: 'kpfun-getStaToken', token })
+                srLog.info({ event: 'kpfun-getStaToken', token })
                 //console.log('call getStaToken...')
                 let r = await pf.checkTokenAndGetStaToken(token, { fun: funCheckAdmin })
                 //console.log('call getStaToken end')
                 return r
             },
             getStaIp: async (_t, token) => {
-                srlog.info({ event: 'kpfun-getStaIp', token })
+                srLog.info({ event: 'kpfun-getStaIp', token })
                 //console.log('call getStaIp...')
                 let r = await pf.checkTokenAndGetStaIp(token, { fun: funCheckAdmin })
                 //console.log('call getStaIp end')
@@ -1167,7 +1205,7 @@ export default WWebSso
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.4</a> on Thu Dec 18 2025 22:24:13 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.4</a> on Sun Feb 08 2026 12:35:50 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
