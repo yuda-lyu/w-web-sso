@@ -49,8 +49,8 @@
     logFd: './_logs',
     logInterval: 'hr',
 
-    emSrcEmail: 'yudalyusemisphere@gmail.com', //'example@gmail.com', 
-    emSrcPW: 'hapbrhbnimpoxorh', //'{pw}', 
+    emSrcEmail: 'example@gmail.com', 
+    emSrcPW: '{pw}', 
     emSrcHost: 'smtp.gmail.com',
     emSrcPort: 465,
 

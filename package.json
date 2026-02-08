@@ -1,6 +1,6 @@
 {
   "name": "w-web-sso",
-  "version": "1.0.36",
+  "version": "1.0.37",
   "main": "dist/w-web-sso.umd.js",
   "dependencies": {
     "@mdi/js": "^7.4.47",
