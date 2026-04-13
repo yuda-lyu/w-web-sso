@@ -155,13 +155,37 @@
         >
 
             <template v-if="items">
-                <WAggridVueDyn
+                <WAggridVue
                     ref="rftable"
                     :style="`width:100%;`"
                     :height="contentHeight"
                     :opt="opt"
                 >
-                </WAggridVueDyn>
+                    <template v-slot:cell-render="props">
+                        <template v-if="props.key === 'userId'">
+                            <span v-if="$ui.gv(props.row, 'isApp') !== 'y'">{{ props.value }}</span>
+                        </template>
+                        <template v-else-if="props.key === 'isApp'">
+                            <input type="checkbox" :checked="props.value === 'y'" @click="$dg.toggleItemIsAppById($ui.gv(props.row, 'id'))" :disabled="!isEditable" />
+                        </template>
+                        <template v-else-if="props.key === 'timeCreate'">
+                            <div @click.stop.prevent @mousedown.stop.prevent>
+                                <button style="width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" @click="$dg.modifyItemTimeCreateById($event.currentTarget, $ui.getTimemsTZ(props.value), $ui.gv(props.row, 'id'))" :disabled="!isEditable">{{ $ui.getTimeMin(props.value, $t('tokenTimeEmpty')) }}</button>
+                            </div>
+                        </template>
+                        <template v-else-if="props.key === 'timeEnd'">
+                            <div @click.stop.prevent @mousedown.stop.prevent>
+                                <button style="width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" @click="$dg.modifyItemTimeEndById($event.currentTarget, $ui.getTimemsTZ(props.value), $ui.gv(props.row, 'id'))" :disabled="!isEditable">{{ $ui.getTimeMin(props.value, $t('tokenTimeEmpty')) }}</button>
+                            </div>
+                        </template>
+                        <template v-else-if="props.key === 'timeUpdate'">
+                            <div @click.stop.prevent @mousedown.stop.prevent>
+                                <button style="width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" @click="$dg.modifyItemTimeUpdateById($event.currentTarget, $ui.getTimemsTZ(props.value), $ui.gv(props.row, 'id'))" :disabled="!isEditable">{{ $ui.getTimeMin(props.value, $t('tokenTimeEmpty')) }}</button>
+                            </div>
+                        </template>
+                        <template v-else>{{ props.value }}</template>
+                    </template>
+                </WAggridVue>
             </template>
 
         </template>
@@ -196,7 +220,7 @@ import WSwitch from 'w-component-vue/src/components/WSwitch.vue'
 import WButtonCircle from 'w-component-vue/src/components/WButtonCircle.vue'
 import WPopup from 'w-component-vue/src/components/WPopup.vue'
 import WInputCheckbox from 'w-component-vue/src/components/WInputCheckbox.vue'
-import WAggridVueDyn from 'w-component-vue/src/components/WAggridVueDyn.vue'
+import WAggridVue from 'w-aggrid-vue/src/components/WAggridVue.vue'
 
 
 export default {
@@ -206,7 +230,7 @@ export default {
         WButtonCircle,
         WPopup,
         WInputCheckbox,
-        WAggridVueDyn,
+        WAggridVue,
     },
     props: {
         drawer: {
@@ -284,7 +308,12 @@ export default {
             let modeEditTokens = get(vo, 'webInfor.modeEditTokens', '')
             vo.isEditable = modeEditTokens === 'y'
 
-            vo.firstSetting = false
+            //會觸發數據變更再導致opt變更導致觸發rowsChange等事件, 故得要延遲, 供組件偵測初始設定數據初始化之用
+            setTimeout(() => {
+                vo.firstSetting = false
+                // console.log('firstSetting', vo.firstSetting)
+            }, 1)
+
         }
 
         //token
@@ -529,120 +558,14 @@ export default {
                         'timeEnd': false,
                         'timeUpdate': false,
                     },
-                    kpCellRender: {
-                        'userId': (v, k, r) => {
-                            // console.log('kpCellRender userId', v, k, r)
-
-                            //isApp
-                            let isApp = get(r, 'isApp', '')
-                            // console.log('isApp', isApp, k, r)
-
-                            //t
-                            let t = ``
-                            if (isApp !== 'y') {
-                                t = v
-                            }
-
-                            return t
-                        },
-                        'isApp': (v, k, r) => {
-                            // console.log('kpCellRender isApp', v, k, r)
-
-                            //id
-                            let id = get(r, 'id', '')
-                            // console.log('id', id, k, r)
-
-                            let t = `
-                                <input type="checkbox" ${v === 'y' ? 'checked' : ''} onclick="$vo.$dg.toggleItemIsAppById('${id}')" ${vo.isEditable ? '' : 'disabled'} />
-                            `
-
-                            return t
-                        },
-                        'timeCreate': (v, k, r) => {
-                            // console.log('kpCellRender timeCreate', v, k, r)
-
-                            //id
-                            let id = get(r, 'id', '')
-                            // console.log('id', id, k, r)
-
-                            //vv, vm
-                            let vv = ''
-                            let vm = vo.$t('tokenTimeEmpty')
-                            if (istimemsTZ(v)) { //原始數據為timemsTZ格式
-                                let vt = ot(v)
-                                vv = vt.format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-                                vm = vt.format('YYYY-MM-DD HH:mm')
-                            }
-                            // console.log('vv', vv)
-                            // console.log('vm', vm)
-
-                            //t
-                            let t = `
-                                <div onclick="event.stopPropagation();event.preventDefault();" onmousedown="event.stopPropagation();event.preventDefault();">
-                                    <button style="width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" onclick="$vo.$dg.modifyItemTimeCreateById(this,'${vv}','${id}')" ${vo.isEditable ? '' : 'disabled'}>${vm}</button>
-                                </div>
-                            `
-
-                            return t
-                        },
-                        'timeEnd': (v, k, r) => {
-                            // console.log('kpCellRender timeEnd', v, k, r)
-
-                            //id
-                            let id = get(r, 'id', '')
-                            // console.log('id', id, k, r)
-
-                            //vv, vm
-                            let vv = ''
-                            let vm = vo.$t('tokenTimeEmpty')
-                            if (istimemsTZ(v)) { //原始數據為timemsTZ格式
-                                let vt = ot(v)
-                                vv = vt.format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-                                vm = vt.format('YYYY-MM-DD HH:mm')
-                            }
-                            // console.log('vv', vv)
-                            // console.log('vm', vm)
-
-                            //t
-                            let t = `
-                                <div onclick="event.stopPropagation();event.preventDefault();" onmousedown="event.stopPropagation();event.preventDefault();">
-                                    <button style="width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" onclick="$vo.$dg.modifyItemTimeEndById(this,'${vv}','${id}')" ${vo.isEditable ? '' : 'disabled'}>${vm}</button>
-                                </div>
-                            `
-
-                            return t
-                        },
-                        'timeUpdate': (v, k, r) => {
-                            // console.log('kpCellRender timeUpdate', v, k, r)
-
-                            //id
-                            let id = get(r, 'id', '')
-                            // console.log('id', id, k, r)
-
-                            //vv, vm
-                            let vv = ''
-                            let vm = vo.$t('tokenTimeEmpty')
-                            if (istimemsTZ(v)) { //原始數據為timemsTZ格式
-                                let vt = ot(v)
-                                vv = vt.format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-                                vm = vt.format('YYYY-MM-DD HH:mm')
-                            }
-                            // console.log('vv', vv)
-                            // console.log('vm', vm)
-
-                            //t
-                            let t = `
-                                <div onclick="event.stopPropagation();event.preventDefault();" onmousedown="event.stopPropagation();event.preventDefault();">
-                                    <button style="width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" onclick="$vo.$dg.modifyItemTimeUpdateById(this,'${vv}','${id}')" ${vo.isEditable ? '' : 'disabled'}>${vm}</button>
-                                </div>
-                            `
-
-                            return t
-                        },
-                    },
                     rowsChange: (rs) => {
                         // console.log('rowsChange', rs)
                         // console.log('rowsChange cloneDeep(vo.opt.rows)', cloneDeep(vo.opt.rows))
+
+                        //check
+                        if (!vo.syncState || vo.firstLoading || vo.firstSetting) {
+                            return
+                        }
 
                         //isModified
                         vo.isModified = true
@@ -670,7 +593,7 @@ export default {
             let vo = this
 
             //cmp
-            let cmp = get(vo, '$refs.rftable.$refs.$self')
+            let cmp = get(vo, '$refs.rftable')
             // console.log('cmp', cmp)
 
             //refresh, 因set不會觸發kpCellRender, 故須另外調用組件函數refresh, 進而觸發kpCellRender, 使能更新數據
@@ -682,7 +605,7 @@ export default {
             let vo = this
 
             //cmp
-            let cmp = get(vo, '$refs.rftable.$refs.$self')
+            let cmp = get(vo, '$refs.rftable')
             // console.log('cmp', cmp)
 
             //showKeys

@@ -214,7 +214,13 @@ export default {
             let language = get(vo, 'webInfor.language', '')
             // console.log('language', language)
             vo.$ui.setLang(language, 'layout mounted')
-            vo.firstSetting = false
+
+            //會觸發數據變更再導致opt變更導致觸發rowsChange等事件, 故得要延遲, 供組件偵測初始設定數據初始化之用
+            setTimeout(() => {
+                vo.firstSetting = false
+                // console.log('firstSetting', vo.firstSetting)
+            }, 1)
+
         }
 
     },

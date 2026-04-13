@@ -43,3 +43,22 @@ instWWebSso.on('error', (err) => {
 //http://localhost:11007/api/getSsoUserInfor?token=token-for-app&key=token&value=token-for-app => 無使用者id-for-app, 要能取得虛擬使用者資訊
 
 //node srv.mjs
+
+
+let t=`
+
+密碼長度需在8~16碼，且須符合以下5項規則：
+
+(1)有0~9的數字
+
+(2)有英文字母(不限大小寫)
+
+(3)有特殊字元(非大小寫字母及數字，例如以下字元： ! @ # $ ^ & * ( ) - + < > ? …等字元)
+
+(4)不可和駭客最常猜測複雜密碼相同，例如1qaz@WSX、P@ssw0rd等
+
+(5)不可包含與自己姓名代號相同之2個以上之連續字元(例如姓名代號123456，密碼不可包含12、23、34、45、56)
+
+(6)不可包含「\」
+
+`

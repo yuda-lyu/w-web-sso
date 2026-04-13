@@ -1,4 +1,5 @@
 import Vue from 'vue'
+import ot from 'dayjs'
 import min from 'lodash-es/min.js'
 import size from 'lodash-es/size.js'
 import take from 'lodash-es/take.js'
@@ -17,7 +18,6 @@ import dropRight from 'lodash-es/dropRight.js'
 import groupBy from 'lodash-es/groupBy.js'
 import sortBy from 'lodash-es/sortBy.js'
 import cloneDeep from 'lodash-es/cloneDeep.js'
-import cint from 'wsemi/src/cint.mjs'
 import delay from 'wsemi/src/delay.mjs'
 import isarr from 'wsemi/src/isarr.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
@@ -25,6 +25,9 @@ import isfun from 'wsemi/src/isfun.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import isearr from 'wsemi/src/isearr.mjs'
 import isEle from 'wsemi/src/isEle.mjs'
+import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
+import cstr from 'wsemi/src/cstr.mjs'
+import cint from 'wsemi/src/cint.mjs'
 import strleft from 'wsemi/src/strleft.mjs'
 import strdelleft from 'wsemi/src/strdelleft.mjs'
 import sep from 'wsemi/src/sep.mjs'
@@ -34,7 +37,6 @@ import haskey from 'wsemi/src/haskey.mjs'
 import genPm from 'wsemi/src/genPm.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
 import waitFun from 'wsemi/src/waitFun.mjs'
-import browserView from 'wsemi/src/browserView.mjs'
 import arrHas from 'wsemi/src/arrHas.mjs'
 import arrSort from 'wsemi/src/arrSort.mjs'
 import arrInsert from 'wsemi/src/arrInsert.mjs'
@@ -47,14 +49,38 @@ import convertToTree from 'wsemi/src/convertToTree.mjs'
 let vo = Vue.prototype
 
 
+let kpFallback = {
+    csIng: {
+        eng: 'Connecting...',
+        cht: '連線中...',
+    },
+    csLogin: {
+        eng: 'Logged in',
+        cht: '已登入',
+    },
+    csLogout: {
+        eng: 'Logged out',
+        cht: '已登出',
+    },
+    csErrConn: {
+        eng: 'Unable to connect',
+        cht: '無法連線',
+    },
+    csErrLogin: {
+        eng: 'Login denied',
+        cht: '拒絕登入',
+    },
+}
+
+
 function setVo(vObj) {
     vo = vObj
 }
 
 
-// function updateConnState(connState) {
-//     vo.$store.commit(vo.$store.types.UpdateConnState, connState)
-// }
+function updateConnState(connState) {
+    vo.$store.commit(vo.$store.types.UpdateConnState, connState)
+}
 
 
 function updateLoading(loading) {
@@ -126,10 +152,9 @@ function getLang() {
         }
     }
 
-    //return
-    if (!isestr(lang)) {
-        return 'eng'
-    }
+    //validLang
+    lang = validLang(lang) //有可能給予非預期lang
+
     return lang
 }
 
@@ -141,9 +166,7 @@ function setLang(lang = null, from = '') {
     if (!isestr(lang)) {
         lang = getLang()
     }
-    else {
-        lang = validLang(lang)
-    }
+    lang = validLang(lang)
     // console.log('get lang', lang)
 
     //check, 若有變更才commit
@@ -182,23 +205,15 @@ function getKpText(key) {
     //t
     let t = get(kpText, key, '')
     if (!isestr(t)) {
+        // fallback: 後端語系尚未載入時使用預設值
+        let lang = getLang()
+        t = get(kpFallback, `${key}.${lang}`, '')
+    }
+    if (!isestr(t)) {
         t = key
     }
 
     return t
-}
-
-
-function gv(o, k, cv = null) {
-    let r = get(o, k, '')
-    if (!isestr(r)) {
-        let def = getKpText('empty')
-        return def
-    }
-    if (isfun(cv)) {
-        r = cv(r)
-    }
-    return r
 }
 
 
@@ -672,11 +687,40 @@ function getIcon(icon) {
 }
 
 
+function gv(o, k, cv = null) {
+    let r = get(o, k, '')
+    if (!isestr(r)) {
+        let def = getKpText('empty')
+        return def
+    }
+    if (isfun(cv)) {
+        r = cv(r)
+    }
+    return r
+}
+
+
+function getTimemsTZ(v) {
+    if (istimemsTZ(v)) {
+        return ot(v).format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+    }
+    return ''
+}
+
+
+function getTimeMin(v, def) {
+    if (istimemsTZ(v)) {
+        return ot(v).format('YYYY-MM-DD HH:mm')
+    }
+    return def
+}
+
+
 let mUI = {
 
     setVo,
 
-    // updateConnState,
+    updateConnState,
     updateLoading,
     updateViewState,
     updateUserToken,
@@ -686,7 +730,6 @@ let mUI = {
     setLang,
     getKpText,
 
-    gv,
     syncHeight,
 
     // waitData,
@@ -700,6 +743,11 @@ let mUI = {
     logout,
 
     getIcon,
+
+    gv,
+    getTimemsTZ,
+    getTimeMin,
+    cstr,
 
 }
 

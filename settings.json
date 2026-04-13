@@ -52,7 +52,7 @@
     emSrcEmail: 'example@gmail.com', 
     emSrcPW: '{pw}', 
     emSrcHost: 'smtp.gmail.com',
-    emSrcPort: 465,
+    emSrcPort: 587,
 
     chpwEmTitle: {
         eng: 'Password has been changed',

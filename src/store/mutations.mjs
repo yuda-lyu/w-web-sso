@@ -26,7 +26,7 @@ let state = {
     userToken: '',
     userSelf: {},
 
-    lang: 'cht', //'eng', 'cht'
+    lang: 'eng', //'eng', 'cht'
     kpText: {}, //一定要放在vuex內, 否則無法用broadcast驅動變更語系文字
 
 }
@@ -54,9 +54,9 @@ export let mutations = {
         state.kpText = kpText
     },
 
-    // [types.UpdateConnState] (state, connState) {
-    //     state.connState = connState
-    // },
+    [types.UpdateConnState] (state, connState) {
+        state.connState = connState
+    },
 
     [types.UpdateSyncState] (state, syncState) {
         state.syncState = syncState

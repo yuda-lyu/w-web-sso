@@ -192,13 +192,151 @@
         >
 
             <template v-if="items">
-                <WAggridVueDyn
+                <WAggridVue
                     ref="rftable"
                     :style="`width:100%;`"
                     :height="contentHeight"
                     :opt="opt"
                 >
-                </WAggridVueDyn>
+                    <template v-slot:cell-render="props">
+                        <!-- account -->
+                        <template v-if="props.key === 'account'">
+                            <span v-if="cellFieldErr('account', props.value)" :title="cellFieldErr('account', props.value)">
+                                <span style="color:#F57C00;">{{ $ui.cstr(props.value) }}</span>
+                                <img style="vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
+                            </span>
+                            <template v-else>{{ props.value }}</template>
+                        </template>
+                        <!-- password -->
+                        <template v-else-if="props.key === 'password'">
+                            <div @click.stop.prevent @mousedown.stop.prevent>
+                                <button style="width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" @click="$dg.modifyItemPasswordById($ui.gv(props.row, 'id'))" :disabled="!isEditable">{{ $t('userResetPassword') }}</button>
+                            </div>
+                        </template>
+                        <!-- email -->
+                        <template v-else-if="props.key === 'email'">
+                            <span v-if="cellFieldErr('email', props.value)" :title="cellFieldErr('email', props.value)">
+                                <span style="color:#F57C00;">{{ $ui.cstr(props.value) }}</span>
+                                <img style="vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
+                            </span>
+                            <template v-else>{{ props.value }}</template>
+                        </template>
+                        <!-- redir -->
+                        <template v-else-if="props.key === 'redir'">
+                            <span v-if="cellFieldErr('redir', props.value)" :title="cellFieldErr('redir', props.value)">
+                                <span style="color:#F57C00;">{{ $ui.cstr(props.value) }}</span>
+                                <img style="vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
+                            </span>
+                            <template v-else>{{ props.value }}</template>
+                        </template>
+                        <!-- isAdmin -->
+                        <template v-else-if="props.key === 'isAdmin'">
+                            <input type="checkbox" :checked="props.value === 'y'" @click="$dg.toggleItemIsAdminById($ui.gv(props.row, 'id'))" :disabled="!isEditable" />
+                        </template>
+                        <!-- isActive -->
+                        <template v-else-if="props.key === 'isActive'">
+                            <input type="checkbox" :checked="props.value === 'y'" @click="$dg.toggleItemIsActiveById($ui.gv(props.row, 'id'))" :disabled="!isEditable" />
+                        </template>
+                        <!-- timeVerified -->
+                        <template v-else-if="props.key === 'timeVerified'">
+                            <div @click.stop.prevent @mousedown.stop.prevent style="display:flex; align-items:center;">
+                                <div style="width:90px; display:inline-flex; align-items:center; vertical-align:middle;" :style="{ color: $s.getIsVerified(props.row) ? 'green' : 'red' }">
+                                    <i class="mdi" :class="$s.getIsVerified(props.row) ? 'mdi-check-bold' : 'mdi-close-thick'"></i>
+                                    <span style="padding-left:2px;">{{ $s.getIsVerified(props.row) ? $t('isVerifiedY') : $t('isVerifiedN') }}</span>
+                                </div>
+                                <WTimeminute
+                                    :style="`line-height:0.9rem;`"
+                                    :value="cellTimeForInput(props.value)"
+                                    @input="handleCellTimeInput('timeVerified', $ui.gv(props.row, 'id'), $event)"
+                                    :editable="isEditable"
+                                    :textEmpty="'請選擇日期'"
+                                    :paddingStyle="{v:0,h:8}"
+                                    :placementDistY="3"
+                                    :textFontSize="'0.8rem'"
+                                    :backgroundColor="'#f0f0f0'"
+                                    :backgroundColorHover="'#e5e5e5'"
+                                    :backgroundColorFocus="'#e5e5e5'"
+                                    :borderColor="'#767676'"
+                                    :borderColorHover="'#767676'"
+                                    :borderColorFocus="'#767676'"
+                                    :borderRadius="4"
+                                    :minuteInter="1"
+                                    :hourMin="0"
+                                    :hourMax="23"
+                                    :shadow="false"
+                                    icon=""
+                                >
+                                </WTimeminute>
+                            </div>
+                        </template>
+                        <!-- timeExpired -->
+                        <template v-else-if="props.key === 'timeExpired'">
+                            <div @click.stop.prevent @mousedown.stop.prevent style="display:flex; align-items:center;">
+                                <div style="width:90px; display:inline-flex; align-items:center; vertical-align:middle;" :style="{ color: !$s.getIsExpired(props.row) ? 'green' : 'red' }">
+                                    <i class="mdi" :class="!$s.getIsExpired(props.row) ? 'mdi-check-bold' : 'mdi-close-thick'"></i>
+                                    <span style="padding-left:2px;">{{ $s.getIsExpired(props.row) ? $t('isExpiredY') : $t('isExpiredN') }}</span>
+                                </div>
+                                <WTimeminute
+                                    :style="`line-height:0.9rem;`"
+                                    :value="cellTimeForInput(props.value)"
+                                    @input="handleCellTimeInput('timeExpired', $ui.gv(props.row, 'id'), $event)"
+                                    :editable="isEditable"
+                                    :textEmpty="'請選擇日期'"
+                                    :paddingStyle="{v:0,h:8}"
+                                    :placementDistY="3"
+                                    :textFontSize="'0.8rem'"
+                                    :backgroundColor="'#f0f0f0'"
+                                    :backgroundColorHover="'#e5e5e5'"
+                                    :backgroundColorFocus="'#e5e5e5'"
+                                    :borderColor="'#767676'"
+                                    :borderColorHover="'#767676'"
+                                    :borderColorFocus="'#767676'"
+                                    :borderRadius="4"
+                                    :minuteInter="1"
+                                    :hourMin="0"
+                                    :hourMax="23"
+                                    :shadow="false"
+                                    icon=""
+                                >
+                                </WTimeminute>
+                            </div>
+                        </template>
+                        <!-- timeBlocked -->
+                        <template v-else-if="props.key === 'timeBlocked'">
+                            <div @click.stop.prevent @mousedown.stop.prevent style="display:flex; align-items:center;">
+                                <div style="width:90px; display:inline-flex; align-items:center; vertical-align:middle;" :style="{ color: !$s.getIsBlocked(props.row) ? 'green' : 'red' }">
+                                    <i class="mdi" :class="!$s.getIsBlocked(props.row) ? 'mdi-check-bold' : 'mdi-close-thick'"></i>
+                                    <span style="padding-left:2px;">{{ $s.getIsBlocked(props.row) ? $t('isBlockedY') : $t('isBlockedN') }}</span>
+                                </div>
+                                <WTimeminute
+                                    :style="`line-height:0.9rem;`"
+                                    :value="cellTimeForInput(props.value)"
+                                    @input="handleCellTimeInput('timeBlocked', $ui.gv(props.row, 'id'), $event)"
+                                    :editable="isEditable"
+                                    :textEmpty="'請選擇日期'"
+                                    :paddingStyle="{v:0,h:8}"
+                                    :placementDistY="3"
+                                    :textFontSize="'0.8rem'"
+                                    :backgroundColor="'#f0f0f0'"
+                                    :backgroundColorHover="'#e5e5e5'"
+                                    :backgroundColorFocus="'#e5e5e5'"
+                                    :borderColor="'#767676'"
+                                    :borderColorHover="'#767676'"
+                                    :borderColorFocus="'#767676'"
+                                    :borderRadius="4"
+                                    :minuteInter="1"
+                                    :hourMin="0"
+                                    :hourMax="23"
+                                    :shadow="false"
+                                    icon=""
+                                >
+                                </WTimeminute>
+                            </div>
+                        </template>
+                        <!-- default -->
+                        <template v-else>{{ props.value }}</template>
+                    </template>
+                </WAggridVue>
             </template>
 
         </template>
@@ -228,7 +366,6 @@ import isestr from 'wsemi/src/isestr.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
 import isEmail from 'wsemi/src/isEmail.mjs'
-import cstr from 'wsemi/src/cstr.mjs'
 import arrPull from 'wsemi/src/arrPull.mjs'
 import domShowInputDatatime from 'wsemi/src/domShowInputDatatime.mjs'
 import WIcon from 'w-component-vue/src/components/WIcon.vue'
@@ -236,7 +373,8 @@ import WSwitch from 'w-component-vue/src/components/WSwitch.vue'
 import WButtonCircle from 'w-component-vue/src/components/WButtonCircle.vue'
 import WPopup from 'w-component-vue/src/components/WPopup.vue'
 import WInputCheckbox from 'w-component-vue/src/components/WInputCheckbox.vue'
-import WAggridVueDyn from 'w-component-vue/src/components/WAggridVueDyn.vue'
+import WAggridVue from 'w-aggrid-vue/src/components/WAggridVue.vue'
+import WTimeminute from 'w-component-vue/src/components/WTimeminute.vue'
 
 
 export default {
@@ -246,7 +384,8 @@ export default {
         WButtonCircle,
         WPopup,
         WInputCheckbox,
-        WAggridVueDyn,
+        WAggridVue,
+        WTimeminute,
     },
     props: {
         drawer: {
@@ -368,7 +507,12 @@ export default {
             vo.widthUsersEmail = get(vo, 'webInfor.widthUsersEmail', '')
             vo.widthUsersDescription = get(vo, 'webInfor.widthUsersDescription', '')
 
-            vo.firstSetting = false
+            //會觸發數據變更再導致opt變更導致觸發rowsChange等事件, 故得要延遲, 供組件偵測初始設定數據初始化之用
+            setTimeout(() => {
+                vo.firstSetting = false
+                // console.log('firstSetting', vo.firstSetting)
+            }, 1)
+
         }
 
         //token
@@ -624,6 +768,66 @@ export default {
     },
     methods: {
 
+        cellTimeForInput: function(v) {
+            if (istimemsTZ(v)) {
+                return ot(v).format('YYYY-MM-DDTHH:mm:ss')
+            }
+            return ''
+        },
+
+        handleCellTimeInput: function(key, id, timeNew) {
+            let vo = this
+
+            //check
+            if (!isestr(id)) {
+                return
+            }
+
+            //rows
+            let rows = get(vo, 'opt.rows', [])
+
+            //find
+            let r = null
+            let kr = null
+            each(rows, (v, k) => {
+                if (get(v, 'id', '') === id) {
+                    r = v
+                    kr = k
+                    return false //跳出
+                }
+            })
+
+            //check
+            if (!iseobj(r)) {
+                return
+            }
+
+            //v
+            let vt = ot(timeNew)
+            let v = vt.format('YYYY-MM-DDTHH:mm:ss.SSSZ') //轉回原始數據為timemsTZ格式
+
+            //set
+            set(vo, `opt.rows[${kr}].${key}`, v)
+
+            //refresh
+            vo.refresh()
+
+            //isModified
+            vo.isModified = true
+
+        },
+
+        cellFieldErr: function(field, v) {
+            let vo = this
+            let errMaps = {
+                'account': vo.errItemsByAccount,
+                'email': vo.errItemsByEmail,
+                'redir': vo.errItemsByRedir,
+            }
+            let err = get(errMaps[field], v, '')
+            return isestr(err) ? err : ''
+        },
+
         resizePanel: function(msg) {
             // console.log('methods resizePanel', msg)
 
@@ -762,230 +966,19 @@ export default {
                         'timeExpired': false,
                         'timeBlocked': false,
                     },
-                    kpCellRender: {
-                        'account': (v) => {
-                            // console.log('kpCellRender account', v)
-
-                            //err
-                            let err = get(vo.errItemsByAccount, v, '')
-                            // console.log(v, err)
-
-                            //check
-                            if (isestr(err)) {
-                                v = `
-                                    <span title="${err}">
-                                        <span style="color:#F57C00;">${cstr(v)}</span>
-                                        <img style="vertical-align:sub; width:16px; height:16px;" src="${vo.$ui.getIcon('warning')}" />
-                                    </span>
-                                `
-                            }
-
-                            return v
-                        },
-                        'password': (v, k, r) => {
-                            // console.log('kpCellRender password', v, k, r)
-
-                            //id
-                            let id = get(r, 'id', '')
-                            // console.log('id', id, k, r)
-
-                            // `
-                            let t = `
-                                <div onclick="event.stopPropagation();event.preventDefault();" onmousedown="event.stopPropagation();event.preventDefault();">
-                                    <button style="width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" onclick="$vo.$dg.modifyItemPasswordById('${id}')" ${vo.isEditable ? '' : 'disabled'} >${vo.$t('userResetPassword')}</button>
-                                </div>
-                            `
-
-                            return t
-                        },
-                        'email': (v) => {
-                            // console.log('kpCellRender email', v)
-
-                            //err
-                            let err = get(vo.errItemsByEmail, v, '')
-                            // console.log(v, err)
-
-                            //check
-                            if (isestr(err)) {
-                                v = `
-                                    <span title="${err}">
-                                        <span style="color:#F57C00;">${cstr(v)}</span>
-                                        <img style="vertical-align:sub; width:16px; height:16px;" src="${vo.$ui.getIcon('warning')}" />
-                                    </span>
-                                `
-                            }
-
-                            return v
-                        },
-                        'redir': (v) => {
-                            // console.log('kpCellRender redir', v)
-
-                            //err
-                            let err = get(vo.errItemsByRedir, v, '')
-                            // console.log(v, err)
-
-                            //check
-                            if (isestr(err)) {
-                                v = `
-                                    <span title="${err}">
-                                        <span style="color:#F57C00;">${cstr(v)}</span>
-                                        <img style="vertical-align:sub; width:16px; height:16px;" src="${vo.$ui.getIcon('warning')}" />
-                                    </span>
-                                `
-                            }
-
-                            return v
-                        },
-                        'isAdmin': (v, k, r) => {
-                            // console.log('kpCellRender isAdmin', v, k, r)
-
-                            //id
-                            let id = get(r, 'id', '')
-                            // console.log('id', id, k, r)
-
-                            let t = `
-                                <input type="checkbox" ${v === 'y' ? 'checked' : ''} onclick="$vo.$dg.toggleItemIsAdminById('${id}')" ${vo.isEditable ? '' : 'disabled'} />
-                            `
-
-                            return t
-                        },
-                        'isActive': (v, k, r) => {
-                            // console.log('kpCellRender isActive', v, k, r)
-
-                            //id
-                            let id = get(r, 'id', '')
-                            // console.log('id', id, k, r)
-
-                            let t = `
-                                <input type="checkbox" ${v === 'y' ? 'checked' : ''} onclick="$vo.$dg.toggleItemIsActiveById('${id}')" ${vo.isEditable ? '' : 'disabled'} />
-                            `
-
-                            return t
-                        },
-                        'timeVerified': (v, k, r) => {
-                            // console.log('kpCellRender timeVerified', v, k, r)
-
-                            //id
-                            let id = get(r, 'id', '')
-                            // console.log('id', id, k, r)
-
-                            //vv, vm
-                            let vv = ''
-                            let vm = vo.$t('userTimeEmpty')
-                            if (istimemsTZ(v)) { //原始數據為timemsTZ格式
-                                let vt = ot(v)
-                                vv = vt.format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-                                vm = vt.format('YYYY-MM-DD HH:mm')
-                            }
-                            // console.log('vv', vv)
-                            // console.log('vm', vm)
-
-                            //isVerified
-                            let isVerified = vo.$s.getIsVerified(r)
-
-                            //h
-                            let iconColor = isVerified ? 'green' : 'red'
-                            let text = isVerified ? vo.$t('isVerifiedY') : vo.$t('isVerifiedN')
-                            let h = `
-                                <div style="width:90px; display:inline-flex; align-items:center; vertical-align:middle; color:${iconColor}; ">
-                                    <i class="mdi ${isVerified ? 'mdi-check-bold' : 'mdi-close-thick'}"></i>
-                                    <span style="padding-left:2px;">${text}</span>
-                                </div>
-                            `
-
-                            let t = `
-                                <div onclick="event.stopPropagation();event.preventDefault();" onmousedown="event.stopPropagation();event.preventDefault();" style="display:flex; align-items:center;">
-                                    ${h}
-                                    <button style="width:126px; min-width:126px;" onclick="$vo.$dg.modifyItemTimeVerifiedById(this,'${vv}','${id}')" ${vo.isEditable ? '' : 'disabled'}>${vm}</button>
-                                </div>
-                            `
-
-                            return t
-                        },
-                        'timeExpired': (v, k, r) => {
-                            // console.log('kpCellRender timeExpired', v, k, r)
-
-                            //id
-                            let id = get(r, 'id', '')
-                            // console.log('id', id, k, r)
-
-                            //vv, vm
-                            let vv = ''
-                            let vm = vo.$t('userTimeEmpty')
-                            if (istimemsTZ(v)) { //原始數據為timemsTZ格式
-                                let vt = ot(v)
-                                vv = vt.format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-                                vm = vt.format('YYYY-MM-DD HH:mm')
-                            }
-                            // console.log('vv', vv)
-                            // console.log('vm', vm)
-
-                            //isExpired
-                            let isExpired = vo.$s.getIsExpired(r)
-
-                            //h
-                            let iconColor = !isExpired ? 'green' : 'red'
-                            let text = isExpired ? vo.$t('isExpiredY') : vo.$t('isExpiredN')
-                            let h = `
-                                <div style="width:90px; display:inline-flex; align-items:center; vertical-align:middle; color:${iconColor}; ">
-                                    <i class="mdi ${!isExpired ? 'mdi-check-bold' : 'mdi-close-thick'}"></i>
-                                    <span style="padding-left:2px;">${text}</span>
-                                </div>
-                            `
-
-                            let t = `
-                                <div onclick="event.stopPropagation();event.preventDefault();" onmousedown="event.stopPropagation();event.preventDefault();" style="display:flex; align-items:center;">
-                                    ${h}
-                                    <button style="width:126px; min-width:126px;" onclick="$vo.$dg.modifyItemTimeExpiredById(this,'${vv}','${id}')" ${vo.isEditable ? '' : 'disabled'}>${vm}</button>
-                                </div>
-                            `
-
-                            return t
-                        },
-                        'timeBlocked': (v, k, r) => {
-                            // console.log('kpCellRender timeBlocked', v, k, r)
-
-                            //id
-                            let id = get(r, 'id', '')
-                            // console.log('id', id, k, r)
-
-                            //vv, vm
-                            let vv = ''
-                            let vm = vo.$t('userTimeEmpty')
-                            if (istimemsTZ(v)) { //原始數據為timemsTZ格式
-                                let vt = ot(v)
-                                vv = vt.format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-                                vm = vt.format('YYYY-MM-DD HH:mm')
-                            }
-                            // console.log('vv', vv)
-                            // console.log('vm', vm)
-
-                            //isBlocked
-                            let isBlocked = vo.$s.getIsBlocked(r)
-
-                            //h
-                            let iconColor = !isBlocked ? 'green' : 'red'
-                            let text = isBlocked ? vo.$t('isBlockedY') : vo.$t('isBlockedN')
-                            let h = `
-                                <div style="width:90px; display:inline-flex; align-items:center; vertical-align:middle; color:${iconColor}; ">
-                                    <i class="mdi ${!isBlocked ? 'mdi-check-bold' : 'mdi-close-thick'}"></i>
-                                    <span style="padding-left:2px;">${text}</span>
-                                </div>
-                            `
-
-                            let t = `
-                                <div onclick="event.stopPropagation();event.preventDefault();" onmousedown="event.stopPropagation();event.preventDefault();" style="display:flex; align-items:center;">
-                                    ${h}
-                                    <button style="width:126px; min-width:126px;" onclick="$vo.$dg.modifyItemTimeBlockedById(this,'${vv}','${id}')" ${vo.isEditable ? '' : 'disabled'}>${vm}</button>
-                                </div>
-                            `
-
-                            return t
-                        },
-                    },
                     rowsChange: (rs) => {
                         // console.log('rowsChange', rs)
                         // console.log('rowsChange cloneDeep(vo.opt.rows)', cloneDeep(vo.opt.rows))
+
+                        //check
+                        if (!vo.syncState || vo.firstLoading || vo.firstSetting) {
+                            return
+                        }
+
+                        //check
+                        if (!vo.syncState || vo.firstLoading || vo.firstSetting) {
+                            return
+                        }
 
                         //isModified
                         vo.isModified = true
@@ -1013,7 +1006,7 @@ export default {
             let vo = this
 
             //cmp
-            let cmp = get(vo, '$refs.rftable.$refs.$self')
+            let cmp = get(vo, '$refs.rftable')
             // console.log('cmp', cmp)
 
             //refresh, 因set不會觸發kpCellRender, 故須另外調用組件函數refresh, 進而觸發kpCellRender, 使能更新數據
@@ -1025,7 +1018,7 @@ export default {
             let vo = this
 
             //cmp
-            let cmp = get(vo, '$refs.rftable.$refs.$self')
+            let cmp = get(vo, '$refs.rftable')
             // console.log('cmp', cmp)
 
             //showKeys
