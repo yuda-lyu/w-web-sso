@@ -1,6 +1,7 @@
 { 
 
     serverPort: 11007,
+    siteUrl: 'http://localhost:8080',
     subfolder: '', //msso
 
     showLanguage: 'y', //'n',
@@ -46,11 +47,51 @@
     numForIpCallApi: 12000, //假設每ip每秒2次, 10分鐘須10*60*2=1200, 同網段ip使用者共10位, 須12000
     minBlockForIpCallApi: 30,
 
+    allowUserRegistration: true,
+
+    passwordPolicy: {
+        minLength: 8,
+        maxLength: 16,
+        requireLetter: true,
+        requireUppercase: false,
+        requireLowercase: false,
+        requireDigit: true,
+        requireSpecial: true,
+        noSpace: true,
+        onlyAscii: true,
+        forbiddenChars: ['\\'],
+        noConsecutiveCharsFromAccount: true,
+        consecutiveCharsMinMatch: 2,
+        commonPasswordBlacklist: [
+            '1234', '12345', '123456', '1234567', '12345678',
+            '123456789', '1234567890', '12345678910',
+            '111111', '000000', '666666', '888888', '7777777', '11111111',
+            '123123', '123321', '654321', '987654321',
+            'qwerty', 'qwerty123', 'qwerty1', 'qwertyuiop', 'qazwsx',
+            '1q2w3e4r', '1q2w3e4r5t', '1q2w3e', '1qaz2wsx', 'zxcvbnm',
+            'password', 'password1', 'passw0rd', 'admin', 'admin123',
+            'welcome', 'letmein', 'login', 'master', 'monkey', 'dragon',
+            'shadow', 'sunshine', 'superman', 'batman', 'football',
+            'baseball', 'soccer', 'hockey', 'michael', 'jordan', 'jennifer',
+            'hunter', 'ranger', 'harley', 'thomas', 'charlie', 'andrew',
+            'daniel', 'ashley', 'bailey', 'mustang', 'access', 'secret',
+            'ninja', 'jesus', 'hello', 'freedom', 'trustno1',
+            '1qaz@WSX', 'P@ssw0rd', 'Pass@123', 'Aa123456', 'Aa@123456',
+            'Admin@123', 'abc@123',
+            'abc123', 'abcdef', 'abcd1234', 'abc',
+            'iloveyou', 'fuckyou', 'f*ckyou', 'whatever', 'nothing',
+            'google', 'computer', 'internet', 'samsung', 'apple', 'killer',
+            'princess', 'lovely', 'tigger', 'starwars', 'pokemon',
+            'minecraft', '123qwe', 'zaq1zaq1', 'photoshop', 'adobe123',
+            '18atcskd2w', 'mynoob',
+        ],
+    },
+
     logFd: './_logs',
     logInterval: 'hr',
 
-    emSrcEmail: 'example@gmail.com', 
-    emSrcPW: '{pw}', 
+    emSrcEmail: 'example@gmail.com',
+    emSrcPW: '{pw}',
     emSrcHost: 'smtp.gmail.com',
     emSrcPort: 587,
 
@@ -61,6 +102,16 @@
     chpwEmContent: {
         eng: 'Dear User {name},<br><br>This is to inform you that the password for your {sender} account has been successfully changed.<br><br>If you did not perform this action or have any concerns regarding your account security, please contact the system administrator as soon as possible to ensure the safety of your account.<br><br>This is an automated system notification. Please do not reply to this email.',
         cht: '使用者 {name} 您好：<br><br>您於「{sender}」的密碼已成功變更。<br><br>若您未曾進行此操作，或對帳號安全有任何疑慮，請您儘速聯絡系統管理單位，以確保帳號安全。<br><br>此為系統自動通知信件，請勿直接回覆。'
+    },
+
+
+    regVerifyEmTitle: {
+        eng: 'Please verify your email',
+        cht: '請驗證您的電子郵件',
+    },
+    regVerifyEmContent: {
+        eng: 'Dear {name},<br><br>Thank you for registering at {sender}.<br><br>Please click the link below to verify your email and activate your account:<br><a href="{verifyUrl}">{verifyUrl}</a><br><br>If you did not register, please ignore this email.<br><br>This is an automated notification. Please do not reply.',
+        cht: '{name} 您好：<br><br>感謝您註冊「{sender}」。<br><br>請點擊以下連結以驗證您的電子郵件並啟用帳號：<br><a href="{verifyUrl}">{verifyUrl}</a><br><br>若您未曾進行此操作，請忽略此信。<br><br>此為系統自動通知信件，請勿直接回覆。',
     },
 
 }

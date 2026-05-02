@@ -13,7 +13,7 @@ import ispint from 'wsemi/src/ispint.mjs'
 import isearr from 'wsemi/src/isearr.mjs'
 import ispnum from 'wsemi/src/ispnum.mjs'
 import isbol from 'wsemi/src/isbol.mjs'
-import isUserPW from 'wsemi/src/isUserPW.mjs'
+import isUserPw from 'wsemi/src/isUserPw.mjs'
 import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
 import isfun from 'wsemi/src/isfun.mjs'
 import ispm from 'wsemi/src/ispm.mjs'
@@ -33,12 +33,13 @@ import delay from 'wsemi/src/delay.mjs'
 import now2str from 'wsemi/src/now2str.mjs'
 import cache from 'wsemi/src/cache.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
+import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
 import hashPassword from './hashPassword.mjs'
 
 
-function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpwEmTitle, chpwEmContent }) {
+function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpwEmTitle, chpwEmContent, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl, regVerifyEmTitle, regVerifyEmContent }) {
 
 
     //_getGenUserByKV
@@ -244,16 +245,18 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
         // console.log('password', password, 'salt', salt)
         // console.log('passwordTest', passwordTest)
 
-        //getGenUserByAccount
-        let u = await _getGenUserByKV('account', account, { deletePassword: false }) //不能使用getGenUserByAccount, 會刪除密碼無法比對
-        // console.log('u', u)
+        //getGenUserByAccount, 不限 isActive 查詢，以便逐一檢查各狀態
+        let us = await woItems.users.select({ account })
+        if (size(us) === 0) {
+            return Promise.reject(`incorrect user account or password`)
+        }
+        let u = us[0]
 
-        // //check, 不用檢測, 若resolve必定有u, 若reject則由外部處理
-        // if (!iseobj(u)) {
-        //     console.log(`account`, account)
-        //     console.log(`can not find the user from account`)
-        //     return Promise.reject(`can not find the user from account`)
-        // }
+        //check isActive
+        let isActive = get(u, 'isActive', '')
+        if (isActive !== 'y') {
+            return Promise.reject('account inactive')
+        }
 
         //passwordTrue
         let passwordTrue = get(u, 'password', '')
@@ -262,6 +265,21 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
         //check
         if (passwordTest !== passwordTrue) {
             return Promise.reject(`incorrect user account or password`)
+        }
+
+        //check timeVerified
+        let timeVerified = get(u, 'timeVerified', '')
+        if (!isestr(timeVerified)) {
+            return Promise.reject('account not verified')
+        }
+
+        //check timeExpired
+        let timeExpired = get(u, 'timeExpired', '')
+        if (isestr(timeExpired) && istimemsTZ(timeExpired)) {
+            let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+            if (tn > timeExpired) {
+                return Promise.reject('account expired')
+            }
         }
 
         //userId
@@ -632,8 +650,202 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
 
 
     //createUser
-    let createUser = async () => {
-        //bbb 待開發createUser
+    let createUser = async (lang, data) => {
+
+        //check
+        if (!isestr(lang)) {
+            lang = 'eng'
+        }
+
+        //check allowUserRegistration
+        if (!allowUserRegistration) {
+            let msg = get(kpLang, `${lang}.userRegistrationNotAllowed`, 'user registration is not allowed')
+            return Promise.reject(msg)
+        }
+
+        //account
+        let account = get(data, 'account', '')
+        if (!isestr(account)) {
+            return Promise.reject('invalid account')
+        }
+
+        //email
+        let email = get(data, 'email', '')
+        if (!isestr(email) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return Promise.reject('invalid email format')
+        }
+
+        //password
+        let password = get(data, 'password', '')
+
+        //confirmPassword
+        let confirmPassword = get(data, 'confirmPassword', '')
+        if (password !== confirmPassword) {
+            let msg = get(kpLang, `${lang}.userChangePasswordNotSame`, 'passwords do not match')
+            return Promise.reject(msg)
+        }
+
+        //check password
+        let r = checkUserPassword(lang, password, { account })
+        if (r.state === 'error') {
+            return Promise.reject(r.msg)
+        }
+
+        //name
+        let name = get(data, 'name', '')
+        if (!isestr(name)) {
+            return Promise.reject('invalid name')
+        }
+
+        //check account unique (全域唯一，不限 isActive)
+        let allUsers = await woItems.users.select()
+        let existAccount = allUsers.some((u) => get(u, 'account', '') === account)
+        if (existAccount) {
+            let msg = get(kpLang, `${lang}.userRegistrationAccountExists`, 'account already exists')
+            return Promise.reject(msg)
+        }
+
+        //check email unique (全域唯一，不限 isActive)
+        let existEmail = allUsers.some((u) => get(u, 'email', '') === email)
+        if (existEmail) {
+            let msg = get(kpLang, `${lang}.userRegistrationEmailExists`, 'email already exists')
+            return Promise.reject(msg)
+        }
+
+        //hashPassword
+        let passwordHashed = hashPassword(password, salt)
+
+        //tokenVerify
+        let tokenVerify = `${genIDSeq()}`
+
+        //new user (timeVerified 為空，須完成 email 驗證才能登入)
+        let u = ds.users.funNew({
+            account,
+            password: passwordHashed,
+            name,
+            email,
+            tokenVerify,
+            isAdmin: 'n',
+            isActive: 'y',
+        })
+
+        //insert
+        await procOrm('', 'users', 'insert', [u])
+
+        //send verify email (若失敗，使用者可透過「重寄驗證信」補救)
+        try {
+            let sender = get(kpLang, `${lang}.webName`, '')
+            let title = get(regVerifyEmTitle, lang, '')
+            let content = get(regVerifyEmContent, lang, '')
+            let verifyUrl = `${verifyBaseUrl}/api/verifyEmail?token=${tokenVerify}&lang=${lang}`
+            content = content.replaceAll('{sender}', sender)
+            content = content.replaceAll('{name}', name)
+            content = content.replaceAll('{verifyUrl}', verifyUrl)
+            await srEmail.send(sender, title, content, email)
+        }
+        catch (err) {
+            console.log('send verify email error', err)
+        }
+
+        return { state: 'success', msg: 'ok' }
+    }
+
+
+    //verifyEmail
+    let verifyEmail = async (token) => {
+
+        //check token
+        if (!isestr(token)) {
+            return Promise.reject('verifyEmailInvalidToken')
+        }
+
+        //以 tokenVerify 查找使用者
+        let us = await woItems.users.select({ tokenVerify: token })
+        if (size(us) === 0) {
+            return Promise.reject('verifyEmailInvalidToken')
+        }
+        let user = us[0]
+
+        //check timeVerified (是否已驗證)
+        let timeVerified = get(user, 'timeVerified', '')
+        if (isestr(timeVerified)) {
+            return Promise.reject('verifyEmailAlreadyVerified')
+        }
+
+        //update timeVerified + 清空 tokenVerify
+        await woItems.users.save({
+            id: user.id,
+            timeVerified: now2str(),
+            tokenVerify: '',
+        })
+
+        return { state: 'success', msg: 'ok' }
+    }
+
+
+    //resendVerifyEmail
+    let resendVerifyEmail = async (lang, account, email) => {
+
+        //check
+        if (!isestr(lang)) {
+            lang = 'eng'
+        }
+
+        //check
+        if (!isestr(account) || !isestr(email)) {
+            return Promise.reject('invalid account or email')
+        }
+
+        //getGenUserByAccount
+        let u = null
+        try {
+            u = await _getGenUserByKV('account', account)
+        }
+        catch (err) {}
+        if (!u) {
+            return Promise.reject('invalid account or email') //不洩露帳號是否存在
+        }
+
+        //check email match
+        let uEmail = get(u, 'email', '')
+        if (uEmail !== email) {
+            return Promise.reject('invalid account or email')
+        }
+
+        //check timeVerified
+        let timeVerified = get(u, 'timeVerified', '')
+        if (isestr(timeVerified)) {
+            return Promise.reject('account already verified')
+        }
+
+        //userId
+        let userId = get(u, 'id', '')
+        let name = get(u, 'name', '')
+
+        //產生新 tokenVerify 並更新至 users
+        let tokenVerify = `${genIDSeq()}`
+        await woItems.users.save({
+            id: userId,
+            tokenVerify,
+        })
+
+        //send verify email
+        try {
+            let sender = get(kpLang, `${lang}.webName`, '')
+            let title = get(regVerifyEmTitle, lang, '')
+            let content = get(regVerifyEmContent, lang, '')
+            let verifyUrl = `${verifyBaseUrl}/api/verifyEmail?token=${tokenVerify}&lang=${lang}`
+            content = content.replaceAll('{sender}', sender)
+            content = content.replaceAll('{name}', name)
+            content = content.replaceAll('{verifyUrl}', verifyUrl)
+            await srEmail.send(sender, title, content, email)
+        }
+        catch (err) {
+            console.log('resend verify email error', err)
+            return Promise.reject('send email failed')
+        }
+
+        return { state: 'success', msg: 'ok' }
     }
 
 
@@ -650,21 +862,41 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
 
 
     //checkUserPassword
-    let checkUserPassword = (lang, pw) => {
+    let checkUserPassword = (lang, pw, opt = {}) => {
 
         //check
         if (!isestr(lang)) {
             lang = 'eng'
         }
 
+        //account
+        let account = get(opt, 'account', '')
+
         //check pw
         let keyErr = ''
         try {
-            isUserPW(pw, { useKeyForError: true, useOnlyOneError: true })
+            isUserPw(pw, {
+                useKeyForError: true,
+                useOnlyOneError: true,
+                numLenMin: passwordPolicy.minLength,
+                numLenMax: passwordPolicy.maxLength,
+                requireLetter: passwordPolicy.requireLetter,
+                requireUppercase: passwordPolicy.requireUppercase,
+                requireLowercase: passwordPolicy.requireLowercase,
+                requireDigit: passwordPolicy.requireDigit,
+                requireSpecial: passwordPolicy.requireSpecial,
+                noSpace: passwordPolicy.noSpace,
+                onlyAscii: passwordPolicy.onlyAscii,
+                forbiddenChars: passwordPolicy.forbiddenChars,
+                commonPasswordBlacklist: passwordPolicy.commonPasswordBlacklist,
+                account,
+                noConsecutiveCharsFromAccount: passwordPolicy.noConsecutiveCharsFromAccount,
+                consecutiveCharsMinMatch: passwordPolicy.consecutiveCharsMinMatch,
+            })
         }
         catch (err) {
             keyErr = err.message
-            console.log('keyErr', keyErr)
+            // console.log('keyErr', keyErr)
         }
 
         let r = null
@@ -676,13 +908,16 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
         }
         else {
             let msg = get(kpLang, `${lang}.userPassword_${keyErr}`, '')
+            //只有三個語系鍵有模板變數, 日後未來語系鍵加了新的模板變數就要連動修改
+            msg = msg.replace('{minLength}', passwordPolicy.minLength)
+            msg = msg.replace('{maxLength}', passwordPolicy.maxLength)
+            msg = msg.replace('{consecutiveCharsMinMatch}', passwordPolicy.consecutiveCharsMinMatch)
             r = {
                 state: 'error',
                 msg,
             }
             return r
         }
-        // console.log('checkUserPassword r', r)
 
         return r
     }
@@ -704,22 +939,21 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
             return Promise.reject(`invalid oldPassword`)
         }
 
-        //check newPassword
-        let r = checkUserPassword(lang, newPassword)
-        if (r.state === 'error') {
-            return Promise.reject(r.msg)
-        }
-
-        //userId
-        let userId = ''
-        if (true) {
-            //getUserByToken
-            let u = await getUserByToken(token)
-            userId = get(u, 'id', '')
-        }
+        //getUserByToken
+        let uToken = await getUserByToken(token)
+        let userId = get(uToken, 'id', '')
 
         //getGenUserByUserId (with password)
         let u = await _getGenUserByKV('id', userId, { deletePassword: false })
+
+        //account
+        let account = get(u, 'account', '')
+
+        //check newPassword
+        let r = checkUserPassword(lang, newPassword, { account })
+        if (r.state === 'error') {
+            return Promise.reject(r.msg)
+        }
 
         //passwordTrue
         let passwordTrue = get(u, 'password', '')
@@ -739,7 +973,6 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
             console.log('u', u)
             return Promise.reject(`invalid email`)
         }
-        email = 'firsemisphere@gmail.com' //bbb
         // console.log('email', email)
 
         //hash newPassword
@@ -883,6 +1116,15 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
 
         //add
         if (size(r.add) > 0) {
+            // 管理員後台建帳自動填 timeVerified
+            if (woName === 'users') {
+                each(r.add, (row) => {
+                    let tv = get(row, 'timeVerified', '')
+                    if (!isestr(tv)) {
+                        row.timeVerified = now2str()
+                    }
+                })
+            }
             await procOrm('', woName, 'insert', r.add) //須使用procOrm才有辦法自動給予相關欄位, 且不使用外部給予userId
             // .catch((err) => {
             //     console.log('woItems[woName].insert err', err)
@@ -1450,6 +1692,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
 
         getTokenByKV,
 
+        createUser,
+        verifyEmail,
+        resendVerifyEmail,
         checkUserPassword,
         checkTokenAndChangePassword,
 

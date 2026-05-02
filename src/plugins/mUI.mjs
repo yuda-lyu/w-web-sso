@@ -337,10 +337,10 @@ function login(account, password, opt = {}) {
     //pm
     let pm = genPm()
 
-    async function core() {
+    //hideLoading, 結束預設隱藏loading, 只有當成功登入要轉址時不隱藏loading, 其他成功或失敗都要隱藏
+    let hideLoadingForEnd = true
 
-        //show loading
-        updateLoading(true)
+    let core = async() => {
 
         //delay
         await delay(1000)
@@ -356,6 +356,9 @@ function login(account, password, opt = {}) {
 
             //reject
             pm.reject('invalid $keyLS')
+
+            //結束後隱藏loading
+            hideLoadingForEnd = true
 
             return
         }
@@ -378,6 +381,9 @@ function login(account, password, opt = {}) {
             //reject
             pm.reject('invalid user')
 
+            //結束後隱藏loading
+            hideLoadingForEnd = true
+
             return
         }
 
@@ -393,6 +399,9 @@ function login(account, password, opt = {}) {
 
             //reject
             pm.reject('invalid token')
+
+            //結束後隱藏loading
+            hideLoadingForEnd = true
 
             return
         }
@@ -420,6 +429,9 @@ function login(account, password, opt = {}) {
                 //reject
                 pm.reject('invalid redir')
 
+                //結束後隱藏loading
+                hideLoadingForEnd = true
+
                 return
             }
 
@@ -430,33 +442,43 @@ function login(account, password, opt = {}) {
             //resolve
             pm.resolve('redir')
 
-            // //hide loading, 登入成功不能先隱藏loading, 開始轉址到轉跳會有一段時間, 持續顯示loading不隱藏, 避免使用者誤會登入失敗
-            // updateLoading(false)
+            //結束後不隱藏loading, 因開始轉址到轉跳會有一段時間, 持續顯示loading不隱藏, 避免使用者誤會登入失敗
+            hideLoadingForEnd = false
 
             return
         }
 
-        //hide loading, 登入成功後且非轉址時隱藏loading
-        updateLoading(false)
+        //結束後隱藏loading, 登入成功後且非轉址時隱藏loading
+        hideLoadingForEnd = true
 
         //resolve
         pm.resolve('done')
 
     }
 
+    //show loading
+    updateLoading(true)
+
     //core
     core()
         .catch((err) => {
             // console.log('login', err)
 
-            //alert
-            vo.$alert(vo.$t('failedLoginForCatch'), { type: 'error' })
+            // //alert
+            // vo.$alert(vo.$t('failedLoginForCatch'), { type: 'error' })
 
             //reject
             pm.reject(err)
 
-            //hide loading, 登入失敗後隱藏loading
-            updateLoading(false)
+        })
+        .finally(() => {
+
+            if (hideLoadingForEnd) {
+
+                //hide loading, 登入失敗後隱藏loading
+                updateLoading(false)
+
+            }
 
         })
 
@@ -482,7 +504,7 @@ function autoLogin(opt = {}) {
     //pm
     let pm = genPm()
 
-    async function core() {
+    let core = async () => {
         let errTemp = null
 
         //waitFun, 因須使用webKey故須等待syncState
@@ -519,29 +541,33 @@ function autoLogin(opt = {}) {
 
         //check
         if (!isestr(token)) {
-            // console.log('invalid token')
+            // console.log('no token')
 
             //reject
-            pm.reject('invalid token')
+            pm.reject('no token')
 
             return
         }
 
         //checkToken
-        await vo.$fapi.checkToken(token) //斷線有重試機制, resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+        let b = false
+        await vo.$fapi.checkToken(token) //斷線有重試機制, resolve回傳true代表有效, false代表已過期, reject代表無效token或檢測token發生錯誤
+            .then((res) => {
+                b = res === true
+            })
             .catch((err) => {
                 // console.log('checkToken catch', err)
                 errTemp = err
             })
 
         //check
-        if (errTemp) {
+        if (errTemp || !b) {
 
             //setItem, 清空token
             await localStorage.setItem(key, '')
 
             //reject
-            pm.reject('token error')
+            pm.reject(errTemp ? 'token error' : 'token expired')
 
             return
         }
@@ -604,8 +630,8 @@ function autoLogin(opt = {}) {
         .catch((err) => {
             // console.log('autoLogin', err)
 
-            //alert
-            vo.$alert(vo.$t('failedLoginForCatch'), { type: 'error' })
+            // //alert
+            // vo.$alert(vo.$t('failedLoginForCatch'), { type: 'error' })
 
             //reject
             pm.reject(err)

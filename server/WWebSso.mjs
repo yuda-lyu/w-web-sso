@@ -1,10 +1,15 @@
 import path from 'path'
 import fs from 'fs'
 import get from 'lodash-es/get.js'
+import size from 'lodash-es/size.js'
+import every from 'lodash-es/every.js'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
+import isstr from 'wsemi/src/isstr.mjs'
 import ispint from 'wsemi/src/ispint.mjs'
 import isearr from 'wsemi/src/isearr.mjs'
+import isarr from 'wsemi/src/isarr.mjs'
+import isbol from 'wsemi/src/isbol.mjs'
 import ispnum from 'wsemi/src/ispnum.mjs'
 import isErr from 'wsemi/src/isErr.mjs'
 import isfun from 'wsemi/src/isfun.mjs'
@@ -43,7 +48,7 @@ import procSettings from './procSettings.mjs'
  *
  *
  */
-function WWebSso(WOrm, url, db, pathSettings) {
+function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let instWServHapiServer = null
 
 
@@ -80,7 +85,12 @@ function WWebSso(WOrm, url, db, pathSettings) {
 
     //getSettings
     let opt = procSettings.getSettings()
-    // console.log('opt', opt)
+    if (iseobj(optExt)) { //外部可傳入額外參數
+        opt = {
+            ...opt,
+            ...optExt,
+        }
+    }
     // * @param {Object|String} [opt={}] 輸入設定物件或設定檔檔案路徑字串，若給予檔案路徑則會預設檔案為json格式且讀入成為opt物件，預設{}
     // * @param {Integer} [opt.serverPort=11007] 輸入伺服器通訊port整數，預設11007
     // * @param {Boolean} [opt.useCheckUser=false] 輸入是否檢查使用者資訊布林值，預設false
@@ -231,8 +241,105 @@ function WWebSso(WOrm, url, db, pathSettings) {
     }
 
 
-    //是否啟用要求使用者定期更換密碼
-    // 若是，預設6個月更換密碼，是否允許使用同樣密碼
+    //allowUserRegistration
+    let allowUserRegistration = get(opt, 'allowUserRegistration', true)
+    if (allowUserRegistration !== true && allowUserRegistration !== false) {
+        allowUserRegistration = true
+    }
+
+
+    //以下設定僅在 allowUserRegistration=true 時才需檢查
+    let siteUrl = ''
+    let regVerifyEmTitle = {}
+    let regVerifyEmContent = {}
+    if (allowUserRegistration) {
+
+        //siteUrl
+        siteUrl = get(opt, 'siteUrl', '')
+        if (!isestr(siteUrl)) {
+            throw new Error('invalid siteUrl: must be a non-empty string when allowUserRegistration is enabled')
+        }
+
+        //regVerifyEmTitle, regVerifyEmContent
+        regVerifyEmTitle = get(opt, 'regVerifyEmTitle', '')
+        if (!iseobj(regVerifyEmTitle)) {
+            throw new Error('invalid regVerifyEmTitle: must be an object with eng/cht keys')
+        }
+        regVerifyEmContent = get(opt, 'regVerifyEmContent', '')
+        if (!iseobj(regVerifyEmContent)) {
+            throw new Error('invalid regVerifyEmContent: must be an object with eng/cht keys')
+        }
+
+    }
+
+
+    //passwordPolicy
+    let passwordPolicy = get(opt, 'passwordPolicy')
+    if (!iseobj(passwordPolicy)) {
+        throw new Error('invalid passwordPolicy: missing or not an object')
+    }
+    let ppMinLength = get(passwordPolicy, 'minLength')
+    if (!ispint(ppMinLength) || cint(ppMinLength) < 1) {
+        throw new Error('invalid passwordPolicy.minLength: must be a positive integer >= 1')
+    }
+    let ppMaxLength = get(passwordPolicy, 'maxLength')
+    if (!ispint(ppMaxLength) || cint(ppMaxLength) < cint(ppMinLength)) {
+        throw new Error('invalid passwordPolicy.maxLength: must be a positive integer >= minLength')
+    }
+    let ppRequireLetter = get(passwordPolicy, 'requireLetter')
+    if (!isbol(ppRequireLetter)) {
+        throw new Error('invalid passwordPolicy.requireLetter: must be a boolean')
+    }
+    let ppRequireUppercase = get(passwordPolicy, 'requireUppercase')
+    if (!isbol(ppRequireUppercase)) {
+        throw new Error('invalid passwordPolicy.requireUppercase: must be a boolean')
+    }
+    let ppRequireLowercase = get(passwordPolicy, 'requireLowercase')
+    if (!isbol(ppRequireLowercase)) {
+        throw new Error('invalid passwordPolicy.requireLowercase: must be a boolean')
+    }
+    let ppRequireDigit = get(passwordPolicy, 'requireDigit')
+    if (!isbol(ppRequireDigit)) {
+        throw new Error('invalid passwordPolicy.requireDigit: must be a boolean')
+    }
+    let ppRequireSpecial = get(passwordPolicy, 'requireSpecial')
+    if (!isbol(ppRequireSpecial)) {
+        throw new Error('invalid passwordPolicy.requireSpecial: must be a boolean')
+    }
+    let ppNoSpace = get(passwordPolicy, 'noSpace')
+    if (!isbol(ppNoSpace)) {
+        throw new Error('invalid passwordPolicy.noSpace: must be a boolean')
+    }
+    let ppOnlyAscii = get(passwordPolicy, 'onlyAscii')
+    if (!isbol(ppOnlyAscii)) {
+        throw new Error('invalid passwordPolicy.onlyAscii: must be a boolean')
+    }
+    let ppForbiddenChars = get(passwordPolicy, 'forbiddenChars')
+    if (!isarr(ppForbiddenChars)) {
+        throw new Error('invalid passwordPolicy.forbiddenChars: must be an array')
+    }
+    for (let i = 0; i < size(ppForbiddenChars); i++) {
+        if (!isstr(ppForbiddenChars[i]) || size(ppForbiddenChars[i]) !== 1) {
+            throw new Error(`invalid passwordPolicy.forbiddenChars[${i}]: each element must be a single character string`)
+        }
+    }
+    let ppNoConsecutiveCharsFromAccount = get(passwordPolicy, 'noConsecutiveCharsFromAccount')
+    if (!isbol(ppNoConsecutiveCharsFromAccount)) {
+        throw new Error('invalid passwordPolicy.noConsecutiveCharsFromAccount: must be a boolean')
+    }
+    if (ppNoConsecutiveCharsFromAccount) {
+        let ppConsecutiveCharsMinMatch = get(passwordPolicy, 'consecutiveCharsMinMatch')
+        if (!ispint(ppConsecutiveCharsMinMatch) || cint(ppConsecutiveCharsMinMatch) < 2) {
+            throw new Error('invalid passwordPolicy.consecutiveCharsMinMatch: must be a positive integer >= 2')
+        }
+    }
+    let ppCommonPasswordBlacklist = get(passwordPolicy, 'commonPasswordBlacklist')
+    if (!isarr(ppCommonPasswordBlacklist)) {
+        throw new Error('invalid passwordPolicy.commonPasswordBlacklist: must be an array')
+    }
+    if (!every(ppCommonPasswordBlacklist, (v) => isstr(v))) {
+        throw new Error('invalid passwordPolicy.commonPasswordBlacklist: each element must be a string')
+    }
 
 
     //userLogo
@@ -338,12 +445,26 @@ function WWebSso(WOrm, url, db, pathSettings) {
             showModeEditIps,
             modeEditIps,
 
+            allowUserRegistration,
+            passwordPolicyInfo: {
+                minLength: passwordPolicy.minLength,
+                maxLength: passwordPolicy.maxLength,
+                requireLetter: passwordPolicy.requireLetter,
+                requireUppercase: passwordPolicy.requireUppercase,
+                requireLowercase: passwordPolicy.requireLowercase,
+                requireDigit: passwordPolicy.requireDigit,
+                requireSpecial: passwordPolicy.requireSpecial,
+            },
+
         }
     }
 
 
     //procCore, procProtect, procStaInfor, procLang
-    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpwEmTitle, chpwEmContent })
+    //verifyBaseUrl, 後端 API base URL，用於驗證信內連結
+    let verifyBaseUrl = `http://localhost:${serverPort}`
+
+    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpwEmTitle, chpwEmContent, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl, regVerifyEmTitle, regVerifyEmContent })
     let pp = procProtect(woItems, p, {
         minForAccountLoginFailed,
         numForAccountLoginFailed,
@@ -882,6 +1003,64 @@ function WWebSso(WOrm, url, db, pathSettings) {
             },
         },
 
+        {
+            method: 'GET',
+            path: '/api/verifyEmail',
+            handler: async function (req, res) {
+
+                async function core() {
+
+                    //token
+                    let token = get(req, 'query.token', '')
+
+                    //info
+                    srLog.info({ event: 'api/verifyEmail', token })
+
+                    //verifyEmail
+                    let r = await p.verifyEmail(token)
+
+                    return r
+                }
+
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                if (isErr(r.msg)) {
+                    r.msg = r.msg.message
+                }
+
+                //lang from query (依語系直接渲染結果頁，避免轉址回 SPA 後 lang 重置)
+                let lang = get(req, 'query.lang', '')
+                if (lang !== 'eng' && lang !== 'cht') {
+                    lang = 'eng'
+                }
+
+                //pick message key
+                let msgKey
+                if (r.state === 'success') {
+                    msgKey = 'userRegistrationVerifySuccess'
+                }
+                else {
+                    msgKey = (r.msg && typeof r.msg === 'string') ? r.msg : 'verifyEmailInvalidToken'
+                }
+
+                //render template
+                let title = get(kpLang, `${lang}.webName`, '')
+                let message = get(kpLang, `${lang}.${msgKey}`, msgKey)
+
+                let pathTemplate = './server/template'
+                let npmPathTemplate = './node_modules/w-web-sso/server/template'
+                if (fsIsFolder(npmPathTemplate)) {
+                    pathTemplate = npmPathTemplate
+                }
+                let fpTpl = path.resolve(pathTemplate, 'verifyEmailResult.html')
+                let html = fs.readFileSync(fpTpl, 'utf8')
+                html = replace(html, '{title}', title)
+                html = replace(html, '{message}', message)
+
+                return res.response(html).type('text/html; charset=utf-8')
+            },
+        },
+
     ]
 
 
@@ -1000,6 +1179,26 @@ function WWebSso(WOrm, url, db, pathSettings) {
                 let r = await p.logoutByToken(token)
                 return r
             },
+
+            createUser: async (_t, lang, account, password, confirmPassword, name, email) => {
+                srLog.info({ event: 'kpfun-createUser', lang, account })
+                let data = { lang, account, password, confirmPassword, name, email }
+                let r = await p.createUser(lang, data)
+                return r
+            },
+
+            verifyEmail: async (_t, token) => {
+                srLog.info({ event: 'kpfun-verifyEmail', token })
+                let r = await p.verifyEmail(token)
+                return r
+            },
+
+            resendVerifyEmail: async (_t, lang, account, email) => {
+                srLog.info({ event: 'kpfun-resendVerifyEmail', lang, account })
+                let r = await p.resendVerifyEmail(lang, account, email)
+                return r
+            },
+
             getUserByToken: async (_t, token) => {
                 srLog.info({ event: 'kpfun-getUserByToken', token })
                 //console.log('call getUserByToken...')

@@ -468,6 +468,10 @@ let kpLang = {
         eng: `Show columns`,
         cht: `顯示欄位`,
     },
+    selectDate: {
+        eng: `Select date`,
+        cht: `請選擇日期`,
+    },
 
     userList: {
         eng: `User list`,
@@ -566,6 +570,10 @@ let kpLang = {
         cht: `無法找到使用者數據`,
     },
 
+    userPassword_keyInvalidPassword: {
+        eng: 'Invalid password',
+        cht: '密碼非有效字串',
+    },
     userPassword_keyLimNumLenMinOrMax: {
         eng: 'The minimum password length is greater than the maximum length',
         cht: '設定密碼最小長度大於最大長度',
@@ -574,17 +582,49 @@ let kpLang = {
         eng: 'Password must not contain whitespace characters',
         cht: '密碼不可包含空白字元',
     },
+    userPassword_keyLimNonAsciiChar: {
+        eng: 'Password may only contain ASCII printable characters (letters, digits, symbols)',
+        cht: '密碼僅允許使用英文大小寫、數字及特殊符號',
+    },
     userPassword_keyLimNumLenMin: {
-        eng: 'Password length must be greater than 8 characters',
-        cht: '密碼長度須大於8個字元',
+        eng: 'Password length must be at least {minLength} characters',
+        cht: '密碼長度須大於等於{minLength}個字元',
     },
     userPassword_keyLimNumLenMax: {
-        eng: 'Password length must be less than 30 characters',
-        cht: '密碼長度須小於30個字元',
+        eng: 'Password length must not exceed {maxLength} characters',
+        cht: '密碼長度須小於等於{maxLength}個字元',
     },
-    userPassword_keyLimCombination: {
-        eng: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special characte',
-        cht: '密碼須包含大寫、小寫英文、數字、特殊符號各1個字元',
+    userPassword_keyLimRequireLetter: {
+        eng: 'Password must contain at least one letter',
+        cht: '密碼須包含至少一個英文字母',
+    },
+    userPassword_keyLimRequireUppercase: {
+        eng: 'Password must contain at least one uppercase letter',
+        cht: '密碼須包含至少一個大寫英文字母',
+    },
+    userPassword_keyLimRequireLowercase: {
+        eng: 'Password must contain at least one lowercase letter',
+        cht: '密碼須包含至少一個小寫英文字母',
+    },
+    userPassword_keyLimRequireDigit: {
+        eng: 'Password must contain at least one digit',
+        cht: '密碼須包含至少一個數字',
+    },
+    userPassword_keyLimRequireSpecial: {
+        eng: 'Password must contain at least one special character',
+        cht: '密碼須包含至少一個特殊符號',
+    },
+    userPassword_keyLimForbiddenChar: {
+        eng: 'Password must not contain forbidden characters',
+        cht: '密碼不可包含禁止字元',
+    },
+    userPassword_keyLimCommonPassword: {
+        eng: 'This password is too common and not allowed',
+        cht: '此密碼為常見弱密碼，不允許使用',
+    },
+    userPassword_keyLimConsecutiveCharsFromAccount: {
+        eng: 'Password must not contain {consecutiveCharsMinMatch} or more consecutive characters from your account name',
+        cht: '密碼不可包含與帳號相同之{consecutiveCharsMinMatch}個以上連續字元',
     },
 
     userChangePassword: {
@@ -634,6 +674,112 @@ let kpLang = {
     userChangePasswordForNetError: {
         eng: 'Password validation failed. Please try again later.',
         cht: '密碼檢測失敗，請稍後再試',
+    },
+
+    userRegistration: {
+        eng: 'Register',
+        cht: '申請帳號',
+    },
+    userRegistrationAccount: {
+        eng: 'Account',
+        cht: '帳號',
+    },
+    userRegistrationName: {
+        eng: 'Name',
+        cht: '姓名',
+    },
+    userRegistrationEmail: {
+        eng: 'Email',
+        cht: '電子郵件',
+    },
+    userRegistrationPassword: {
+        eng: 'Password',
+        cht: '密碼',
+    },
+    userRegistrationConfirmPassword: {
+        eng: 'Confirm password',
+        cht: '確認密碼',
+    },
+    userRegistrationSubmit: {
+        eng: 'Submit',
+        cht: '送出申請',
+    },
+    userRegistrationSuccess: {
+        eng: 'Registration successful. Please check your email to verify your account.',
+        cht: '帳號申請成功，請至信箱收取驗證信以啟用帳號。',
+    },
+    userRegistrationNotAllowed: {
+        eng: 'User registration is not available.',
+        cht: '目前不開放使用者自行申請帳號。',
+    },
+    userRegistrationAccountExists: {
+        eng: 'This account already exists.',
+        cht: '此帳號已存在。',
+    },
+    userRegistrationEmailExists: {
+        eng: 'This email already exists.',
+        cht: '此電子郵件已存在。',
+    },
+    userRegistrationBackToLogin: {
+        eng: 'Back to login',
+        cht: '返回登入',
+    },
+    userRegistrationNotVerified: {
+        eng: 'Your account has not been verified. Please check your email and click the verification link.',
+        cht: '您的帳號尚未完成 email 驗證，請至信箱點擊驗證連結。',
+    },
+    userRegistrationResendVerify: {
+        eng: 'Resend verification email',
+        cht: '重寄驗證信',
+    },
+    userRegistrationResendSuccess: {
+        eng: 'Verification email has been resent. Please check your inbox.',
+        cht: '驗證信已重新寄出，請至信箱收取。',
+    },
+    userRegistrationAlreadyVerified: {
+        eng: 'This account has already been verified.',
+        cht: '此帳號已完成驗證。',
+    },
+    userRegistrationResendSubmit: {
+        eng: 'Send verification email',
+        cht: '寄送驗證信',
+    },
+    userRegistrationResendInvalidEmail: {
+        eng: 'The email address does not match the account. Please check and try again.',
+        cht: '電子郵件與帳號不符，請確認後再試。',
+    },
+    userRegistrationResendFailed: {
+        eng: 'Failed to send verification email. Please try again later.',
+        cht: '驗證信寄送失敗，請稍後再試。',
+    },
+    verifyEmailInvalidToken: {
+        eng: 'Invalid or expired verification link.',
+        cht: '驗證連結無效或已失效。',
+    },
+    verifyEmailAlreadyVerified: {
+        eng: 'This account has already been verified.',
+        cht: '此帳號已完成驗證。',
+    },
+    userRegistrationVerifySuccess: {
+        eng: 'Email verified successfully. Please log in.',
+        cht: '電子郵件驗證成功，請登入。',
+    },
+
+    loginAccountBlocked: {
+        eng: 'Your account has been temporarily locked due to multiple failed login attempts. Please try again later.',
+        cht: '您的帳號因多次登入失敗已被暫時鎖定，請稍後再試。',
+    },
+    loginAccountInactive: {
+        eng: 'Your account has been deactivated. Please contact the administrator.',
+        cht: '您的帳號已被停用，請聯繫管理員。',
+    },
+    loginAccountExpired: {
+        eng: 'Your account has expired. Please contact the administrator.',
+        cht: '您的帳號已過期，請聯繫管理員。',
+    },
+    loginUnknownError: {
+        eng: 'An unexpected error occurred during login. Please try again later.',
+        cht: '登入時發生未預期的錯誤，請稍後再試。',
     },
     // msgSendChangePasswordEmailSuccess: {
     //     eng: 'Verification email sent. Please check your inbox and click the link to change your password.',

@@ -209,8 +209,24 @@
                         </template>
                         <!-- password -->
                         <template v-else-if="props.key === 'password'">
-                            <div @click.stop.prevent @mousedown.stop.prevent>
-                                <button style="width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" @click="$dg.modifyItemPasswordById($ui.gv(props.row, 'id'))" :disabled="!isEditable">{{ $t('userResetPassword') }}</button>
+                            <div @click.stop.prevent @mousedown.stop.prevent style="height:100%; display:flex; align-items:center;">
+                                <WButtonChip
+                                    :style="`line-height:1.1rem; flex:1;`"
+                                    :text="$t('userResetPassword')"
+                                    :displayType="'line'"
+                                    :textFontSize="'0.8rem'"
+                                    :paddingStyle="{v:1,h:8}"
+                                    :backgroundColor="'#f0f0f0'"
+                                    :backgroundColorHover="'#e5e5e5'"
+                                    :backgroundColorFocus="'#e5e5e5'"
+                                    :borderColor="'#767676'"
+                                    :borderColorHover="'#767676'"
+                                    :borderColorFocus="'#767676'"
+                                    :borderRadius="4"
+                                    :shadow="false"
+                                    :editable="isEditable"
+                                    @click="$dg.modifyItemPasswordById($ui.gv(props.row, 'id'))"
+                                ></WButtonChip>
                             </div>
                         </template>
                         <!-- email -->
@@ -245,12 +261,12 @@
                                     <span style="padding-left:2px;">{{ $s.getIsVerified(props.row) ? $t('isVerifiedY') : $t('isVerifiedN') }}</span>
                                 </div>
                                 <WTimeminute
-                                    :style="`line-height:0.9rem;`"
+                                    :style="`line-height:1.1rem;`"
                                     :value="cellTimeForInput(props.value)"
                                     @input="handleCellTimeInput('timeVerified', $ui.gv(props.row, 'id'), $event)"
                                     :editable="isEditable"
-                                    :textEmpty="'請選擇日期'"
-                                    :paddingStyle="{v:0,h:8}"
+                                    :textEmpty="$t('selectDate')"
+                                    :paddingStyle="{v:1,h:8}"
                                     :placementDistY="3"
                                     :textFontSize="'0.8rem'"
                                     :backgroundColor="'#f0f0f0'"
@@ -277,12 +293,12 @@
                                     <span style="padding-left:2px;">{{ $s.getIsExpired(props.row) ? $t('isExpiredY') : $t('isExpiredN') }}</span>
                                 </div>
                                 <WTimeminute
-                                    :style="`line-height:0.9rem;`"
+                                    :style="`line-height:1.1rem;`"
                                     :value="cellTimeForInput(props.value)"
                                     @input="handleCellTimeInput('timeExpired', $ui.gv(props.row, 'id'), $event)"
                                     :editable="isEditable"
-                                    :textEmpty="'請選擇日期'"
-                                    :paddingStyle="{v:0,h:8}"
+                                    :textEmpty="$t('selectDate')"
+                                    :paddingStyle="{v:1,h:8}"
                                     :placementDistY="3"
                                     :textFontSize="'0.8rem'"
                                     :backgroundColor="'#f0f0f0'"
@@ -309,12 +325,12 @@
                                     <span style="padding-left:2px;">{{ $s.getIsBlocked(props.row) ? $t('isBlockedY') : $t('isBlockedN') }}</span>
                                 </div>
                                 <WTimeminute
-                                    :style="`line-height:0.9rem;`"
+                                    :style="`line-height:1.1rem;`"
                                     :value="cellTimeForInput(props.value)"
                                     @input="handleCellTimeInput('timeBlocked', $ui.gv(props.row, 'id'), $event)"
                                     :editable="isEditable"
-                                    :textEmpty="'請選擇日期'"
-                                    :paddingStyle="{v:0,h:8}"
+                                    :textEmpty="$t('selectDate')"
+                                    :paddingStyle="{v:1,h:8}"
                                     :placementDistY="3"
                                     :textFontSize="'0.8rem'"
                                     :backgroundColor="'#f0f0f0'"
@@ -367,7 +383,6 @@ import iseobj from 'wsemi/src/iseobj.mjs'
 import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
 import isEmail from 'wsemi/src/isEmail.mjs'
 import arrPull from 'wsemi/src/arrPull.mjs'
-import domShowInputDatatime from 'wsemi/src/domShowInputDatatime.mjs'
 import WIcon from 'w-component-vue/src/components/WIcon.vue'
 import WSwitch from 'w-component-vue/src/components/WSwitch.vue'
 import WButtonCircle from 'w-component-vue/src/components/WButtonCircle.vue'
@@ -375,6 +390,7 @@ import WPopup from 'w-component-vue/src/components/WPopup.vue'
 import WInputCheckbox from 'w-component-vue/src/components/WInputCheckbox.vue'
 import WAggridVue from 'w-aggrid-vue/src/components/WAggridVue.vue'
 import WTimeminute from 'w-component-vue/src/components/WTimeminute.vue'
+import WButtonChip from 'w-component-vue/src/components/WButtonChip.vue'
 
 
 export default {
@@ -386,6 +402,7 @@ export default {
         WInputCheckbox,
         WAggridVue,
         WTimeminute,
+        WButtonChip,
     },
     props: {
         drawer: {
@@ -490,9 +507,6 @@ export default {
         // vo.$dg.toggleItemIsVerifiedById = vo.toggleItemIsVerifiedById
         vo.$dg.toggleItemIsActiveById = vo.toggleItemIsActiveById
         vo.$dg.modifyItemPasswordById = vo.modifyItemPasswordById
-        vo.$dg.modifyItemTimeVerifiedById = vo.modifyItemTimeVerifiedById
-        vo.$dg.modifyItemTimeExpiredById = vo.modifyItemTimeExpiredById
-        vo.$dg.modifyItemTimeBlockedById = vo.modifyItemTimeBlockedById
 
         //firstSetting
         if (vo.firstSetting) {
@@ -1145,99 +1159,6 @@ export default {
 
             //toggleItemByKeyAndId
             vo.toggleItemByKeyAndId('isActive', id)
-
-        },
-
-        modifyItemByKeyAndId: function(key, ele, t, id) {
-            // console.log('modifyItemTimeVerifiedById', ele, t, id)
-
-            let vo = this
-
-            //check
-            if (!isestr(id)) {
-                vo.$alert(`${vo.$t('userEditNoUserId')}`, { type: 'error' })
-                return
-            }
-
-            //timePrev, 須給予秒時間, 要滿足istime才能展示初始值
-            let timePrev = ''
-            if (istimemsTZ(t)) {
-                timePrev = ot(t).format('YYYY-MM-DDTHH:mm:ss')
-            }
-            // console.log('timePrev', timePrev)
-
-            //domShowInputDatatime
-            let type = 'datetime-local' //'datetime-local', 'date'
-            domShowInputDatatime(timePrev, { eleRef: ele, type })
-                .then((timeNew) => {
-                    // console.log(k, 'timeNew', timeNew)
-
-                    //rows
-                    let rows = get(vo, 'opt.rows', [])
-
-                    //find
-                    let r = null
-                    let kr = null
-                    each(rows, (v, k) => {
-                        if (get(v, 'id', '') === id) {
-                            r = v
-                            kr = k
-                            return false //跳出
-                        }
-                    })
-
-                    //check
-                    if (!iseobj(r)) {
-                        vo.$alert(`${vo.$t('userEditNoUserData')}`, { type: 'error' })
-                        return
-                    }
-
-                    //v
-                    let vt = ot(timeNew, 'YYYY-MM-DDTHH:mm') //domShowInputDatatime數據為年月日時分
-                    let v = vt.format('YYYY-MM-DDTHH:mm:ss.SSSZ') //轉回原始數據為timemsTZ格式
-                    // console.log('v', v)
-
-                    //set
-                    set(vo, `opt.rows[${kr}].${key}`, v)
-                    // console.log('vo.opt.rows[kr]', cloneDeep(vo.opt.rows[kr]))
-
-                    //refresh
-                    vo.refresh()
-
-                    //isModified
-                    vo.isModified = true
-
-                })
-
-        },
-
-        modifyItemTimeVerifiedById: function(ele, t, id) {
-            // console.log('modifyItemTimeVerifiedById', ele, t, id)
-
-            let vo = this
-
-            //modifyItemByKeyAndId
-            vo.modifyItemByKeyAndId('timeVerified', ele, t, id)
-
-        },
-
-        modifyItemTimeExpiredById: function(ele, t, id) {
-            // console.log('modifyItemTimeExpiredById', ele, t, id)
-
-            let vo = this
-
-            //modifyItemByKeyAndId
-            vo.modifyItemByKeyAndId('timeExpired', ele, t, id)
-
-        },
-
-        modifyItemTimeBlockedById: function(ele, t, id) {
-            // console.log('modifyItemTimeBlockedById', ele, t, id)
-
-            let vo = this
-
-            //modifyItemByKeyAndId
-            vo.modifyItemByKeyAndId('timeBlocked', ele, t, id)
 
         },
 

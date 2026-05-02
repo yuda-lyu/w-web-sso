@@ -145,9 +145,10 @@
 
                         <div style="padding:5px 0px; text-align:center;">
                             <WButtonChip
+                                :displayType="'line'"
                                 :text="$t('logout')"
                                 :textFontSize="'0.9rem'"
-                                :paddingStyle="{v:6,h:20}"
+                                :paddingStyle="{v:6,h:0}"
                                 :backgroundColor="'rgba(255,255,255,0.5)'"
                                 :backgroundColorHover="'rgba(255,255,255,0.7)'"
                                 _shadow="false"

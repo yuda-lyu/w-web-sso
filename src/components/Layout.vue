@@ -187,14 +187,20 @@ export default {
                 //     })
 
                 // console.log('checkToken...', vo.userToken)
-                vo.$fapi.checkToken(vo.userToken) //斷線有重試機制, resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+                vo.$fapi.checkToken(vo.userToken) //斷線有重試機制, resolve回傳true代表有效, false代表已過期, reject代表無效token或檢測token發生錯誤
+                    .then((b) => {
+                        if (b !== true) {
+                            // console.log('checkToken expired')
+                            vo.logout() //登出與轉跳登入頁
+                        }
+                    })
                     .catch((err) => {
                         console.log('checkToken catch', err)
                         vo.logout() //登出與轉跳登入頁
                     })
 
             }
-        }, 1 * 1000) //每1min更新
+        }, 60 * 1000) //每1min更新
 
     },
     beforeDestroy: function() {

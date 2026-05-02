@@ -163,8 +163,30 @@
                 >
                     <template v-slot:cell-render="props">
                         <template v-if="props.key === 'timeBlocked'">
-                            <div @click.stop.prevent @mousedown.stop.prevent>
-                                <button style="width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" @click="$dg.modifyItemTimeBlockedById($event.currentTarget, $ui.getTimemsTZ(props.value), $ui.gv(props.row, 'id'))" :disabled="!isEditable">{{ $ui.getTimeMin(props.value, $t('ipTimeEmpty')) }}</button>
+                            <div @click.stop.prevent @mousedown.stop.prevent style="display:flex; align-items:center;">
+                                <WTimeminute
+                                    :style="`line-height:1.1rem;`"
+                                    :value="cellTimeForInput(props.value)"
+                                    @input="handleCellTimeInput('timeBlocked', $ui.gv(props.row, 'id'), $event)"
+                                    :editable="isEditable"
+                                    :textEmpty="$t('selectDate')"
+                                    :paddingStyle="{v:1,h:8}"
+                                    :placementDistY="3"
+                                    :textFontSize="'0.8rem'"
+                                    :backgroundColor="'#f0f0f0'"
+                                    :backgroundColorHover="'#e5e5e5'"
+                                    :backgroundColorFocus="'#e5e5e5'"
+                                    :borderColor="'#767676'"
+                                    :borderColorHover="'#767676'"
+                                    :borderColorFocus="'#767676'"
+                                    :borderRadius="4"
+                                    :minuteInter="1"
+                                    :hourMin="0"
+                                    :hourMax="23"
+                                    :shadow="false"
+                                    icon=""
+                                >
+                                </WTimeminute>
                             </div>
                         </template>
                         <template v-else>{{ props.value }}</template>
@@ -198,13 +220,13 @@ import isestr from 'wsemi/src/isestr.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
 import arrPull from 'wsemi/src/arrPull.mjs'
-import domShowInputDatatime from 'wsemi/src/domShowInputDatatime.mjs'
 import WIcon from 'w-component-vue/src/components/WIcon.vue'
 import WSwitch from 'w-component-vue/src/components/WSwitch.vue'
 import WButtonCircle from 'w-component-vue/src/components/WButtonCircle.vue'
 import WPopup from 'w-component-vue/src/components/WPopup.vue'
 import WInputCheckbox from 'w-component-vue/src/components/WInputCheckbox.vue'
 import WAggridVue from 'w-aggrid-vue/src/components/WAggridVue.vue'
+import WTimeminute from 'w-component-vue/src/components/WTimeminute.vue'
 
 
 export default {
@@ -215,6 +237,7 @@ export default {
         WPopup,
         WInputCheckbox,
         WAggridVue,
+        WTimeminute,
     },
     props: {
         drawer: {
@@ -266,7 +289,6 @@ export default {
         let vo = this
 
         //註冊至$dg供使用
-        vo.$dg.modifyItemTimeBlockedById = vo.modifyItemTimeBlockedById
 
         //firstSetting
         if (vo.firstSetting) {
@@ -554,76 +576,52 @@ export default {
 
         },
 
-        modifyItemByKeyAndId: function(key, ele, t, id) {
-            // console.log('modifyItemByKeyAndId', ele, t, id)
+        cellTimeForInput: function(v) {
+            if (istimemsTZ(v)) {
+                return ot(v).format('YYYY-MM-DDTHH:mm:ss')
+            }
+            return ''
+        },
 
+        handleCellTimeInput: function(key, id, timeNew) {
             let vo = this
 
             //check
             if (!isestr(id)) {
-                vo.$alert(`${vo.$t('ipEditNoIpId')}`, { type: 'error' })
                 return
             }
 
-            //timePrev, 須給予秒時間, 要滿足istime才能展示初始值
-            let timePrev = ''
-            if (istimemsTZ(t)) {
-                timePrev = ot(t).format('YYYY-MM-DDTHH:mm:ss')
+            //rows
+            let rows = get(vo, 'opt.rows', [])
+
+            //find
+            let r = null
+            let kr = null
+            each(rows, (v, k) => {
+                if (get(v, 'id', '') === id) {
+                    r = v
+                    kr = k
+                    return false //跳出
+                }
+            })
+
+            //check
+            if (!iseobj(r)) {
+                return
             }
-            // console.log('timePrev', timePrev)
 
-            //domShowInputDatatime
-            let type = 'datetime-local' //'datetime-local', 'date'
-            domShowInputDatatime(timePrev, { eleRef: ele, type })
-                .then((timeNew) => {
-                    // console.log(k, 'timeNew', timeNew)
+            //v
+            let vt = ot(timeNew)
+            let v = vt.format('YYYY-MM-DDTHH:mm:ss.SSSZ') //轉回原始數據為timemsTZ格式
 
-                    //rows
-                    let rows = get(vo, 'opt.rows', [])
+            //set
+            set(vo, `opt.rows[${kr}].${key}`, v)
 
-                    //find
-                    let r = null
-                    let kr = null
-                    each(rows, (v, k) => {
-                        if (get(v, 'id', '') === id) {
-                            r = v
-                            kr = k
-                            return false //跳出
-                        }
-                    })
+            //refresh
+            vo.refresh()
 
-                    //check
-                    if (!iseobj(r)) {
-                        vo.$alert(`${vo.$t('ipEditNoIpData')}`, { type: 'error' })
-                        return
-                    }
-
-                    //v
-                    let vt = ot(timeNew, 'YYYY-MM-DDTHH:mm') //domShowInputDatatime數據為年月日時分
-                    let v = vt.format('YYYY-MM-DDTHH:mm:ss.SSSZ') //轉回原始數據為timemsTZ格式
-                    // console.log('v', v)
-
-                    //set
-                    set(vo, `opt.rows[${kr}].${key}`, v)
-                    // console.log('vo.opt.rows[kr]', cloneDeep(vo.opt.rows[kr]))
-
-                    //refresh
-                    vo.refresh()
-
-                    //isModified
-                    vo.isModified = true
-
-                })
-
-        },
-
-        modifyItemTimeBlockedById: function(ele, t, id) {
-            // console.log('modifyItemTimeBlockedById', ele, t, id)
-
-            let vo = this
-
-            //modifyItemByKeyAndId
-            vo.modifyItemByKeyAndId('timeBlocked', ele, t, id)
+            //isModified
+            vo.isModified = true
 
         },
 

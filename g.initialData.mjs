@@ -18,7 +18,7 @@ async function initialData() {
             email: 'viewer@example.com',
             description: 'description-for-viewer',
             from: 'SSO',
-            redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
+            redir: 'http://localhost:8080/?view=user&token={token}', //給予{token}使前端自動取代成真實token
             isAdmin: 'n',
             timeVerified: '2025-01-01T00:00:00.000+08:00',
             timeExpired: '2030-01-01T00:00:00.000+08:00',
@@ -34,7 +34,7 @@ async function initialData() {
             email: 'basic@example.com',
             description: 'description-for-basic',
             from: 'SSO',
-            redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
+            redir: 'http://localhost:8080/?view=user&token={token}', //給予{token}使前端自動取代成真實token
             isAdmin: 'n',
             timeVerified: '', //未驗證
             timeExpired: '2030-01-01T00:00:00.000+08:00',
@@ -49,7 +49,7 @@ async function initialData() {
             email: 'admin@example.com',
             description: 'description-for-admin',
             from: 'SSO',
-            redir: 'https://github.com/?token={token}', //給予{token}使前端自動取代成真實token
+            redir: 'http://localhost:8080/?view=backstage&token={token}', //給予{token}使前端自動取代成真實token
             isAdmin: 'y',
             timeVerified: '2025-01-01T00:00:00.000+08:00',
             timeExpired: '2030-01-01T00:00:00.000+08:00',

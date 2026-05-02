@@ -11,7 +11,7 @@ let db = st.dbName
 let pathSettings = './settings.json'
 
 //WWebSso
-let instWWebSso = WWebSso(WOrm, url, db, pathSettings)
+let instWWebSso = WWebSso(WOrm, url, db, pathSettings, st)
 
 instWWebSso.on('error', (err) => {
     console.log(err)
