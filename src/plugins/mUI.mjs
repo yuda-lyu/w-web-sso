@@ -566,7 +566,7 @@ function autoLogin(opt = {}) {
 
         //checkToken
         let b = false
-        await vo.$fapi.checkToken(token) //斷線有重試機制, resolve回傳true代表有效, false代表已過期, reject代表無效token或檢測token發生錯誤
+        await vo.$fapi.checkToken(token) //斷線有重試機制; 後端 wrapper 在過期/無效時一律 reject, 僅在有效時 resolve(true), 不會 resolve(false)
             .then((res) => {
                 b = res === true
             })
