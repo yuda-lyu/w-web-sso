@@ -75,9 +75,10 @@ export default {
         //setVo, 更換ui內vo, 才能使用廣播技術, 更換語系才能用廣播通知全部組件forceUpdate
         vo.$ui.setVo(vo)
 
-        //setLang
-        let lang = get(window, '___pmwsso___.language', '')
-        vo.$ui.setLang(lang, 'app init') //初始化先讀取html內語系設定進行變更
+        //setLang，URL ?lang= 優先（轉址後攜帶語系時生效），否則讀 html 內語系設定
+        let urlLang = new URLSearchParams(window.location.search).get('lang') || ''
+        let lang = urlLang || get(window, '___pmwsso___.language', '')
+        vo.$ui.setLang(lang, 'app init')
         // console.log('lang', lang)
 
     },

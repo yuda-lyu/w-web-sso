@@ -353,9 +353,9 @@ export default {
             let showLanguage = get(vo, 'webInfor.showLanguage', '')
             // console.log('showLanguage', showLanguage)
             vo.showLangSelect = showLanguage === 'y'
-            let language = get(vo, 'webInfor.language', '')
-            // console.log('language', language)
-            vo.$ui.setLang(language, 'layout mounted')
+            //setLang(null) 走 getLang 的優先序（URL > store > window），不會被 webInfor 預設覆蓋
+            //store 在 App.vue beforeMount 已依 URL/window 設好；使用者後續切語系也存於 store
+            vo.$ui.setLang(null, 'layout mounted')
 
             //會觸發數據變更再導致opt變更導致觸發rowsChange等事件, 故得要延遲, 供組件偵測初始設定數據初始化之用
             setTimeout(() => {

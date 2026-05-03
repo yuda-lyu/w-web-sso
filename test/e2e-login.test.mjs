@@ -327,13 +327,13 @@ async function notVerifiedFullFlow(page, lang) {
     await inputs.nth(0).fill(notVerifyUser.account)
     await inputs.nth(1).fill(notVerifyUser.rawPassword)
     await page.waitForTimeout(500)
-    page.locator(`text=${t.login}`).first().click().catch(() => {})
+    page.locator(`text="${t.login}"`).first().click().catch(() => {})
     await page.waitForTimeout(5000)
     bufs['003-notverify-login-failed'] = await page.screenshot({ fullPage: true })
 
     // Step 2: 點「重寄驗證信」
     console.log('  [2] click resend link')
-    await page.locator(`text=${t.resendLink}`).first().click()
+    await page.locator(`text="${t.resendLink}"`).first().click()
     await page.waitForTimeout(1500)
     bufs['004-notverify-resend-page'] = await page.screenshot({ fullPage: true })
 
@@ -343,7 +343,7 @@ async function notVerifiedFullFlow(page, lang) {
     let resendInput = page.locator('input:not([type="password"])').last()
     await resendInput.fill(notVerifyUser.email)
     await page.waitForTimeout(500)
-    page.locator(`text=${t.resendSubmit}`).first().click().catch(() => {})
+    page.locator(`text="${t.resendSubmit}"`).first().click().catch(() => {})
     // 等寄信 + CheckYes 彈窗
     await page.waitForTimeout(10000)
     bufs['005-notverify-resend-sent'] = await page.screenshot({ fullPage: true })
@@ -381,7 +381,7 @@ async function notVerifiedFullFlow(page, lang) {
     await inputs.nth(0).fill(notVerifyUser.account)
     await inputs.nth(1).fill(notVerifyUser.rawPassword)
     await page.waitForTimeout(500)
-    page.locator(`text=${t.login}`).first().click().catch(() => {})
+    page.locator(`text="${t.login}"`).first().click().catch(() => {})
     await page.waitForTimeout(8000)
     bufs['007-notverify-logged-in'] = await page.screenshot({ fullPage: true })
 
@@ -409,7 +409,7 @@ async function loginAndScreenshot(page, lang, account, password, viewParam = nul
     await inputs.nth(1).fill(password)
     await page.waitForTimeout(500)
 
-    page.locator(`text=${t.login}`).first().click().catch(() => {})
+    page.locator(`text="${t.login}"`).first().click().catch(() => {})
     await page.waitForTimeout(8000)
 
     return await page.screenshot({ fullPage: true })
@@ -436,10 +436,10 @@ async function resendErrorFlow(page, lang, account, password, resendEmail, preSe
     await inputs.nth(0).fill(account)
     await inputs.nth(1).fill(password)
     await page.waitForTimeout(500)
-    page.locator(`text=${t.login}`).first().click().catch(() => {})
+    page.locator(`text="${t.login}"`).first().click().catch(() => {})
     await page.waitForTimeout(5000)
 
-    await page.locator(`text=${t.resendLink}`).first().click()
+    await page.locator(`text="${t.resendLink}"`).first().click()
     await page.waitForTimeout(1500)
 
     let resendInput = page.locator('input:not([type="password"])').last()
@@ -450,7 +450,7 @@ async function resendErrorFlow(page, lang, account, password, resendEmail, preSe
         await preSendHook()
     }
 
-    page.locator(`text=${t.resendSubmit}`).first().click().catch(() => {})
+    page.locator(`text="${t.resendSubmit}"`).first().click().catch(() => {})
     await page.waitForTimeout(5000)
 
     return await page.screenshot({ fullPage: true })

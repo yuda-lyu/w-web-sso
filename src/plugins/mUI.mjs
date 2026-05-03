@@ -134,21 +134,33 @@ function validLang(lang) {
 function getLang() {
     let lang = ''
 
-    //from window
+    //from URL ?lang= (轉址攜帶語系時最優先，例如登入後 redirect 帶當前語系)
     if (!isestr(lang)) {
-        let _lang = get(window, '___pmwsso___.language', '')
-        // console.log('_lang(from window)', _lang)
-        if (isestr(_lang)) {
-            lang = validLang(_lang) //有可能取到未取代前模板符號
+        try {
+            let _lang = new URLSearchParams(window.location.search).get('lang') || ''
+            // console.log('_lang(from url)', _lang)
+            if (isestr(_lang)) {
+                lang = validLang(_lang)
+            }
         }
+        catch (err) {}
     }
 
-    //from store
+    //from store (使用者當下選的，或 App.vue beforeMount 已設定)
     if (!isestr(lang)) {
         let _lang = get(vo, '$store.state.lang', '')
         // console.log('_lang(from store)', _lang)
         if (isestr(_lang)) {
             lang = validLang(_lang) //有可能給予非預期lang
+        }
+    }
+
+    //from window (server 預設語系，fallback)
+    if (!isestr(lang)) {
+        let _lang = get(window, '___pmwsso___.language', '')
+        // console.log('_lang(from window)', _lang)
+        if (isestr(_lang)) {
+            lang = validLang(_lang) //有可能取到未取代前模板符號
         }
     }
 
@@ -302,21 +314,23 @@ function getUrlView() {
 }
 
 
-function goUrl(url, token) {
+function goUrl(url, token, lang) {
 
-    //replace
+    //replace {token}
     url = url.replaceAll('{token}', token)
 
+    //replace {lang} 佔位符（若 redir 模板顯式包含）
+    if (isestr(lang)) {
+        url = url.replaceAll('{lang}', lang)
+    }
+
+    //自動 append &lang= 給轉址後的系統作為依據（已含 lang 參數則不覆寫）
+    if (isestr(lang) && !/[?&]lang=/.test(url)) {
+        let sep = url.includes('?') ? '&' : '?'
+        url = `${url}${sep}lang=${encodeURIComponent(lang)}`
+    }
+
     //href
-    // if (isDev()) {
-    //     console.log('10s後重導至:', url)
-    //     setTimeout(() => {
-    //         window.location.href = url
-    //     }, 10 * 1000)
-    // }
-    // else {
-    //     window.location.href = url
-    // }
     window.location.href = url
 
 }
@@ -435,9 +449,10 @@ function login(account, password, opt = {}) {
                 return
             }
 
-            //goUrl
-            goUrl(redir, token)
-            // console.log('goUrl', redir, 'token', token)
+            //goUrl，帶上當前 lang 讓轉址後系統能讀 ?lang=
+            let lang = get(vo, '$store.state.lang', '')
+            goUrl(redir, token, lang)
+            // console.log('goUrl', redir, 'token', token, 'lang', lang)
 
             //resolve
             pm.resolve('redir')
@@ -610,9 +625,10 @@ function autoLogin(opt = {}) {
                 return
             }
 
-            //goUrl
-            goUrl(redir, token)
-            // console.log('goUrl', redir, 'token', token)
+            //goUrl，帶上當前 lang 讓轉址後系統能讀 ?lang=
+            let lang = get(vo, '$store.state.lang', '')
+            goUrl(redir, token, lang)
+            // console.log('goUrl', redir, 'token', token, 'lang', lang)
 
             //resolve
             pm.resolve('redir')
