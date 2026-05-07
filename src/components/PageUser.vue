@@ -69,6 +69,9 @@
                                                         v-model="oldPassword"
                                                         @click-right="showOldPassword=!showOldPassword"
                                                     ></WText>
+                                                    <div style="padding-top:4px; font-size:0.75rem; color:#c62828;" v-if="chPwOldError">
+                                                        {{chPwOldError}}
+                                                    </div>
                                                 </div>
                                                 <div style="margin-bottom:10px;">
                                                     <div style="font-size:0.8rem; color:#444; margin-bottom:2px;">{{$t('userChangePasswordNewPassword')}}</div>
@@ -86,6 +89,9 @@
                                                         v-model="newPassword"
                                                         @click-right="showNewPassword=!showNewPassword"
                                                     ></WText>
+                                                    <div style="padding-top:4px; font-size:0.75rem; color:#c62828;" v-if="chPwNewError">
+                                                        {{chPwNewError}}
+                                                    </div>
                                                 </div>
                                                 <div style="margin-bottom:15px;">
                                                     <div style="font-size:0.8rem; color:#444; margin-bottom:2px;">{{$t('userChangePasswordConfirmPassword')}}</div>
@@ -103,6 +109,9 @@
                                                         v-model="confirmPassword"
                                                         @click-right="showConfirmPassword=!showConfirmPassword"
                                                     ></WText>
+                                                    <div style="padding-top:4px; font-size:0.75rem; color:#c62828;" v-if="chPwConfirmError">
+                                                        {{chPwConfirmError}}
+                                                    </div>
                                                 </div>
                                                 <div style="display:flex; gap:10px;">
                                                     <WButtonChip
@@ -230,6 +239,10 @@ export default {
             showOldPassword: false,
             showNewPassword: false,
             showConfirmPassword: false,
+            //inline 錯誤訊息（顯示於對應輸入框下方紅字，取代 alert）
+            chPwOldError: '',
+            chPwNewError: '',
+            chPwConfirmError: '',
         }
     },
     mounted: function() {
@@ -360,11 +373,19 @@ export default {
             vo.showOldPassword = false
             vo.showNewPassword = false
             vo.showConfirmPassword = false
+            //清空 inline 錯誤訊息
+            vo.chPwOldError = ''
+            vo.chPwNewError = ''
+            vo.chPwConfirmError = ''
         },
 
         cancelChangePassword: function() {
             let vo = this
             vo.showChangePassword = false
+            //清空 inline 錯誤訊息
+            vo.chPwOldError = ''
+            vo.chPwNewError = ''
+            vo.chPwConfirmError = ''
         },
 
         submitChangePassword: function() {
@@ -372,27 +393,32 @@ export default {
 
             let core = async () => {
 
+                //每次送出先清空舊的 inline 錯誤訊息
+                vo.chPwOldError = ''
+                vo.chPwNewError = ''
+                vo.chPwConfirmError = ''
+
                 //check oldPassword
                 if (!isestr(vo.oldPassword)) {
-                    vo.$alert(vo.$t('userChangePasswordForNoOldPassword'), { type: 'error' })
+                    vo.chPwOldError = vo.$t('userChangePasswordForNoOldPassword')
                     return
                 }
 
                 //check newPassword
                 if (!isestr(vo.newPassword)) {
-                    vo.$alert(vo.$t('userChangePasswordForNoNewPassword'), { type: 'error' })
+                    vo.chPwNewError = vo.$t('userChangePasswordForNoNewPassword')
                     return
                 }
 
                 //check confirmPassword
                 if (!isestr(vo.confirmPassword)) {
-                    vo.$alert(vo.$t('userChangePasswordForNoConfirmPassword'), { type: 'error' })
+                    vo.chPwConfirmError = vo.$t('userChangePasswordForNoConfirmPassword')
                     return
                 }
 
                 //check same
                 if (vo.newPassword !== vo.confirmPassword) {
-                    vo.$alert(vo.$t('userChangePasswordNotSame'), { type: 'error' })
+                    vo.chPwConfirmError = vo.$t('userChangePasswordNotSame')
                     return
                 }
 
@@ -404,16 +430,16 @@ export default {
                             bCkPw = true
                         }
                         else if (res.state === 'error') {
-                            vo.$alert(res.msg, { type: 'error' })
+                            vo.chPwNewError = res.msg
                         }
                         else {
                             console.log('error[res]', res)
-                            vo.$alert(vo.$t('userChangePasswordForNetError'), { type: 'error' })
+                            vo.chPwNewError = vo.$t('userChangePasswordForNetError')
                         }
                     })
                     .catch((err) => {
                         console.log('catch', err)
-                        vo.$alert(vo.$t('userChangePasswordForNetError'), { type: 'error' })
+                        vo.chPwNewError = vo.$t('userChangePasswordForNetError')
                     })
                 if (!bCkPw) {
                     return
@@ -432,7 +458,9 @@ export default {
                     })
                     .catch((err) => {
                         console.log('catch', err)
-                        vo.$alert(vo.$t('userChangePasswordFail'), { type: 'error' })
+                        //變更失敗（incorrect old password / token 失效等）統一訊息顯示於舊密碼下方
+                        //最常見原因為舊密碼錯，放此位置最直覺；其他原因（如 token 失效）顯示同一訊息
+                        vo.chPwOldError = vo.$t('userChangePasswordFail')
                     })
                 if (!bChPw) {
                     return
