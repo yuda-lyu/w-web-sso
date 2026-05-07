@@ -1102,6 +1102,16 @@ let kpLang = {
         cht: `變更使用者成功`,
     },
 
+    //email titles (對應 server/template/{*Email}-{lang}.html body)
+    regVerifyEmTitle: {
+        eng: `Please verify your email`,
+        cht: `請驗證您的電子郵件`,
+    },
+    chpwEmTitle: {
+        eng: `Password has been changed`,
+        cht: `密碼已進行變更`,
+    },
+
 }
 
 

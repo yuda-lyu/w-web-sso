@@ -250,8 +250,6 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
     //以下設定僅在 allowUserRegistration=true 時才需檢查
     let siteUrl = ''
-    let regVerifyEmTitle = {}
-    let regVerifyEmContent = {}
     if (allowUserRegistration) {
 
         //siteUrl
@@ -260,15 +258,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             throw new Error('invalid siteUrl: must be a non-empty string when allowUserRegistration is enabled')
         }
 
-        //regVerifyEmTitle, regVerifyEmContent
-        regVerifyEmTitle = get(opt, 'regVerifyEmTitle', '')
-        if (!iseobj(regVerifyEmTitle)) {
-            throw new Error('invalid regVerifyEmTitle: must be an object with eng/cht keys')
-        }
-        regVerifyEmContent = get(opt, 'regVerifyEmContent', '')
-        if (!iseobj(regVerifyEmContent)) {
-            throw new Error('invalid regVerifyEmContent: must be an object with eng/cht keys')
-        }
+        //email title 已搬到 procLang.mjs（regVerifyEmTitle 鍵），可由 kpLangExt 覆寫
+        //email body 已搬到 server/template/regVerifyEmail-{lang}.html
 
     }
 
@@ -390,9 +381,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let kpLangExt = get(opt, 'kpLangExt', {})
 
 
-    //chpwEmTitle, chpwEmContent
-    let chpwEmTitle = get(opt, 'chpwEmTitle', '')
-    let chpwEmContent = get(opt, 'chpwEmContent', '')
+    //email title 已搬到 procLang.mjs（chpwEmTitle 鍵），可由 kpLangExt 覆寫
+    //email body 已搬到 server/template/changePasswordEmail-{lang}.html
 
 
     //srLog
@@ -464,7 +454,15 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     //verifyBaseUrl, 後端 API base URL，用於驗證信內連結
     let verifyBaseUrl = `http://localhost:${serverPort}`
 
-    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpwEmTitle, chpwEmContent, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl, regVerifyEmTitle, regVerifyEmContent })
+    //pathTemplate 模板資料夾路徑（dev / npm 兩種來源）
+    //供 procCore 渲染 email body 與本檔 /api/verifyEmail handler 渲染結果頁
+    let pathTemplate = './server/template'
+    let npmPathTemplate = './node_modules/w-web-sso/server/template'
+    if (fsIsFolder(npmPathTemplate)) {
+        pathTemplate = npmPathTemplate
+    }
+
+    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pathTemplate, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl })
     let pp = procProtect(woItems, p, {
         minForAccountLoginFailed,
         numForAccountLoginFailed,
@@ -1043,15 +1041,10 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     msgKey = (r.msg && typeof r.msg === 'string') ? r.msg : 'verifyEmailInvalidToken'
                 }
 
-                //render template
+                //render template (pathTemplate 為上層共用變數)
                 let title = get(kpLang, `${lang}.webName`, '')
                 let message = get(kpLang, `${lang}.${msgKey}`, msgKey)
 
-                let pathTemplate = './server/template'
-                let npmPathTemplate = './node_modules/w-web-sso/server/template'
-                if (fsIsFolder(npmPathTemplate)) {
-                    pathTemplate = npmPathTemplate
-                }
                 let fpTpl = path.resolve(pathTemplate, 'verifyEmailResult.html')
                 let html = fs.readFileSync(fpTpl, 'utf8')
                 html = replace(html, '{title}', title)

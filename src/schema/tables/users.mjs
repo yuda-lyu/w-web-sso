@@ -55,7 +55,7 @@ let settings = {
         type: 'STRING',
     },
     tokenVerify: {
-        name: '驗證用 token',
+        name: '註冊後驗證用token',
         type: 'STRING',
     },
     timeVerified: {
@@ -68,6 +68,10 @@ let settings = {
     },
     timeBlocked: {
         name: '封鎖時間',
+        type: 'STRING',
+    },
+    isForceChangePw: { //僅'y'或'n'
+        name: '是否須強制變更密碼',
         type: 'STRING',
     },
     userId: {
@@ -86,7 +90,7 @@ let settings = {
         name: '更新時間',
         type: 'STRING',
     },
-    isActive: {
+    isActive: { //僅'y'或'n'
         name: '是否有效',
         type: 'STRING',
     },

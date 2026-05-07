@@ -39,7 +39,23 @@ import * as s from '../src/plugins/mShare.mjs'
 import hashPassword from './hashPassword.mjs'
 
 
-function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpwEmTitle, chpwEmContent, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl, regVerifyEmTitle, regVerifyEmContent }) {
+function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pathTemplate, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl }) {
+
+
+    //email title 從 procLang 取
+    let getEmailTitle = (key, lang) => {
+        return get(kpLang, `${lang}.${key}`, '')
+    }
+
+    //email body 從 server/template/{templateName}-{lang}.html 讀檔並做 placeholder 替換
+    let renderEmailBody = (templateName, lang, kvMap = {}) => {
+        let fpTpl = path.resolve(pathTemplate, `${templateName}-${lang}.html`)
+        let content = fs.readFileSync(fpTpl, 'utf8')
+        for (let k in kvMap) {
+            content = content.replaceAll(`{${k}}`, kvMap[k])
+        }
+        return content
+    }
 
 
     //_getGenUserByKV
@@ -735,12 +751,11 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
         //send verify email (若失敗，使用者可透過「重寄驗證信」補救)
         try {
             let sender = get(kpLang, `${lang}.webName`, '')
-            let title = get(regVerifyEmTitle, lang, '')
-            let content = get(regVerifyEmContent, lang, '')
+            let title = getEmailTitle('regVerifyEmTitle', lang)
             let verifyUrl = `${verifyBaseUrl}/api/verifyEmail?token=${tokenVerify}&lang=${lang}`
-            content = content.replaceAll('{sender}', sender)
-            content = content.replaceAll('{name}', name)
-            content = content.replaceAll('{verifyUrl}', verifyUrl)
+            let content = renderEmailBody('regVerifyEmail', lang, {
+                sender, name, verifyUrl,
+            })
             await srEmail.send(sender, title, content, email)
         }
         catch (err) {
@@ -832,12 +847,11 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
         //send verify email
         try {
             let sender = get(kpLang, `${lang}.webName`, '')
-            let title = get(regVerifyEmTitle, lang, '')
-            let content = get(regVerifyEmContent, lang, '')
+            let title = getEmailTitle('regVerifyEmTitle', lang)
             let verifyUrl = `${verifyBaseUrl}/api/verifyEmail?token=${tokenVerify}&lang=${lang}`
-            content = content.replaceAll('{sender}', sender)
-            content = content.replaceAll('{name}', name)
-            content = content.replaceAll('{verifyUrl}', verifyUrl)
+            let content = renderEmailBody('regVerifyEmail', lang, {
+                sender, name, verifyUrl,
+            })
             await srEmail.send(sender, title, content, email)
         }
         catch (err) {
@@ -998,23 +1012,17 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
             //name
             let name = get(u, 'name', 'unknow')
 
-            //chpwEmTitle
-            let title = get(chpwEmTitle, lang, '')
+            //title from procLang
+            let title = getEmailTitle('chpwEmTitle', lang)
             if (!isestr(title)) {
-                console.log('chpwEmTitle', chpwEmTitle)
-                console.log('lang', lang)
+                console.log('chpwEmTitle 取不到, lang', lang)
                 return Promise.reject(`invalid title`)
             }
 
-            //chpwEmContent
-            let content = get(chpwEmContent, lang, '')
-            if (!isestr(content)) {
-                console.log('chpwEmContent', chpwEmContent)
-                console.log('lang', lang)
-                return Promise.reject(`invalid content`)
-            }
-            content = content.replaceAll('{sender}', sender)
-            content = content.replaceAll('{name}', name)
+            //body from server/template/changePasswordEmail-{lang}.html
+            let content = renderEmailBody('changePasswordEmail', lang, {
+                sender, name,
+            })
 
             //send
             await srEmail.send(sender, title, content, email)

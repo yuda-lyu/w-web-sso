@@ -135,14 +135,27 @@ async function deleteAllRegisterTestUsers() {
         ids.push(`id-register-verify-ok-${lang}`)
         ids.push(`id-register-verify-already-${lang}`)
     }
-    // 註冊成功流程產生的 user，account 為 qauser-{lang}，id 由 funNew 隨機產生，須以 account 刪除
+    // 註冊成功流程產生的 user，account 為 qauser-{lang}，id 由 funNew 隨機產生
+    // 註：woItems.users.del({account:...}) 不會真的刪除（nDeleted:0），須 select 取 id 後以 del({id}) 刪
     for (let id of ids) {
         await woItems.users.del({ id }).catch(() => {})
     }
     for (let lang of langs) {
-        await woItems.users.del({ account: `qauser-${lang}` }).catch(() => {})
+        let us = await woItems.users.select({ account: `qauser-${lang}` }).catch(() => [])
+        for (let u of us) {
+            await woItems.users.del({ id: u.id }).catch(() => {})
+        }
     }
     console.log(`deleted register test users`)
+}
+
+
+// 刪除特定 account 的 user（select 取 id 後以 id 刪，因 del by account 無效）
+async function deleteUserByAccount(account) {
+    let us = await woItems.users.select({ account }).catch(() => [])
+    for (let u of us) {
+        await woItems.users.del({ id: u.id }).catch(() => {})
+    }
 }
 
 
@@ -286,7 +299,7 @@ async function generateBaselineForLang(page, lang) {
 
     // 005 success → form 清空回 login mode（先清掉前次殘留 user）
     console.log('  005-success')
-    await woItems.users.del({ account: `qauser-${lang}` }).catch(() => {})
+    await deleteUserByAccount(`qauser-${lang}`)
     let buf5 = await captureSuccess(page, lang)
     fs.writeFileSync(bp(lang, '005-success'), buf5)
 
@@ -317,18 +330,19 @@ async function generateBaseline() {
     await deleteAllRegisterTestUsers()
     await insertVerifyTestUsers()
 
-    let browser = await chromium.launch({ headless: true })
-    let page = await browser.newPage()
-
-    page.on('dialog', async (dialog) => {
-        await dialog.accept()
-    })
-
+    // 每個 lang 啟動 fresh browser，與 mocha test mode（每個 describe 各自 launch browser）一致
+    // 避免「warm 跑 baseline / cold 跑 test」造成 cht-001-form-initial 等首次截圖 pixel 微差
     for (let lang of langs) {
-        await generateBaselineForLang(page, lang)
-    }
+        let browser = await chromium.launch({ headless: true })
+        let page = await browser.newPage()
+        page.on('dialog', async (dialog) => {
+            await dialog.accept()
+        })
 
-    await browser.close()
+        await generateBaselineForLang(page, lang)
+
+        await browser.close()
+    }
 
     await deleteAllRegisterTestUsers()
 
@@ -411,7 +425,7 @@ else {
             })
 
             it('005-success: 註冊成功 → form 清空回 login mode', async function() {
-                await woItems.users.del({ account: `qauser-${lang}` }).catch(() => {})
+                await deleteUserByAccount(`qauser-${lang}`)
                 let buf = await captureSuccess(page, lang)
                 let baselinePath = bp(lang, '005-success')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)

@@ -77,7 +77,7 @@ function checkUserPassword(lang, pw, opt = {}) {
 }
 
 
-describe('createUser - password validation (checkUserPassword)', function() {
+describe('register - password validation (checkUserPassword)', function() {
 
     // B2: password empty
     it('B2: should fail when password is empty', function() {
@@ -201,7 +201,7 @@ describe('createUser - password validation (checkUserPassword)', function() {
 })
 
 
-describe('createUser - field validation logic', function() {
+describe('register - field validation logic', function() {
 
     // B3: confirmPassword mismatch
     it('B3: should detect confirmPassword mismatch', function() {
@@ -234,7 +234,7 @@ describe('createUser - field validation logic', function() {
 })
 
 
-describe('createUser - allowUserRegistration setting', function() {
+describe('register - allowUserRegistration setting', function() {
 
     // A3: default when not set
     it('A3: should default to true when allowUserRegistration is not set', function() {
