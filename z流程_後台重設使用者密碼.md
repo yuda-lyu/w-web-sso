@@ -29,7 +29,7 @@
 
 - 使用者於強制變更頁面填妥舊密碼（管理員給的隨機）+ 新密碼+確認密碼且都正確, 變更成功 → 後端清 `isForceChangePw='n'` + 寄變更通知信
 - 使用者欄位錯誤（空值、新密碼≠確認、新密碼不符策略、舊密碼錯）, 同 [z流程_使用者變更密碼.md](z流程_使用者變更密碼.md) inline 紅字機制
-- 使用者於強制變更頁面點「取消」, 轉為登出回登入頁（強制模式下取消 = 登出，避免 isForceChangePw='y' 的 user 滯留 user view 不變更）
+- 強制變更模式下「取消」按鈕**直接隱藏**, 只剩「送出」一條路（避免使用者繞過強制變更繼續使用; 不改 cancel 行為以維持既有按鈕邏輯單純）
 - 使用者點 logout, 回登入頁；下次以隨機密碼再登入又會被拉回強制變更（直到變更為止）
 
 ## 執行流程
@@ -93,7 +93,7 @@
 003          自動 clickChangePassword（展開變更密碼表單）
 004          UI 模式進入「強制變更模式」（forceChangePwMode = true）
 005          隱藏 logout 以外的其他導覽（避免使用者跳出去）
-006          「取消」按鈕改為「登出」（或維持取消但 click 時改呼叫 logout）
+006          「取消」按鈕直接隱藏（只剩送出，使用者要離開只能 logout）
 007  使用者填寫舊密碼（管理員給的隨機新密碼）+ 新密碼 + 確認密碼，點送出
 008      呼叫既有 submitChangePassword 流程（見 z流程_使用者變更密碼.md）
 009      後端 checkTokenAndChangePassword 在成功 save 時多寫一欄: isForceChangePw='n'
@@ -142,27 +142,48 @@
 | `src/schema/tables/users.mjs` | （已有 `isForceChangePw`，只需確認 funNew 預設 `'n'`，並把此欄位納入 admin 後台檢視 / 查詢 schema） |
 | `src/components/LayoutContentUsers.vue` | `modifyItemPasswordById` 改實作（呼叫 adminResetUserPassword API + showCheckYesNo 二次確認 + alert） |
 | `src/components/PageLogin.vue` | login `.then` 內檢查 `userSelf.isForceChangePw === 'y'`，若是則 showCheckYes 後 updateViewState('user') |
-| `src/components/PageUser.vue` | mounted 內檢查 `userSelf.isForceChangePw === 'y'`，若是則自動展開變更密碼表單 + 切到「強制變更模式」（取消按鈕改登出，隱藏 logout 以外的選項） |
-| `settings.json` | 新增 `resetPwEmTitle` / `resetPwEmContent`（內含 `{account}` / `{newPassword}` placeholder，**無 `{resetUrl}`**） |
+| `src/components/PageUser.vue` | mounted 內檢查 `userSelf.isForceChangePw === 'y'`，若是則自動展開變更密碼表單 + 切到「強制變更模式」（取消按鈕直接隱藏，隱藏 logout 以外的選項） |
+| `server/procLang.mjs` | 新增 `resetPwEmTitle`（信件標題, eng + cht）|
+| `server/template/resetPasswordEmail-{eng,cht}.html` | 新增信件 body 模板, 內含 `{name}` / `{sender}` / `{account}` / `{newPassword}` placeholder, **無 `{resetUrl}`**（與既有 `regVerifyEmail-*.html`、`changePasswordEmail-*.html` 慣例一致） |
 
 > 移除：先前規劃的 `passwordResetToken` / `timePasswordResetExpired` / `isPendingPasswordReset` 欄位、PageResetPassword.vue、validateResetToken / submitResetPassword API 等全部不需要。
 
 ### 六、Email 模板（無連結，僅明文新密碼）
 
-`settings.json` 新增：
+依 `CLAUDE.md` 「Email 模板存放慣例」：標題進 `procLang.mjs`，body 放 `server/template/`。
 
-```json
-{
-    "resetPwEmTitle": {
-        "eng": "Your password has been reset",
-        "cht": "您的密碼已被重設"
-    },
-    "resetPwEmContent": {
-        "eng": "Dear {name},<br><br>The administrator has reset the password for your {sender} account.<br><br>Account: {account}<br>New password: <strong>{newPassword}</strong><br><br>Please log in with this password and immediately set your own new password upon login.<br><br>If you did not expect this change, please contact the administrator.<br><br>This is an automated notification.",
-        "cht": "{name} 您好：<br><br>管理員已重設您於「{sender}」的密碼。<br><br>帳號：{account}<br>新密碼：<strong>{newPassword}</strong><br><br>請以此密碼登入後，立即變更為您自己的新密碼。<br><br>若非您預期之操作，請聯繫管理員。<br><br>此為系統自動通知信。"
-    }
-}
+**1. `server/procLang.mjs` 新增語系鍵**：
+
+```js
+resetPwEmTitle: {
+    eng: 'Your password has been reset',
+    cht: '您的密碼已被重設',
+},
 ```
+
+**2. `server/template/resetPasswordEmail-eng.html`**：
+
+```html
+<p>Dear {name},</p>
+<p>The administrator has reset the password for your {sender} account.</p>
+<p>Account: {account}<br>New password: <strong>{newPassword}</strong></p>
+<p>Please log in with this password and immediately set your own new password upon login.</p>
+<p>If you did not expect this change, please contact the administrator.</p>
+<p>This is an automated notification.</p>
+```
+
+**3. `server/template/resetPasswordEmail-cht.html`**：
+
+```html
+<p>{name} 您好：</p>
+<p>管理員已重設您於「{sender}」的密碼。</p>
+<p>帳號：{account}<br>新密碼：<strong>{newPassword}</strong></p>
+<p>請以此密碼登入後，立即變更為您自己的新密碼。</p>
+<p>若非您預期之操作，請聯繫管理員。</p>
+<p>此為系統自動通知信。</p>
+```
+
+寄信時由 `procCore.renderEmailBody('resetPasswordEmail', lang, { name, sender, account, newPassword })` 載入並代入。
 
 ## 與 z流程_使用者變更密碼.md 的對照
 
@@ -190,20 +211,19 @@
 | Admin 對自己重設 | 拒絕（避免自我鎖死；admin 自己改密碼走「使用者變更密碼」流程） |
 | 密碼不記錄 log | srLog 僅記錄 event / userId，**不記錄 newPassword 明文**；明文僅在寄信當下使用後即釋放 |
 | 操作者得知密碼 | 後端不回傳密碼明文給前端（管理員無法看到）。理論上若管理員可讀使用者信箱仍可得知，但這是 email 系統層級信任邊界 |
-| 強制變更頁面跳脫 | UX 設計上「取消」按鈕轉為「登出」，避免使用者繞過強制變更繼續使用 |
+| 強制變更頁面跳脫 | UX 設計上「取消」按鈕**直接隱藏**，使用者要離開只能點 logout 重登（重登又會被拉回強制變更，直到完成為止） |
 
 ## 開發順序建議
 
 | 步驟 | 內容 | 檔案 |
 |---|---|---|
-| 1 | 新增語系鍵 | `server/procLang.mjs` |
-| 2 | 新增 Email 模板設定 | `settings.json` |
-| 3 | 實作 `genRandomPassword` helper | `server/procCore.mjs` 或獨立檔 |
+| 1 | 新增語系鍵 `resetPwEmTitle` 與相關 alert / CheckYes 文字 | `server/procLang.mjs` |
+| 2 | 新增 Email body 模板兩支（eng/cht） | `server/template/resetPasswordEmail-{eng,cht}.html` |
+| 3 | 實作 `genRandomPassword` helper（獨立檔） | `server/genRandomPassword.mjs` |
 | 4 | 實作 `adminResetUserPassword` | `server/procCore.mjs` |
 | 5 | 修改 `checkTokenAndChangePassword` 於成功時清 `isForceChangePw='n'` | `server/procCore.mjs` |
 | 6 | 註冊 API | `server/WWebSso.mjs` |
-| 7 | 後端單元測試（admin 權限、隨機密碼合規性、email 失敗仍成功等） | `test/` |
-| 8 | 前端 `LayoutContentUsers.vue` `modifyItemPasswordById` 實作 | — |
-| 9 | 前端 `PageLogin.vue` login 後檢查 `isForceChangePw` | — |
-| 10 | 前端 `PageUser.vue` 強制變更模式 | — |
-| 11 | e2e 測試（登入後強制變更流程） | `test/e2e-resetpassword.test.mjs`（規劃） |
+| 7 | 前端 `LayoutContentUsers.vue` `modifyItemPasswordById` 實作 | — |
+| 8 | 前端 `PageLogin.vue` login 後檢查 `isForceChangePw` | — |
+| 9 | 前端 `PageUser.vue` 強制變更模式（自動展開 + 隱藏取消按鈕） | — |
+| 10 | e2e 測試（登入後強制變更流程） | `test/e2e-resetpassword.test.mjs` |

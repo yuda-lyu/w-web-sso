@@ -427,6 +427,13 @@ function login(account, password, opt = {}) {
         updateUserToken(token)
         updateUserSelf(u)
 
+        //強制變更密碼模式: 不論原本是否要 useRedir, 一律不走 redir,
+        //並把 view 切到 'user' 確保 PageUser 進入強制變更模式 (見 PageUser.mounted)
+        if (get(u, 'isForceChangePw', '') === 'y') {
+            useRedir = false
+            updateViewState('user')
+        }
+
         //useRedir
         if (useRedir) {
 
@@ -604,6 +611,13 @@ function autoLogin(opt = {}) {
         //update token and user
         updateUserToken(token)
         updateUserSelf(u)
+
+        //強制變更密碼模式: 不論原本是否要 useRedir, 一律不走 redir,
+        //並把 view 切到 'user' 確保 PageUser 進入強制變更模式 (見 PageUser.mounted)
+        if (get(u, 'isForceChangePw', '') === 'y') {
+            useRedir = false
+            updateViewState('user')
+        }
 
         //useRedir
         if (useRedir) {

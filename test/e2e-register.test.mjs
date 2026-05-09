@@ -46,6 +46,41 @@ let kpLangText = {
 }
 
 
+// 可選 --names <eng-001-form-initial,cht-002-pw-too-short,...> 進行手術式 baseline 重產
+let baselineNamesFilter = null
+{
+    let i = process.argv.indexOf('--names')
+    if (i >= 0 && process.argv[i + 1]) {
+        baselineNamesFilter = new Set(process.argv[i + 1].split(','))
+    }
+}
+function writeBaseline(lang, name, buf) {
+    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`)) {
+        console.log(`  [skip] ${lang}-${name}`)
+        return
+    }
+    fs.writeFileSync(bp(lang, name), buf)
+}
+
+
+// 設計不變式：register form 高度應觸發 .sb 內捲軸（Playwright headless 不渲染捲軸像素，
+// 故無法靠 baseline 比對抓到「max-height/overflow 設計被破壞」的 regression）
+async function assertSbOverflows(page, label) {
+    let m = await page.evaluate(() => {
+        let sb = document.querySelector('.sb')
+        if (!sb) return null
+        return {
+            client: sb.clientHeight,
+            scroll: sb.scrollHeight,
+            overflowY: getComputedStyle(sb).overflowY,
+        }
+    })
+    assert.strict.notEqual(m, null, `${label}: .sb 元素不存在（max-height/overflow 設計被破壞？）`)
+    assert.strict.equal(/^(auto|scroll)$/.test(m.overflowY), true, `${label}: .sb overflow-y 應為 auto/scroll，實際 ${m.overflowY}`)
+    assert.strict.equal(m.scroll > m.client, true, `${label}: .sb 應觸發捲軸（scroll=${m.scroll} client=${m.client}）`)
+}
+
+
 function bp(lang, name) {
     return path.join(baselineDir, `register-${lang}-${name}.png`)
 }
@@ -280,43 +315,43 @@ async function generateBaselineForLang(page, lang) {
     // 001 form initial
     console.log('  001-form-initial')
     let buf1 = await captureFormInitial(page, lang)
-    fs.writeFileSync(bp(lang, '001-form-initial'), buf1)
+    writeBaseline(lang, '001-form-initial', buf1)
 
     // 002 pw too short
     console.log('  002-pw-too-short')
     let buf2 = await capturePwTooShort(page, lang)
-    fs.writeFileSync(bp(lang, '002-pw-too-short'), buf2)
+    writeBaseline(lang, '002-pw-too-short', buf2)
 
     // 003 pw mismatch
     console.log('  003-pw-mismatch')
     let buf3 = await capturePwMismatch(page, lang)
-    fs.writeFileSync(bp(lang, '003-pw-mismatch'), buf3)
+    writeBaseline(lang, '003-pw-mismatch', buf3)
 
     // 004 pw multi errors
     console.log('  004-pw-multi-errors')
     let buf4 = await capturePwMultiErrors(page, lang)
-    fs.writeFileSync(bp(lang, '004-pw-multi-errors'), buf4)
+    writeBaseline(lang, '004-pw-multi-errors', buf4)
 
     // 005 success → form 清空回 login mode（先清掉前次殘留 user）
     console.log('  005-success')
     await deleteUserByAccount(`qauser-${lang}`)
     let buf5 = await captureSuccess(page, lang)
-    fs.writeFileSync(bp(lang, '005-success'), buf5)
+    writeBaseline(lang, '005-success', buf5)
 
     // 006 verify success（須先 reset verify users，因為 005 success 流程不影響 verify users，但保險起見）
     console.log('  006-verify-success')
     let buf6 = await captureVerifyResult(page, lang, verifyTokens.success[lang])
-    fs.writeFileSync(bp(lang, '006-verify-success'), buf6)
+    writeBaseline(lang, '006-verify-success', buf6)
 
     // 007 verify invalid
     console.log('  007-verify-invalid')
     let buf7 = await captureVerifyResult(page, lang, 'fake-token-not-in-db')
-    fs.writeFileSync(bp(lang, '007-verify-invalid'), buf7)
+    writeBaseline(lang, '007-verify-invalid', buf7)
 
     // 008 verify already
     console.log('  008-verify-already')
     let buf8 = await captureVerifyResult(page, lang, verifyTokens.already[lang])
-    fs.writeFileSync(bp(lang, '008-verify-already'), buf8)
+    writeBaseline(lang, '008-verify-already', buf8)
 }
 
 
@@ -398,6 +433,7 @@ else {
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-001-form-initial`)
+                await assertSbOverflows(page, `register-${lang}-001-form-initial`)
             })
 
             it('002-pw-too-short: 密碼長度不足 → inline 紅字', async function() {
@@ -406,6 +442,7 @@ else {
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-002-pw-too-short`)
+                await assertSbOverflows(page, `register-${lang}-002-pw-too-short`)
             })
 
             it('003-pw-mismatch: 密碼≠確認密碼 → inline 紅字', async function() {
@@ -414,6 +451,7 @@ else {
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-003-pw-mismatch`)
+                await assertSbOverflows(page, `register-${lang}-003-pw-mismatch`)
             })
 
             it('004-pw-multi-errors: 密碼觸發多項策略違反 → 多條紅字', async function() {
@@ -422,6 +460,7 @@ else {
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-004-pw-multi-errors`)
+                await assertSbOverflows(page, `register-${lang}-004-pw-multi-errors`)
             })
 
             it('005-success: 註冊成功 → form 清空回 login mode', async function() {

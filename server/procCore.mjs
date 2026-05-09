@@ -37,6 +37,7 @@ import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
 import hashPassword from './hashPassword.mjs'
+import genRandomPassword from './genRandomPassword.mjs'
 
 
 function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pathTemplate, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl }) {
@@ -317,6 +318,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             redir: u.redir,
             isAdmin: u.isAdmin,
             isActive: u.isActive,
+            isForceChangePw: u.isForceChangePw, //強制變更密碼旗標, 前端登入後判斷是否拉去 user view 強制變更
             token,
         }
 
@@ -992,10 +994,11 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //hash newPassword
         let passwordNew = hashPassword(newPassword, salt)
 
-        //save
+        //save (清 isForceChangePw='n', 變更密碼成功後即解除強制變更)
         await woItems.users.save({
             id: userId,
             password: passwordNew,
+            isForceChangePw: 'n',
         })
 
         //若已變更密碼, 但寄送email失敗時, 不能報錯中斷流程
@@ -1036,6 +1039,116 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         }
 
+    }
+
+
+    //adminResetUserPassword: admin 對 targetUserId 重設密碼, 產生隨機新密碼塞 DB + 寄信附明文
+    //
+    //回傳: { state:'success' } (不含明文密碼, 避免操作者得知)
+    //失敗 reject:
+    //  - token 無效 / 過期
+    //  - 操作者非 admin: 'forbidden'
+    //  - userId 空: 'invalid userId'
+    //  - 目標 user 不存在: 'user not found'
+    //  - 對自己觸發: 'cannot reset self'
+    //  - 隨機密碼產製失敗 (極少): 由 genRandomPassword 拋出
+    //
+    //寄信失敗 (SMTP 不通) 不視為錯誤, 密碼仍會寫入, 僅記 srLog.error
+    let adminResetUserPassword = async (token, lang, targetUserId) => {
+
+        //checkToken
+        await checkToken(token)
+
+        //check lang
+        if (!isestr(lang)) {
+            lang = 'eng'
+        }
+
+        //check targetUserId
+        if (!isestr(targetUserId)) {
+            return Promise.reject(`invalid userId`)
+        }
+
+        //getUserByToken (操作者)
+        let uOperator = await getUserByToken(token)
+        let operatorId = get(uOperator, 'id', '')
+
+        //operator 必須為 admin
+        if (get(uOperator, 'isAdmin', '') !== 'y') {
+            return Promise.reject(`forbidden`)
+        }
+
+        //不可對自己觸發
+        if (operatorId === targetUserId) {
+            return Promise.reject(`cannot reset self`)
+        }
+
+        //目標 user (含 password 拿到也不用, 只是確認存在)
+        let uTarget = null
+        try {
+            uTarget = await _getGenUserByKV('id', targetUserId, { deletePassword: true })
+        }
+        catch (err) {
+            return Promise.reject(`user not found`)
+        }
+        if (!iseobj(uTarget)) {
+            return Promise.reject(`user not found`)
+        }
+
+        let targetAccount = get(uTarget, 'account', '')
+        let targetName = get(uTarget, 'name', 'unknow')
+        let targetEmail = get(uTarget, 'email', '')
+
+        //產生隨機新密碼 (符合 passwordPolicy + account 限制)
+        let newPassword = genRandomPassword(passwordPolicy, targetAccount)
+
+        //hash + save (含 isForceChangePw='y')
+        let hashed = hashPassword(newPassword, salt)
+        await woItems.users.save({
+            id: targetUserId,
+            password: hashed,
+            isForceChangePw: 'y',
+        })
+
+        //寄信附明文新密碼 (SMTP 失敗不阻斷)
+        try {
+
+            if (!isestr(targetEmail)) {
+                //email 缺失就不寄, 但密碼已重設; admin 須由其他管道告知
+                srLog.error({ event: 'fun-adminResetUserPassword-noEmail', token, targetUserId })
+            }
+            else {
+
+                //sender
+                let sender = get(kpLang, `${lang}.webName`, '')
+                if (!isestr(sender)) {
+                    return Promise.reject(`invalid sender`)
+                }
+
+                //title from procLang
+                let title = getEmailTitle('resetPwEmTitle', lang)
+                if (!isestr(title)) {
+                    return Promise.reject(`invalid title`)
+                }
+
+                //body from server/template/resetPasswordEmail-{lang}.html
+                let content = renderEmailBody('resetPasswordEmail', lang, {
+                    sender, name: targetName, account: targetAccount, newPassword,
+                })
+
+                //send
+                await srEmail.send(sender, title, content, targetEmail)
+
+            }
+
+        }
+        catch (err) {
+            console.log(err)
+            //僅記 log, 不記明文密碼
+            srLog.error({ event: 'fun-adminResetUserPassword-sendEmail', token, targetUserId, err: getErrorMessage(err) })
+        }
+
+        return { state: 'success' }
     }
 
 
@@ -1705,6 +1818,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         resendVerifyEmail,
         checkUserPassword,
         checkTokenAndChangePassword,
+        adminResetUserPassword,
 
         getIpByKV,
 

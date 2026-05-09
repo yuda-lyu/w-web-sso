@@ -1111,6 +1111,42 @@ let kpLang = {
         eng: `Password has been changed`,
         cht: `密碼已進行變更`,
     },
+    resetPwEmTitle: {
+        eng: `Your password has been reset`,
+        cht: `您的密碼已被重設`,
+    },
+
+    //adminResetUserPassword (前端 modifyItemPasswordById)
+    adminResetPasswordConfirm: {
+        eng: `Confirm to reset password for {account}?`,
+        cht: `確定對 {account} 重設密碼？`,
+    },
+    adminResetPasswordSuccess: {
+        eng: `Password reset and new password sent to {email}`,
+        cht: `已重設並寄送新密碼至 {email}`,
+    },
+    adminResetPasswordCannotResetSelf: {
+        eng: `Cannot reset your own password via this action`,
+        cht: `不可對自己重設密碼`,
+    },
+    adminResetPasswordForbidden: {
+        eng: `Forbidden: admin permission required`,
+        cht: `權限不足：須具管理員身分`,
+    },
+    adminResetPasswordUserNotFound: {
+        eng: `User not found`,
+        cht: `查無使用者`,
+    },
+    adminResetPasswordFailed: {
+        eng: `Failed to reset password`,
+        cht: `重設密碼失敗`,
+    },
+
+    //強制變更密碼 (使用者收信登入後 CheckYes 文字)
+    userForceChangePwPrompt: {
+        eng: `Your password has been reset by the administrator. Please change it to your own new password.`,
+        cht: `您的密碼已由管理員重設，請按確認後變更為您自己的新密碼。`,
+    },
 
 }
 

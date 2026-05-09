@@ -67,6 +67,41 @@ function bp(lang, name) {
 }
 
 
+// 設計不變式：變更密碼表單展開時應觸發 .sb 內捲軸（Playwright headless 不渲染捲軸像素，
+// 故無法靠 baseline 比對抓到「max-height/overflow 設計被破壞」的 regression）
+async function assertSbOverflows(page, label) {
+    let m = await page.evaluate(() => {
+        let sb = document.querySelector('.sb')
+        if (!sb) return null
+        return {
+            client: sb.clientHeight,
+            scroll: sb.scrollHeight,
+            overflowY: getComputedStyle(sb).overflowY,
+        }
+    })
+    assert.strict.notEqual(m, null, `${label}: .sb 元素不存在（max-height/overflow 設計被破壞？）`)
+    assert.strict.equal(/^(auto|scroll)$/.test(m.overflowY), true, `${label}: .sb overflow-y 應為 auto/scroll，實際 ${m.overflowY}`)
+    assert.strict.equal(m.scroll > m.client, true, `${label}: .sb 應觸發捲軸（scroll=${m.scroll} client=${m.client}）`)
+}
+
+
+// 可選 --names <eng-001-form-initial,cht-008-success,...> 進行手術式 baseline 重產
+let baselineNamesFilter = null
+{
+    let i = process.argv.indexOf('--names')
+    if (i >= 0 && process.argv[i + 1]) {
+        baselineNamesFilter = new Set(process.argv[i + 1].split(','))
+    }
+}
+function writeBaseline(lang, name, buf) {
+    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`)) {
+        console.log(`  [skip] ${lang}-${name}`)
+        return
+    }
+    fs.writeFileSync(bp(lang, name), buf)
+}
+
+
 // --- 新增/重置/刪除測試使用者與 token ---
 
 async function insertTestUserAndToken(lang) {
@@ -273,36 +308,36 @@ async function generateBaselineForLang(page, lang) {
 
     console.log('  001-form-initial')
     let buf1 = await captureFormInitial(page, lang)
-    fs.writeFileSync(bp(lang, '001-form-initial'), buf1)
+    writeBaseline(lang, '001-form-initial', buf1)
 
     console.log('  002-old-empty')
     let buf2 = await captureOldEmpty(page, lang)
-    fs.writeFileSync(bp(lang, '002-old-empty'), buf2)
+    writeBaseline(lang, '002-old-empty', buf2)
 
     console.log('  003-new-empty')
     let buf3 = await captureNewEmpty(page, lang)
-    fs.writeFileSync(bp(lang, '003-new-empty'), buf3)
+    writeBaseline(lang, '003-new-empty', buf3)
 
     console.log('  004-confirm-empty')
     let buf4 = await captureConfirmEmpty(page, lang)
-    fs.writeFileSync(bp(lang, '004-confirm-empty'), buf4)
+    writeBaseline(lang, '004-confirm-empty', buf4)
 
     console.log('  005-pw-mismatch')
     let buf5 = await capturePwMismatch(page, lang)
-    fs.writeFileSync(bp(lang, '005-pw-mismatch'), buf5)
+    writeBaseline(lang, '005-pw-mismatch', buf5)
 
     console.log('  006-pw-policy-fail')
     let buf6 = await capturePwPolicyFail(page, lang)
-    fs.writeFileSync(bp(lang, '006-pw-policy-fail'), buf6)
+    writeBaseline(lang, '006-pw-policy-fail', buf6)
 
     console.log('  007-old-wrong')
     let buf7 = await captureOldWrong(page, lang)
-    fs.writeFileSync(bp(lang, '007-old-wrong'), buf7)
+    writeBaseline(lang, '007-old-wrong', buf7)
 
     // 008 會改 user.password；放最後執行避免影響其他情境
     console.log('  008-success')
     let buf8 = await captureSuccess(page, lang)
-    fs.writeFileSync(bp(lang, '008-success'), buf8)
+    writeBaseline(lang, '008-success', buf8)
 }
 
 
@@ -382,6 +417,7 @@ else {
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-001-form-initial`)
+                await assertSbOverflows(page, `changepassword-${lang}-001-form-initial`)
             })
 
             it('002-old-empty: 三欄空送出 → 舊密碼下方紅字', async function() {
@@ -390,6 +426,7 @@ else {
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-002-old-empty`)
+                await assertSbOverflows(page, `changepassword-${lang}-002-old-empty`)
             })
 
             it('003-new-empty: 只填舊密碼送出 → 新密碼下方紅字', async function() {
@@ -398,6 +435,7 @@ else {
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-003-new-empty`)
+                await assertSbOverflows(page, `changepassword-${lang}-003-new-empty`)
             })
 
             it('004-confirm-empty: 填舊+新送出 → 確認密碼下方紅字', async function() {
@@ -406,6 +444,7 @@ else {
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-004-confirm-empty`)
+                await assertSbOverflows(page, `changepassword-${lang}-004-confirm-empty`)
             })
 
             it('005-pw-mismatch: 新密碼≠確認密碼 → 確認密碼下方紅字', async function() {
@@ -414,6 +453,7 @@ else {
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-005-pw-mismatch`)
+                await assertSbOverflows(page, `changepassword-${lang}-005-pw-mismatch`)
             })
 
             it('006-pw-policy-fail: 新密碼不符策略 → 新密碼下方紅字', async function() {
@@ -422,6 +462,7 @@ else {
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-006-pw-policy-fail`)
+                await assertSbOverflows(page, `changepassword-${lang}-006-pw-policy-fail`)
             })
 
             it('007-old-wrong: 舊密碼錯 → 舊密碼下方紅字「變更失敗」', async function() {
@@ -430,6 +471,7 @@ else {
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-007-old-wrong`)
+                await assertSbOverflows(page, `changepassword-${lang}-007-old-wrong`)
             })
 
             it('008-success: 三欄填妥+正確 → 表單收起回 user info', async function() {

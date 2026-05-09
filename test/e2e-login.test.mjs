@@ -53,6 +53,23 @@ function bp(lang, name) {
 }
 
 
+// 可選 --names <eng-001-ok,cht-007-notverify-logged-in,...> 進行手術式 baseline 重產
+let baselineNamesFilter = null
+{
+    let i = process.argv.indexOf('--names')
+    if (i >= 0 && process.argv[i + 1]) {
+        baselineNamesFilter = new Set(process.argv[i + 1].split(','))
+    }
+}
+function writeBaseline(lang, name, buf) {
+    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`)) {
+        console.log(`  [skip] ${lang}-${name}`)
+        return
+    }
+    fs.writeFileSync(bp(lang, name), buf)
+}
+
+
 // --- 測試使用者清單 ---
 
 let testUsers = [
@@ -467,35 +484,34 @@ async function generateBaselineForLang(page, lang) {
 
     for (let u of testUsers) {
         if (u.fullFlow || u.customTest) continue
-        let fp = bp(lang, u.screenshotName)
-        console.log(`  ${u.account} (expect: ${u.expect}) → ${fp}`)
+        console.log(`  ${u.account} (expect: ${u.expect})`)
         let buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword)
-        fs.writeFileSync(fp, buf)
+        writeBaseline(lang, u.screenshotName, buf)
     }
 
     // 未驗證使用者完整流程（產生 003 ~ 007）
     console.log(`=== 未驗證使用者完整流程（${lang}）===`)
     let bufs = await notVerifiedFullFlow(page, lang)
     for (let name of Object.keys(bufs)) {
-        fs.writeFileSync(bp(lang, name), bufs[name])
+        writeBaseline(lang, name, bufs[name])
     }
 
     // A1: view=backstage
     console.log(`=== view=backstage（${lang}）===`)
     let loginOk = testUsers.find((u) => u.account === 'login-ok')
     let bufA1 = await loginAndScreenshot(page, lang, loginOk.account, loginOk.rawPassword, 'backstage')
-    fs.writeFileSync(bp(lang, '011-view-backstage'), bufA1)
+    writeBaseline(lang, '011-view-backstage', bufA1)
 
     // A2: view=user
     console.log(`=== view=user（${lang}）===`)
     let bufA2 = await loginAndScreenshot(page, lang, loginOk.account, loginOk.rawPassword, 'user')
-    fs.writeFileSync(bp(lang, '012-view-user'), bufA2)
+    writeBaseline(lang, '012-view-user', bufA2)
 
     // C1: resend invalid account/email
     console.log(`=== resend invalid account（${lang}）===`)
     let c1User = testUsers.find((u) => u.customTest === 'c1')
     let bufC1 = await resendErrorFlow(page, lang, c1User.account, c1User.rawPassword, 'wrong-email@nowhere.com', null)
-    fs.writeFileSync(bp(lang, '013-resend-invalid-account'), bufC1)
+    writeBaseline(lang, '013-resend-invalid-account', bufC1)
 
     // C2: resend already verified（送出前動態標記為已驗證）
     console.log(`=== resend already verified（${lang}）===`)
@@ -503,13 +519,13 @@ async function generateBaselineForLang(page, lang) {
     let bufC2 = await resendErrorFlow(page, lang, c2User.account, c2User.rawPassword, c2User.email, async () => {
         await woItems.users.save({ id: c2User.id, timeVerified: '2025-06-01T00:00:00.000+08:00' })
     })
-    fs.writeFileSync(bp(lang, '014-resend-already-verified'), bufC2)
+    writeBaseline(lang, '014-resend-already-verified', bufC2)
 
     // D2: login success but no redir
     console.log(`=== login no redir（${lang}）===`)
     let noRedirUser = testUsers.find((u) => u.customTest === 'd2')
     let bufD2 = await loginAndScreenshot(page, lang, noRedirUser.account, noRedirUser.rawPassword)
-    fs.writeFileSync(bp(lang, '016-login-no-redir'), bufD2)
+    writeBaseline(lang, '016-login-no-redir', bufD2)
 
     // D1 不需產生新 baseline，直接共用 002-wrong-pw
 

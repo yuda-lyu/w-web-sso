@@ -104,6 +104,9 @@ let funNew = (ndata = {}) => {
     o.userIdUpdate = o.userId
     o.timeUpdate = o.timeCreate
     o.isActive = 'y'
+    if (o.isForceChangePw !== 'y' && o.isForceChangePw !== 'n') {
+        o.isForceChangePw = 'n'
+    }
     return o
 }
 

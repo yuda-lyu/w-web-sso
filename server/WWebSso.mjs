@@ -1221,6 +1221,12 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 //console.log('call checkTokenAndChangePassword end')
                 return r
             },
+            adminResetUserPassword: async (_t, token, lang, targetUserId) => {
+                //僅記 event / token / targetUserId, 不記任何密碼明文
+                srLog.info({ event: 'kpfun-adminResetUserPassword', token, lang, targetUserId })
+                let r = await p.adminResetUserPassword(token, lang, targetUserId)
+                return r
+            },
 
             getUsersList: async (_t, token) => {
                 srLog.info({ event: 'kpfun-getUsersList', token })

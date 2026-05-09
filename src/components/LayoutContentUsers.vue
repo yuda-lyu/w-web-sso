@@ -1042,55 +1042,68 @@ export default {
         },
 
         modifyItemPasswordById: function(id) {
-            // console.log('modifyItemPasswordById', id)
-
             let vo = this
 
-            vo.$alert(`尚待開發`, { type: 'error' }) //bbb
+            //check id
+            if (!isestr(id)) {
+                vo.$alert(`${vo.$t('userEditNoUserId')}`, { type: 'error' })
+                return
+            }
 
-            // //k
-            // let k = 'password'
+            //find target row (取 account 給二次確認文字使用)
+            let rows = get(vo, 'opt.rows', [])
+            let r = null
+            each(rows, (v) => {
+                if (get(v, 'id', '') === id) {
+                    r = v
+                    return false //跳出
+                }
+            })
+            if (!iseobj(r)) {
+                vo.$alert(`${vo.$t('userEditNoUserData')}`, { type: 'error' })
+                return
+            }
 
-            // //check
-            // if (!isestr(id)) {
-            //     vo.$alert(`${vo.$t('userEditNoUserId')}`, { type: 'error' })
-            //     return
-            // }
+            let account = get(r, 'account', '')
+            let email = get(r, 'email', '')
 
-            // //rows
-            // let rows = get(vo, 'opt.rows', [])
+            //二次確認 (showCheckYesNo 回傳 true=yes / false=no)
+            let confirmText = vo.$t('adminResetPasswordConfirm').replace('{account}', account)
+            vo.$dg.showCheckYesNo(confirmText)
+                .then((agree) => {
+                    if (!agree) {
+                        return
+                    }
 
-            // //find
-            // let r = null
-            // let kr = null
-            // each(rows, (v, k) => {
-            //     if (get(v, 'id', '') === id) {
-            //         r = v
-            //         kr = k
-            //         return false //跳出
-            //     }
-            // })
+                    let token = vo.userToken
+                    let lang = get(vo, '$store.state.lang', 'eng')
 
-            // //check
-            // if (!iseobj(r)) {
-            //     vo.$alert(`${vo.$t('userEditNoUserData')}`, { type: 'error' })
-            //     return
-            // }
-
-            // //v
-            // let _v = get(r, k, 'n')
-            // let v = _v === 'y' ? 'n' : 'y'
-            // // console.log(k, v)
-
-            // //set
-            // set(vo, `opt.rows[${kr}].${k}`, v)
-            // // console.log('vo.opt.rows[kr]', cloneDeep(vo.opt.rows[kr]))
-
-            // //refresh
-            // vo.refresh()
-
-            // //isModified
-            // vo.isModified = true
+                    vo.$ui.updateLoading(true)
+                    vo.$fapi.adminResetUserPassword(token, lang, id)
+                        .then(() => {
+                            let msg = vo.$t('adminResetPasswordSuccess').replace('{email}', email)
+                            vo.$alert(msg)
+                        })
+                        .catch((err) => {
+                            let errMsg = (err && typeof err === 'string') ? err : ''
+                            if (errMsg === 'cannot reset self') {
+                                vo.$alert(vo.$t('adminResetPasswordCannotResetSelf'), { type: 'error' })
+                            }
+                            else if (errMsg === 'forbidden') {
+                                vo.$alert(vo.$t('adminResetPasswordForbidden'), { type: 'error' })
+                            }
+                            else if (errMsg === 'user not found') {
+                                vo.$alert(vo.$t('adminResetPasswordUserNotFound'), { type: 'error' })
+                            }
+                            else {
+                                console.log('adminResetUserPassword unknown error', err)
+                                vo.$alert(vo.$t('adminResetPasswordFailed'), { type: 'error' })
+                            }
+                        })
+                        .finally(() => {
+                            vo.$ui.updateLoading(false)
+                        })
+                })
 
         },
 

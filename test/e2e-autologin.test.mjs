@@ -28,6 +28,22 @@ let salt = '{salt}'
 let baselineDir = './test/pics/autologin'
 let langs = ['eng', 'cht']
 
+// 可選 --names <eng-001-ok-redir,cht-003-ok-user,...> 進行手術式 baseline 重產
+let baselineNamesFilter = null
+{
+    let i = process.argv.indexOf('--names')
+    if (i >= 0 && process.argv[i + 1]) {
+        baselineNamesFilter = new Set(process.argv[i + 1].split(','))
+    }
+}
+function writeBaseline(lang, name, buf) {
+    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`)) {
+        console.log(`  [skip] ${lang}-${name}`)
+        return
+    }
+    fs.writeFileSync(bp(lang, name), buf)
+}
+
 // 由 settings.json webKey 組成的 localStorage key
 let webKey = 'ksso'
 let lsKey = `${webKey}:userToken`
@@ -210,28 +226,28 @@ async function generateBaselineForLang(page, lang) {
     // 001: token 有效 + view=login → autoLogin 成功 → redirect 到 user view
     console.log(`  001-ok-redir`)
     let buf1 = await autoLoginScreenshot(page, lang, { token: okToken })
-    fs.writeFileSync(bp(lang, '001-ok-redir'), buf1)
+    writeBaseline(lang, '001-ok-redir', buf1)
 
     // 002: token 有效 + view=backstage → autoLogin 成功 → 停留 backstage
     console.log(`  002-ok-backstage`)
     let buf2 = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'backstage' })
-    fs.writeFileSync(bp(lang, '002-ok-backstage'), buf2)
+    writeBaseline(lang, '002-ok-backstage', buf2)
 
     // 003: token 有效 + view=user → autoLogin 成功 → 停留 user view
     console.log(`  003-ok-user`)
     let buf3 = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'user' })
-    fs.writeFileSync(bp(lang, '003-ok-user'), buf3)
+    writeBaseline(lang, '003-ok-user', buf3)
 
     // 004: 無 token → autoLogin 'no token' reject → 回登入頁
     console.log(`  004-no-token`)
     let buf4 = await autoLoginScreenshot(page, lang, { token: '' })
-    fs.writeFileSync(bp(lang, '004-no-token'), buf4)
+    writeBaseline(lang, '004-no-token', buf4)
 
     // 005: token 有效但 user.redir 為空 → 顯示 'failedLoginForNoRedir' alert + 回登入頁
     // 須等 autoLogin 完成 (~2s) 但仍在 WAlert 4s 自動消失前截圖；3.5s 為兩端窗口
     console.log(`  005-no-redir`)
     let buf5 = await autoLoginScreenshot(page, lang, { token: noRedirToken, waitMs: 3500 })
-    fs.writeFileSync(bp(lang, '005-no-redir'), buf5)
+    writeBaseline(lang, '005-no-redir', buf5)
 
     await deleteTestUsersAndTokens()
 }

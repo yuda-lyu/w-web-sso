@@ -18,7 +18,8 @@
                     `"
                 >
 
-                    <div :style="`padding:${contentPadding}px;`">
+                    <div :style="`padding:${contentPadding/2}px ${contentPadding/2-10}px ${contentPadding/2}px ${contentPadding/2-10}px;`">
+                        <div class="sb" :style="`padding:${contentPadding/2}px ${contentPadding/2+10}px ${contentPadding/2}px ${contentPadding/2+10}px; max-height:calc(100svh - 240px); overflow-y:auto;`">
 
                         <div style="padding-bottom:20px; text-align:center; font-size:1.3rem;">
                             {{$t('mmUserInfor')}}
@@ -125,6 +126,7 @@
                                                         @click="submitChangePassword"
                                                     ></WButtonChip>
                                                     <WButtonChip
+                                                        v-if="!isForceChangePw"
                                                         :text="$t('cancel')"
                                                         :textFontSize="'0.8rem'"
                                                         :paddingStyle="{v:4,h:15}"
@@ -165,6 +167,7 @@
                             ></WButtonChip>
                         </div>
 
+                        </div>
                     </div>
 
                 </div>
@@ -252,6 +255,13 @@ export default {
         let showLanguage = get(vo, 'webInfor.showLanguage', '')
         vo.showLangSelect = showLanguage === 'y'
 
+        //強制變更密碼模式: userSelf.isForceChangePw === 'y' 時自動展開變更密碼表單
+        //(取消按鈕在 template 內以 v-if="!isForceChangePw" 隱藏)
+        let userSelf = get(vo, '$store.state.userSelf', {})
+        if (get(userSelf, 'isForceChangePw', '') === 'y') {
+            vo.clickChangePassword()
+        }
+
     },
     computed: {
 
@@ -298,6 +308,11 @@ export default {
         userSelf: function() {
             let vo = this
             return get(vo, '$store.state.userSelf', {})
+        },
+
+        isForceChangePw: function() {
+            let vo = this
+            return get(vo, 'userSelf.isForceChangePw', '') === 'y'
         },
 
         displayUser: function() {
@@ -450,6 +465,11 @@ export default {
                 await vo.$fapi.changeUserPassword(vo.userToken, vo.lang, vo.oldPassword, vo.newPassword)
                     .then((res) => {
                         bChPw = true
+
+                        //成功後 isForceChangePw 已被後端清為 'n', 同步刷新 store.userSelf,
+                        //讓 isForceChangePw computed 重新求值, 解除強制變更模式
+                        let u = { ...vo.$store.state.userSelf, isForceChangePw: 'n' }
+                        vo.$store.commit(vo.$store.types.UpdateUserSelf, u)
 
                         //cancelChangePassword
                         vo.cancelChangePassword()

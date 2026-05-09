@@ -170,4 +170,24 @@ button {
     font-family: inherit;
 }
 
+.sb {
+    transition: opacity 0.3s;
+    /* Works on Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0,0,0,0.3) transparent;
+}
+/* Works on Chrome, Edge, and Safari */
+.sb::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+.sb::-webkit-scrollbar-track {
+    background: transparent;
+}
+.sb::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.3);
+    border-radius: 20px;
+    border: 3px solid transparent;
+}
+
 </style>

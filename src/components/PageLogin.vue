@@ -24,7 +24,8 @@
                         <img :width="logoSize" :height="logoSize" :src="webLogo">
                     </div>
 
-                    <div :style="`padding:${logoSize/2+contentPadding}px ${contentPadding}px ${contentPadding}px ${contentPadding}px;`">
+                    <div :style="`padding:${logoSize/2+contentPadding/2}px ${contentPadding/2-10}px ${contentPadding/2}px ${contentPadding/2-10}px;`">
+                        <div class="sb" :style="`padding:${contentPadding/2}px ${contentPadding/2+10}px ${contentPadding/2}px ${contentPadding/2+10}px; max-height:calc(100svh - ${logoSize/2 + 240}px); overflow-y:auto;`">
 
                         <div style="padding-bottom:20px; text-align:center; font-size:1.3rem;">
                             {{webName}}
@@ -248,6 +249,7 @@
 
                         </template>
 
+                        </div>
                     </div>
 
                 </div>
@@ -601,12 +603,28 @@ export default {
             vo.showResendVerify = false
 
             //login
+            //強制變更密碼模式: 若 userSelf.isForceChangePw === 'y', 不走 useRedir,
+            //而是登入後 showCheckYes 提示再進 user view (見 .then 內部處理)
+            let userSelfBeforeLogin = get(vo, '$store.state.userSelf', {})
+            void userSelfBeforeLogin //僅參考; 真正判斷在 .then 內讀最新 userSelf
             vo.$ui.login(vo.account, vo.password, { useRedir: view === 'login' })
-                .then(() => {
+                .then(async () => {
 
-                    //提交變更viewState前往指定功能頁
-                    vo.$ui.updateViewState(view)
-                    console.log(`login, goto view[${view}] page`)
+                    //login 成功後 store.userSelf 已被 mUI updateUserSelf 寫入
+                    let userSelf = get(vo, '$store.state.userSelf', {})
+                    let isForce = get(userSelf, 'isForceChangePw', '') === 'y'
+
+                    if (isForce) {
+                        //不論原本 view 是哪種, 一律導去 user view + 顯示提示
+                        await vo.$dg.showCheckYes(vo.$t('userForceChangePwPrompt'))
+                        vo.$ui.updateViewState('user')
+                        console.log(`login, isForceChangePw=y, goto user view`)
+                    }
+                    else {
+                        //提交變更viewState前往指定功能頁
+                        vo.$ui.updateViewState(view)
+                        console.log(`login, goto view[${view}] page`)
+                    }
 
                 })
                 .catch((err) => {

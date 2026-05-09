@@ -13,8 +13,8 @@
     "w-email": "^1.0.34",
     "w-serv-hapi": "^1.0.72",
     "w-serv-orm": "^1.0.38",
-    "w-syslog": "^1.0.7",
-    "wsemi": "^1.8.49"
+    "w-syslog": "^1.0.8",
+    "wsemi": "^1.8.51"
   },
   "devDependencies": {
     "@vue/cli-plugin-babel": "^5.0.8",
