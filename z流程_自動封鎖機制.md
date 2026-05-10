@@ -206,11 +206,3 @@ kpIpCallApi          = { [ip]:      [timeStr, timeStr, ...] }   // IP 調用時�
 - **IP 被擋**：`verifyConn` 直接返回 false，由 hapi 層阻斷，前端會收到連線失敗（無特定錯誤訊息）。
 - **Token 被擋**：對應 token 紀錄已被刪除，前端任何 API 會拿到 `invalid token`，通常觸發前端清空 localStorage token 並回到登入頁。
 
-## 與其他流程的關聯
-
-| 相關流程 | 關聯點 |
-|---------|--------|
-| [z流程_使用者一般登入.md](z流程_使用者一般登入.md) | 登入前經 `pp.loginByAccountAndPassword` 先檢查 `getBlockedByAccount`；登入失敗次數於本機制累計，超過門檻由背景 timer 寫入 `users.timeBlocked` |
-| [z流程_使用者自動登入.md](z流程_使用者自動登入.md) | 自動登入走 `checkToken`，若 token 因 B/C 區塊封鎖已被刪除，會於 procCore 查找 token 落空而 reject `invalid token`，前端清空快取並退回登入頁 |
-| `verifyConn`（API 進入點） | 所有 API 請求皆經此檢查 IP 封鎖；同時也是觸發 `callApiByIp` 累計記錄的入口 |
-| 各 API handler | 帶 token 的 API 在 handler 內各自呼叫 `pp.callApiByToken` 累計記錄（共 5 處） |

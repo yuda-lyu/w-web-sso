@@ -109,7 +109,7 @@
 ### 三、未驗證帳號嘗試登入
 
 ```
-001  進入一般登入流程 (見 z流程_使用者一般登入.md)
+001  進入一般登入流程
 002  procCore login: 密碼比對通過  [procCore.mjs:266]
 003  檢查 timeVerified  [procCore.mjs:270]
 004      為空:

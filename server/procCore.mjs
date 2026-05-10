@@ -668,6 +668,19 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
 
     //createUser
+    //
+    //【自助註冊專用】此函式僅由前端 PageLogin Register 表單透過 $fapi.createUser 觸發,
+    //對應 WWebSso 的 kpfun.createUser handler (不驗 token, 允許未登入匿名呼叫)。
+    //
+    //後台 admin 新增使用者走另一條路徑 updateUsersList → updateTabItems, 不會進到本函式。
+    //
+    //自助註冊的特性:
+    //- 須符合 settings.allowUserRegistration = true 才開放
+    //- 須帶 password + confirmPassword (admin 後台路徑則由 admin 就地輸入單一密碼)
+    //- 產生 tokenVerify 並寄驗證信; timeVerified 留空, 使用者完成驗證才能登入
+    //- procOrm operatorId 傳 u.id 自我參照: 自己即創造者, userId / userIdUpdate 皆寫入自己 id;
+    //  後台路徑則傳 admin id。可由 userId === id 判斷此 user 為自助註冊
+    //
     let createUser = async (lang, data) => {
 
         //check
@@ -748,7 +761,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         })
 
         //insert
-        await procOrm('', 'users', 'insert', [u])
+        //operatorId 傳 u.id (自我參照): 自助註冊本人即創建者, userId / userIdUpdate 寫入自己的 id,
+        //可由 userId === id 判斷此 user 為自助註冊（後台 admin 建立則 userId 為 admin id）
+        await procOrm(u.id, 'users', 'insert', [u])
 
         //send verify email (若失敗，使用者可透過「重寄驗證信」補救)
         try {
@@ -1162,6 +1177,15 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             resetOrder = false
         }
 
+        //operatorId: 操作者 user id (寫入 audit fields userId / userIdUpdate; 預設 '' 維持舊行為)
+        let operatorId = get(opt, 'operatorId', '')
+
+        //lang: 用於 users 路徑下密碼策略檢查的錯誤訊息語系; 預設 'eng'
+        let lang = get(opt, 'lang', 'eng')
+        if (!isestr(lang)) {
+            lang = 'eng'
+        }
+
         //ltdtmapping
         rows = ltdtmapping(rows, ds[woName].keys)
         // console.log('ltdtmapping rows', rows)
@@ -1223,22 +1247,45 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //ltdtDiffByKey
         let ltdtOld = await woItems[woName].select()
         //console.log(`...woName[${woName}].select`)
+
+        //users 路徑: 既有 row 的 password 保留 DB hash, 避免前端送來的 '' (getUsersList 已 strip)
+        //在儲存階段把 DB 既有 password 覆蓋成空字串, 等同把所有既有使用者密碼洗掉
+        if (woName === 'users') {
+            let oldById = {}
+            each(ltdtOld, (r) => {
+                oldById[r.id] = r
+            })
+            each(rows, (row) => {
+                let oldRow = oldById[row.id]
+                if (oldRow) {
+                    row.password = oldRow.password
+                }
+            })
+        }
+
         let ltdtNew = rows
         let r = ltdtDiffByKey(ltdtOld, ltdtNew, keyDetect)
         // console.log('ltdtDiffByKey r', r)
 
         //del
         if (size(r.del) > 0) {
-            await procOrm('', woName, 'del', r.del) //須使用procOrm才有辦法自動給予相關欄位, 且不使用外部給予userId
-            // .catch((err) => {
-            //     console.log('woItems[woName].del err', err)
-            // })
+            await procOrm(operatorId, woName, 'del', r.del) //operatorId 用於 audit (userIdUpdate)
         }
 
         //add
         if (size(r.add) > 0) {
-            // 管理員後台建帳自動填 timeVerified
+            //users 路徑: 對新使用者的明文密碼進行 policy 檢查與 hash
             if (woName === 'users') {
+                for (let row of r.add) {
+                    let pw = get(row, 'password', '')
+                    let account = get(row, 'account', '')
+                    let chk = checkUserPassword(lang, pw, { account })
+                    if (chk.state === 'error') {
+                        return Promise.reject(chk.msg)
+                    }
+                    row.password = hashPassword(pw, salt)
+                }
+                //後台建帳自動填 timeVerified
                 each(r.add, (row) => {
                     let tv = get(row, 'timeVerified', '')
                     if (!isestr(tv)) {
@@ -1246,18 +1293,21 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
                     }
                 })
             }
-            await procOrm('', woName, 'insert', r.add) //須使用procOrm才有辦法自動給予相關欄位, 且不使用外部給予userId
-            // .catch((err) => {
-            //     console.log('woItems[woName].insert err', err)
-            // })
+            await procOrm(operatorId, woName, 'insert', r.add)
         }
 
         //diff
         if (size(r.diff) > 0) {
-            await procOrm('', woName, 'save', r.diff) //須使用procOrm才有辦法自動給予相關欄位, 且不使用外部給予userId
-            // .catch((err) => {
-            //     console.log('woItems[woName].save err', err)
-            // })
+            await procOrm(operatorId, woName, 'save', r.diff)
+        }
+
+        //users 路徑: 回傳前剝除 password 欄位, 避免明文/hash 經 API 洩漏
+        if (woName === 'users') {
+            ltdtNew = map(ltdtNew, (row) => {
+                let copy = { ...row }
+                delete copy.password
+                return copy
+            })
         }
 
         return ltdtNew
@@ -1499,23 +1549,49 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
 
     //updateUsersList
-    let updateUsersList = async (rows) => {
+    let updateUsersList = async (rows, opt = {}) => {
 
         //updateTabItems
-        rows = await updateTabItems('users', rows, 'id', { resetOrder: true })
+        rows = await updateTabItems('users', rows, 'id', { resetOrder: true, ...opt })
 
         return rows
     }
 
 
     //checkTokenAndUpdateUsersList
-    let checkTokenAndUpdateUsersList = async (token, rows, opt = {}) => {
+    let checkTokenAndUpdateUsersList = async (token, lang, rows, opt = {}) => {
 
         //checkToken
         await checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
-        //updateUsersList
-        rows = await updateUsersList(rows)
+        //lang
+        if (!isestr(lang)) {
+            lang = 'eng'
+        }
+
+        //取操作者 id (用於 audit fields userId/userIdUpdate 與 self-lockout 檢查)
+        let uOperator = await getUserByToken(token)
+        let operatorId = get(uOperator, 'id', '')
+
+        //自我鎖死保護: 若 rows 內含操作者自己, 且操作者把自己 isAdmin/isActive 改成非 'y', reject
+        let selfRow = null
+        each(rows, (rr) => {
+            if (get(rr, 'id', '') === operatorId) {
+                selfRow = rr
+                return false //跳出
+            }
+        })
+        if (iseobj(selfRow)) {
+            if (get(selfRow, 'isAdmin', '') !== 'y') {
+                return Promise.reject(get(kpLang, `${lang}.cannotDemoteSelf`, 'cannot demote yourself'))
+            }
+            if (get(selfRow, 'isActive', '') !== 'y') {
+                return Promise.reject(get(kpLang, `${lang}.cannotDisableSelf`, 'cannot disable yourself'))
+            }
+        }
+
+        //updateUsersList (帶 lang/operatorId 給下層用於 add 群組密碼策略檢查與 audit)
+        rows = await updateUsersList(rows, { lang, operatorId })
 
         return rows
     }

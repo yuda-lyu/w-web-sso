@@ -1235,10 +1235,10 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 //console.log('call getUsersList end')
                 return rs
             },
-            updateUsersList: async (_t, token, rows) => {
-                srLog.info({ event: 'kpfun-updateUsersList', token })
+            updateUsersList: async (_t, token, lang, rows) => {
+                srLog.info({ event: 'kpfun-updateUsersList', token, lang })
                 //console.log('call updateUsersList...')
-                let rs = await p.checkTokenAndUpdateUsersList(token, rows, { fun: funCheckAdmin })
+                let rs = await p.checkTokenAndUpdateUsersList(token, lang, rows, { fun: funCheckAdmin })
                 //console.log('call updateUsersList end')
                 return rs
             },

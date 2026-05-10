@@ -513,6 +513,14 @@ let kpLang = {
         eng: `Invalid redirect of user`,
         cht: `尚未給予有效登入後轉址`,
     },
+    userPasswordEmpty: {
+        eng: `Empty password of user`,
+        cht: `尚未給予使用者密碼`,
+    },
+    errInPasswords: {
+        eng: `Password errors`,
+        cht: `密碼出現錯誤待修復`,
+    },
     userTimeEmpty: {
         eng: `Invalid time`,
         cht: `無`,
@@ -1146,6 +1154,16 @@ let kpLang = {
     userForceChangePwPrompt: {
         eng: `Your password has been reset by the administrator. Please change it to your own new password.`,
         cht: `您的密碼已由管理員重設，請按確認後變更為您自己的新密碼。`,
+    },
+
+    //後台新增/編輯使用者 - 自我鎖死保護
+    cannotDemoteSelf: {
+        eng: `Cannot demote yourself from admin`,
+        cht: `不可解除自己的管理員權限`,
+    },
+    cannotDisableSelf: {
+        eng: `Cannot disable yourself`,
+        cht: `不可停用自己的帳號`,
     },
 
 }

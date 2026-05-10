@@ -210,23 +210,51 @@
                         <!-- password -->
                         <template v-else-if="props.key === 'password'">
                             <div @click.stop.prevent @mousedown.stop.prevent style="height:100%; display:flex; align-items:center;">
-                                <WButtonChip
-                                    :style="`line-height:1.1rem; flex:1;`"
-                                    :text="$t('userResetPassword')"
-                                    :displayType="'line'"
-                                    :textFontSize="'0.8rem'"
-                                    :paddingStyle="{v:1,h:8}"
-                                    :backgroundColor="'#f0f0f0'"
-                                    :backgroundColorHover="'#e5e5e5'"
-                                    :backgroundColorFocus="'#e5e5e5'"
-                                    :borderColor="'#767676'"
-                                    :borderColorHover="'#767676'"
-                                    :borderColorFocus="'#767676'"
-                                    :borderRadius="4"
-                                    :shadow="false"
-                                    :editable="isEditable"
-                                    @click="$dg.modifyItemPasswordById($ui.gv(props.row, 'id'))"
-                                ></WButtonChip>
+                                <template v-if="$ui.gv(props.row, '_isNew')">
+                                    <!-- 新增列: 就地輸入密碼 (顯/隱 toggle), 警告 icon 顯示驗證錯誤 -->
+                                    <WText
+                                        :style="`flex:1;`"
+                                        :textFontSize="'0.8rem'"
+                                        :paddingStyle="{v:1,h:8}"
+                                        :backgroundColor="'#f0f0f0'"
+                                        :backgroundColorHover="'#e5e5e5'"
+                                        :backgroundColorFocus="'#e5e5e5'"
+                                        :borderColor="'#767676'"
+                                        :borderColorHover="'#767676'"
+                                        :borderColorFocus="'#767676'"
+                                        :borderRadius="4"
+                                        :shadow="false"
+                                        :password="!passwordVisible[$ui.gv(props.row, 'id')]"
+                                        :rightIcon="passwordVisible[$ui.gv(props.row, 'id')] ? 'mdi-eye' : 'mdi-eye-off'"
+                                        :value="$ui.gv(props.row, 'password') || ''"
+                                        :editable="isEditable"
+                                        @input="onPasswordInput($ui.gv(props.row, 'id'), $event)"
+                                        @click-right="togglePasswordVisible($ui.gv(props.row, 'id'))"
+                                    ></WText>
+                                    <span v-if="cellPasswordErr($ui.gv(props.row, 'id'))" :title="cellPasswordErr($ui.gv(props.row, 'id'))" style="padding-left:4px;">
+                                        <img style="vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
+                                    </span>
+                                </template>
+                                <template v-else>
+                                    <!-- 既有列: 重設密碼按鈕 (走另一條 API, 不在本頁批次儲存範圍) -->
+                                    <WButtonChip
+                                        :style="`line-height:1.1rem; flex:1;`"
+                                        :text="$t('userResetPassword')"
+                                        :displayType="'line'"
+                                        :textFontSize="'0.8rem'"
+                                        :paddingStyle="{v:1,h:8}"
+                                        :backgroundColor="'#f0f0f0'"
+                                        :backgroundColorHover="'#e5e5e5'"
+                                        :backgroundColorFocus="'#e5e5e5'"
+                                        :borderColor="'#767676'"
+                                        :borderColorHover="'#767676'"
+                                        :borderColorFocus="'#767676'"
+                                        :borderRadius="4"
+                                        :shadow="false"
+                                        :editable="isEditable"
+                                        @click="$dg.modifyItemPasswordById($ui.gv(props.row, 'id'))"
+                                    ></WButtonChip>
+                                </template>
                             </div>
                         </template>
                         <!-- email -->
@@ -495,6 +523,9 @@ export default {
             itemsCheck: [],
             opt: null,
 
+            //新增列密碼欄位的「顯/隱」狀態, 鍵為 row id, 值為 boolean (true=顯示明文)
+            passwordVisible: {},
+
         }
     },
     mounted: function() {
@@ -728,26 +759,54 @@ export default {
             return kpErr
         },
 
+        //新增列密碼空值檢查 (其他 policy 違反交給後端 reject, 訊息再 alert 上來)
+        //鍵以 row.id 而非 password value, 因 password 不適合做 key
+        errItemsByPassword: function() {
+            let vo = this
+
+            let rows = get(vo, 'opt.rows', [])
+
+            let kpErr = {}
+            each(rows, (v) => {
+
+                //只檢查新增列, 既有列 password 顯示為「重設密碼」按鈕, 不在本流程驗證範圍
+                if (!get(v, '_isNew')) {
+                    return true
+                }
+
+                let id = get(v, 'id', '')
+                let pw = get(v, 'password', '')
+
+                if (!isestr(pw)) {
+                    kpErr[id] = vo.$t('userPasswordEmpty')
+                    return true
+                }
+
+            })
+
+            return kpErr
+        },
+
         isError: function() {
             let vo = this
 
-            let c = ''
-            let b = false
-            b = iseobj(vo.errItemsByAccount)
-            if (b) {
-                c = vo.$t('errInAccounts')
-                return c
+            //回傳第一條具體錯誤訊息 (按 account → password → email → redir 優先序),
+            //而非 category title (errInAccounts 等)。讓 CheckYes modal 顯示具體錯誤
+            //(如「使用者帳號出現重複」而非「帳號出現錯誤待修復」), admin 可立即知道哪一步出問題。
+            let firstOf = (kpErr) => {
+                if (!iseobj(kpErr)) return ''
+                for (let k in kpErr) {
+                    let v = kpErr[k]
+                    if (isestr(v)) return v
+                }
+                return ''
             }
-            b = iseobj(vo.errItemsByEmail)
-            if (b) {
-                c = vo.$t('errInEmails')
-                return c
-            }
-            b = iseobj(vo.errItemsByRedir)
-            if (b) {
-                c = vo.$t('errInRedir')
-                return c
-            }
+
+            let m = ''
+            m = firstOf(vo.errItemsByAccount); if (m) return m
+            m = firstOf(vo.errItemsByPassword); if (m) return m
+            m = firstOf(vo.errItemsByEmail); if (m) return m
+            m = firstOf(vo.errItemsByRedir); if (m) return m
 
             return ''
         },
@@ -840,6 +899,51 @@ export default {
             }
             let err = get(errMaps[field], v, '')
             return isestr(err) ? err : ''
+        },
+
+        //新增列密碼欄位錯誤查詢, 鍵為 row.id (其他欄位以 value 當鍵, 但 password 不適合做鍵)
+        cellPasswordErr: function(id) {
+            let vo = this
+            let err = get(vo.errItemsByPassword, id, '')
+            return isestr(err) ? err : ''
+        },
+
+        //新增列密碼輸入: 將輸入值寫回對應 row.password
+        onPasswordInput: function(id, value) {
+            let vo = this
+
+            if (!isestr(id)) {
+                return
+            }
+
+            let rows = get(vo, 'opt.rows', [])
+            let kr = null
+            each(rows, (v, k) => {
+                if (get(v, 'id', '') === id) {
+                    kr = k
+                    return false
+                }
+            })
+            if (kr === null) {
+                return
+            }
+
+            set(vo, `opt.rows[${kr}].password`, value || '')
+            vo.refresh()
+            vo.isModified = true
+        },
+
+        //新增列密碼欄位顯/隱 toggle
+        togglePasswordVisible: function(id) {
+            let vo = this
+
+            if (!isestr(id)) {
+                return
+            }
+
+            let cur = get(vo.passwordVisible, id, false)
+            //Vue 2 響應式: 對物件 dynamic key 須用 $set
+            vo.$set(vo.passwordVisible, id, !cur)
         },
 
         resizePanel: function(msg) {
@@ -1193,6 +1297,9 @@ export default {
             r.timeCreate = `{${vo.$t('userAddIdNew')}}`
             r.userIdUpdate = `{${vo.$t('userAddIdNew')}}`
             r.timeUpdate = `{${vo.$t('userAddIdNew')}}`
+            //transient flag, 用來區分「未儲存的新列」: password cell 顯示為輸入框, 並啟用密碼策略檢查
+            //(送後端前由 saveUsers 剝除)
+            r._isNew = true
             // console.log('r', r)
 
             //添加至最首
@@ -1259,6 +1366,9 @@ export default {
             r.timeCreate = `{${vo.$t('userAddIdNew')}}`
             r.userIdUpdate = `{${vo.$t('userAddIdNew')}}`
             r.timeUpdate = `{${vo.$t('userAddIdNew')}}`
+            //transient flag: copyItem 出來的列也是「新列」, 須由 admin 重新輸入密碼
+            r.password = ''
+            r._isNew = true
             // console.log('r', r)
 
             //添加至最首
@@ -1332,7 +1442,8 @@ export default {
 
                 //check
                 if (isestr(vo.isError)) {
-                    vo.$alert(`${vo.isError}`, { type: 'error' })
+                    vo.$ui.updateLoading(false)
+                    await vo.$dg.showCheckYes(`${vo.isError}`)
                     return
                 }
 
@@ -1341,31 +1452,78 @@ export default {
 
                 //check
                 if (size(rows) === 0) {
-                    vo.$alert(`${vo.$t('userAddEmpty')}`, { type: 'error' })
+                    vo.$ui.updateLoading(false)
+                    await vo.$dg.showCheckYes(`${vo.$t('userAddEmpty')}`)
                     return
                 }
 
-                //token
+                //自我鎖死保護 (前端先擋, 後端也會 reject 作為第二道防線)
+                let userSelf = get(vo, '$store.state.userSelf', {})
+                let myId = get(userSelf, 'id', '')
+                let mySelfRow = null
+                each(rows, (rr) => {
+                    if (get(rr, 'id', '') === myId) {
+                        mySelfRow = rr
+                        return false
+                    }
+                })
+                if (iseobj(mySelfRow)) {
+                    if (get(mySelfRow, 'isAdmin', '') !== 'y') {
+                        vo.$ui.updateLoading(false)
+                        await vo.$dg.showCheckYes(vo.$t('cannotDemoteSelf'))
+                        return
+                    }
+                    if (get(mySelfRow, 'isActive', '') !== 'y') {
+                        vo.$ui.updateLoading(false)
+                        await vo.$dg.showCheckYes(vo.$t('cannotDisableSelf'))
+                        return
+                    }
+                }
+
+                //剝除 transient 欄位 _isNew (前端用來區分新列/既有列, 不送後端)
+                rows = rows.map((r) => {
+                    let copy = { ...r }
+                    delete copy._isNew
+                    return copy
+                })
+
+                //token / lang
                 let token = vo.userToken
-                // console.log('token', token)
+                let lang = get(vo, '$store.state.lang', 'eng')
 
                 //updateUsersList
-                await vo.$fapi.updateUsersList(token, rows)
+                await vo.$fapi.updateUsersList(token, lang, rows)
                     .catch((err) => {
                         errTemp = err
                     })
 
                 //check
+                //後端 reject (token 過期 / ckKey 衝突 / 密碼策略違反 / 自我鎖死等)
+                //改用 showCheckYes 強制 admin 點擊確認讀過訊息, 避免 transient toast 漏看
                 if (errTemp !== null) {
-                    vo.$alert(`${vo.$t('userSaveUsersFail')}: ${errTemp}`, { type: 'error' })
+                    //hide loading 因 showCheckYes 是 modal, 等待期間 loading 會疊著
+                    vo.$ui.updateLoading(false)
+                    await vo.$dg.showCheckYes(`${vo.$t('userSaveUsersFail')}: ${errTemp}`)
                     return
                 }
+
+                //儲存成功 → 重拉 getUsersList 同步 server-side data (新增使用者的 timeVerified
+                //在後端被填 now, 既有使用者的 audit fields 也在後端被覆寫, 須刷新前端表格)
+                await vo.$fapi.getUsersList(token)
+                    .then((res) => {
+                        res = sortBy(res, 'order')
+                        vo.users = res
+                    })
+                    .catch((err) => {
+                        console.log('refresh getUsersList catch', err)
+                    })
 
                 //isModified
                 vo.isModified = false
 
-                //alert
-                vo.$alert(vo.$t('userSaveUsersSuccess'))
+                //成功訊息: 改用 CheckYes modal 與其他訊息一致, admin 須點擊確認讀過
+                vo.$ui.updateLoading(false)
+                await vo.$dg.showCheckYes(vo.$t('userSaveUsersSuccess'))
 
             }
 
