@@ -210,8 +210,11 @@
                         <!-- password -->
                         <template v-else-if="props.key === 'password'">
                             <div @click.stop.prevent @mousedown.stop.prevent style="height:100%; display:flex; align-items:center;">
-                                <template v-if="$ui.gv(props.row, '_isNew')">
+                                <template v-if="props.row._isNew">
                                     <!-- 新增列: 就地輸入密碼 (顯/隱 toggle), 警告 icon 顯示驗證錯誤 -->
+                                    <span v-if="cellPasswordErr($ui.gv(props.row, 'id'))" :title="cellPasswordErr($ui.gv(props.row, 'id'))" style="padding-right:4px;">
+                                        <img style="vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
+                                    </span>
                                     <WText
                                         :style="`flex:1;`"
                                         :textFontSize="'0.8rem'"
@@ -226,14 +229,11 @@
                                         :shadow="false"
                                         :password="!passwordVisible[$ui.gv(props.row, 'id')]"
                                         :rightIcon="passwordVisible[$ui.gv(props.row, 'id')] ? 'mdi-eye' : 'mdi-eye-off'"
-                                        :value="$ui.gv(props.row, 'password') || ''"
+                                        :value="props.row.password || ''"
                                         :editable="isEditable"
                                         @input="onPasswordInput($ui.gv(props.row, 'id'), $event)"
                                         @click-right="togglePasswordVisible($ui.gv(props.row, 'id'))"
                                     ></WText>
-                                    <span v-if="cellPasswordErr($ui.gv(props.row, 'id'))" :title="cellPasswordErr($ui.gv(props.row, 'id'))" style="padding-left:4px;">
-                                        <img style="vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
-                                    </span>
                                 </template>
                                 <template v-else>
                                     <!-- 既有列: 重設密碼按鈕 (走另一條 API, 不在本頁批次儲存範圍) -->
@@ -419,6 +419,7 @@ import WInputCheckbox from 'w-component-vue/src/components/WInputCheckbox.vue'
 import WAggridVue from 'w-aggrid-vue/src/components/WAggridVue.vue'
 import WTimeminute from 'w-component-vue/src/components/WTimeminute.vue'
 import WButtonChip from 'w-component-vue/src/components/WButtonChip.vue'
+import WText from 'w-component-vue/src/components/WText.vue'
 
 
 export default {
@@ -431,6 +432,7 @@ export default {
         WAggridVue,
         WTimeminute,
         WButtonChip,
+        WText,
     },
     props: {
         drawer: {
@@ -1467,6 +1469,12 @@ export default {
                         return false
                     }
                 })
+                //自我刪除保護: 自己列已從 rows 移除 (admin 把自己勾選刪除), 直接擋下
+                if (isestr(myId) && !iseobj(mySelfRow)) {
+                    vo.$ui.updateLoading(false)
+                    await vo.$dg.showCheckYes(vo.$t('cannotDeleteSelf'))
+                    return
+                }
                 if (iseobj(mySelfRow)) {
                     if (get(mySelfRow, 'isAdmin', '') !== 'y') {
                         vo.$ui.updateLoading(false)

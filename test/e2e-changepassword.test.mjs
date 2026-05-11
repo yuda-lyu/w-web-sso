@@ -67,6 +67,114 @@ function bp(lang, name) {
 }
 
 
+// ===================================================================
+// 預期語意斷言 (從 z流程_使用者變更密碼.md + procLang.mjs 衍生, 非現狀指紋)
+// ===================================================================
+
+let expectedSpecText = {
+    '001-form-initial': {
+        //表單展開: 應見「送出」按鈕文字
+        eng: { mode: 'text', value: 'Send' },
+        cht: { mode: 'text', value: '送出' },
+    },
+    '002-old-empty': {
+        //userChangePasswordForNoOldPassword
+        eng: { mode: 'text', value: 'Please enter old password' },
+        cht: { mode: 'text', value: '尚未給予舊密碼' },
+    },
+    '003-new-empty': {
+        //userChangePasswordForNoNewPassword
+        eng: { mode: 'text', value: 'Please enter new password' },
+        cht: { mode: 'text', value: '尚未給予新密碼' },
+    },
+    '004-confirm-empty': {
+        //userChangePasswordForNoConfirmPassword
+        eng: { mode: 'text', value: 'Please enter confirm password' },
+        cht: { mode: 'text', value: '尚未給予確認密碼' },
+    },
+    '005-pw-mismatch': {
+        //userChangePasswordNotSame
+        eng: { mode: 'text', value: 'New password and confirm password do not match' },
+        cht: { mode: 'text', value: '新密碼與確認密碼不一致' },
+    },
+    '006-pw-policy-fail': {
+        //'12345' 5 字元 → 後端 checkUserPassword 先回長度錯誤 (NumLenMin 優先於 RequireLetter)
+        eng: { mode: 'text', value: 'Password length must be at least 8 characters' },
+        cht: { mode: 'text', value: '密碼長度須大於等於8個字元' },
+    },
+    '007-old-wrong': {
+        //userChangePasswordFail (統一訊息, 不洩露細節)
+        eng: { mode: 'text', value: 'Password change failed' },
+        cht: { mode: 'text', value: '密碼變更失敗' },
+    },
+    '008-success': {
+        //成功後表單收起, 不應再見 Send 按鈕
+        eng: { mode: 'absentText', value: 'Send' },
+        cht: { mode: 'absentText', value: '送出' },
+    },
+}
+
+
+async function collectVisibleText(page) {
+    return await page.evaluate(() => {
+        let parts = []
+        let walk = (el) => {
+            if (!el) return
+            if (el.nodeType === 3) {
+                let t = (el.nodeValue || '').trim()
+                if (t) parts.push(t)
+                return
+            }
+            if (el.nodeType !== 1) return
+            let tag = el.tagName
+            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return
+            for (let c of el.childNodes) walk(c)
+        }
+        walk(document.body)
+        return parts.join(' | ').slice(0, 2000)
+    })
+}
+
+async function pageHasText(page, text) {
+    return await page.evaluate((t) => {
+        let walk = (el) => {
+            if (!el) return false
+            if (el.nodeType === 3) return (el.nodeValue || '').includes(t)
+            if (el.nodeType !== 1) return false
+            let tag = el.tagName
+            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return false
+            for (let c of el.childNodes) {
+                if (walk(c)) return true
+            }
+            return false
+        }
+        return walk(document.body)
+    }, text)
+}
+
+async function assertSpecForCase(page, lang, name) {
+    let expected = expectedSpecText[name]
+    if (!expected || !expected[lang]) {
+        throw new Error(`expectedSpecText 未為 case "${name}" / lang "${lang}" 定義`)
+    }
+    let e = expected[lang]
+    if (e.mode === 'text') {
+        let found = await pageHasText(page, e.value)
+        if (!found) {
+            let dump = await collectVisibleText(page)
+            assert.fail(`預期含 "${e.value}" (${name}), 實際: ${dump}`)
+        }
+    }
+    else if (e.mode === 'absentText') {
+        let stillHas = await pageHasText(page, e.value)
+        if (stillHas) {
+            let dump = await collectVisibleText(page)
+            assert.fail(`預期不含 "${e.value}" (${name}), 但見到. 可見文字: ${dump}`)
+        }
+    }
+}
+
+
 // 設計不變式：變更密碼表單展開時應觸發 .sb 內捲軸（Playwright headless 不渲染捲軸像素，
 // 故無法靠 baseline 比對抓到「max-height/overflow 設計被破壞」的 regression）
 async function assertSbOverflows(page, label) {
@@ -417,11 +525,13 @@ else {
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-001-form-initial`)
+                await assertSpecForCase(page, lang, '001-form-initial')
                 await assertSbOverflows(page, `changepassword-${lang}-001-form-initial`)
             })
 
             it('002-old-empty: 三欄空送出 → 舊密碼下方紅字', async function() {
                 let buf = await captureOldEmpty(page, lang)
+                await assertSpecForCase(page, lang, '002-old-empty')
                 let baselinePath = bp(lang, '002-old-empty')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -431,6 +541,7 @@ else {
 
             it('003-new-empty: 只填舊密碼送出 → 新密碼下方紅字', async function() {
                 let buf = await captureNewEmpty(page, lang)
+                await assertSpecForCase(page, lang, '003-new-empty')
                 let baselinePath = bp(lang, '003-new-empty')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -440,6 +551,7 @@ else {
 
             it('004-confirm-empty: 填舊+新送出 → 確認密碼下方紅字', async function() {
                 let buf = await captureConfirmEmpty(page, lang)
+                await assertSpecForCase(page, lang, '004-confirm-empty')
                 let baselinePath = bp(lang, '004-confirm-empty')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -449,6 +561,7 @@ else {
 
             it('005-pw-mismatch: 新密碼≠確認密碼 → 確認密碼下方紅字', async function() {
                 let buf = await capturePwMismatch(page, lang)
+                await assertSpecForCase(page, lang, '005-pw-mismatch')
                 let baselinePath = bp(lang, '005-pw-mismatch')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -458,6 +571,7 @@ else {
 
             it('006-pw-policy-fail: 新密碼不符策略 → 新密碼下方紅字', async function() {
                 let buf = await capturePwPolicyFail(page, lang)
+                await assertSpecForCase(page, lang, '006-pw-policy-fail')
                 let baselinePath = bp(lang, '006-pw-policy-fail')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -467,6 +581,7 @@ else {
 
             it('007-old-wrong: 舊密碼錯 → 舊密碼下方紅字「變更失敗」', async function() {
                 let buf = await captureOldWrong(page, lang)
+                await assertSpecForCase(page, lang, '007-old-wrong')
                 let baselinePath = bp(lang, '007-old-wrong')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -476,6 +591,7 @@ else {
 
             it('008-success: 三欄填妥+正確 → 表單收起回 user info', async function() {
                 let buf = await captureSuccess(page, lang)
+                await assertSpecForCase(page, lang, '008-success')
                 let baselinePath = bp(lang, '008-success')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)

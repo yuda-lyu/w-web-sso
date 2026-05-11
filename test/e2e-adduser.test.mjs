@@ -16,25 +16,14 @@ import { startServersOnce } from './e2e-setup.mjs'
 //
 // 使用方式：
 //   1. 先產生標準圖：node test/e2e-adduser.test.mjs --baseline
-//   2. 跑測試比對：npx mocha test/e2e-adduser.test.mjs --timeout 120000
+//   2. 跑測試比對：npx mocha test/e2e-adduser.test.mjs --timeout 240000
+//   --names <eng-002-account-empty,...> 進行手術式 baseline 重產
 //
 // 標準圖存放：test/pics/adduser/adduser-{lang}-{number}-{name}.png
 //
-// 涵蓋 14 個 UI distinct 狀態 (× 2 lang = 28 baselines):
-//   001-success-after-save                    成功 + 表格刷新
-//   002-account-empty-checkyes                帳號空 → CheckYes errInAccounts
-//   003-account-duplicate-checkyes            帳號重複 (同表內) → CheckYes errInAccounts
-//   004-password-empty-checkyes               密碼空 → CheckYes errInPasswords
-//   005-email-empty-checkyes                  email 空 → CheckYes errInEmails
-//   006-email-format-checkyes                 email 格式錯 → CheckYes errInEmails
-//   007-email-duplicate-checkyes              email 重複 → CheckYes errInEmails
-//   008-redir-empty-checkyes                  redir 空 → CheckYes errInRedir
-//   009-rows-empty-checkyes                   表內無 row → CheckYes userAddEmpty
-//   010-cannot-demote-self-checkyes           admin 解除自己 admin → CheckYes
-//   011-cannot-disable-self-checkyes          admin 停用自己 → CheckYes
-//   012-password-policy-backend-checkyes      密碼違反策略 backend reject → CheckYes
-//   013-account-conflict-backend-checkyes     帳號與 DB 衝突 backend reject → CheckYes
-//   014-email-conflict-backend-checkyes       email 與 DB 衝突 backend reject → CheckYes
+// 涵蓋 14 個 UI distinct 狀態 (× 2 lang = 28 baselines)。所有 capture 透過真實 UI
+// 互動推進: 鍵盤滑鼠輸入 / WText input fill / ag-grid cell dblclick + Enter /
+// 按鈕 SVG path 點擊。不使用 vm.method() / page.evaluate state mutation 抄捷徑。
 //
 
 let baseUrl = 'http://localhost:8080'
@@ -46,7 +35,6 @@ let webKey = 'ksso'
 let lsKey = `${webKey}:userToken`
 
 
-//可選 --names <eng-001-...,cht-001-...> 進行手術式 baseline 重產
 let baselineNamesFilter = null
 {
     let i = process.argv.indexOf('--names')
@@ -69,10 +57,8 @@ function bp(lang, name) {
 
 
 // ===================================================================
-// 每個 baseline 的預期 modal 文字 (從 spec / procLang.mjs 衍生, 不是現狀指紋)
-//
-// 此映射用於語意斷言: 每張截圖必須包含對應 i18n 鍵的文字.
-// 若實機產出不含此文字 → 修系統 (錯誤聚合粒度 / i18n 對應) 或修 spec, 不改 baseline.
+// 預期 modal 文字 (從 spec / procLang.mjs 衍生, 不是現狀指紋)
+// 每張截圖必須包含對應 i18n 鍵的文字; 不含 → 修系統或修 spec, 不改 baseline.
 // ===================================================================
 
 let expectedModalText = {
@@ -122,12 +108,12 @@ let expectedModalText = {
         cht: '儲存使用者數據失敗',
     },
     '013-account-conflict-backend': {
-        //目前實作 delegate 到 captureAccountDuplicate, 故同 003
+        //同表內重複 (ckKey) → 與 003 同訊息
         eng: 'Duplicate account of user',
         cht: '使用者帳號出現重複',
     },
     '014-email-conflict-backend': {
-        //目前實作 delegate 到 captureEmailDuplicate, 故同 007
+        //同表內重複 (ckKey) → 與 007 同訊息
         eng: 'Duplicate email of user',
         cht: '使用者Email出現重複',
     },
@@ -136,7 +122,7 @@ let expectedModalText = {
 
 
 // ===================================================================
-// 經 Vue 應用呼叫 $fapi.<funcName>，回傳 { ok, val? , err? }
+// $fapi 呼叫 (僅用於 API 拒絕情境的 mocha test, UI baseline 不使用)
 // ===================================================================
 
 async function callFapi(page, funcName, args) {
@@ -164,7 +150,7 @@ async function callFapi(page, funcName, args) {
 
 
 // ===================================================================
-// 測試使用者 / Token
+// 測試使用者 / Token (admin 觸發者 + 既有列保留情境驗證 user)
 // ===================================================================
 
 let testUsers = {
@@ -232,263 +218,21 @@ async function deleteTestUsersAndTokens() {
         await woItems.users.del({ id: u.id }).catch(() => {})
         await woItems.tokens.del({ userId: u.id }).catch(() => {})
     }
+    //marathon 模式下其他 e2e 測試可能殘留 users (register 成功 qauser-*, login-*, autologin-*, ...
+    //各自的 after() 大多會清, 但個別 it 中途失敗可能殘留), table row 數變動 → 001 pixel diff.
+    //清除「非 g.initialData.mjs seeded」的全部 user, 確保 marathon vs alone 達同樣 DB state.
     let allUsers = await woItems.users.select().catch(() => [])
     let knownIds = new Set(Object.values(testUsers).map((u) => u.id))
+    let seededAccounts = new Set(['ac-admin', 'ac-basic', 'ac-viewer', 'test-noverify'])
     for (let u of allUsers) {
-        if (/^au-/.test(u.account || '') && !knownIds.has(u.id)) {
-            await woItems.users.del({ id: u.id }).catch(() => {})
-            await woItems.tokens.del({ userId: u.id }).catch(() => {})
-        }
+        if (knownIds.has(u.id)) continue
+        if (seededAccounts.has(u.account || '')) continue
+        await woItems.users.del({ id: u.id }).catch(() => {})
+        await woItems.tokens.del({ userId: u.id }).catch(() => {})
     }
     console.log('deleted adduser test users + tokens')
 }
 
-
-// ===================================================================
-// 共用 helper: login 並進入 Users list (edit mode 已開)
-// ===================================================================
-
-async function adminLoginAndOpenUsersList(page, lang) {
-    let loginText = lang === 'eng' ? 'Log in' : '登入'
-
-    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
-    await page.evaluate(() => localStorage.clear())
-    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
-    await page.waitForTimeout(2500)
-
-    if (lang === 'cht') {
-        await page.locator('text=English').first().click()
-        await page.waitForTimeout(400)
-        await page.locator('text=中文').first().click()
-        await page.waitForTimeout(600)
-    }
-
-    let inputs = page.locator('input')
-    await inputs.nth(0).fill(testUsers.admin.account)
-    await inputs.nth(1).fill(testUsers.admin.rawPassword)
-    await page.waitForTimeout(300)
-    await page.locator(`text="${loginText}"`).first().click()
-    await page.waitForTimeout(4000)
-
-    //navigate to Users list
-    let usersText = lang === 'eng' ? 'Users list' : '使用者清單'
-    await page.locator(`text=${JSON.stringify(usersText)}`).first().waitFor({ state: 'visible', timeout: 15000 })
-    await page.locator(`text=${JSON.stringify(usersText)}`).first().click()
-    await page.waitForTimeout(2000)
-
-    //toggle edit mode on (找 Edit mode label 並點擊其旁的 switch)
-    //WSwitch 通常是 div 結構，點 label 會切到 isEditable=true
-    let editModeText = lang === 'eng' ? 'Edit mode' : '編輯模式'
-    await page.evaluate((labelText) => {
-        let findVue = (el) => {
-            if (el.__vue__) return el.__vue__
-            for (let c of el.children) { let r = findVue(c); if (r) return r }
-            return null
-        }
-        let walk = (vm, fn) => {
-            if (!vm) return null
-            let r = fn(vm); if (r) return r
-            for (let c of (vm.$children || [])) { let rr = walk(c, fn); if (rr) return rr }
-            return null
-        }
-        let root = findVue(document.body)
-        let layoutContentUsers = walk(root, (vm) => {
-            return vm.$options && vm.$options.name === 'LayoutContentUsers' ? vm
-                : (vm.toggleItemIsAdminById ? vm : null)
-        })
-        if (layoutContentUsers) {
-            layoutContentUsers.isEditable = true
-        }
-    }, editModeText)
-    await page.waitForTimeout(500)
-}
-
-
-// ===================================================================
-// 透過 Vue 直接操作 LayoutContentUsers 的 state (避開 ag-grid editor 互動 flakiness)
-// ===================================================================
-
-async function getLayoutContentUsersVm(page) {
-    return await page.evaluateHandle(() => {
-        let findVue = (el) => {
-            if (el.__vue__) return el.__vue__
-            for (let c of el.children) { let r = findVue(c); if (r) return r }
-            return null
-        }
-        let walk = (vm, fn) => {
-            if (!vm) return null
-            let r = fn(vm); if (r) return r
-            for (let c of (vm.$children || [])) { let rr = walk(c, fn); if (rr) return rr }
-            return null
-        }
-        let root = findVue(document.body)
-        return walk(root, (vm) => (vm && vm.addItem && vm.saveUsers ? vm : null))
-    })
-}
-
-//直接呼叫 vm.addItem() 然後對最頂列做欄位 override
-//
-//注意 Vue 2 reactivity: 必須對 vm.users (data property) 做 mutation, 不能對 vm.opt.rows
-//(vm.opt.rows 是透過 items computed 衍生的引用, mutation 不會回流到 vm.users 觸發後續儲存)
-async function addRowAndSetFields(page, fieldsOverride = {}) {
-    await page.evaluate((override) => {
-        let findVue = (el) => {
-            if (el.__vue__) return el.__vue__
-            for (let c of el.children) { let r = findVue(c); if (r) return r }
-            return null
-        }
-        let walk = (vm, fn) => {
-            if (!vm) return null
-            let r = fn(vm); if (r) return r
-            for (let c of (vm.$children || [])) { let rr = walk(c, fn); if (rr) return rr }
-            return null
-        }
-        let root = findVue(document.body)
-        let vm = walk(root, (vm) => (vm && vm.addItem && vm.saveUsers ? vm : null))
-        if (!vm) return
-        vm.addItem()
-        //直接 mutate vm.users[0] (新增列); Vue 2 reactivity 會傳播到 items / opt.rows
-        if (vm.users && vm.users.length > 0) {
-            for (let k in override) {
-                vm.users[0][k] = override[k]
-            }
-            //強制觸發 array reactivity (Vue 2 對 array 內容變動須 splice/$set)
-            vm.users.splice(0, 1, { ...vm.users[0] })
-        }
-        vm.refresh && vm.refresh()
-    }, fieldsOverride)
-    await page.waitForTimeout(500)
-}
-
-//直接刪除所有 rows (對 userAddEmpty 情境)
-async function clearAllRows(page) {
-    await page.evaluate(() => {
-        let findVue = (el) => {
-            if (el.__vue__) return el.__vue__
-            for (let c of el.children) { let r = findVue(c); if (r) return r }
-            return null
-        }
-        let walk = (vm, fn) => {
-            if (!vm) return null
-            let r = fn(vm); if (r) return r
-            for (let c of (vm.$children || [])) { let rr = walk(c, fn); if (rr) return rr }
-            return null
-        }
-        let root = findVue(document.body)
-        let vm = walk(root, (vm) => (vm && vm.addItem && vm.saveUsers ? vm : null))
-        if (!vm) return
-        vm.users = []
-        vm.isModified = true
-    })
-    await page.waitForTimeout(300)
-}
-
-//對 admin 自己列改某欄位 (e.g. isAdmin='n' 觸發 self-lockout)
-//同上注意 Vue 2 reactivity: mutate vm.users 而非 vm.opt.rows
-async function modifySelfRow(page, key, value) {
-    await page.evaluate(({ adminId, k, v }) => {
-        let findVue = (el) => {
-            if (el.__vue__) return el.__vue__
-            for (let c of el.children) { let r = findVue(c); if (r) return r }
-            return null
-        }
-        let walk = (vm, fn) => {
-            if (!vm) return null
-            let r = fn(vm); if (r) return r
-            for (let c of (vm.$children || [])) { let rr = walk(c, fn); if (rr) return rr }
-            return null
-        }
-        let root = findVue(document.body)
-        let vm = walk(root, (vm) => (vm && vm.addItem && vm.saveUsers ? vm : null))
-        if (!vm) return
-        for (let i = 0; i < (vm.users ? vm.users.length : 0); i++) {
-            if (vm.users[i].id === adminId) {
-                vm.users[i][k] = v
-                vm.users.splice(i, 1, { ...vm.users[i] })
-                break
-            }
-        }
-        vm.isModified = true
-        vm.refresh && vm.refresh()
-    }, { adminId: testUsers.admin.id, k: key, v: value })
-    await page.waitForTimeout(300)
-}
-
-async function clickSave(page) {
-    //儲存按鈕只有 isModified=true 才顯示, 用 mdi-cloud-upload 的 button (紅底)
-    //fallback: 找包含 saveChanges tooltip 的可點 element
-    await page.evaluate(() => {
-        let findVue = (el) => {
-            if (el.__vue__) return el.__vue__
-            for (let c of el.children) { let r = findVue(c); if (r) return r }
-            return null
-        }
-        let walk = (vm, fn) => {
-            if (!vm) return null
-            let r = fn(vm); if (r) return r
-            for (let c of (vm.$children || [])) { let rr = walk(c, fn); if (rr) return rr }
-            return null
-        }
-        let root = findVue(document.body)
-        let vm = walk(root, (vm) => (vm && vm.addItem && vm.saveUsers ? vm : null))
-        if (vm) vm.saveUsers()
-    })
-}
-
-async function waitCheckYes(page, lang) {
-    //CheckYes button 文字: ok 或 確認
-    let okText = lang === 'eng' ? 'OK' : '確認'
-    await page.locator(`text="${okText}"`).first().waitFor({ state: 'visible', timeout: 30000 })
-    await page.waitForTimeout(800)
-}
-
-
-// ===================================================================
-// 14 個 capture helper
-// ===================================================================
-
-//先設好乾淨的 admin token (用於 token 衝突 / 過期等之前清理)
-async function resetAdminToken() {
-    await woItems.tokens.del({ userId: testUsers.admin.id }).catch(() => {})
-    let t = ds.tokens.funNew({ userId: testUsers.admin.id })
-    t.timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-    userTokens[testUsers.admin.id] = t.token
-    await woItems.tokens.insert([t])
-}
-
-
-//001 success 透過 API 加 user 後進 Users list
-async function captureSuccessAfterSave(page, lang) {
-    await adminLoginAndOpenUsersList(page, lang)
-
-    let newAccount = `au-newuser-${lang}-baseline`
-    let allUsers = await woItems.users.select()
-    allUsers = allUsers.map((u) => { let c = { ...u }; delete c.password; return c })
-    allUsers.push(buildNewRowPlain(newAccount, 'Pw@KLMN5678', { name: `New User ${lang}`, email: `${newAccount}@test.com` }))
-
-    let r = await callFapi(page, 'updateUsersList', [userTokens[testUsers.admin.id], lang, allUsers])
-    if (!r.ok) throw new Error(`baseline 001 setup failed: ${r.err}`)
-
-    //navigate again to Users list 強制 refetch
-    let usersText = lang === 'eng' ? 'Users list' : '使用者清單'
-    //先點 Statistics 再回 Users list, 確保 LayoutContentUsers 重 mount + getUsersList
-    let statText = lang === 'eng' ? 'Statistics information' : '統計資訊'
-    await page.locator(`text=${JSON.stringify(statText)}`).first().click().catch(() => {})
-    await page.waitForTimeout(800)
-    await page.locator(`text=${JSON.stringify(usersText)}`).first().click()
-    //等新增的 user account text 出現於 ag-grid (確保 getUsersList 已回傳並渲染),
-    //避免在「No Rows To Show」狀態下截圖
-    await page.locator(`text=${JSON.stringify(newAccount)}`).first().waitFor({ state: 'visible', timeout: 30000 })
-    await page.waitForTimeout(800)
-
-    let buf = await page.screenshot({ fullPage: true })
-
-    //cleanup
-    let us = await woItems.users.select({ account: newAccount }).catch(() => [])
-    for (let u of us) await woItems.users.del({ id: u.id }).catch(() => {})
-
-    return buf
-}
 
 function buildNewRowPlain(account, password, opt = {}) {
     return ds.users.funNew({
@@ -509,160 +253,501 @@ function buildNewRowPlain(account, password, opt = {}) {
 }
 
 
-//通用 helper: 經 Users list UI 觸發新增/儲存 → 等 CheckYes 出現後截圖
-async function captureCheckYesAfterAddRow(page, lang, rowOverride, modifySelf) {
-    await adminLoginAndOpenUsersList(page, lang)
-
-    if (rowOverride) {
-        await addRowAndSetFields(page, rowOverride)
-    }
-    if (modifySelf) {
-        await modifySelfRow(page, modifySelf.key, modifySelf.value)
-    }
-
-    await clickSave(page)
-    await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true })
+//每個 it 之間 admin token 都要復原
+async function resetAdminToken() {
+    await woItems.tokens.del({ userId: testUsers.admin.id }).catch(() => {})
+    let t = ds.tokens.funNew({ userId: testUsers.admin.id })
+    t.timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+    userTokens[testUsers.admin.id] = t.token
+    await woItems.tokens.insert([t])
 }
 
 
-//002 account empty
+// ===================================================================
+// UI helpers — 全部走真實鍵盤滑鼠互動 (透過 Playwright)
+// 隱性 selector 來源:
+//   - 按鈕 (+, save, trash) 透過 mdi SVG path d 屬性鎖定 → closest div[tabindex]
+//   - ag-grid cell 透過 col-id 屬性鎖定
+//   - WText input 直接 input[type] 鎖定
+//   - i18n 文字 (Edit mode / Users list / Log in / OK) 透過 page.locator(text=...)
+//   不使用 data-testid (產品端不為測試新增 hook)
+// ===================================================================
+
+let mdiPlus = 'M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z'
+let mdiCloudUploadOutline = 'M6.5 20Q4.22 20 2.61 18.43 1 16.85 1 14.58 1 12.63 2.17 11.1 3.35 9.57 5.25 9.15 5.88 6.85 7.75 5.43 9.63 4 12 4 14.93 4 16.96 6.04 19 8.07 19 11 20.73 11.2 21.86 12.5 23 13.78 23 15.5 23 17.38 21.69 18.69 20.38 20 18.5 20H13Q12.18 20 11.59 19.41 11 18.83 11 18V12.85L9.4 14.4L8 13L12 9L16 13L14.6 14.4L13 12.85V18H18.5Q19.55 18 20.27 17.27 21 16.55 21 15.5 21 14.45 20.27 13.73 19.55 13 18.5 13H17V11Q17 8.93 15.54 7.46 14.08 6 12 6 9.93 6 8.46 7.46 7 8.93 7 11H6.5Q5.05 11 4.03 12.03 3 13.05 3 14.5 3 15.95 4.03 17 5.05 18 6.5 18H9V20M12 13Z'
+let mdiTrashCanOutline = 'M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z'
+
+let kpUiText = {
+    eng: { login: 'Log in', usersList: 'Users list', editMode: 'Edit mode', ok: 'OK' },
+    cht: { login: '登入', usersList: '使用者清單', editMode: '編輯模式', ok: '確認' },
+}
+
+
+//透過 SVG path d 屬性找按鈕的 click 中心座標
+async function locateMdiButton(page, dPath) {
+    let found = await page.evaluate((d) => {
+        let p = Array.from(document.querySelectorAll('svg path')).find(x => x.getAttribute('d') === d)
+        if (!p) return null
+        let btn = p.closest('div[tabindex]')
+        if (!btn) return null
+        let r = btn.getBoundingClientRect()
+        if (r.width === 0 || r.height === 0) return null
+        return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }
+    }, dPath)
+    if (!found) throw new Error(`mdi button not found / not visible: d=${dPath.slice(0, 30)}...`)
+    return found
+}
+
+
+//login 頁 → 填帳密 → 進 Users list → 確認 Edit mode 開
+async function loginAsAdminAndOpenUsersList(page, lang) {
+    let t = kpUiText[lang]
+
+    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
+    await page.evaluate(() => localStorage.clear())
+    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
+    await page.waitForTimeout(2500)
+
+    if (lang === 'cht') {
+        await page.locator('text=English').first().click()
+        await page.waitForTimeout(400)
+        await page.locator('text=中文').first().click()
+        await page.waitForTimeout(600)
+    }
+    else {
+        //eng 不切語系, 但補上 cht 切換的等同 warm-up 時間;
+        //marathon 模式下這段 buffer 對 ag-grid 後續 render 穩定性有實質貢獻 (eng-001 反覆 flake 觀察)
+        await page.waitForTimeout(1000)
+    }
+
+    let inputs = page.locator('input')
+    await inputs.nth(0).fill(testUsers.admin.account)
+    await inputs.nth(1).fill(testUsers.admin.rawPassword)
+    await page.waitForTimeout(300)
+    await page.locator(`text="${t.login}"`).first().click()
+    await page.waitForTimeout(4000)
+
+    await page.locator(`text="${t.usersList}"`).first().waitFor({ state: 'visible', timeout: 15000 })
+    await page.locator(`text="${t.usersList}"`).first().click()
+    await page.waitForTimeout(2500)
+
+    //確認 Edit mode 是 on; 否則點一下
+    let editChecked = await page.evaluate((label) => {
+        let lab = Array.from(document.querySelectorAll('div')).find(d => (d.innerText || '').trim() === label && d.children.length === 0)
+        if (!lab) return null
+        let cb = lab.parentElement && lab.parentElement.querySelector('input[type="checkbox"]')
+        return cb ? cb.checked : null
+    }, t.editMode)
+    if (editChecked === false) {
+        await page.locator(`text="${t.editMode}"`).first().click()
+        await page.waitForTimeout(500)
+    }
+    //等 ag-grid 初始載入後 cell 完全 hydrate (marathon 模式累積 backend / vue-cli 暖記憶體會讓
+    //getUsersList 回 / Vue mount / ag-grid render 三階段時序變動, 不等到 idle 直接 click + 會撞)
+    await page.waitForFunction(async () => {
+        let snap = () => {
+            let cells = document.querySelectorAll('.ag-cell')
+            return JSON.stringify({
+                count: cells.length,
+                first10: Array.from(cells).slice(0, 10).map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 20)),
+            })
+        }
+        let s1 = snap()
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        let s2 = snap()
+        if (s1 !== s2) return false
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        let s3 = snap()
+        return s2 === s3
+    }, null, { timeout: 15000 })
+    await page.waitForTimeout(1000)
+}
+
+
+async function clickPlusToAddRow(page) {
+    let p = await locateMdiButton(page, mdiPlus)
+    await page.mouse.click(p.x, p.y)
+    await page.waitForTimeout(800)
+    //鼠標移開 (避免 tooltip 殘留污染 baseline)
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(300)
+}
+
+
+async function clickSave(page) {
+    let p = await locateMdiButton(page, mdiCloudUploadOutline)
+    await page.mouse.click(p.x, p.y)
+    //儲存後可能因 Loading dialog 短暫消失再出現 → 不等 fixed delay, 由呼叫者 waitCheckYes
+    await page.mouse.move(0, 0)
+}
+
+
+async function clickTrashAfterSelectAll(page) {
+    //點 ag-grid header 的 checkbox 全選
+    let cbBox = await page.evaluate(() => {
+        let cb = document.querySelector('.ag-header-cell input[type="checkbox"]')
+        if (!cb) return null
+        let r = cb.getBoundingClientRect()
+        return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }
+    })
+    if (!cbBox) throw new Error('header checkbox not found')
+    await page.mouse.click(cbBox.x, cbBox.y)
+    await page.waitForTimeout(500)
+    //點 trash
+    let p = await locateMdiButton(page, mdiTrashCanOutline)
+    await page.mouse.click(p.x, p.y)
+    await page.waitForTimeout(800)
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(300)
+}
+
+
+//ag-grid 視窗虛擬化讓非可視欄不在 DOM. 透過掃描 scrollLeft 找到該欄能渲染的位置,
+//再將其捲到視口正中, 確保 dblclick 等互動命中
+async function ensureColumnVisible(page, colId) {
+    let ok = await page.evaluate(async (cid) => {
+        let body = document.querySelector('.ag-center-cols-viewport')
+        if (!body) return false
+        let sw = body.scrollWidth, cw = body.clientWidth
+        //sweep scrollLeft from 0 → sw-cw with step cw*0.6
+        let positions = []
+        let step = Math.max(60, cw * 0.6)
+        for (let x = 0; x <= sw - cw + step; x += step) positions.push(Math.min(x, Math.max(0, sw - cw)))
+        for (let pos of positions) {
+            body.scrollLeft = pos
+            await new Promise(r => setTimeout(r, 80))
+            let header = document.querySelector(`.ag-header-cell[col-id="${cid}"]`)
+            if (header) {
+                let r = header.getBoundingClientRect()
+                let bbox = body.getBoundingClientRect()
+                let center = bbox.x + bbox.width / 2
+                let headerCenter = r.x + r.width / 2
+                //微調讓 header 落在 body 視口中央
+                body.scrollLeft = pos + (headerCenter - center)
+                await new Promise(r => setTimeout(r, 120))
+                return true
+            }
+        }
+        return false
+    }, colId)
+    if (!ok) throw new Error(`column not findable in any scroll position: ${colId}`)
+    await page.waitForTimeout(300)
+}
+
+
+//ag-grid 文字欄位 (account / email / redir / name / description) 編輯:
+//dblclick 進 cell editor → fill input → Enter
+async function fillAgGridCell(page, rowIdx, colId, value) {
+    await ensureColumnVisible(page, colId)
+    let cellSel = `.ag-row[row-index="${rowIdx}"] .ag-cell[col-id="${colId}"]`
+    let cell = page.locator(cellSel)
+    await cell.scrollIntoViewIfNeeded()
+    await cell.dblclick()
+    await page.waitForTimeout(400)
+    let editor = page.locator(`${cellSel} input`)
+    await editor.waitFor({ state: 'visible', timeout: 5000 })
+    await editor.fill(value)
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(300)
+}
+
+
+//新增列 password 欄: WText input 已就在 cell 內, 直接 fill (不需 dblclick)
+async function fillNewRowPassword(page, value) {
+    let inp = page.locator('.ag-row[row-index="0"] .ag-cell[col-id="password"] input[type="password"], .ag-row[row-index="0"] .ag-cell[col-id="password"] input[type="text"]').first()
+    await inp.waitFor({ state: 'visible', timeout: 5000 })
+    await inp.click()
+    await inp.fill(value)
+    await page.waitForTimeout(200)
+}
+
+
+//找到 admin 自己列的 row-index, 並對 isAdmin / isActive checkbox 進行 toggle
+async function toggleSelfRowCheckbox(page, colId) {
+    await ensureColumnVisible(page, colId)
+    let rowIdx = await page.evaluate((adminAccount) => {
+        let cells = Array.from(document.querySelectorAll('.ag-row .ag-cell[col-id="account"]'))
+        for (let c of cells) {
+            if ((c.innerText || '').trim() === adminAccount) {
+                let row = c.closest('.ag-row')
+                return row.getAttribute('row-index')
+            }
+        }
+        return null
+    }, testUsers.admin.account)
+    if (rowIdx === null) throw new Error(`admin row not found for account=${testUsers.admin.account}`)
+    let cellSel = `.ag-row[row-index="${rowIdx}"] .ag-cell[col-id="${colId}"]`
+    let cell = page.locator(cellSel)
+    await cell.scrollIntoViewIfNeeded()
+    let cb = page.locator(`${cellSel} input[type="checkbox"]`)
+    await cb.waitFor({ state: 'visible', timeout: 5000 })
+    await cb.click()
+    await page.waitForTimeout(300)
+}
+
+
+async function waitCheckYes(page, lang) {
+    let t = kpUiText[lang]
+    await page.locator(`text="${t.ok}"`).first().waitFor({ state: 'visible', timeout: 30000 })
+    //modal 出現後, 穩定化 4 步:
+    //  1. window scrollTop=0 — toggleSelfRowCheckbox 經 scrollIntoViewIfNeeded 可能捲動 window
+    //  2. ag-grid 內部水平 scroll=0 — toggle isAdmin / isActive 等右側欄會將 grid 捲到右邊,
+    //     截到 timeCreate / timeUpdate 等每次值都不同的動態欄位 → pixel diff
+    //  3. 鼠標移到角落 — 清 hover state / tooltip 殘留
+    //  4. 等 ag-grid 真 idle — 連續兩次 raf 之間 cell 數量 + 第一列 cell HTML hash 完全一致才算穩定
+    //     (固定 timeout 對 CPU 忙時不夠, idle 偵測對「壞運氣」case 也足夠)
+    await page.evaluate(() => {
+        window.scrollTo(0, 0)
+        let body = document.querySelector('.ag-center-cols-viewport')
+        if (body) body.scrollLeft = 0
+    })
+    await page.mouse.move(0, 0)
+    await page.waitForFunction(async () => {
+        let body = document.querySelector('.ag-center-cols-viewport')
+        if (!body) return true //無 grid (login etc), 直接 ok
+        if (body.scrollLeft !== 0) return false
+        //password header 必須出現
+        if (!document.querySelector('.ag-header-cell[col-id="password"]')) return false
+        //連續三次 raf 之間 cell 數量 + row[0] cell HTML 全等 → 認定 idle
+        //(marathon 模式累積 browser 狀態, 兩個 raf 偶有差異; 三個更穩定)
+        let snap = () => {
+            let cells = document.querySelectorAll('.ag-cell')
+            let row0Cells = Array.from(document.querySelectorAll('.ag-row[row-index="0"] .ag-cell'))
+            return JSON.stringify({
+                count: cells.length,
+                row0: row0Cells.map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
+            })
+        }
+        let s1 = snap()
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        let s2 = snap()
+        if (s1 !== s2) return false
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        let s3 = snap()
+        return s2 === s3
+    }, null, { timeout: 15000 })
+    await page.waitForTimeout(1500)
+}
+
+
+// ===================================================================
+// 14 個 capture (全 UI 互動, 不走 vm.method / state mutation)
+// ===================================================================
+
+//001 success: 完整 UI 流程 — + → 填欄位 → save → 過 success modal → 看到表內新帳號
+async function captureSuccessAfterSave(page, lang) {
+    let t = kpUiText[lang]
+    await loginAsAdminAndOpenUsersList(page, lang)
+
+    let newAccount = `au-newuser-${lang}-baseline`
+    let newEmail = `${newAccount}@test.com`
+
+    await clickPlusToAddRow(page)
+    await fillAgGridCell(page, 0, 'account', newAccount)
+    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'email', newEmail)
+    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await clickSave(page)
+    await waitCheckYes(page, lang) //success modal 出現
+    await page.locator(`text="${t.ok}"`).first().click() //dismiss success modal
+    //等表格刷新後 (重 fetch getUsersList) 看到新帳號
+    await page.locator(`text="${newAccount}"`).first().waitFor({ state: 'visible', timeout: 15000 })
+    //等 ag-grid getUsersList 後重畫穩定 (連續三 raf cell 不變), 否則 marathon 模式偶有未繪完截圖
+    await page.evaluate(() => {
+        let body = document.querySelector('.ag-center-cols-viewport')
+        if (body) body.scrollLeft = 0
+    })
+    await page.waitForFunction(async () => {
+        let snap = () => {
+            let cells = document.querySelectorAll('.ag-cell')
+            return JSON.stringify({
+                count: cells.length,
+                first10: Array.from(cells).slice(0, 10).map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
+            })
+        }
+        let s1 = snap()
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        let s2 = snap()
+        if (s1 !== s2) return false
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        let s3 = snap()
+        return s2 === s3
+    }, null, { timeout: 15000 })
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(1500)
+
+    let buf = await page.screenshot({ fullPage: true, animations: 'disabled' })
+
+    //cleanup: 透過 woItems 直接刪 (測試環境 admin 操作)
+    let us = await woItems.users.select({ account: newAccount }).catch(() => [])
+    for (let u of us) await woItems.users.del({ id: u.id }).catch(() => {})
+
+    return buf
+}
+
+
+//002 account 空 (password / email 填妥, 觸發 errInAccounts CheckYes)
 async function captureAccountEmpty(page, lang) {
-    return await captureCheckYesAfterAddRow(page, lang, {
-        account: '',
-        email: 'au-newuser-002@test.com',
-        password: 'Pw@KLMN5678',
-    })
+    await loginAsAdminAndOpenUsersList(page, lang)
+    await clickPlusToAddRow(page)
+    //account 故意不填
+    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'email', 'au-newuser-002@test.com')
+    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await clickSave(page)
+    await waitCheckYes(page, lang)
+    return await page.screenshot({ fullPage: true, animations: 'disabled' })
 }
 
-//003 account duplicate (新增 2 列同 account)
+
+//003 account 同表內重複 (新加 2 列同 account)
 async function captureAccountDuplicate(page, lang) {
-    await adminLoginAndOpenUsersList(page, lang)
-    await addRowAndSetFields(page, {
-        account: 'au-dup',
-        email: 'au-dup1@test.com',
-        password: 'Pw@KLMN5678',
-    })
-    await addRowAndSetFields(page, {
-        account: 'au-dup',
-        email: 'au-dup2@test.com',
-        password: 'Pw@KLMN5678',
-    })
+    await loginAsAdminAndOpenUsersList(page, lang)
+    //加 row1
+    await clickPlusToAddRow(page)
+    await fillAgGridCell(page, 0, 'account', 'au-dup')
+    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'email', 'au-dup1@test.com')
+    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    //加 row2 (同 account, 不同 email)
+    await clickPlusToAddRow(page)
+    await fillAgGridCell(page, 0, 'account', 'au-dup')
+    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'email', 'au-dup2@test.com')
+    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true })
+    return await page.screenshot({ fullPage: true, animations: 'disabled' })
 }
 
-//004 password empty
+
+//004 password 空
 async function capturePasswordEmpty(page, lang) {
-    return await captureCheckYesAfterAddRow(page, lang, {
-        account: 'au-newuser-004',
-        email: 'au-newuser-004@test.com',
-        password: '',
-    })
+    await loginAsAdminAndOpenUsersList(page, lang)
+    await clickPlusToAddRow(page)
+    await fillAgGridCell(page, 0, 'account', 'au-newuser-004')
+    //password 故意不填
+    await fillAgGridCell(page, 0, 'email', 'au-newuser-004@test.com')
+    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await clickSave(page)
+    await waitCheckYes(page, lang)
+    return await page.screenshot({ fullPage: true, animations: 'disabled' })
 }
 
-//005 email empty
+
+//005 email 空
 async function captureEmailEmpty(page, lang) {
-    return await captureCheckYesAfterAddRow(page, lang, {
-        account: 'au-newuser-005',
-        email: '',
-        password: 'Pw@KLMN5678',
-    })
+    await loginAsAdminAndOpenUsersList(page, lang)
+    await clickPlusToAddRow(page)
+    await fillAgGridCell(page, 0, 'account', 'au-newuser-005')
+    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    //email 故意不填
+    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await clickSave(page)
+    await waitCheckYes(page, lang)
+    return await page.screenshot({ fullPage: true, animations: 'disabled' })
 }
 
-//006 email format bad
+
+//006 email 格式錯
 async function captureEmailFormatBad(page, lang) {
-    return await captureCheckYesAfterAddRow(page, lang, {
-        account: 'au-newuser-006',
-        email: 'not-an-email',
-        password: 'Pw@KLMN5678',
-    })
+    await loginAsAdminAndOpenUsersList(page, lang)
+    await clickPlusToAddRow(page)
+    await fillAgGridCell(page, 0, 'account', 'au-newuser-006')
+    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'email', 'not-an-email')
+    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await clickSave(page)
+    await waitCheckYes(page, lang)
+    return await page.screenshot({ fullPage: true, animations: 'disabled' })
 }
 
-//007 email duplicate (新增 2 列同 email)
+
+//007 email 同表內重複
 async function captureEmailDuplicate(page, lang) {
-    await adminLoginAndOpenUsersList(page, lang)
-    await addRowAndSetFields(page, {
-        account: 'au-dup-em-1',
-        email: 'au-dup-em@test.com',
-        password: 'Pw@KLMN5678',
-    })
-    await addRowAndSetFields(page, {
-        account: 'au-dup-em-2',
-        email: 'au-dup-em@test.com',
-        password: 'Pw@KLMN5678',
-    })
+    await loginAsAdminAndOpenUsersList(page, lang)
+    await clickPlusToAddRow(page)
+    await fillAgGridCell(page, 0, 'account', 'au-dup-em-1')
+    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'email', 'au-dup-em@test.com')
+    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await clickPlusToAddRow(page)
+    await fillAgGridCell(page, 0, 'account', 'au-dup-em-2')
+    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'email', 'au-dup-em@test.com')
+    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true })
+    return await page.screenshot({ fullPage: true, animations: 'disabled' })
 }
 
-//008 redir empty
+
+//008 redir 空
 async function captureRedirEmpty(page, lang) {
-    return await captureCheckYesAfterAddRow(page, lang, {
-        account: 'au-newuser-008',
-        email: 'au-newuser-008@test.com',
-        password: 'Pw@KLMN5678',
-        redir: '',
-    })
-}
-
-//009 rows empty (清掉所有 rows)
-async function captureRowsEmpty(page, lang) {
-    await adminLoginAndOpenUsersList(page, lang)
-    await clearAllRows(page)
+    await loginAsAdminAndOpenUsersList(page, lang)
+    await clickPlusToAddRow(page)
+    await fillAgGridCell(page, 0, 'account', 'au-newuser-008')
+    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'email', 'au-newuser-008@test.com')
+    //redir 故意不填
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true })
+    return await page.screenshot({ fullPage: true, animations: 'disabled' })
 }
 
-//010 self isAdmin=n
+
+//009 全表空 (header checkbox 全選 + trash 刪光 → save → CheckYes 'userAddEmpty')
+async function captureRowsEmpty(page, lang) {
+    await loginAsAdminAndOpenUsersList(page, lang)
+    await clickTrashAfterSelectAll(page)
+    await clickSave(page)
+    await waitCheckYes(page, lang)
+    return await page.screenshot({ fullPage: true, animations: 'disabled' })
+}
+
+
+//010 admin 解除自己 isAdmin (前端 self-lockout)
 async function captureCannotDemoteSelf(page, lang) {
-    return await captureCheckYesAfterAddRow(page, lang, null, { key: 'isAdmin', value: 'n' })
+    await loginAsAdminAndOpenUsersList(page, lang)
+    await toggleSelfRowCheckbox(page, 'isAdmin')
+    await clickSave(page)
+    await waitCheckYes(page, lang)
+    return await page.screenshot({ fullPage: true, animations: 'disabled' })
 }
 
-//011 self isActive=n
+
+//011 admin 停用自己 isActive
 async function captureCannotDisableSelf(page, lang) {
-    return await captureCheckYesAfterAddRow(page, lang, null, { key: 'isActive', value: 'n' })
+    await loginAsAdminAndOpenUsersList(page, lang)
+    await toggleSelfRowCheckbox(page, 'isActive')
+    await clickSave(page)
+    await waitCheckYes(page, lang)
+    return await page.screenshot({ fullPage: true, animations: 'disabled' })
 }
 
-//012 password policy backend reject
-//
-//必須讓所有前端 isError 都通過 (account / email / redir 皆有效, password 非空)
-//才會把整批送到後端, 由 checkUserPassword 把關。否則前端 isError 會先攔下,
-//modal 顯示的是前端錯誤訊息而非後端 reject 訊息 (此問題由語意斷言抓出, 非 pixel)
+
+//012 password 違反後端 policy (繞過前端 isError, 由 checkUserPassword reject)
 async function capturePasswordPolicyBackend(page, lang) {
-    return await captureCheckYesAfterAddRow(page, lang, {
-        account: 'au-newuser-012',
-        email: 'au-newuser-012@test.com',
-        password: 'short', //非空 (繞過前端 isError 之 errItemsByPassword 空值檢查), 但長度 < 8 觸發後端 checkUserPassword reject
-        redir: 'http://localhost:8080/?view=user&token={token}', //有效, 繞過 errItemsByRedir
-    })
+    await loginAsAdminAndOpenUsersList(page, lang)
+    await clickPlusToAddRow(page)
+    await fillAgGridCell(page, 0, 'account', 'au-newuser-012')
+    await fillNewRowPassword(page, 'short') //非空, 通過前端; 但長度<8 後端 reject
+    await fillAgGridCell(page, 0, 'email', 'au-newuser-012@test.com')
+    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await clickSave(page)
+    await waitCheckYes(page, lang)
+    return await page.screenshot({ fullPage: true, animations: 'disabled' })
 }
 
-//013 account 與 DB 既有衝突 (前端 isError 不擋, 因 ckKey 是 backend 對整批 rows 偵測表內衝突)
-//此處須 admin 加新列 account 與 DB 既有 user 重複 (例如 ac-admin)
+
+//013 account 與 DB 既有衝突 — 同表內重複的 ckKey path 會以同訊息呈現,
+//   故重用 003 的 captureAccountDuplicate 路徑作為此情境之 UI 代表
 async function captureAccountConflictBackend(page, lang) {
-    //假設 ac-admin 是 DB 既有 (g.initialData.mjs 內), 取它做衝突
-    //但要注意: 前端 isError errItemsByAccount 對「同表內」重複會擋, 須 testUsers 載入後再加新列 account=ac-admin
-    //ac-admin 已在表內 (從 getUsersList 回來), 加新列 ac-admin 會被 errItemsByAccount 偵測到 (同表內重複)
-    //→ 觸發 isError CheckYes 而非 backend ckKey reject
-    //→ 行為 essentially identical (CheckYes errInAccounts 訊息), 與 002 重疊
-    //
-    //若要真正觸發 backend ckKey, 須繞過前端 isError. 一個方法是: row1.account='X' 通過前端檢查,
-    //但 procOrm 寫入時撞 DB 實際上的 ckKey 是「同 ltdtNew 內 account 重複」, 不是 vs DB.
-    //
-    //實際上 backend 端對「新增 account 與 DB 既有 row 衝突」的偵測在 ckKey('id') / ckKey('email')
-    //之後的 procOrm.insert 階段, 由 LMDB 的 unique constraint 觸發 reject.
-    //此情境 CheckYes 顯示 LMDB 拋出的英文錯誤訊息, 不易維持穩定.
-    //
-    //簡化: 重用「同表內重複」(003) 的行為作為「帳號衝突」的代表 UI 狀態.
-    //此 capture 與 003 internally 同 path, 但 baseline 命名不同以利文件對照.
     return await captureAccountDuplicate(page, lang)
 }
 
-//014 email 與 DB 既有衝突 (同上邏輯, 重用 007)
+
+//014 email 與 DB 既有衝突 — 同上, 重用 007
 async function captureEmailConflictBackend(page, lang) {
     return await captureEmailDuplicate(page, lang)
 }
@@ -694,6 +779,7 @@ async function generateBaselineForLang(page, lang) {
 
     for (let [name, fn] of cases) {
         console.log(`  ${name}`)
+        await resetAdminToken()
         let buf = await fn(page, lang)
         writeBaseline(lang, name, buf)
     }
@@ -741,7 +827,7 @@ if (process.argv.includes('--baseline')) {
 }
 else {
 
-    // --- API 拒絕 / 副作用驗證 (語系無關, 1 輪即可) ---
+    // --- API 拒絕情境 (語系無關, 只測 backend reject 行為) ---
 
     describe(`AddUser E2E API — updateUsersList 拒絕情境與副作用`, function() {
         this.timeout(60000)
@@ -886,7 +972,7 @@ else {
     for (let lang of langs) {
 
         describe(`AddUser E2E [${lang}] — UI baseline 比對`, function() {
-            this.timeout(180000)
+            this.timeout(240000)
 
             let browser
             let page
@@ -933,15 +1019,10 @@ else {
 
             for (let [name, fn] of cases) {
                 it(`${name}`, async function() {
-                    //每個 it 之間 admin token 都要復原 (前面 case 的 captureCheckYesAfterAddRow 不會儲存到 DB,
-                    //但 happy-path API test 等可能影響, 此處 reset 確保乾淨)
                     await resetAdminToken()
                     let buf = await fn(page, lang)
 
                     //語意斷言 (主) — 從 spec 衍生的預期文字必須出現在頁面 DOM 上
-                    //自訂 DOM 走訪: 跳過 SCRIPT/STYLE, 收集所有 text node 內容比對
-                    //(innerText 受 viewport visible 限制可能漏失 modal 文字; documentElement.textContent
-                    //會包含 CSS / 內聯 script 內容導致誤判)
                     let pageHasText = async (text) => {
                         return await page.evaluate((t) => {
                             let walk = (el) => {
@@ -996,7 +1077,7 @@ else {
                         }
                     }
 
-                    //像素斷言 (補強, 視覺回歸) — 補語意斷言之後的 layout / icon / 字型微差
+                    //像素斷言 (補強, 視覺回歸)
                     let baselinePath = bp(lang, name)
                     assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                     let baselineBuf = fs.readFileSync(baselinePath)
@@ -1013,7 +1094,6 @@ else {
                     for (let u of us) await woItems.users.del({ id: u.id }).catch(() => {})
                 })
 
-                //setup 新 user via API
                 await resetAdminToken()
                 let allUsers = await woItems.users.select()
                 allUsers = allUsers.map((u) => { let c = { ...u }; delete c.password; return c })
@@ -1021,7 +1101,6 @@ else {
                 let r = await callFapi(page, 'updateUsersList', [userTokens[testUsers.admin.id], lang, allUsers])
                 assert.strict.equal(r.ok, true)
 
-                //logout: 清 LS + 重進 baseUrl
                 await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
                 await page.evaluate(() => localStorage.clear())
                 await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })

@@ -38,11 +38,125 @@ let kpLangText = {
     eng: {
         registerLink: 'Register',          // userRegistration
         submit: 'Submit',                  // userRegistrationSubmit
+        login: 'Log in',
     },
     cht: {
         registerLink: '申請帳號',
         submit: '送出申請',
+        login: '登入',
     },
+}
+
+
+// ===================================================================
+// 預期語意斷言 (從 z流程_使用者創建帳密.md + procLang.mjs 衍生, 非現狀指紋)
+// 每張截圖必須含對應 i18n 鍵的文字; 不含 → 修系統或修 spec, 不改 baseline.
+// ===================================================================
+
+let expectedSpecText = {
+    '001-form-initial': {
+        //register 模式下表單應出現 submit 按鈕文字
+        eng: { mode: 'text', value: 'Submit' },
+        cht: { mode: 'text', value: '送出申請' },
+    },
+    '002-pw-too-short': {
+        //userPassword_keyLimNumLenMin (minLength=8, settings.json)
+        eng: { mode: 'text', value: 'Password length must be at least 8 characters' },
+        cht: { mode: 'text', value: '密碼長度須大於等於8個字元' },
+    },
+    '003-pw-mismatch': {
+        //userChangePasswordNotSame
+        eng: { mode: 'text', value: 'New password and confirm password do not match' },
+        cht: { mode: 'text', value: '新密碼與確認密碼不一致' },
+    },
+    '004-pw-multi-errors': {
+        //'12345' 觸發 RequireLetter (純數字)
+        eng: { mode: 'text', value: 'Password must contain at least one letter' },
+        cht: { mode: 'text', value: '密碼須包含至少一個英文字母' },
+    },
+    '005-success': {
+        //form 切回 login mode, 不應再見 submit 按鈕文字
+        eng: { mode: 'absentText', value: 'Submit' },
+        cht: { mode: 'absentText', value: '送出申請' },
+    },
+    '006-verify-success': {
+        //userRegistrationVerifySuccess (server-rendered HTML)
+        eng: { mode: 'text', value: 'Email verified successfully' },
+        cht: { mode: 'text', value: '電子郵件驗證成功' },
+    },
+    '007-verify-invalid': {
+        //verifyEmailInvalidToken
+        eng: { mode: 'text', value: 'Invalid or expired verification link' },
+        cht: { mode: 'text', value: '驗證連結無效或已失效' },
+    },
+    '008-verify-already': {
+        //verifyEmailAlreadyVerified
+        eng: { mode: 'text', value: 'This account has already been verified' },
+        cht: { mode: 'text', value: '此帳號已完成驗證' },
+    },
+}
+
+
+async function collectVisibleText(page) {
+    return await page.evaluate(() => {
+        let parts = []
+        let walk = (el) => {
+            if (!el) return
+            if (el.nodeType === 3) {
+                let t = (el.nodeValue || '').trim()
+                if (t) parts.push(t)
+                return
+            }
+            if (el.nodeType !== 1) return
+            let tag = el.tagName
+            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return
+            for (let c of el.childNodes) walk(c)
+        }
+        walk(document.body)
+        return parts.join(' | ').slice(0, 2000)
+    })
+}
+
+async function pageHasText(page, text) {
+    return await page.evaluate((t) => {
+        let walk = (el) => {
+            if (!el) return false
+            if (el.nodeType === 3) return (el.nodeValue || '').includes(t)
+            if (el.nodeType !== 1) return false
+            let tag = el.tagName
+            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return false
+            for (let c of el.childNodes) {
+                if (walk(c)) return true
+            }
+            return false
+        }
+        return walk(document.body)
+    }, text)
+}
+
+async function assertSpecForCase(page, lang, name) {
+    let expected = expectedSpecText[name]
+    if (!expected || !expected[lang]) {
+        throw new Error(`expectedSpecText 未為 case "${name}" / lang "${lang}" 定義`)
+    }
+    let e = expected[lang]
+    if (e.mode === 'text') {
+        let found = await pageHasText(page, e.value)
+        if (!found) {
+            let dump = await collectVisibleText(page)
+            assert.fail(`預期含 spec 文字 "${e.value}" (${name}), 實際: ${dump}`)
+        }
+    }
+    else if (e.mode === 'absentText') {
+        let stillHas = await pageHasText(page, e.value)
+        if (stillHas) {
+            let dump = await collectVisibleText(page)
+            assert.fail(`預期不含 "${e.value}" (${name}), 但仍見到. 可見文字: ${dump}`)
+        }
+    }
+    else {
+        throw new Error(`未知 mode: ${e.mode}`)
+    }
 }
 
 
@@ -429,6 +543,7 @@ else {
 
             it('001-form-initial: 進入 register 模式，表單空白', async function() {
                 let buf = await captureFormInitial(page, lang)
+                await assertSpecForCase(page, lang, '001-form-initial')
                 let baselinePath = bp(lang, '001-form-initial')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -438,6 +553,7 @@ else {
 
             it('002-pw-too-short: 密碼長度不足 → inline 紅字', async function() {
                 let buf = await capturePwTooShort(page, lang)
+                await assertSpecForCase(page, lang, '002-pw-too-short')
                 let baselinePath = bp(lang, '002-pw-too-short')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -447,6 +563,7 @@ else {
 
             it('003-pw-mismatch: 密碼≠確認密碼 → inline 紅字', async function() {
                 let buf = await capturePwMismatch(page, lang)
+                await assertSpecForCase(page, lang, '003-pw-mismatch')
                 let baselinePath = bp(lang, '003-pw-mismatch')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -456,6 +573,7 @@ else {
 
             it('004-pw-multi-errors: 密碼觸發多項策略違反 → 多條紅字', async function() {
                 let buf = await capturePwMultiErrors(page, lang)
+                await assertSpecForCase(page, lang, '004-pw-multi-errors')
                 let baselinePath = bp(lang, '004-pw-multi-errors')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -466,6 +584,7 @@ else {
             it('005-success: 註冊成功 → form 清空回 login mode', async function() {
                 await deleteUserByAccount(`qauser-${lang}`)
                 let buf = await captureSuccess(page, lang)
+                await assertSpecForCase(page, lang, '005-success')
                 let baselinePath = bp(lang, '005-success')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -473,9 +592,8 @@ else {
             })
 
             it('006-verify-success: 驗證連結 token 正確 → server-rendered 成功頁', async function() {
-                // 因 005 success 與 008 already 都不會影響此 user，但若多次跑 mocha test mode 會狀態髒；before 已 reset
-                // 此 it 之後 user.timeVerified 會被寫入；下一輪 before 會重新 reset
                 let buf = await captureVerifyResult(page, lang, verifyTokens.success[lang])
+                await assertSpecForCase(page, lang, '006-verify-success')
                 let baselinePath = bp(lang, '006-verify-success')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -484,6 +602,7 @@ else {
 
             it('007-verify-invalid: 驗證連結 token 無效 → server-rendered 失敗頁', async function() {
                 let buf = await captureVerifyResult(page, lang, 'fake-token-not-in-db')
+                await assertSpecForCase(page, lang, '007-verify-invalid')
                 let baselinePath = bp(lang, '007-verify-invalid')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -492,6 +611,7 @@ else {
 
             it('008-verify-already: 驗證連結 token 已驗證 → server-rendered 已驗證頁', async function() {
                 let buf = await captureVerifyResult(page, lang, verifyTokens.already[lang])
+                await assertSpecForCase(page, lang, '008-verify-already')
                 let baselinePath = bp(lang, '008-verify-already')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)

@@ -53,6 +53,148 @@ function bp(lang, name) {
 }
 
 
+// ===================================================================
+// 預期語意斷言 (從 z流程_使用者一般登入.md + procLang.mjs / PageLogin.vue 衍生, 非現狀指紋)
+// 每張截圖必須含對應 i18n 鍵的可見文字; 不含 → 修系統或修 spec, 不改 baseline.
+// 'absentLoginButton' = 成功 case, 不應再看到 "Log in" / "登入" 按鈕 (頁面已跳走)
+// ===================================================================
+
+let expectedSpecText = {
+    '001-ok': {
+        eng: { mode: 'absentLoginButton' },
+        cht: { mode: 'absentLoginButton' },
+    },
+    '002-wrong-pw': {
+        eng: { mode: 'text', value: 'User account or password is incorrect' },
+        cht: { mode: 'text', value: '使用者帳密錯誤無法登入' },
+    },
+    '003-notverify-login-failed': {
+        eng: { mode: 'text', value: 'Your account has not been verified' },
+        cht: { mode: 'text', value: '您的帳號尚未完成 email 驗證' },
+    },
+    '004-notverify-resend-page': {
+        eng: { mode: 'text', value: 'Send verification email' },
+        cht: { mode: 'text', value: '寄送驗證信' },
+    },
+    '005-notverify-resend-sent': {
+        eng: { mode: 'text', value: 'Verification email has been resent' },
+        cht: { mode: 'text', value: '驗證信已重新寄出' },
+    },
+    '006-notverify-verified': {
+        eng: { mode: 'text', value: 'Email verified successfully' },
+        cht: { mode: 'text', value: '電子郵件驗證成功' },
+    },
+    '007-notverify-logged-in': {
+        eng: { mode: 'absentLoginButton' },
+        cht: { mode: 'absentLoginButton' },
+    },
+    '008-inactive': {
+        //inactive 由 procProtect 階段 reject 'can not find the user by account',
+        //PageLogin 顯示同 failedLoginForCatch (與 002-wrong-pw 一致, 防帳號列舉)
+        eng: { mode: 'text', value: 'User account or password is incorrect' },
+        cht: { mode: 'text', value: '使用者帳密錯誤無法登入' },
+    },
+    '009-expired': {
+        eng: { mode: 'text', value: 'Your account has expired' },
+        cht: { mode: 'text', value: '您的帳號已過期' },
+    },
+    '010-blocked': {
+        eng: { mode: 'text', value: 'Your account has been temporarily locked' },
+        cht: { mode: 'text', value: '您的帳號因多次登入失敗已被暫時鎖定' },
+    },
+    '011-view-backstage': {
+        eng: { mode: 'absentLoginButton' },
+        cht: { mode: 'absentLoginButton' },
+    },
+    '012-view-user': {
+        eng: { mode: 'absentLoginButton' },
+        cht: { mode: 'absentLoginButton' },
+    },
+    '013-resend-invalid-account': {
+        eng: { mode: 'text', value: 'The email address does not match the account' },
+        cht: { mode: 'text', value: '電子郵件與帳號不符' },
+    },
+    '014-resend-already-verified': {
+        eng: { mode: 'text', value: 'This account has already been verified' },
+        cht: { mode: 'text', value: '此帳號已完成驗證' },
+    },
+    '015-account-not-exist': {
+        //不存在帳號 = 與密碼錯誤完全同訊息 (防帳號列舉, 同 002)
+        eng: { mode: 'text', value: 'User account or password is incorrect' },
+        cht: { mode: 'text', value: '使用者帳密錯誤無法登入' },
+    },
+    '016-login-no-redir': {
+        eng: { mode: 'text', value: 'Can not get the url for redirection' },
+        cht: { mode: 'text', value: '無有效轉址' },
+    },
+}
+
+
+//收集頁面可見文字 (跳過 SCRIPT / STYLE)
+async function collectVisibleText(page) {
+    return await page.evaluate(() => {
+        let parts = []
+        let walk = (el) => {
+            if (!el) return
+            if (el.nodeType === 3) {
+                let t = (el.nodeValue || '').trim()
+                if (t) parts.push(t)
+                return
+            }
+            if (el.nodeType !== 1) return
+            let tag = el.tagName
+            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return
+            for (let c of el.childNodes) walk(c)
+        }
+        walk(document.body)
+        return parts.join(' | ').slice(0, 2000)
+    })
+}
+
+async function pageHasText(page, text) {
+    return await page.evaluate((t) => {
+        let walk = (el) => {
+            if (!el) return false
+            if (el.nodeType === 3) return (el.nodeValue || '').includes(t)
+            if (el.nodeType !== 1) return false
+            let tag = el.tagName
+            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return false
+            for (let c of el.childNodes) {
+                if (walk(c)) return true
+            }
+            return false
+        }
+        return walk(document.body)
+    }, text)
+}
+
+async function assertSpecForCase(page, lang, name) {
+    let expected = expectedSpecText[name]
+    if (!expected || !expected[lang]) {
+        throw new Error(`expectedSpecText 未為 case "${name}" / lang "${lang}" 定義, spec 來源缺失`)
+    }
+    let e = expected[lang]
+    if (e.mode === 'absentLoginButton') {
+        //成功 case: 已離開 PageLogin → 不應仍有 password input (login form 的 [type=password] input)
+        //不用文字檢查 ("Log in"/"登入" 在 backstage Statistics 頁有「Login Frequency」「登入頻率」誤觸)
+        let pwCount = await page.locator('input[type="password"]').count()
+        if (pwCount > 0) {
+            assert.fail(`預期登入成功離開 PageLogin (不應再有 password input), 實際 ${pwCount} 個 password input`)
+        }
+    }
+    else if (e.mode === 'text') {
+        let found = await pageHasText(page, e.value)
+        if (!found) {
+            let dump = await collectVisibleText(page)
+            assert.fail(`預期含 spec 文字 "${e.value}" (來自 ${name} 之 i18n / 流程文件), 實際可見文字: ${dump}`)
+        }
+    }
+    else {
+        throw new Error(`未知 mode: ${e.mode}`)
+    }
+}
+
+
 // 可選 --names <eng-001-ok,cht-007-notverify-logged-in,...> 進行手術式 baseline 重產
 let baselineNamesFilter = null
 {
@@ -331,6 +473,30 @@ async function notVerifiedFullFlow(page, lang) {
     // 減 1 分鐘緩衝，避免本機時鐘與 AgentMail 伺服器時鐘差異導致抓不到信
     let emailSendStart = Date.now() - 60000
     let bufs = {}
+    let specHits = {} //每步在當下抓 expected spec 文字是否存在; mocha it 階段斷言用
+
+    let recordSpec = async (name) => {
+        let expected = expectedSpecText[name]
+        if (!expected || !expected[lang]) {
+            specHits[name] = { ok: false, err: `expectedSpecText 未定義 ${name}/${lang}` }
+            return
+        }
+        let e = expected[lang]
+        if (e.mode === 'absentLoginButton') {
+            let stillHas = await pageHasText(page, t.login)
+            specHits[name] = { ok: !stillHas, err: stillHas ? `仍含 "${t.login}", 預期已離開 PageLogin` : null }
+        }
+        else if (e.mode === 'text') {
+            let found = await pageHasText(page, e.value)
+            if (!found) {
+                let dump = await collectVisibleText(page)
+                specHits[name] = { ok: false, err: `未含 "${e.value}". 可見文字: ${dump}` }
+            }
+            else {
+                specHits[name] = { ok: true }
+            }
+        }
+    }
 
     // Step 1: 登入失敗
     console.log(`  [1] login → expect not verified (${lang})`)
@@ -346,12 +512,14 @@ async function notVerifiedFullFlow(page, lang) {
     await page.waitForTimeout(500)
     page.locator(`text="${t.login}"`).first().click().catch(() => {})
     await page.waitForTimeout(5000)
+    await recordSpec('003-notverify-login-failed')
     bufs['003-notverify-login-failed'] = await page.screenshot({ fullPage: true })
 
     // Step 2: 點「重寄驗證信」
     console.log('  [2] click resend link')
     await page.locator(`text="${t.resendLink}"`).first().click()
     await page.waitForTimeout(1500)
+    await recordSpec('004-notverify-resend-page')
     bufs['004-notverify-resend-page'] = await page.screenshot({ fullPage: true })
 
     // Step 3: 填 email 點寄送
@@ -363,6 +531,7 @@ async function notVerifiedFullFlow(page, lang) {
     page.locator(`text="${t.resendSubmit}"`).first().click().catch(() => {})
     // 等寄信 + CheckYes 彈窗
     await page.waitForTimeout(10000)
+    await recordSpec('005-notverify-resend-sent')
     bufs['005-notverify-resend-sent'] = await page.screenshot({ fullPage: true })
 
     // 關閉 CheckYes 彈窗（點 OK / 確認 按鈕）
@@ -384,6 +553,7 @@ async function notVerifiedFullFlow(page, lang) {
     console.log('  [5] open verify URL')
     await page.goto(verifyUrl, { waitUntil: 'networkidle', timeout: 15000 })
     await page.waitForTimeout(2000)
+    await recordSpec('006-notverify-verified')
     bufs['006-notverify-verified'] = await page.screenshot({ fullPage: true })
 
     // Step 6: 驗證後登入
@@ -400,9 +570,10 @@ async function notVerifiedFullFlow(page, lang) {
     await page.waitForTimeout(500)
     page.locator(`text="${t.login}"`).first().click().catch(() => {})
     await page.waitForTimeout(8000)
+    await recordSpec('007-notverify-logged-in')
     bufs['007-notverify-logged-in'] = await page.screenshot({ fullPage: true })
 
-    return bufs
+    return { bufs, specHits }
 }
 
 
@@ -491,7 +662,7 @@ async function generateBaselineForLang(page, lang) {
 
     // 未驗證使用者完整流程（產生 003 ~ 007）
     console.log(`=== 未驗證使用者完整流程（${lang}）===`)
-    let bufs = await notVerifiedFullFlow(page, lang)
+    let { bufs } = await notVerifiedFullFlow(page, lang)
     for (let name of Object.keys(bufs)) {
         writeBaseline(lang, name, bufs[name])
     }
@@ -606,6 +777,10 @@ else {
 
                     let buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword)
 
+                    //語意斷言 (主) — 從 spec 衍生
+                    await assertSpecForCase(page, lang, u.screenshotName)
+
+                    //像素斷言 (補強)
                     assert.strict.equal(
                         fs.existsSync(baselinePath),
                         true,
@@ -621,9 +796,12 @@ else {
                 this.timeout(180000)
 
                 let bufs
+                let specHits
 
                 before(async function() {
-                    bufs = await notVerifiedFullFlow(page, lang)
+                    let r = await notVerifiedFullFlow(page, lang)
+                    bufs = r.bufs
+                    specHits = r.specHits
                 })
 
                 let names = [
@@ -635,6 +813,12 @@ else {
                 ]
                 for (let name of names) {
                     it(name, function() {
+                        //語意斷言: notVerifiedFullFlow 內每 step 完成後即時抓 spec 文字, 結果存 specHits[name]
+                        let hit = specHits[name]
+                        assert.strict.notEqual(hit, undefined, `specHits 缺 "${name}", recordSpec 邏輯異常`)
+                        assert.strict.equal(hit.ok, true, `語意斷言失敗 (${name}): ${hit.err}`)
+
+                        //像素斷言 (補強)
                         let baselinePath = bp(lang, name)
                         assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                         let baselineBuf = fs.readFileSync(baselinePath)
@@ -649,7 +833,8 @@ else {
                     let u = testUsers.find((u) => u.account === 'login-ok')
                     buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword, 'backstage')
                 })
-                it('011-view-backstage', function() {
+                it('011-view-backstage', async function() {
+                    await assertSpecForCase(page, lang, '011-view-backstage')
                     let baselinePath = bp(lang, '011-view-backstage')
                     assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                     let baselineBuf = fs.readFileSync(baselinePath)
@@ -663,7 +848,8 @@ else {
                     let u = testUsers.find((u) => u.account === 'login-ok')
                     buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword, 'user')
                 })
-                it('012-view-user', function() {
+                it('012-view-user', async function() {
+                    await assertSpecForCase(page, lang, '012-view-user')
                     let baselinePath = bp(lang, '012-view-user')
                     assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                     let baselineBuf = fs.readFileSync(baselinePath)
@@ -677,7 +863,8 @@ else {
                     let u = testUsers.find((u) => u.customTest === 'c1')
                     buf = await resendErrorFlow(page, lang, u.account, u.rawPassword, 'wrong-email@nowhere.com', null)
                 })
-                it('013-resend-invalid-account', function() {
+                it('013-resend-invalid-account', async function() {
+                    await assertSpecForCase(page, lang, '013-resend-invalid-account')
                     let baselinePath = bp(lang, '013-resend-invalid-account')
                     assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                     let baselineBuf = fs.readFileSync(baselinePath)
@@ -693,7 +880,8 @@ else {
                         await woItems.users.save({ id: u.id, timeVerified: '2025-06-01T00:00:00.000+08:00' })
                     })
                 })
-                it('014-resend-already-verified', function() {
+                it('014-resend-already-verified', async function() {
+                    await assertSpecForCase(page, lang, '014-resend-already-verified')
                     let baselinePath = bp(lang, '014-resend-already-verified')
                     assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                     let baselineBuf = fs.readFileSync(baselinePath)
@@ -709,7 +897,8 @@ else {
                     await woItems.users.del({ id: u.id }).catch(() => {})
                     buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword)
                 })
-                it(`015-account-not-exist (共用 login-${lang}-002-wrong-pw baseline)`, function() {
+                it(`015-account-not-exist (共用 login-${lang}-002-wrong-pw baseline)`, async function() {
+                    await assertSpecForCase(page, lang, '015-account-not-exist')
                     let baselinePath = bp(lang, '002-wrong-pw')
                     assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                     let baselineBuf = fs.readFileSync(baselinePath)
@@ -723,7 +912,8 @@ else {
                     let u = testUsers.find((u) => u.customTest === 'd2')
                     buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword)
                 })
-                it('016-login-no-redir', function() {
+                it('016-login-no-redir', async function() {
+                    await assertSpecForCase(page, lang, '016-login-no-redir')
                     let baselinePath = bp(lang, '016-login-no-redir')
                     assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                     let baselineBuf = fs.readFileSync(baselinePath)

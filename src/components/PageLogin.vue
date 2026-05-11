@@ -650,6 +650,11 @@ export default {
                     else if (errMsg === 'incorrect user account or password' || errMsg === 'can not find the user by account') {
                         vo.loginError = vo.$t('failedLoginForCatch')
                     }
+                    else if (errMsg === 'invalid redir') {
+                        //view=login 模式下 user.redir 為空, mUI 已 alert 但 4s 後消失;
+                        //inline 紅字保留訊息與設計意圖一致 (參見 z流程_使用者一般登入.md)
+                        vo.loginError = vo.$t('failedLoginForNoRedir')
+                    }
                     else {
                         console.log('login unknown error', err)
                         vo.loginError = vo.$t('loginUnknownError')

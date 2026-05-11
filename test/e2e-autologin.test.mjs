@@ -49,6 +49,117 @@ let webKey = 'ksso'
 let lsKey = `${webKey}:userToken`
 
 
+// 各語系 UI 文字
+let kpLangText = {
+    eng: { login: 'Log in' },
+    cht: { login: '登入' },
+}
+
+
+// ===================================================================
+// 預期語意斷言 (從 z流程_使用者自動登入.md + procLang.mjs 衍生, 非現狀指紋)
+// ===================================================================
+
+let expectedSpecText = {
+    '001-ok-redir': {
+        eng: { mode: 'absentLoginButton' },
+        cht: { mode: 'absentLoginButton' },
+    },
+    '002-ok-backstage': {
+        eng: { mode: 'absentLoginButton' },
+        cht: { mode: 'absentLoginButton' },
+    },
+    '003-ok-user': {
+        eng: { mode: 'absentLoginButton' },
+        cht: { mode: 'absentLoginButton' },
+    },
+    '004-no-token': {
+        //無 token → 回登入頁, 應見 Log in 按鈕
+        eng: { mode: 'text', value: 'Log in' },
+        cht: { mode: 'text', value: '登入' },
+    },
+    '005-no-redir': {
+        //failedLoginForNoRedir WAlert 顯示文字
+        eng: { mode: 'text', value: 'Can not get the url for redirection' },
+        cht: { mode: 'text', value: '無有效轉址' },
+    },
+    'stale-token': {
+        //視覺等同 004
+        eng: { mode: 'text', value: 'Log in' },
+        cht: { mode: 'text', value: '登入' },
+    },
+    'expired-token': {
+        eng: { mode: 'text', value: 'Log in' },
+        cht: { mode: 'text', value: '登入' },
+    },
+    'inactive-user': {
+        eng: { mode: 'text', value: 'Log in' },
+        cht: { mode: 'text', value: '登入' },
+    },
+}
+
+
+async function collectVisibleText(page) {
+    return await page.evaluate(() => {
+        let parts = []
+        let walk = (el) => {
+            if (!el) return
+            if (el.nodeType === 3) {
+                let t = (el.nodeValue || '').trim()
+                if (t) parts.push(t)
+                return
+            }
+            if (el.nodeType !== 1) return
+            let tag = el.tagName
+            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return
+            for (let c of el.childNodes) walk(c)
+        }
+        walk(document.body)
+        return parts.join(' | ').slice(0, 2000)
+    })
+}
+
+async function pageHasText(page, text) {
+    return await page.evaluate((t) => {
+        let walk = (el) => {
+            if (!el) return false
+            if (el.nodeType === 3) return (el.nodeValue || '').includes(t)
+            if (el.nodeType !== 1) return false
+            let tag = el.tagName
+            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return false
+            for (let c of el.childNodes) {
+                if (walk(c)) return true
+            }
+            return false
+        }
+        return walk(document.body)
+    }, text)
+}
+
+async function assertSpecForCase(page, lang, name) {
+    let expected = expectedSpecText[name]
+    if (!expected || !expected[lang]) {
+        throw new Error(`expectedSpecText 未為 case "${name}" / lang "${lang}" 定義`)
+    }
+    let e = expected[lang]
+    if (e.mode === 'absentLoginButton') {
+        //已離開 PageLogin → 不應仍有 password input
+        //(不用文字檢查 — backstage Statistics 含「使用者登入頻率」/「Login Frequency」誤觸)
+        let pwCount = await page.locator('input[type="password"]').count()
+        if (pwCount > 0) {
+            assert.fail(`預期 autoLogin 成功離開 PageLogin (不應再有 password input), 實際 ${pwCount} 個`)
+        }
+    }
+    else if (e.mode === 'text') {
+        let found = await pageHasText(page, e.value)
+        if (!found) {
+            let dump = await collectVisibleText(page)
+            assert.fail(`預期含 "${e.value}" (${name}), 實際: ${dump}`)
+        }
+    }
+}
+
+
 // --- 測試使用者清單 ---
 
 let testUsers = [
@@ -322,7 +433,7 @@ else {
             it('001-ok-redir: token 有效 + view=login → redirect 至 user view', async function() {
                 let okToken = userTokens['id-autologin-ok']
                 let buf = await autoLoginScreenshot(page, lang, { token: okToken })
-
+                await assertSpecForCase(page, lang, '001-ok-redir')
                 let baselinePath = bp(lang, '001-ok-redir')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -332,7 +443,7 @@ else {
             it('002-ok-backstage: token 有效 + view=backstage → 停留 backstage', async function() {
                 let okToken = userTokens['id-autologin-ok']
                 let buf = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'backstage' })
-
+                await assertSpecForCase(page, lang, '002-ok-backstage')
                 let baselinePath = bp(lang, '002-ok-backstage')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -342,7 +453,7 @@ else {
             it('003-ok-user: token 有效 + view=user → 停留 user view', async function() {
                 let okToken = userTokens['id-autologin-ok']
                 let buf = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'user' })
-
+                await assertSpecForCase(page, lang, '003-ok-user')
                 let baselinePath = bp(lang, '003-ok-user')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -351,7 +462,7 @@ else {
 
             it('004-no-token: 無 token → 回登入頁', async function() {
                 let buf = await autoLoginScreenshot(page, lang, { token: '' })
-
+                await assertSpecForCase(page, lang, '004-no-token')
                 let baselinePath = bp(lang, '004-no-token')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -361,7 +472,7 @@ else {
             it('005-no-redir: token 有效但 user.redir 為空 → alert + 回登入頁', async function() {
                 let noRedirToken = userTokens['id-autologin-no-redir']
                 let buf = await autoLoginScreenshot(page, lang, { token: noRedirToken, waitMs: 3500 })
-
+                await assertSpecForCase(page, lang, '005-no-redir')
                 let baselinePath = bp(lang, '005-no-redir')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -373,7 +484,7 @@ else {
 
             it('stale-token (LS 有 token 但 DB 查無) → 共用 004-no-token baseline', async function() {
                 let buf = await autoLoginScreenshot(page, lang, { token: 'fake-token-not-in-db' })
-
+                await assertSpecForCase(page, lang, 'stale-token')
                 let baselinePath = bp(lang, '004-no-token')
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, '截圖與 004-no-token 不一致（stale token 應與無 token 視覺相同）')
@@ -381,7 +492,7 @@ else {
 
             it('expired-token (token 在 DB 但 timeEnd 已過) → 共用 004-no-token baseline', async function() {
                 let buf = await autoLoginScreenshot(page, lang, { token: expiredToken })
-
+                await assertSpecForCase(page, lang, 'expired-token')
                 let baselinePath = bp(lang, '004-no-token')
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, '截圖與 004-no-token 不一致（expired token 應與無 token 視覺相同）')
@@ -390,7 +501,7 @@ else {
             it('inactive-user (token 有效但 user.isActive=n) → 共用 004-no-token baseline', async function() {
                 let inactiveToken = userTokens['id-autologin-inactive']
                 let buf = await autoLoginScreenshot(page, lang, { token: inactiveToken })
-
+                await assertSpecForCase(page, lang, 'inactive-user')
                 let baselinePath = bp(lang, '004-no-token')
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, '截圖與 004-no-token 不一致（inactive user 應與無 token 視覺相同）')

@@ -63,6 +63,89 @@ function bp(lang, name) {
 }
 
 
+// ===================================================================
+// 預期語意斷言 (從 z流程_後台重設使用者密碼.md + procLang.mjs 衍生, 非現狀指紋)
+// ===================================================================
+
+let expectedSpecText = {
+    '001-checkyes-prompt': {
+        //userForceChangePwPrompt
+        eng: { mode: 'text', value: 'Your password has been reset by the administrator' },
+        cht: { mode: 'text', value: '您的密碼已由管理員重設' },
+    },
+    '002-force-form-expanded': {
+        //userChangePasswordOldPassword (force form 展開, 應見舊密碼欄 label)
+        eng: { mode: 'text', value: 'Old password' },
+        cht: { mode: 'text', value: '舊密碼' },
+    },
+    '003-after-success': {
+        //表單收起, 應 *不見* 舊密碼欄 label
+        eng: { mode: 'absentText', value: 'Old password' },
+        cht: { mode: 'absentText', value: '舊密碼' },
+    },
+}
+
+
+async function collectVisibleText2(page) {
+    return await page.evaluate(() => {
+        let parts = []
+        let walk = (el) => {
+            if (!el) return
+            if (el.nodeType === 3) {
+                let t = (el.nodeValue || '').trim()
+                if (t) parts.push(t)
+                return
+            }
+            if (el.nodeType !== 1) return
+            let tag = el.tagName
+            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return
+            for (let c of el.childNodes) walk(c)
+        }
+        walk(document.body)
+        return parts.join(' | ').slice(0, 2000)
+    })
+}
+
+async function pageHasText2(page, text) {
+    return await page.evaluate((t) => {
+        let walk = (el) => {
+            if (!el) return false
+            if (el.nodeType === 3) return (el.nodeValue || '').includes(t)
+            if (el.nodeType !== 1) return false
+            let tag = el.tagName
+            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return false
+            for (let c of el.childNodes) {
+                if (walk(c)) return true
+            }
+            return false
+        }
+        return walk(document.body)
+    }, text)
+}
+
+async function assertSpecForCase(page, lang, name) {
+    let expected = expectedSpecText[name]
+    if (!expected || !expected[lang]) {
+        throw new Error(`expectedSpecText 未為 case "${name}" / lang "${lang}" 定義`)
+    }
+    let e = expected[lang]
+    if (e.mode === 'text') {
+        let found = await pageHasText2(page, e.value)
+        if (!found) {
+            let dump = await collectVisibleText2(page)
+            assert.fail(`預期含 "${e.value}" (${name}), 實際: ${dump}`)
+        }
+    }
+    else if (e.mode === 'absentText') {
+        let stillHas = await pageHasText2(page, e.value)
+        if (stillHas) {
+            let dump = await collectVisibleText2(page)
+            assert.fail(`預期不含 "${e.value}" (${name}), 但見到. 可見文字: ${dump}`)
+        }
+    }
+}
+
+
 //設計不變式：強制變更模式下的 user view 表單區應觸發 .sb 內捲軸
 async function assertSbOverflows(page, label) {
     let m = await page.evaluate(() => {
@@ -421,6 +504,7 @@ else {
             it('001-checkyes-prompt: 使用者用隨機密碼登入 → 顯示 CheckYes 強制變更提示', async function() {
                 await simulateAdminReset(target)
                 let buf = await captureCheckYesPrompt(page, lang, target)
+                await assertSpecForCase(page, lang, '001-checkyes-prompt')
                 let baselinePath = bp(lang, '001-checkyes-prompt')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -430,6 +514,7 @@ else {
             it('002-force-form-expanded: 按 OK 進 user view → 表單自動展開, cancel 隱藏', async function() {
                 await simulateAdminReset(target)
                 let buf = await captureForceFormExpanded(page, lang, target)
+                await assertSpecForCase(page, lang, '002-force-form-expanded')
                 let baselinePath = bp(lang, '002-force-form-expanded')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
@@ -445,6 +530,7 @@ else {
             it('003-after-success: 強制變更密碼成功 → 表單收回 + isForceChangePw=n', async function() {
                 await simulateAdminReset(target)
                 let buf = await captureAfterSuccess(page, lang, target)
+                await assertSpecForCase(page, lang, '003-after-success')
                 let baselinePath = bp(lang, '003-after-success')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
