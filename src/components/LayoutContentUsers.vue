@@ -202,8 +202,8 @@
                         <!-- account -->
                         <template v-if="props.key === 'account'">
                             <span v-if="cellFieldErr('account', props.value)" :title="cellFieldErr('account', props.value)">
+                                <img style="padding-right:4px; vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
                                 <span style="color:#F57C00;">{{ $ui.cstr(props.value) }}</span>
-                                <img style="vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
                             </span>
                             <template v-else>{{ props.value }}</template>
                         </template>
@@ -260,16 +260,16 @@
                         <!-- email -->
                         <template v-else-if="props.key === 'email'">
                             <span v-if="cellFieldErr('email', props.value)" :title="cellFieldErr('email', props.value)">
+                                <img style="padding-right:4px; vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
                                 <span style="color:#F57C00;">{{ $ui.cstr(props.value) }}</span>
-                                <img style="vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
                             </span>
                             <template v-else>{{ props.value }}</template>
                         </template>
                         <!-- redir -->
                         <template v-else-if="props.key === 'redir'">
                             <span v-if="cellFieldErr('redir', props.value)" :title="cellFieldErr('redir', props.value)">
+                                <img style="padding-right:4px; vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
                                 <span style="color:#F57C00;">{{ $ui.cstr(props.value) }}</span>
-                                <img style="vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
                             </span>
                             <template v-else>{{ props.value }}</template>
                         </template>
