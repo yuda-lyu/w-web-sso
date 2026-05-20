@@ -151,7 +151,7 @@
         </div>
 
         <template
-            v-if="!isLoading"
+            v-if="!firstLoading"
         >
 
             <template v-if="items">
@@ -316,7 +316,7 @@ export default {
             panelHeight: 100,
             headHeight: 100,
 
-            isLoading: true,
+            firstLoading: true,
             firstSetting: true,
             showIsEditable: false,
             isEditable: false,
@@ -396,11 +396,16 @@ export default {
                 vo.errMsg = vo.$t('getDataError')
             })
             .finally(() => {
-                vo.isLoading = false
+                vo.firstLoading = false
             })
 
     },
     computed: {
+
+        syncState: function() {
+            let vo = this
+            return get(vo, '$store.state.syncState')
+        },
 
         webInfor: function() {
             let wi = get(this, `$store.state.webInfor`)
@@ -429,8 +434,8 @@ export default {
             //genOpt
             vo.genOpt({ isEditable })
 
-            //isLoading
-            vo.isLoading = false
+            //firstLoading
+            vo.firstLoading = false
 
             return ''
         },
@@ -526,8 +531,12 @@ export default {
             vo.itemsCheck = []
 
             //opt
+            //  - firstLoading=true (尚未完成第一次載入) + items=0: opt=null, 允許 loading state
+            //  - firstLoading=false (已載入過) + items=0: opt 仍須有效, rows=空 array
+            //    這對應 "使用者把 row 全刪光" 的合理 UI 操作; 缺這條會撞 w-aggrid-vue 的 changeOpt
+            //    在 opt=null 時 early return 不清空 ag-grid 的 bug, 導致 stale rowData 殘留畫面.
             let opt = null
-            if (size(vo.items) > 0) {
+            if (size(vo.items) > 0 || !vo.firstLoading) {
 
                 //ks
                 let ks = vo.tabKeys
@@ -848,11 +857,11 @@ export default {
                 //rows
                 let rows = get(vo, 'opt.rows', [])
 
-                //check
-                if (size(rows) === 0) {
-                    // vo.$alert(`${vo.$t('tokenAddEmpty')}`, { type: 'error' })
-                    // return
-                }
+                // //check, 可允許全刪除
+                // if (size(rows) === 0) {
+                //     vo.$alert(`${vo.$t('tokenAddEmpty')}`, { type: 'error' })
+                //     return
+                // }
 
                 //token
                 let token = vo.userToken

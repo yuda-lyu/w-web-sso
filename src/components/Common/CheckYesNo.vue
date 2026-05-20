@@ -49,6 +49,38 @@ export default {
     },
     methods: {
 
+        /**
+         * 顯示 Yes/No 確認對話框並回傳 Promise。
+         *
+         * **Contract** (caller 須遵守):
+         *   - 使用者點 **Yes** → Promise `resolve()` (無值, 進 `.then()`)
+         *   - 使用者點 **No** → Promise `reject('close')` (進 `.catch(err => err === 'close')`)
+         *
+         * 正確 caller pattern:
+         *
+         *     vo.$dg.showCheckYesNo('確定要 X？')
+         *         .then(() => {
+         *             //使用者點 Yes
+         *             doX()
+         *         })
+         *         .catch((err) => {
+         *             //使用者點 No (err === 'close') 為正常路徑, 靜默處理
+         *             if (err === 'close') return
+         *             //非預期錯誤 (CheckYesNo 本身故障等)
+         *             console.log('showCheckYesNo unexpected error', err)
+         *         })
+         *
+         * **錯誤 pattern (歷史踩過坑, 不要再寫)**:
+         *
+         *     // ❌ 永遠錯: 假設 resolve(true/false) 來判斷 Yes/No
+         *     vo.$dg.showCheckYesNo(text).then(agree => {
+         *         if (agree) { doX() }  //agree 永遠 undefined (resolve 無值) → 永不執行 doX
+         *     })
+         *     //雙重 bug: Yes silent fail (本段) + No unhandled rejection (沒 .catch)
+         *
+         * @param {string} content - 顯示在 modal 中的訊息文字
+         * @returns {Promise<void>} Yes → resolve(); No → reject('close')
+         */
         show: function (content) {
             //console.log('methods show', content)
 

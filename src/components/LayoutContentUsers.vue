@@ -188,7 +188,7 @@
         </div>
 
         <template
-            v-if="!isLoading"
+            v-if="!firstLoading"
         >
 
             <template v-if="items">
@@ -209,34 +209,15 @@
                         </template>
                         <!-- password -->
                         <template v-else-if="props.key === 'password'">
-                            <div @click.stop.prevent @mousedown.stop.prevent style="height:100%; display:flex; align-items:center;">
-                                <template v-if="props.row._isNew">
-                                    <!-- 新增列: 就地輸入密碼 (顯/隱 toggle), 警告 icon 顯示驗證錯誤 -->
-                                    <span v-if="cellPasswordErr($ui.gv(props.row, 'id'))" :title="cellPasswordErr($ui.gv(props.row, 'id'))" style="padding-right:4px;">
-                                        <img style="vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
-                                    </span>
-                                    <WText
-                                        :style="`flex:1;`"
-                                        :textFontSize="'0.8rem'"
-                                        :paddingStyle="{v:1,h:8}"
-                                        :backgroundColor="'#f0f0f0'"
-                                        :backgroundColorHover="'#e5e5e5'"
-                                        :backgroundColorFocus="'#e5e5e5'"
-                                        :borderColor="'#767676'"
-                                        :borderColorHover="'#767676'"
-                                        :borderColorFocus="'#767676'"
-                                        :borderRadius="4"
-                                        :shadow="false"
-                                        :password="!passwordVisible[$ui.gv(props.row, 'id')]"
-                                        :rightIcon="passwordVisible[$ui.gv(props.row, 'id')] ? 'mdi-eye' : 'mdi-eye-off'"
-                                        :value="props.row.password || ''"
-                                        :editable="isEditable"
-                                        @input="onPasswordInput($ui.gv(props.row, 'id'), $event)"
-                                        @click-right="togglePasswordVisible($ui.gv(props.row, 'id'))"
-                                    ></WText>
-                                </template>
-                                <template v-else>
-                                    <!-- 既有列: 重設密碼按鈕 (走另一條 API, 不在本頁批次儲存範圍) -->
+                            <template v-if="props.row._isNew">
+                                <span v-if="cellPasswordErr($ui.gv(props.row, 'id'))" :title="cellPasswordErr($ui.gv(props.row, 'id'))">
+                                    <img style="padding-right:4px; vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
+                                    <span style="color:#F57C00;">{{ $ui.cstr(props.value) }}</span>
+                                </span>
+                                <template v-else>{{ props.value }}</template>
+                            </template>
+                            <template v-else>
+                                <div @click.stop.prevent @mousedown.stop.prevent style="height:100%; display:flex; align-items:center;">
                                     <WButtonChip
                                         :style="`line-height:1.1rem; flex:1;`"
                                         :text="$t('userResetPassword')"
@@ -254,8 +235,8 @@
                                         :editable="isEditable"
                                         @click="$dg.modifyItemPasswordById($ui.gv(props.row, 'id'))"
                                     ></WButtonChip>
-                                </template>
-                            </div>
+                                </div>
+                            </template>
                         </template>
                         <!-- email -->
                         <template v-else-if="props.key === 'email'">
@@ -309,6 +290,7 @@
                                     :hourMax="23"
                                     :shadow="false"
                                     icon=""
+                                    :labelContentForDay="`users-timeVerified-day-${$ui.gv(props.row, 'id')}`"
                                 >
                                 </WTimeminute>
                             </div>
@@ -341,6 +323,7 @@
                                     :hourMax="23"
                                     :shadow="false"
                                     icon=""
+                                    :labelContentForDay="`users-timeExpired-day-${$ui.gv(props.row, 'id')}`"
                                 >
                                 </WTimeminute>
                             </div>
@@ -373,6 +356,7 @@
                                     :hourMax="23"
                                     :shadow="false"
                                     icon=""
+                                    :labelContentForDay="`users-timeBlocked-day-${$ui.gv(props.row, 'id')}`"
                                 >
                                 </WTimeminute>
                             </div>
@@ -419,7 +403,6 @@ import WInputCheckbox from 'w-component-vue/src/components/WInputCheckbox.vue'
 import WAggridVue from 'w-aggrid-vue/src/components/WAggridVue.vue'
 import WTimeminute from 'w-component-vue/src/components/WTimeminute.vue'
 import WButtonChip from 'w-component-vue/src/components/WButtonChip.vue'
-import WText from 'w-component-vue/src/components/WText.vue'
 
 
 export default {
@@ -432,7 +415,6 @@ export default {
         WAggridVue,
         WTimeminute,
         WButtonChip,
-        WText,
     },
     props: {
         drawer: {
@@ -453,7 +435,7 @@ export default {
             panelHeight: 100,
             headHeight: 100,
 
-            isLoading: true,
+            firstLoading: true,
             firstSetting: true,
             showIsEditable: false,
             isEditable: false,
@@ -525,9 +507,6 @@ export default {
             itemsCheck: [],
             opt: null,
 
-            //新增列密碼欄位的「顯/隱」狀態, 鍵為 row id, 值為 boolean (true=顯示明文)
-            passwordVisible: {},
-
         }
     },
     mounted: function() {
@@ -578,11 +557,16 @@ export default {
                 vo.errMsg = vo.$t('getDataError')
             })
             .finally(() => {
-                vo.isLoading = false
+                vo.firstLoading = false
             })
 
     },
     computed: {
+
+        syncState: function() {
+            let vo = this
+            return get(vo, '$store.state.syncState')
+        },
 
         webInfor: function() {
             let wi = get(this, `$store.state.webInfor`)
@@ -611,8 +595,8 @@ export default {
             //genOpt
             vo.genOpt({ isEditable })
 
-            //isLoading
-            vo.isLoading = false
+            //firstLoading
+            vo.firstLoading = false
 
             return ''
         },
@@ -910,44 +894,6 @@ export default {
             return isestr(err) ? err : ''
         },
 
-        //新增列密碼輸入: 將輸入值寫回對應 row.password
-        onPasswordInput: function(id, value) {
-            let vo = this
-
-            if (!isestr(id)) {
-                return
-            }
-
-            let rows = get(vo, 'opt.rows', [])
-            let kr = null
-            each(rows, (v, k) => {
-                if (get(v, 'id', '') === id) {
-                    kr = k
-                    return false
-                }
-            })
-            if (kr === null) {
-                return
-            }
-
-            set(vo, `opt.rows[${kr}].password`, value || '')
-            vo.refresh()
-            vo.isModified = true
-        },
-
-        //新增列密碼欄位顯/隱 toggle
-        togglePasswordVisible: function(id) {
-            let vo = this
-
-            if (!isestr(id)) {
-                return
-            }
-
-            let cur = get(vo.passwordVisible, id, false)
-            //Vue 2 響應式: 對物件 dynamic key 須用 $set
-            vo.$set(vo.passwordVisible, id, !cur)
-        },
-
         resizePanel: function(msg) {
             // console.log('methods resizePanel', msg)
 
@@ -988,8 +934,13 @@ export default {
             vo.itemsCheck = []
 
             //opt
+            //  - firstLoading=true (尚未完成第一次載入) + items=0: opt=null, 允許 loading state
+            //  - firstLoading=false (已載入過) + items=0: opt 仍須有效, rows=空 array
+            //    這對應 "使用者把 row 全刪光" 的合理 UI 操作; 缺這條會撞 w-aggrid-vue 的 changeOpt
+            //    在 opt=null 時 early return 不清空 ag-grid 的 bug, 導致 stale rowData 殘留畫面.
+            //    sso 後端 procCore.checkUserSelfLockout 會擋 cannotDeleteSelf, 不會真讓 admin 自刪.
             let opt = null
-            if (size(vo.items) > 0) {
+            if (size(vo.items) > 0 || !vo.firstLoading) {
 
                 //ks
                 let ks = vo.tabKeys
@@ -1005,6 +956,7 @@ export default {
                 if (vo.isEditable) {
                     kpCellEditable = {
                         'account': true,
+                        'password': (params) => !!get(params, 'data._isNew'), //只新增列可編輯;既有列改走「重設密碼」按鈕
                         'name': true,
                         'email': true,
                         'description': true,
@@ -1095,11 +1047,6 @@ export default {
                             return
                         }
 
-                        //check
-                        if (!vo.syncState || vo.firstLoading || vo.firstSetting) {
-                            return
-                        }
-
                         //isModified
                         vo.isModified = true
 
@@ -1173,42 +1120,71 @@ export default {
             let account = get(r, 'account', '')
             let email = get(r, 'email', '')
 
-            //二次確認 (showCheckYesNo 回傳 true=yes / false=no)
-            let confirmText = vo.$t('adminResetPasswordConfirm').replace('{account}', account)
-            vo.$dg.showCheckYesNo(confirmText)
-                .then((agree) => {
-                    if (!agree) {
-                        return
-                    }
+            let core = async () => {
 
-                    let token = vo.userToken
-                    let lang = get(vo, '$store.state.lang', 'eng')
+                //二次確認 (CheckYesNo 設計: Yes → resolve(); No → reject('close'))
+                let confirmText = vo.$t('adminResetPasswordConfirm').replace('{account}', account)
+                let agree = false
+                await vo.$dg.showCheckYesNo(confirmText)
+                    .then(() => {
+                        agree = true //使用者點 Yes
+                    })
+                    .catch((err) => {
+                        //使用者點 No (err='close') 或 modal 關閉, 為正常路徑, 靜默處理
+                        if (err === 'close') {
+                            return
+                        }
+                        //非預期錯誤 (CheckYesNo 本身故障等), log 但不擾使用者
+                        console.log('showCheckYesNo unexpected error', err)
+                    })
+                if (!agree) {
+                    return
+                }
 
-                    vo.$ui.updateLoading(true)
-                    vo.$fapi.adminResetUserPassword(token, lang, id)
-                        .then(() => {
-                            let msg = vo.$t('adminResetPasswordSuccess').replace('{email}', email)
-                            vo.$alert(msg)
-                        })
-                        .catch((err) => {
-                            let errMsg = (err && typeof err === 'string') ? err : ''
-                            if (errMsg === 'cannot reset self') {
-                                vo.$alert(vo.$t('adminResetPasswordCannotResetSelf'), { type: 'error' })
-                            }
-                            else if (errMsg === 'forbidden') {
-                                vo.$alert(vo.$t('adminResetPasswordForbidden'), { type: 'error' })
-                            }
-                            else if (errMsg === 'user not found') {
-                                vo.$alert(vo.$t('adminResetPasswordUserNotFound'), { type: 'error' })
-                            }
-                            else {
-                                console.log('adminResetUserPassword unknown error', err)
-                                vo.$alert(vo.$t('adminResetPasswordFailed'), { type: 'error' })
-                            }
-                        })
-                        .finally(() => {
-                            vo.$ui.updateLoading(false)
-                        })
+                //updateLoading 須在使用者確認 Yes 之後、實際 API 呼叫之前 (確認對話框開啟期間不顯示 loading)
+                vo.$ui.updateLoading(true)
+
+                let token = vo.userToken
+                let lang = get(vo, '$store.state.lang', 'eng')
+
+                let ok = false
+                await vo.$fapi.adminResetUserPassword(token, lang, id)
+                    .then(() => {
+                        ok = true
+                    })
+                    .catch((err) => {
+                        let errMsg = (err && typeof err === 'string') ? err : ''
+                        if (errMsg === 'cannot reset self') {
+                            vo.$alert(vo.$t('adminResetPasswordCannotResetSelf'), { type: 'error' })
+                        }
+                        else if (errMsg === 'forbidden') {
+                            vo.$alert(vo.$t('adminResetPasswordForbidden'), { type: 'error' })
+                        }
+                        else if (errMsg === 'user not found') {
+                            vo.$alert(vo.$t('adminResetPasswordUserNotFound'), { type: 'error' })
+                        }
+                        else {
+                            console.log('adminResetUserPassword unknown error', err)
+                            vo.$alert(vo.$t('adminResetPasswordFailed'), { type: 'error' })
+                        }
+                    })
+                if (!ok) {
+                    return
+                }
+
+                //成功
+                let msg = vo.$t('adminResetPasswordSuccess').replace('{email}', email)
+                vo.$alert(msg)
+
+                return 'ok'
+            }
+            core()
+                .catch((err) => {
+                    console.log('modifyItemPasswordById catch', err)
+                    vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
+                })
+                .finally(() => {
+                    vo.$ui.updateLoading(false)
                 })
 
         },

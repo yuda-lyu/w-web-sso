@@ -1165,6 +1165,10 @@ let kpLang = {
         eng: `Cannot disable yourself`,
         cht: `不可停用自己的帳號`,
     },
+    cannotDeleteSelf: {
+        eng: `Admin cannot delete yourself`,
+        cht: `管理員不得刪除自己`,
+    },
 
 }
 

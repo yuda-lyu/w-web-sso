@@ -7,7 +7,7 @@
 
         <div
             style="height:100%; background:#fff; overflow-y:auto;"
-            v-if="!isLoading && !errMsg"
+            v-if="!firstLoading && !errMsg"
         >
 
             <div style="padding:40px;">
@@ -459,7 +459,7 @@
         <template v-else>
             <div
                 style="padding:10px 15px; font-size:0.8rem;"
-                v-if="isLoading"
+                v-if="firstLoading"
             >
                 {{$t('waitingData')}}
             </div>
@@ -500,7 +500,7 @@ export default {
             headHeight: 100,
             // groupInforHeight: 100,
 
-            isLoading: true,
+            firstLoading: true,
             errMsg: '',
             isOperatable: true,
             // isModified: false,
@@ -512,8 +512,8 @@ export default {
     mounted: function() {
         let vo = this
 
-        //isLoading, errMsg
-        vo.isLoading = true
+        //firstLoading, errMsg
+        vo.firstLoading = true
         vo.errMsg = ''
 
         //token
@@ -543,7 +543,7 @@ export default {
                 vo.errMsg = vo.$t('getDataError')
             })
             .finally(() => {
-                vo.isLoading = false
+                vo.firstLoading = false
             })
 
     },

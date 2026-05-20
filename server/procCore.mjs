@@ -1581,6 +1581,10 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
                 return false //跳出
             }
         })
+        //自我刪除保護: rows 內找不到操作者 row, 代表 admin 嘗試把自己刪除, reject 防止直接打 API 繞過前端
+        if (isestr(operatorId) && !iseobj(selfRow)) {
+            return Promise.reject(get(kpLang, `${lang}.cannotDeleteSelf`, 'admin cannot delete yourself'))
+        }
         if (iseobj(selfRow)) {
             if (get(selfRow, 'isAdmin', '') !== 'y') {
                 return Promise.reject(get(kpLang, `${lang}.cannotDemoteSelf`, 'cannot demote yourself'))

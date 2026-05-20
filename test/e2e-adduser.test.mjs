@@ -6,13 +6,13 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
 
 
 //
 // E2E adduser test — 後台新增使用者流程
 //
-// 對應流程文件：z流程_後台新增使用者.md
+// 對應流程文件：spec/流程_後台新增使用者.md
 //
 // 使用方式：
 //   1. 先產生標準圖：node test/e2e-adduser.test.mjs --baseline
@@ -26,7 +26,6 @@ import { startServersOnce } from './e2e-setup.mjs'
 // 按鈕 SVG path 點擊。不使用 vm.method() / page.evaluate state mutation 抄捷徑。
 //
 
-let baseUrl = 'http://localhost:8080'
 let salt = '{salt}'
 let baselineDir = './test/pics/adduser'
 let langs = ['eng', 'cht']
@@ -51,6 +50,12 @@ function writeBaseline(lang, name, buf) {
 }
 
 
+//是否需要產生此 case 的標準圖. --names 指定時只有指定 case 回 true → 連「截圖」都跳過 (非僅跳寫檔).
+function shouldGen(lang, name) {
+    return !baselineNamesFilter || baselineNamesFilter.has(`${lang}-${name}`)
+}
+
+
 function bp(lang, name) {
     return path.join(baselineDir, `adduser-${lang}-${name}.png`)
 }
@@ -62,57 +67,57 @@ function bp(lang, name) {
 // ===================================================================
 
 let expectedModalText = {
-    '002-account-empty': {
+    'E2E-002-account-empty': {
         eng: 'Invalid account of user',
         cht: '尚未給予有效使用者帳號',
     },
-    '003-account-duplicate': {
+    'E2E-003-account-duplicate': {
         eng: 'Duplicate account of user',
         cht: '使用者帳號出現重複',
     },
-    '004-password-empty': {
+    'E2E-004-password-empty': {
         eng: 'Empty password of user',
         cht: '尚未給予使用者密碼',
     },
-    '005-email-empty': {
+    'E2E-005-email-empty': {
         eng: 'Empty email of user',
         cht: '尚未給予使用者Email',
     },
-    '006-email-format': {
+    'E2E-006-email-format': {
         eng: 'Invalid email of user',
         cht: '使用者Email格式錯誤',
     },
-    '007-email-duplicate': {
+    'E2E-007-email-duplicate': {
         eng: 'Duplicate email of user',
         cht: '使用者Email出現重複',
     },
-    '008-redir-empty': {
+    'E2E-008-redir-empty': {
         eng: 'Invalid redirect of user',
         cht: '尚未給予有效登入後轉址',
     },
-    '009-rows-empty': {
+    'E2E-009-rows-empty': {
         eng: 'No user',
         cht: '尚未新增使用者資料',
     },
-    '010-cannot-demote-self': {
+    'E2E-010-cannot-demote-self': {
         eng: 'Cannot demote yourself from admin',
         cht: '不可解除自己的管理員權限',
     },
-    '011-cannot-disable-self': {
+    'E2E-011-cannot-disable-self': {
         eng: 'Cannot disable yourself',
         cht: '不可停用自己的帳號',
     },
-    '012-password-policy-backend': {
+    'E2E-012-password-policy-backend': {
         //後端 reject 訊息以 userSaveUsersFail 為前綴
         eng: 'Failed to save users',
         cht: '儲存使用者數據失敗',
     },
-    '013-account-conflict-backend': {
+    'E2E-013-account-conflict-backend': {
         //同表內重複 (ckKey) → 與 003 同訊息
         eng: 'Duplicate account of user',
         cht: '使用者帳號出現重複',
     },
-    '014-email-conflict-backend': {
+    'E2E-014-email-conflict-backend': {
         //同表內重複 (ckKey) → 與 007 同訊息
         eng: 'Duplicate email of user',
         cht: '使用者Email出現重複',
@@ -161,7 +166,7 @@ let testUsers = {
         name: 'AddUser Admin',
         email: 'au-admin@test.com',
         isAdmin: 'y',
-        redir: `http://localhost:8080/?view=backstage&token={token}`,
+        redir: `${baseUrl}/?view=backstage&token={token}`,
     },
     existing: {
         id: 'id-au-existing',
@@ -170,7 +175,7 @@ let testUsers = {
         name: 'AddUser Existing',
         email: 'au-existing@test.com',
         isAdmin: 'n',
-        redir: `http://localhost:8080/?view=user&token={token}`,
+        redir: `${baseUrl}/?view=user&token={token}`,
     },
 }
 
@@ -178,6 +183,11 @@ let userTokens = {}
 
 
 async function insertTestUsersAndTokens() {
+    //先 wipe 全表並重置為 canonical base seed (3 users + 4 tokens), 再插入本檔專屬資料.
+    //此函式為 mocha hook 與 generateBaseline 共用的 own-insert 單一入口, 放在最前一行即可
+    //同時覆蓋兩條路徑 (per-test hermetic setup).
+    await resetToBaseSeed()
+
     let arr = Object.values(testUsers)
     let rs = arr.map((u, k) => {
         let v = ds.users.funNew({
@@ -214,22 +224,8 @@ async function insertTestUsersAndTokens() {
 
 
 async function deleteTestUsersAndTokens() {
-    for (let u of Object.values(testUsers)) {
-        await woItems.users.del({ id: u.id }).catch(() => {})
-        await woItems.tokens.del({ userId: u.id }).catch(() => {})
-    }
-    //marathon 模式下其他 e2e 測試可能殘留 users (register 成功 qauser-*, login-*, autologin-*, ...
-    //各自的 after() 大多會清, 但個別 it 中途失敗可能殘留), table row 數變動 → 001 pixel diff.
-    //清除「非 g.initialData.mjs seeded」的全部 user, 確保 marathon vs alone 達同樣 DB state.
-    let allUsers = await woItems.users.select().catch(() => [])
-    let knownIds = new Set(Object.values(testUsers).map((u) => u.id))
-    let seededAccounts = new Set(['ac-admin', 'ac-basic', 'ac-viewer', 'test-noverify'])
-    for (let u of allUsers) {
-        if (knownIds.has(u.id)) continue
-        if (seededAccounts.has(u.account || '')) continue
-        await woItems.users.del({ id: u.id }).catch(() => {})
-        await woItems.tokens.del({ userId: u.id }).catch(() => {})
-    }
+    //刪除所有非 base seed 的專屬資料 (含動態建立的 au-newuser-* / 複製使用者), 保留 base seed.
+    await deleteNonBaseSeed()
     console.log('deleted adduser test users + tokens')
 }
 
@@ -243,7 +239,7 @@ function buildNewRowPlain(account, password, opt = {}) {
         email: opt.email || `${account}@test.com`,
         description: '',
         from: 'test',
-        redir: `http://localhost:8080/?view=user&token={token}`,
+        redir: `${baseUrl}/?view=user&token={token}`,
         isAdmin: opt.isAdmin || 'n',
         timeVerified: '',
         timeExpired: '2030-01-01T00:00:00.000+08:00',
@@ -255,7 +251,9 @@ function buildNewRowPlain(account, password, opt = {}) {
 
 //每個 it 之間 admin token 都要復原
 async function resetAdminToken() {
-    await woItems.tokens.del({ userId: testUsers.admin.id }).catch(() => {})
+    //w-orm-lmdb 的 del 嚴格認 .id, 須先 select 再逐筆 del by id
+    let _tks = await woItems.tokens.select({ userId: testUsers.admin.id }).catch(() => [])
+    for (let _tk of _tks) await woItems.tokens.del({ id: _tk.id }).catch(() => {})
     let t = ds.tokens.funNew({ userId: testUsers.admin.id })
     t.timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
     userTokens[testUsers.admin.id] = t.token
@@ -276,10 +274,78 @@ async function resetAdminToken() {
 let mdiPlus = 'M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z'
 let mdiCloudUploadOutline = 'M6.5 20Q4.22 20 2.61 18.43 1 16.85 1 14.58 1 12.63 2.17 11.1 3.35 9.57 5.25 9.15 5.88 6.85 7.75 5.43 9.63 4 12 4 14.93 4 16.96 6.04 19 8.07 19 11 20.73 11.2 21.86 12.5 23 13.78 23 15.5 23 17.38 21.69 18.69 20.38 20 18.5 20H13Q12.18 20 11.59 19.41 11 18.83 11 18V12.85L9.4 14.4L8 13L12 9L16 13L14.6 14.4L13 12.85V18H18.5Q19.55 18 20.27 17.27 21 16.55 21 15.5 21 14.45 20.27 13.73 19.55 13 18.5 13H17V11Q17 8.93 15.54 7.46 14.08 6 12 6 9.93 6 8.46 7.46 7 8.93 7 11H6.5Q5.05 11 4.03 12.03 3 13.05 3 14.5 3 15.95 4.03 17 5.05 18 6.5 18H9V20M12 13Z'
 let mdiTrashCanOutline = 'M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z'
+let mdiContentCopy = 'M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z'
 
 let kpUiText = {
-    eng: { login: 'Log in', usersList: 'Users list', editMode: 'Edit mode', ok: 'OK' },
-    cht: { login: '登入', usersList: '使用者清單', editMode: '編輯模式', ok: '確認' },
+    eng: { login: 'Log in', usersList: 'Users list', editMode: 'Edit mode', ok: 'OK', statistics: 'Statistics' },
+    cht: { login: '登入', usersList: '使用者清單', editMode: '編輯模式', ok: '確認', statistics: '統計' },
+}
+
+
+//每步驟先偵測對象出現再操作 (10s timeout). 超時拋錯 = 真實異常 (而非 sleep 不夠).
+//設計理由: navigate / Vue mount / refetch 都是 async 且時序不可預測, fixed waitForTimeout
+//容易撞「sleep 太短點空 body」或「sleep 太長浪費時間」. 改成等具體 DOM 條件再行動.
+//arg: 傳給 fn 的參數 (因 page.waitForFunction 內 fn 是序列化跨 process 執行, 不能 closure).
+async function waitUntilExist(page, label, fn, opts = {}) {
+    let { timeout = 10000, arg = null } = opts
+    try {
+        await page.waitForFunction(fn, arg, { timeout })
+    }
+    catch (err) {
+        throw new Error(`waitUntilExist 超過 ${timeout}ms 仍找不到「${label}」 — 此為真實異常 (production race / 元件未渲染)`)
+    }
+}
+
+
+//真鍵盤輸入 nth(idx) 的 input (取代 .fill() L4 偷工 — 全域 CLAUDE.md §6.3 act 階段操作層級表).
+//click 取得 focus → 驗證 activeElement → keyboard.insertText 整段 → 驗證 → 不符則清空重打 (最多 3 次).
+//
+//用 insertText (非 keyboard.type): type 逐字打在 Vue v-model 場景觸發 N 次 input event → N 次 re-render
+//→ focus 中途被吃掉導致漏字 (觀察過: 11 字密碼只進 1 字). insertText 一次 inject 全段, 1 次 input event,
+//本專案 WText/WTextCore 沒 hook keydown listener (僅 @input/@focus/@blur/@change/@keyup.enter),
+//所以 insertText 跟 type 行為等價. 不碰剪貼簿, scoped 到 page renderer, 不影響其他平行 agent.
+async function typeIntoNthInput(page, idx, value) {
+    let inp = page.locator('input').nth(idx)
+    await inp.waitFor({ state: 'visible', timeout: 5000 })
+
+    let maxAttempts = 3
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        await inp.click()
+        await page.waitForFunction((i) => {
+            let inputs = document.querySelectorAll('input')
+            return document.activeElement === inputs[i]
+        }, idx, { timeout: 3000 })
+        //清空 (Backspace N 次, 不用剪貼簿 / Ctrl+A 組合鍵)
+        let cur = await page.evaluate((i) => document.querySelectorAll('input')[i]?.value || '', idx)
+        if (cur) {
+            await page.keyboard.press('End')
+            for (let k = 0; k < cur.length + 2; k++) await page.keyboard.press('Backspace')
+        }
+        await page.keyboard.insertText(value)
+        await page.waitForTimeout(200)
+        let got = await page.evaluate((i) => {
+            let el = document.querySelectorAll('input')[i]
+            return el ? el.value : null
+        }, idx)
+        if (got === value) return
+
+        console.warn(`typeIntoNthInput attempt ${attempt}/${maxAttempts}: 預期「${value}」實得「${got}」, 重試`)
+        await page.waitForTimeout(400)
+    }
+
+    let final = await page.evaluate((i) => document.querySelectorAll('input')[i]?.value, idx)
+    throw new Error(`typeIntoNthInput ${maxAttempts} 次仍漏字: 預期「${value}」(${value.length} 字), 最終「${final}」(${(final || '').length} 字)`)
+}
+
+
+//輔助: 用 Backspace 清空 input.value, 不碰剪貼簿 / 不用 Ctrl+A 組合鍵 (避免影響其他平行 agent 測試)
+async function clearInputByBackspace(page, cellSel) {
+    let cur = await page.evaluate((sel) => document.querySelector(sel + ' input')?.value || '', cellSel)
+    if (!cur) return
+    await page.keyboard.press('End')
+    for (let i = 0; i < cur.length + 2; i++) {
+        await page.keyboard.press('Backspace')
+    }
 }
 
 
@@ -320,12 +386,21 @@ async function loginAsAdminAndOpenUsersList(page, lang) {
         await page.waitForTimeout(1000)
     }
 
-    let inputs = page.locator('input')
-    await inputs.nth(0).fill(testUsers.admin.account)
-    await inputs.nth(1).fill(testUsers.admin.rawPassword)
-    await page.waitForTimeout(300)
+    //偵測: 等 login 表單 input 元件出現 (Vue mount + getWebInfor 完成的證明)
+    await waitUntilExist(page, 'login form inputs (2 個)', () => document.querySelectorAll('input').length >= 2)
+
+    await typeIntoNthInput(page, 0, testUsers.admin.account)
+    await typeIntoNthInput(page, 1, testUsers.admin.rawPassword)
+
+    await page.locator(`text="${t.login}"`).first().waitFor({ state: 'visible', timeout: 10000 })
     await page.locator(`text="${t.login}"`).first().click()
-    await page.waitForTimeout(4000)
+
+    //login → backstage 為跨頁 redirect, 較久. 一律先 fixed 10s 等 redirect 啟動, 避免
+    //偵測抓到「點 Log in 前的 login 頁殘留 DOM」(殘留 DOM 不會立刻被清, redirect 啟動才換).
+    await page.waitForTimeout(10000)
+
+    //偵測: 等 backstage Statistics 文字 (login 成功 + redirect 完成)
+    await waitUntilExist(page, `backstage ${t.statistics} 文字`, (s) => document.body.innerText.includes(s), { arg: t.statistics })
 
     await page.locator(`text="${t.usersList}"`).first().waitFor({ state: 'visible', timeout: 15000 })
     await page.locator(`text="${t.usersList}"`).first().click()
@@ -435,30 +510,37 @@ async function ensureColumnVisible(page, colId) {
 }
 
 
-//ag-grid 文字欄位 (account / email / redir / name / description) 編輯:
-//dblclick 進 cell editor → fill input → Enter
+//ag-grid 文字欄位編輯: dblclick → 偵測 input 出現 → 1s pre-buffer → insertText → 驗證 → retry × 3 → Enter
+//(詳細設計理由見全域 CLAUDE.md §6.3 Pattern D)
 async function fillAgGridCell(page, rowIdx, colId, value) {
     await ensureColumnVisible(page, colId)
     let cellSel = `.ag-row[row-index="${rowIdx}"] .ag-cell[col-id="${colId}"]`
     let cell = page.locator(cellSel)
     await cell.scrollIntoViewIfNeeded()
     await cell.dblclick()
-    await page.waitForTimeout(400)
     let editor = page.locator(`${cellSel} input`)
     await editor.waitFor({ state: 'visible', timeout: 5000 })
-    await editor.fill(value)
+    await page.waitForTimeout(1000)
+
+    let maxAttempts = 3
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        await editor.click()
+        await clearInputByBackspace(page, cellSel)
+        await page.keyboard.insertText(value)
+        await page.waitForTimeout(200)
+        let got = await page.evaluate((sel) => {
+            let el = document.querySelector(sel + ' input')
+            return el ? el.value : null
+        }, cellSel)
+        if (got === value) break
+        console.warn(`fillAgGridCell ${colId} attempt ${attempt}/${maxAttempts}: 預期「${value}」實得「${got}」, 重試`)
+        if (attempt === maxAttempts) {
+            throw new Error(`fillAgGridCell ${colId} ${maxAttempts} 次仍漏字: 預期「${value}」, 最終「${got}」`)
+        }
+        await page.waitForTimeout(400)
+    }
     await page.keyboard.press('Enter')
     await page.waitForTimeout(300)
-}
-
-
-//新增列 password 欄: WText input 已就在 cell 內, 直接 fill (不需 dblclick)
-async function fillNewRowPassword(page, value) {
-    let inp = page.locator('.ag-row[row-index="0"] .ag-cell[col-id="password"] input[type="password"], .ag-row[row-index="0"] .ag-cell[col-id="password"] input[type="text"]').first()
-    await inp.waitFor({ state: 'visible', timeout: 5000 })
-    await inp.click()
-    await inp.fill(value)
-    await page.waitForTimeout(200)
 }
 
 
@@ -544,9 +626,9 @@ async function captureSuccessAfterSave(page, lang) {
 
     await clickPlusToAddRow(page)
     await fillAgGridCell(page, 0, 'account', newAccount)
-    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'password', 'Pw@KLMN5678')
     await fillAgGridCell(page, 0, 'email', newEmail)
-    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await fillAgGridCell(page, 0, 'redir', `${baseUrl}/?view=user&token={token}`)
     await clickSave(page)
     await waitCheckYes(page, lang) //success modal 出現
     await page.locator(`text="${t.ok}"`).first().click() //dismiss success modal
@@ -576,7 +658,7 @@ async function captureSuccessAfterSave(page, lang) {
     await page.mouse.move(0, 0)
     await page.waitForTimeout(1500)
 
-    let buf = await page.screenshot({ fullPage: true, animations: 'disabled' })
+    let buf = await captureStable(page)
 
     //cleanup: 透過 woItems 直接刪 (測試環境 admin 操作)
     let us = await woItems.users.select({ account: newAccount }).catch(() => [])
@@ -591,12 +673,12 @@ async function captureAccountEmpty(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
     await clickPlusToAddRow(page)
     //account 故意不填
-    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'password', 'Pw@KLMN5678')
     await fillAgGridCell(page, 0, 'email', 'au-newuser-002@test.com')
-    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await fillAgGridCell(page, 0, 'redir', `${baseUrl}/?view=user&token={token}`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true, animations: 'disabled' })
+    return await captureStable(page)
 }
 
 
@@ -606,18 +688,18 @@ async function captureAccountDuplicate(page, lang) {
     //加 row1
     await clickPlusToAddRow(page)
     await fillAgGridCell(page, 0, 'account', 'au-dup')
-    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'password', 'Pw@KLMN5678')
     await fillAgGridCell(page, 0, 'email', 'au-dup1@test.com')
-    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await fillAgGridCell(page, 0, 'redir', `${baseUrl}/?view=user&token={token}`)
     //加 row2 (同 account, 不同 email)
     await clickPlusToAddRow(page)
     await fillAgGridCell(page, 0, 'account', 'au-dup')
-    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'password', 'Pw@KLMN5678')
     await fillAgGridCell(page, 0, 'email', 'au-dup2@test.com')
-    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await fillAgGridCell(page, 0, 'redir', `${baseUrl}/?view=user&token={token}`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true, animations: 'disabled' })
+    return await captureStable(page)
 }
 
 
@@ -628,10 +710,10 @@ async function capturePasswordEmpty(page, lang) {
     await fillAgGridCell(page, 0, 'account', 'au-newuser-004')
     //password 故意不填
     await fillAgGridCell(page, 0, 'email', 'au-newuser-004@test.com')
-    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await fillAgGridCell(page, 0, 'redir', `${baseUrl}/?view=user&token={token}`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true, animations: 'disabled' })
+    return await captureStable(page)
 }
 
 
@@ -640,12 +722,12 @@ async function captureEmailEmpty(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
     await clickPlusToAddRow(page)
     await fillAgGridCell(page, 0, 'account', 'au-newuser-005')
-    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'password', 'Pw@KLMN5678')
     //email 故意不填
-    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await fillAgGridCell(page, 0, 'redir', `${baseUrl}/?view=user&token={token}`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true, animations: 'disabled' })
+    return await captureStable(page)
 }
 
 
@@ -654,12 +736,12 @@ async function captureEmailFormatBad(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
     await clickPlusToAddRow(page)
     await fillAgGridCell(page, 0, 'account', 'au-newuser-006')
-    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'password', 'Pw@KLMN5678')
     await fillAgGridCell(page, 0, 'email', 'not-an-email')
-    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await fillAgGridCell(page, 0, 'redir', `${baseUrl}/?view=user&token={token}`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true, animations: 'disabled' })
+    return await captureStable(page)
 }
 
 
@@ -668,17 +750,17 @@ async function captureEmailDuplicate(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
     await clickPlusToAddRow(page)
     await fillAgGridCell(page, 0, 'account', 'au-dup-em-1')
-    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'password', 'Pw@KLMN5678')
     await fillAgGridCell(page, 0, 'email', 'au-dup-em@test.com')
-    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await fillAgGridCell(page, 0, 'redir', `${baseUrl}/?view=user&token={token}`)
     await clickPlusToAddRow(page)
     await fillAgGridCell(page, 0, 'account', 'au-dup-em-2')
-    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'password', 'Pw@KLMN5678')
     await fillAgGridCell(page, 0, 'email', 'au-dup-em@test.com')
-    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await fillAgGridCell(page, 0, 'redir', `${baseUrl}/?view=user&token={token}`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true, animations: 'disabled' })
+    return await captureStable(page)
 }
 
 
@@ -687,22 +769,39 @@ async function captureRedirEmpty(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
     await clickPlusToAddRow(page)
     await fillAgGridCell(page, 0, 'account', 'au-newuser-008')
-    await fillNewRowPassword(page, 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'password', 'Pw@KLMN5678')
     await fillAgGridCell(page, 0, 'email', 'au-newuser-008@test.com')
     //redir 故意不填
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true, animations: 'disabled' })
+    return await captureStable(page)
 }
 
 
 //009 全表空 (header checkbox 全選 + trash 刪光 → save → CheckYes 'userAddEmpty')
+//刪光所有 row 後 layout 縮窄, 觸發 WDrawer ResizeObserver → autoSwitchToHide/Show, 此切換
+//可能在 waitCheckYes 結束後才完成, 導致 captureStable 抓到「sidebar 收合中」與「展開後」
+//兩個 stable state 隨機收斂. 額外等 sidebar 寬度連續 ~2s 不變才視為 settle.
 async function captureRowsEmpty(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
     await clickTrashAfterSelectAll(page)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true, animations: 'disabled' })
+    await page.waitForFunction(() => {
+        let drawer = document.querySelector('.w-drawer .panel') || document.querySelector('.w-drawer')
+        if (!drawer) return true
+        let key = '__drawerWidthSamples'
+        if (!window[key]) window[key] = []
+        let w = Math.round(drawer.getBoundingClientRect().width)
+        window[key].push({ t: Date.now(), w })
+        //保留最近 2 秒 samples
+        let cutoff = Date.now() - 2000
+        window[key] = window[key].filter(s => s.t >= cutoff)
+        //需要 >=10 samples 且寬度全部一致才視為 settle
+        if (window[key].length < 10) return false
+        return window[key].every(s => s.w === window[key][0].w)
+    }, null, { timeout: 10000, polling: 200 }).catch(() => {})
+    return await captureStable(page)
 }
 
 
@@ -712,7 +811,7 @@ async function captureCannotDemoteSelf(page, lang) {
     await toggleSelfRowCheckbox(page, 'isAdmin')
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true, animations: 'disabled' })
+    return await captureStable(page)
 }
 
 
@@ -722,7 +821,7 @@ async function captureCannotDisableSelf(page, lang) {
     await toggleSelfRowCheckbox(page, 'isActive')
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true, animations: 'disabled' })
+    return await captureStable(page)
 }
 
 
@@ -731,12 +830,12 @@ async function capturePasswordPolicyBackend(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
     await clickPlusToAddRow(page)
     await fillAgGridCell(page, 0, 'account', 'au-newuser-012')
-    await fillNewRowPassword(page, 'short') //非空, 通過前端; 但長度<8 後端 reject
+    await fillAgGridCell(page, 0, 'password', 'short') //非空, 通過前端; 但長度<8 後端 reject
     await fillAgGridCell(page, 0, 'email', 'au-newuser-012@test.com')
-    await fillAgGridCell(page, 0, 'redir', 'http://localhost:8080/?view=user&token={token}')
+    await fillAgGridCell(page, 0, 'redir', `${baseUrl}/?view=user&token={token}`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await page.screenshot({ fullPage: true, animations: 'disabled' })
+    return await captureStable(page)
 }
 
 
@@ -757,31 +856,45 @@ async function captureEmailConflictBackend(page, lang) {
 // 產生標準圖
 // ===================================================================
 
-async function generateBaselineForLang(page, lang) {
+async function generateBaselineForLang(lang) {
     console.log(`=== 產生標準圖（${lang}）===`)
 
     let cases = [
-        ['001-after-save-with-new-user', captureSuccessAfterSave],
-        ['002-account-empty', captureAccountEmpty],
-        ['003-account-duplicate', captureAccountDuplicate],
-        ['004-password-empty', capturePasswordEmpty],
-        ['005-email-empty', captureEmailEmpty],
-        ['006-email-format', captureEmailFormatBad],
-        ['007-email-duplicate', captureEmailDuplicate],
-        ['008-redir-empty', captureRedirEmpty],
-        ['009-rows-empty', captureRowsEmpty],
-        ['010-cannot-demote-self', captureCannotDemoteSelf],
-        ['011-cannot-disable-self', captureCannotDisableSelf],
-        ['012-password-policy-backend', capturePasswordPolicyBackend],
-        ['013-account-conflict-backend', captureAccountConflictBackend],
-        ['014-email-conflict-backend', captureEmailConflictBackend],
+        ['E2E-001-after-save-with-new-user', captureSuccessAfterSave],
+        ['E2E-002-account-empty', captureAccountEmpty],
+        ['E2E-003-account-duplicate', captureAccountDuplicate],
+        ['E2E-004-password-empty', capturePasswordEmpty],
+        ['E2E-005-email-empty', captureEmailEmpty],
+        ['E2E-006-email-format', captureEmailFormatBad],
+        ['E2E-007-email-duplicate', captureEmailDuplicate],
+        ['E2E-008-redir-empty', captureRedirEmpty],
+        ['E2E-009-rows-empty', captureRowsEmpty],
+        ['E2E-010-cannot-demote-self', captureCannotDemoteSelf],
+        ['E2E-011-cannot-disable-self', captureCannotDisableSelf],
+        ['E2E-012-password-policy-backend', capturePasswordPolicyBackend],
+        ['E2E-013-account-conflict-backend', captureAccountConflictBackend],
+        ['E2E-014-email-conflict-backend', captureEmailConflictBackend],
     ]
 
+    //per-case fresh browser + DB setup, 與 mocha test 端 beforeEach/afterEach 對稱.
+    //保證 marathon mode 與 single-case run 收斂到同一 stable state (無 cross-case browser
+    //state 累積). 詳全域 CLAUDE.md §6.3「截圖穩定性」.
     for (let [name, fn] of cases) {
+        if (!shouldGen(lang, name)) continue
         console.log(`  ${name}`)
-        await resetAdminToken()
+
+        await deleteTestUsersAndTokens()
+        await insertTestUsersAndTokens()
+
+        let browser = await chromium.launch({ headless: true })
+        let page = await browser.newPage()
+        page.on('dialog', async (dialog) => { await dialog.accept() })
+
         let buf = await fn(page, lang)
-        writeBaseline(lang, name, buf)
+        fs.writeFileSync(bp(lang, name), buf)
+
+        await browser.close()
+        await deleteTestUsersAndTokens()
     }
 }
 
@@ -793,24 +906,15 @@ async function generateBaseline() {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    await deleteTestUsersAndTokens()
-    await insertTestUsersAndTokens()
-
     for (let lang of langs) {
-        let browser = await chromium.launch({ headless: true })
-        let page = await browser.newPage()
-        page.on('dialog', async (dialog) => {
-            await dialog.accept()
-        })
-
-        await generateBaselineForLang(page, lang)
-
-        await browser.close()
+        await generateBaselineForLang(lang)
     }
 
     await deleteTestUsersAndTokens()
 
     console.log('=== 標準圖產生完成 ===')
+
+    cleanup()
 }
 
 
@@ -827,15 +931,33 @@ if (process.argv.includes('--baseline')) {
 }
 else {
 
-    // --- API 拒絕情境 (語系無關, 只測 backend reject 行為) ---
+    //
+    // API 契約 cases (password-* / self-lockout-* / happy-path / existing-row-password-preserved)
+    // 已遷至 test/api-adduser.test.mjs (Node + 無 browser).
+    // 此檔僅保留需 Playwright + baseline 的 UI cases (包含 copy-clone-then-save 下方).
+    //
 
-    describe(`AddUser E2E API — updateUsersList 拒絕情境與副作用`, function() {
-        this.timeout(60000)
+
+    // --- 衍生操作 / copyItem 複製列 ---
+    //
+    // 對應 spec: spec/流程_後台新增使用者.md「執行流程 → 五、衍生操作 → copyItem」
+    //   - 勾選表內單一列, copy 按鈕始出現 (hasItemCheckOne)
+    //   - 點 copy → 新列插入最首 (_isNew=true), password 清空, 其他欄位 clone 自源頭列
+    //   - 改新列 account / email 避開同表重複 → 重新填 password → 儲存
+    //   - 儲存路徑與 addItem 共用 add 群組, 源頭列不受影響, DB 兩列共存
+    //
+    // 使用 e2e-adduser 共用 setup (testUsers admin/existing + helpers loginAsAdminAndOpenUsersList /
+    // fillAgGridCell / ensureColumnVisible / locateMdiButton / resetAdminToken).
+    // existing 列 (au-existing) 即作為被複製的源頭列, 不另設源頭使用者.
+
+    describe('AddUser E2E — 衍生操作 / copyItem 複製列', function() {
+        this.timeout(180000)
 
         let browser
         let page
 
-        before(async function() {
+        //per-case 獨立: 與其他 describe 同款架構 (fresh browser + DB setup), 確保 --grep 可單跑.
+        beforeEach(async function() {
             this.timeout(180000)
             await startServersOnce()
 
@@ -845,123 +967,141 @@ else {
             browser = await chromium.launch({ headless: true })
             let context = await browser.newContext()
             page = await context.newPage()
-
-            await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
-            await page.waitForTimeout(2500)
+            page.on('dialog', async (dialog) => { await dialog.accept() })
         })
 
-        after(async function() {
+        afterEach(async function() {
             if (browser) {
                 await browser.close()
+                browser = null
             }
             await deleteTestUsersAndTokens()
         })
 
-        async function buildAllRowsWithNew(newRow) {
-            let allUsers = await woItems.users.select()
-            allUsers = allUsers.map((u) => { let c = { ...u }; delete c.password; return c })
-            return [...allUsers, newRow]
+
+        //依 account innerText 找該列 row-index (ag-grid 用)
+        async function findRowIndexByAccount(p, account) {
+            return await p.evaluate((acc) => {
+                let cells = Array.from(document.querySelectorAll('.ag-row .ag-cell[col-id="account"]'))
+                for (let c of cells) {
+                    if ((c.innerText || '').trim() === acc) {
+                        let row = c.closest('.ag-row')
+                        return row.getAttribute('row-index')
+                    }
+                }
+                return null
+            }, account)
         }
 
-        it('password-empty: 新 row password 空 → reject', async function() {
-            let rows = await buildAllRowsWithNew(buildNewRowPlain('au-bad-empty', '', { email: 'au-bad-empty@test.com' }))
-            let r = await callFapi(page, 'updateUsersList', [userTokens[testUsers.admin.id], 'eng', rows])
-            assert.strict.equal(r.ok, false)
-        })
 
-        it('password-too-short: → reject', async function() {
-            let rows = await buildAllRowsWithNew(buildNewRowPlain('au-bad-short', 'Ab@1', { email: 'au-bad-short@test.com' }))
-            let r = await callFapi(page, 'updateUsersList', [userTokens[testUsers.admin.id], 'eng', rows])
-            assert.strict.equal(r.ok, false)
-        })
+        //勾選指定列 (row-index) 的 selection checkbox.
+        //ag-grid row selection checkbox 預設在第一欄, 用 .ag-selection-checkbox input.
+        async function checkRowSelectionByRowIdx(p, rowIdx) {
+            let sel = `.ag-row[row-index="${rowIdx}"] .ag-selection-checkbox input[type="checkbox"]`
+            let n = await p.locator(sel).count()
+            if (n === 0) {
+                //fallback: 該列第一個 checkbox
+                sel = `.ag-row[row-index="${rowIdx}"] input[type="checkbox"]`
+            }
+            let cb = p.locator(sel).first()
+            await cb.waitFor({ state: 'visible', timeout: 5000 })
+            await cb.check()
+            await p.waitForTimeout(400)
+        }
 
-        it('password-no-letter: → reject', async function() {
-            let rows = await buildAllRowsWithNew(buildNewRowPlain('au-bad-noletter', '12345678@', { email: 'au-bad-noletter@test.com' }))
-            let r = await callFapi(page, 'updateUsersList', [userTokens[testUsers.admin.id], 'eng', rows])
-            assert.strict.equal(r.ok, false)
-        })
 
-        it('password-no-digit: → reject', async function() {
-            let rows = await buildAllRowsWithNew(buildNewRowPlain('au-bad-nodigit', 'Abcdefg@', { email: 'au-bad-nodigit@test.com' }))
-            let r = await callFapi(page, 'updateUsersList', [userTokens[testUsers.admin.id], 'eng', rows])
-            assert.strict.equal(r.ok, false)
-        })
+        it('copy-clone-then-save: 勾選 existing 列 → copy → 新列首列 password 空 + 其他欄位 clone → 改 account/email 填密碼 → 儲存 → DB 兩列共存', async function() {
+            await resetAdminToken()
+            await loginAsAdminAndOpenUsersList(page, 'eng')
 
-        it('password-blacklist: → reject', async function() {
-            let rows = await buildAllRowsWithNew(buildNewRowPlain('au-bad-bl', '1qaz@WSX', { email: 'au-bad-bl@test.com' }))
-            let r = await callFapi(page, 'updateUsersList', [userTokens[testUsers.admin.id], 'eng', rows])
-            assert.strict.equal(r.ok, false)
-        })
+            //新列改寫的 account / password, 須避開後端 noConsecutiveCharsFromAccount 策略
+            let copyAccount = 'au-existing-copy'
+            let copyPassword = 'Pw@RaN9876!'
 
-        it('self-lockout-isAdmin: → reject "cannotDemoteSelf"', async function() {
-            let allUsers = await woItems.users.select()
-            allUsers = allUsers.map((u) => {
-                let copy = { ...u }
-                delete copy.password
-                if (copy.id === testUsers.admin.id) copy.isAdmin = 'n'
-                return copy
+            //找 existing 列 (作為被複製的源頭)
+            let srcRowIdx = await findRowIndexByAccount(page, testUsers.existing.account)
+            assert.strict.notEqual(srcRowIdx, null, `應找到 source 列 (${testUsers.existing.account})`)
+
+            //勾選 source 列
+            await checkRowSelectionByRowIdx(page, srcRowIdx)
+
+            //對應 spec: 勾選單一列後 copy 按鈕始出現 (hasItemCheckOne)
+            let copyBtn = await locateMdiButton(page, mdiContentCopy)
+            assert.strict.notEqual(copyBtn, null, `勾選 1 列後 copy 按鈕應出現`)
+
+            //點 copy
+            await page.mouse.click(copyBtn.x, copyBtn.y)
+            await page.waitForTimeout(800)
+
+            //對應 spec: 新列插入最首 (row-index="0"), account 沿用 source
+            await ensureColumnVisible(page, 'account')
+            let accountText = await page.evaluate(() => {
+                let row0 = document.querySelector('.ag-row[row-index="0"]')
+                if (!row0) return null
+                let cell = row0.querySelector('.ag-cell[col-id="account"]')
+                return cell ? (cell.innerText || '').trim() : null
             })
-            let r = await callFapi(page, 'updateUsersList', [userTokens[testUsers.admin.id], 'eng', allUsers])
-            assert.strict.equal(r.ok, false)
-            assert.strict.match(r.err, /[Cc]annot demote yourself|不可解除自己的管理員權限/)
-        })
+            assert.strict.notEqual(accountText, null, `新列應出現於首列`)
+            assert.strict.equal(accountText, testUsers.existing.account, `新列 account 應 clone 自 source (${testUsers.existing.account}), 實際 ${accountText}`)
 
-        it('self-lockout-isActive: → reject "cannotDisableSelf"', async function() {
-            let allUsers = await woItems.users.select()
-            allUsers = allUsers.map((u) => {
-                let copy = { ...u }
-                delete copy.password
-                if (copy.id === testUsers.admin.id) copy.isActive = 'n'
-                return copy
+            //對應 spec: password 清空 (新列 _isNew=true, 走 ag-grid 標準 cellRenderer 顯示純文字)
+            //ag-grid 含 pinned-left + center 兩個容器, .ag-row[row-index="0"] 會匹配多個;
+            //直接用 col-id 全文件搜尋 cell 再判斷 row-index.
+            await ensureColumnVisible(page, 'password')
+            await page.waitForTimeout(400)
+            let pwInfo = await page.evaluate(() => {
+                let cells = Array.from(document.querySelectorAll('.ag-cell[col-id="password"]'))
+                let row0PwCell = cells.find(c => {
+                    let row = c.closest('.ag-row')
+                    return row && row.getAttribute('row-index') === '0'
+                })
+                if (!row0PwCell) {
+                    let cellsInfo = cells.map(c => {
+                        let row = c.closest('.ag-row')
+                        return row ? row.getAttribute('row-index') : 'noRow'
+                    })
+                    return { found: false, debug: { passwordCells: cellsInfo } }
+                }
+                return {
+                    found: true,
+                    cellText: (row0PwCell.innerText || '').trim(),
+                }
             })
-            let r = await callFapi(page, 'updateUsersList', [userTokens[testUsers.admin.id], 'eng', allUsers])
-            assert.strict.equal(r.ok, false)
-            assert.strict.match(r.err, /[Cc]annot disable yourself|不可停用自己的帳號/)
-        })
+            assert.strict.equal(pwInfo.found, true, `password cell 應存在於首列, debug=${JSON.stringify(pwInfo.debug)}`)
+            assert.strict.equal(pwInfo.cellText, '', `新列 password 應被清空, 實際 "${pwInfo.cellText}"`)
 
-        it('happy-path: admin 加 user → DB 驗證 hash/audit/timeVerified', async function() {
-            let newAccount = 'au-newuser-happy'
-            await woItems.users.select({ account: newAccount }).catch(() => []).then(async (us) => {
-                for (let u of us) await woItems.users.del({ id: u.id }).catch(() => {})
-            })
+            //避開同表重複: 改 account + email (其他欄位保留, 依 spec)
+            await fillAgGridCell(page, 0, 'account', copyAccount)
+            await fillAgGridCell(page, 0, 'email', `${copyAccount}@test.com`)
 
-            let rawPw = 'Pw@KLMN5678'
-            let rows = await buildAllRowsWithNew(buildNewRowPlain(newAccount, rawPw, { email: 'au-newuser-happy@test.com' }))
-            let r = await callFapi(page, 'updateUsersList', [userTokens[testUsers.admin.id], 'eng', rows])
-            assert.strict.equal(r.ok, true, `預期 resolve, 實際 reject: ${r.err}`)
+            //重新填 password (走 ag-grid 標準編輯)
+            await fillAgGridCell(page, 0, 'password', copyPassword)
 
-            let us = await woItems.users.select({ account: newAccount })
-            assert.strict.equal(us.length, 1)
-            let u = us[0]
-            assert.strict.notEqual(u.password, rawPw)
-            assert.strict.notEqual(u.password, '')
-            assert.strict.equal(u.password, hashPassword(rawPw, salt))
-            assert.strict.equal(u.isForceChangePw, 'n')
-            assert.strict.equal(u.userId, testUsers.admin.id, `userId 應為 admin id`)
-            assert.strict.equal(u.userIdUpdate, testUsers.admin.id)
-            assert.strict.equal(typeof u.timeVerified === 'string' && u.timeVerified.length > 0, true)
+            //儲存
+            let saveBtn = await locateMdiButton(page, mdiCloudUploadOutline)
+            assert.strict.notEqual(saveBtn, null, `修改後 save 按鈕應出現`)
+            await page.mouse.click(saveBtn.x, saveBtn.y)
 
-            await woItems.users.del({ id: u.id }).catch(() => {})
-        })
+            //CheckYes 浮出 → 點 OK
+            await page.locator(`text="OK"`).first().waitFor({ state: 'visible', timeout: 30000 })
+            await page.waitForTimeout(500)
+            await page.locator(`text="OK"`).first().click()
+            await page.waitForTimeout(3000)
 
-        it('existing-row-password-preserved: → 既有 user password hash 不被洗掉', async function() {
-            let before = await woItems.users.select({ id: testUsers.existing.id })
-            let originalHash = before[0].password
-            assert.strict.equal(originalHash, hashPassword(testUsers.existing.rawPassword, salt))
+            //對應 spec: 源頭列不受影響, DB 兩列共存
+            let srcUsers = await woItems.users.select({ account: testUsers.existing.account })
+            let copyUsers = await woItems.users.select({ account: copyAccount })
+            assert.strict.equal(srcUsers.length, 1, `source user 仍應存在 (${testUsers.existing.account})`)
+            assert.strict.equal(copyUsers.length, 1, `cloned user 應已建立 (${copyAccount})`)
 
-            let allUsers = await woItems.users.select()
-            allUsers = allUsers.map((u) => {
-                let copy = { ...u }
-                delete copy.password
-                if (copy.id === testUsers.existing.id) copy.description = 'updated desc'
-                return copy
-            })
-            let r = await callFapi(page, 'updateUsersList', [userTokens[testUsers.admin.id], 'eng', allUsers])
-            assert.strict.equal(r.ok, true, `預期 resolve, 實際 reject: ${r.err}`)
+            //對應 spec: cloned user password 為新填明文之 hash, 其他欄位 clone 自 source
+            let cloned = copyUsers[0]
+            assert.strict.equal(cloned.password, hashPassword(copyPassword, salt), `cloned user password 應為新填的 hash`)
+            assert.strict.equal(cloned.name, testUsers.existing.name, `cloned user name 應 clone 自 source`)
+            assert.strict.equal(cloned.isAdmin, testUsers.existing.isAdmin, `cloned user isAdmin 應 clone 自 source`)
 
-            let after = await woItems.users.select({ id: testUsers.existing.id })
-            assert.strict.equal(after[0].password, originalHash)
-            assert.strict.equal(after[0].description, 'updated desc')
+            //cleanup cloned user (existing 會由 afterEach 清)
+            await woItems.users.del({ id: cloned.id }).catch(() => {})
         })
 
     })
@@ -977,7 +1117,11 @@ else {
             let browser
             let page
 
-            before(async function() {
+            //per-case 獨立: 每個 it 都 fresh browser + DB setup, 確保單 case --grep 也能跑.
+            //(設計理由: 避免 marathon flake — 多 case 在同 browser 跑會累積 GPU/font/CSS state
+            //導致 baseline 不確定. per-case 隔離雖 launch overhead 較高, 但換來 case 獨立可
+            //除錯 + baseline 確定性.)
+            beforeEach(async function() {
                 this.timeout(240000)
                 await startServersOnce()
 
@@ -993,28 +1137,29 @@ else {
                 })
             })
 
-            after(async function() {
+            afterEach(async function() {
                 if (browser) {
                     await browser.close()
+                    browser = null
                 }
                 await deleteTestUsersAndTokens()
             })
 
             let cases = [
-                ['001-after-save-with-new-user', captureSuccessAfterSave],
-                ['002-account-empty', captureAccountEmpty],
-                ['003-account-duplicate', captureAccountDuplicate],
-                ['004-password-empty', capturePasswordEmpty],
-                ['005-email-empty', captureEmailEmpty],
-                ['006-email-format', captureEmailFormatBad],
-                ['007-email-duplicate', captureEmailDuplicate],
-                ['008-redir-empty', captureRedirEmpty],
-                ['009-rows-empty', captureRowsEmpty],
-                ['010-cannot-demote-self', captureCannotDemoteSelf],
-                ['011-cannot-disable-self', captureCannotDisableSelf],
-                ['012-password-policy-backend', capturePasswordPolicyBackend],
-                ['013-account-conflict-backend', captureAccountConflictBackend],
-                ['014-email-conflict-backend', captureEmailConflictBackend],
+                ['E2E-001-after-save-with-new-user', captureSuccessAfterSave],
+                ['E2E-002-account-empty', captureAccountEmpty],
+                ['E2E-003-account-duplicate', captureAccountDuplicate],
+                ['E2E-004-password-empty', capturePasswordEmpty],
+                ['E2E-005-email-empty', captureEmailEmpty],
+                ['E2E-006-email-format', captureEmailFormatBad],
+                ['E2E-007-email-duplicate', captureEmailDuplicate],
+                ['E2E-008-redir-empty', captureRedirEmpty],
+                ['E2E-009-rows-empty', captureRowsEmpty],
+                ['E2E-010-cannot-demote-self', captureCannotDemoteSelf],
+                ['E2E-011-cannot-disable-self', captureCannotDisableSelf],
+                ['E2E-012-password-policy-backend', capturePasswordPolicyBackend],
+                ['E2E-013-account-conflict-backend', captureAccountConflictBackend],
+                ['E2E-014-email-conflict-backend', captureEmailConflictBackend],
             ]
 
             for (let [name, fn] of cases) {
@@ -1060,7 +1205,7 @@ else {
                         })
                     }
 
-                    if (name === '001-after-save-with-new-user') {
+                    if (name === 'E2E-001-after-save-with-new-user') {
                         let expectedAccount = `au-newuser-${lang}-baseline`
                         let found = await pageHasText(expectedAccount)
                         if (!found) {
@@ -1081,6 +1226,9 @@ else {
                     let baselinePath = bp(lang, name)
                     assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                     let baselineBuf = fs.readFileSync(baselinePath)
+                    //debug: assertion 前先存 test capture, 確保 fail 時有證據可 diff
+                    if (!fs.existsSync('./tmp')) fs.mkdirSync('./tmp', { recursive: true })
+                    fs.writeFileSync(`./tmp/adduser-${lang}-${name}-test.png`, buf)
                     assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: adduser-${lang}-${name}`)
                 })
             }
@@ -1093,6 +1241,10 @@ else {
                 await woItems.users.select({ account: newAccount }).catch(() => []).then(async (us) => {
                     for (let u of us) await woItems.users.del({ id: u.id }).catch(() => {})
                 })
+
+                //per-case beforeEach 後 page 還是 about:blank, callFapi 需要 Vue app 載入, 故先導頁
+                await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
+                await page.waitForTimeout(2500)
 
                 await resetAdminToken()
                 let allUsers = await woItems.users.select()
@@ -1113,12 +1265,20 @@ else {
                     await page.waitForTimeout(600)
                 }
 
-                let inputs = page.locator('input')
-                await inputs.nth(0).fill(newAccount)
-                await inputs.nth(1).fill(rawPw)
-                await page.waitForTimeout(300)
+                //偵測: 等 login 表單 input 元件出現
+                await waitUntilExist(page, 'login form inputs (2 個)', () => document.querySelectorAll('input').length >= 2)
+
+                await typeIntoNthInput(page, 0, newAccount)
+                await typeIntoNthInput(page, 1, rawPw)
+
+                await page.locator(`text="${loginText}"`).first().waitFor({ state: 'visible', timeout: 10000 })
                 await page.locator(`text="${loginText}"`).first().click()
-                await page.waitForTimeout(4000)
+
+                //login → view=user 為跨頁 redirect, 較久. 一律先 fixed 5s 等 redirect 啟動.
+                await page.waitForTimeout(5000)
+
+                //偵測: 等 url 變為 view=user (login 成功 + redirect 完成)
+                await waitUntilExist(page, 'url 含 view=user', () => location.href.includes('view=user'))
 
                 let url = await page.evaluate(() => location.href)
                 assert.strict.match(url, /view=user/)

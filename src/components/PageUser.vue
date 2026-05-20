@@ -437,6 +437,9 @@ export default {
                     return
                 }
 
+                //同步驗證全通過、確定要打 API 才開 loading (放 core 外會在 early-return 時閃 loading)
+                vo.$ui.updateLoading(true)
+
                 //checkUserPassword
                 let bCkPw = false
                 await vo.$fapi.checkUserPassword(vo.lang, vo.newPassword)
@@ -489,11 +492,12 @@ export default {
                 return 'ok'
             }
 
-            //loading
-            vo.$ui.updateLoading(true)
-
             //core
             core()
+                .catch((err) => {
+                    console.log('catch', err)
+                    vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
+                })
                 .finally(() => {
 
                     //hide loading

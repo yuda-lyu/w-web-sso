@@ -6,13 +6,13 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
 
 
 //
 // E2E change password test — 驗證使用者變更密碼流程畫面（中英文版）
 //
-// 對應流程文件：z流程_使用者變更密碼.md
+// 對應流程文件：spec/流程_使用者變更密碼.md
 //
 // 使用方式：
 //   1. 先產生標準圖：node test/e2e-changepassword.test.mjs --baseline
@@ -26,7 +26,6 @@ import { startServersOnce } from './e2e-setup.mjs'
 //   呈現「表單收起回 user info」狀態（cancelChangePassword 在 .then 內被呼叫）
 //
 
-let baseUrl = 'http://localhost:8080'
 let salt = '{salt}'
 let baselineDir = './test/pics/changepassword'
 let langs = ['eng', 'cht']
@@ -68,49 +67,59 @@ function bp(lang, name) {
 
 
 // ===================================================================
-// 預期語意斷言 (從 z流程_使用者變更密碼.md + procLang.mjs 衍生, 非現狀指紋)
+// 預期語意斷言 (從 spec/流程_使用者變更密碼.md + procLang.mjs 衍生, 非現狀指紋)
 // ===================================================================
 
 let expectedSpecText = {
-    '001-form-initial': {
+    'E2E-001-form-initial': {
         //表單展開: 應見「送出」按鈕文字
         eng: { mode: 'text', value: 'Send' },
         cht: { mode: 'text', value: '送出' },
     },
-    '002-old-empty': {
+    'E2E-002-old-empty': {
         //userChangePasswordForNoOldPassword
         eng: { mode: 'text', value: 'Please enter old password' },
         cht: { mode: 'text', value: '尚未給予舊密碼' },
     },
-    '003-new-empty': {
+    'E2E-003-new-empty': {
         //userChangePasswordForNoNewPassword
         eng: { mode: 'text', value: 'Please enter new password' },
         cht: { mode: 'text', value: '尚未給予新密碼' },
     },
-    '004-confirm-empty': {
+    'E2E-004-confirm-empty': {
         //userChangePasswordForNoConfirmPassword
         eng: { mode: 'text', value: 'Please enter confirm password' },
         cht: { mode: 'text', value: '尚未給予確認密碼' },
     },
-    '005-pw-mismatch': {
+    'E2E-005-pw-mismatch': {
         //userChangePasswordNotSame
         eng: { mode: 'text', value: 'New password and confirm password do not match' },
         cht: { mode: 'text', value: '新密碼與確認密碼不一致' },
     },
-    '006-pw-policy-fail': {
+    'E2E-006-pw-policy-fail': {
         //'12345' 5 字元 → 後端 checkUserPassword 先回長度錯誤 (NumLenMin 優先於 RequireLetter)
         eng: { mode: 'text', value: 'Password length must be at least 8 characters' },
         cht: { mode: 'text', value: '密碼長度須大於等於8個字元' },
     },
-    '007-old-wrong': {
+    'E2E-007-old-wrong': {
         //userChangePasswordFail (統一訊息, 不洩露細節)
         eng: { mode: 'text', value: 'Password change failed' },
         cht: { mode: 'text', value: '密碼變更失敗' },
     },
-    '008-success': {
+    'E2E-008-success': {
         //成功後表單收起, 不應再見 Send 按鈕
         eng: { mode: 'absentText', value: 'Send' },
         cht: { mode: 'absentText', value: '送出' },
+    },
+    'E2E-009-network-error': {
+        //userChangePasswordForNetError
+        eng: { mode: 'text', value: 'Password validation failed' },
+        cht: { mode: 'text', value: '密碼檢測失敗' },
+    },
+    'E2E-010-token-invalid': {
+        //userChangePasswordFail (與 E2E-007 同訊息)
+        eng: { mode: 'text', value: 'Password change failed' },
+        cht: { mode: 'text', value: '密碼變更失敗' },
     },
 }
 
@@ -208,17 +217,28 @@ function writeBaseline(lang, name, buf) {
     }
     fs.writeFileSync(bp(lang, name), buf)
 }
+//是否需要產生此 case 的標準圖. --names 指定時只有指定 case 回 true → 連「截圖」都跳過 (非僅跳寫檔).
+function shouldGen(lang, name) {
+    return !baselineNamesFilter || baselineNamesFilter.has(`${lang}-${name}`)
+}
 
 
 // --- 新增/重置/刪除測試使用者與 token ---
 
 async function insertTestUserAndToken(lang) {
+    //先重設為 base seed (清空 users/tokens/ips + 插入 3 canonical users + 4 tokens),
+    //再插入本測試自己的 user + token. hermetic: 每次 setup 都從乾淨 base seed 起跳.
+    //此函式為 mocha beforeEach 與 generateBaselineForLang (含 008 前重插) 共用唯一進入點,
+    //故置於首行覆蓋所有路徑. 下方既有的 per-lang del 保留 (resetToBaseSeed 已清, 但無害).
+    await resetToBaseSeed()
+
     let userId = userIdOf(lang)
     let account = accountOf(lang)
 
-    // clean
+    // clean (w-orm-lmdb 的 del 嚴格認 .id, 須先 select 再逐筆 del by id)
     await woItems.users.del({ id: userId }).catch(() => {})
-    await woItems.tokens.del({ userId }).catch(() => {})
+    let _tks = await woItems.tokens.select({ userId }).catch(() => [])
+    for (let _tk of _tks) await woItems.tokens.del({ id: _tk.id }).catch(() => {})
 
     // user
     let v = ds.users.funNew({
@@ -229,7 +249,7 @@ async function insertTestUserAndToken(lang) {
         email: `${account}@test.com`,
         description: '',
         from: 'test',
-        redir: 'http://localhost:8080/?view=user&token={token}',
+        redir: `${baseUrl}/?view=user&token={token}`,
         isAdmin: 'n',
         isActive: 'y',
         timeVerified: '2025-01-01T00:00:00.000+08:00',
@@ -252,10 +272,7 @@ async function insertTestUserAndToken(lang) {
 }
 
 async function deleteTestUsersAndTokens() {
-    for (let lang of langs) {
-        await woItems.users.del({ id: userIdOf(lang) }).catch(() => {})
-        await woItems.tokens.del({ userId: userIdOf(lang) }).catch(() => {})
-    }
+    await deleteNonBaseSeed()
     console.log(`deleted changepassword test users + tokens`)
 }
 
@@ -295,17 +312,28 @@ async function gotoUserViewAndOpenChangePw(page, lang) {
 // 由於 user info 區塊也有顯示型 input，需以表單區塊內的相對位置取值。
 // 改用 input[type="password"]:not([disabled]) 取變更密碼三欄（其他 user info 欄位非 password type）。
 //
+async function typeIntoInput(page, locator, value) {
+    //真實 user 輸入: click → focus → 清空 → keyboard.type
+    //(全域 CLAUDE.md §6.3: act 階段禁 .fill(), 必用 keyboard.type)
+    await locator.click()
+    await page.waitForTimeout(50)
+    //已聚焦, 全選 + 刪除以清空 (避免殘留干擾)
+    await page.keyboard.press('Control+A')
+    await page.keyboard.press('Delete')
+    await page.keyboard.type(value, { delay: 0 })
+}
+
 async function fillChangePwForm(page, opt = {}) {
     // input[type="password"] 篩出三個密碼欄位（Old / New / Confirm）
     let pwInputs = page.locator('input[type="password"]')
     if (opt.oldPassword !== undefined) {
-        await pwInputs.nth(0).fill(opt.oldPassword)
+        await typeIntoInput(page, pwInputs.nth(0), opt.oldPassword)
     }
     if (opt.newPassword !== undefined) {
-        await pwInputs.nth(1).fill(opt.newPassword)
+        await typeIntoInput(page, pwInputs.nth(1), opt.newPassword)
     }
     if (opt.confirmPassword !== undefined) {
-        await pwInputs.nth(2).fill(opt.confirmPassword)
+        await typeIntoInput(page, pwInputs.nth(2), opt.confirmPassword)
     }
     await page.waitForTimeout(300)
 }
@@ -321,14 +349,14 @@ async function clickSend(page, lang) {
 
 async function captureFormInitial(page, lang) {
     await gotoUserViewAndOpenChangePw(page, lang)
-    return await page.screenshot({ fullPage: true })
+    return await captureStable(page)
 }
 
 async function captureOldEmpty(page, lang) {
     await gotoUserViewAndOpenChangePw(page, lang)
     await clickSend(page, lang)
     await page.waitForTimeout(800)
-    return await page.screenshot({ fullPage: true })
+    return await captureStable(page)
 }
 
 async function captureNewEmpty(page, lang) {
@@ -336,7 +364,7 @@ async function captureNewEmpty(page, lang) {
     await fillChangePwForm(page, { oldPassword: originalPassword })
     await clickSend(page, lang)
     await page.waitForTimeout(800)
-    return await page.screenshot({ fullPage: true })
+    return await captureStable(page)
 }
 
 async function captureConfirmEmpty(page, lang) {
@@ -347,7 +375,7 @@ async function captureConfirmEmpty(page, lang) {
     })
     await clickSend(page, lang)
     await page.waitForTimeout(800)
-    return await page.screenshot({ fullPage: true })
+    return await captureStable(page)
 }
 
 async function capturePwMismatch(page, lang) {
@@ -359,7 +387,7 @@ async function capturePwMismatch(page, lang) {
     })
     await clickSend(page, lang)
     await page.waitForTimeout(800)
-    return await page.screenshot({ fullPage: true })
+    return await captureStable(page)
 }
 
 async function capturePwPolicyFail(page, lang) {
@@ -372,7 +400,7 @@ async function capturePwPolicyFail(page, lang) {
     })
     await clickSend(page, lang)
     await page.waitForTimeout(2500) // 後端 checkUserPassword API call
-    return await page.screenshot({ fullPage: true })
+    return await captureStable(page)
 }
 
 async function captureOldWrong(page, lang) {
@@ -384,7 +412,7 @@ async function captureOldWrong(page, lang) {
     })
     await clickSend(page, lang)
     await page.waitForTimeout(3500) // 後端 checkUserPassword + changeUserPassword
-    return await page.screenshot({ fullPage: true })
+    return await captureStable(page)
 }
 
 async function captureSuccess(page, lang) {
@@ -402,7 +430,54 @@ async function captureSuccess(page, lang) {
         return document.querySelectorAll('input[type="password"]').length === 0
     }, null, { timeout: 60000 })
     await page.waitForTimeout(1500) // 給 Vue re-render 穩定
-    return await page.screenshot({ fullPage: true })
+    return await captureStable(page)
+}
+
+
+//E2E-009: 模擬前端 checkUserPassword 網路錯誤
+//用 page.route 攔截 /api/main POST 請求, 阻斷後端通訊
+//→ checkUserPassword fapi reject (axios 網路錯誤) → chPwNewError 顯示「密碼檢測失敗」
+async function captureNetworkError(page, lang) {
+    await gotoUserViewAndOpenChangePw(page, lang)
+    await fillChangePwForm(page, {
+        oldPassword: originalPassword,
+        newPassword,
+        confirmPassword: newPassword,
+    })
+    //啟動 route 攔截 (此時表單已填妥, 之前的 fapi calls 都已完成)
+    await page.route('**/api/main', (route) => route.abort('failed'))
+    await clickSend(page, lang)
+    //等 chPwNewError 訊息 (userChangePasswordForNetError) 出現
+    let needle = lang === 'eng' ? 'Password validation failed' : '密碼檢測失敗'
+    await page.waitForFunction((t) => (document.body.innerText || '').includes(t), needle, { timeout: 15000 })
+    await page.waitForTimeout(500)
+    let buf = await captureStable(page)
+    await page.unroute('**/api/main')
+    return buf
+}
+
+
+//E2E-010: 模擬 token 失效情境
+//用 woItems.tokens.del 在 user 已登入後刪除其 token, 再送出 changePassword
+//→ backend checkUserPassword 通過 (純函數性檢查, 不需 token) → changeUserPassword reject (invalid token)
+//→ chPwOldError = '變更失敗' (與 E2E-007 視覺等同, 共用 baseline)
+async function captureTokenInvalidated(page, lang) {
+    await gotoUserViewAndOpenChangePw(page, lang)
+    await fillChangePwForm(page, {
+        oldPassword: originalPassword,
+        newPassword,
+        confirmPassword: newPassword,
+    })
+    //在 user 已登入 + form 已填妥之後, 從 DB 刪除該 user 的所有 token
+    let userId = userIdOf(lang)
+    let tks = await woItems.tokens.select({ userId }).catch(() => [])
+    for (let tk of tks) await woItems.tokens.del({ id: tk.id }).catch(() => {})
+    await clickSend(page, lang)
+    //等 chPwOldError 訊息 (userChangePasswordFail) 出現
+    let needle = lang === 'eng' ? 'Password change failed' : '密碼變更失敗'
+    await page.waitForFunction((t) => (document.body.innerText || '').includes(t), needle, { timeout: 15000 })
+    await page.waitForTimeout(500)
+    return await captureStable(page)
 }
 
 
@@ -414,38 +489,66 @@ async function generateBaselineForLang(page, lang) {
     // 每個 lang 開頭重置 user（前一輪 008 success 會改 password）
     await insertTestUserAndToken(lang)
 
-    console.log('  001-form-initial')
-    let buf1 = await captureFormInitial(page, lang)
-    writeBaseline(lang, '001-form-initial', buf1)
+    if (shouldGen(lang, 'E2E-001-form-initial')) {
+        console.log('  001-form-initial')
+        let buf1 = await captureFormInitial(page, lang)
+        writeBaseline(lang, 'E2E-001-form-initial', buf1)
+    }
 
-    console.log('  002-old-empty')
-    let buf2 = await captureOldEmpty(page, lang)
-    writeBaseline(lang, '002-old-empty', buf2)
+    if (shouldGen(lang, 'E2E-002-old-empty')) {
+        console.log('  002-old-empty')
+        let buf2 = await captureOldEmpty(page, lang)
+        writeBaseline(lang, 'E2E-002-old-empty', buf2)
+    }
 
-    console.log('  003-new-empty')
-    let buf3 = await captureNewEmpty(page, lang)
-    writeBaseline(lang, '003-new-empty', buf3)
+    if (shouldGen(lang, 'E2E-003-new-empty')) {
+        console.log('  003-new-empty')
+        let buf3 = await captureNewEmpty(page, lang)
+        writeBaseline(lang, 'E2E-003-new-empty', buf3)
+    }
 
-    console.log('  004-confirm-empty')
-    let buf4 = await captureConfirmEmpty(page, lang)
-    writeBaseline(lang, '004-confirm-empty', buf4)
+    if (shouldGen(lang, 'E2E-004-confirm-empty')) {
+        console.log('  004-confirm-empty')
+        let buf4 = await captureConfirmEmpty(page, lang)
+        writeBaseline(lang, 'E2E-004-confirm-empty', buf4)
+    }
 
-    console.log('  005-pw-mismatch')
-    let buf5 = await capturePwMismatch(page, lang)
-    writeBaseline(lang, '005-pw-mismatch', buf5)
+    if (shouldGen(lang, 'E2E-005-pw-mismatch')) {
+        console.log('  005-pw-mismatch')
+        let buf5 = await capturePwMismatch(page, lang)
+        writeBaseline(lang, 'E2E-005-pw-mismatch', buf5)
+    }
 
-    console.log('  006-pw-policy-fail')
-    let buf6 = await capturePwPolicyFail(page, lang)
-    writeBaseline(lang, '006-pw-policy-fail', buf6)
+    if (shouldGen(lang, 'E2E-006-pw-policy-fail')) {
+        console.log('  006-pw-policy-fail')
+        let buf6 = await capturePwPolicyFail(page, lang)
+        writeBaseline(lang, 'E2E-006-pw-policy-fail', buf6)
+    }
 
-    console.log('  007-old-wrong')
-    let buf7 = await captureOldWrong(page, lang)
-    writeBaseline(lang, '007-old-wrong', buf7)
+    if (shouldGen(lang, 'E2E-007-old-wrong')) {
+        console.log('  007-old-wrong')
+        let buf7 = await captureOldWrong(page, lang)
+        writeBaseline(lang, 'E2E-007-old-wrong', buf7)
+    }
+
+    if (shouldGen(lang, 'E2E-009-network-error')) {
+        console.log('  009-network-error')
+        //009 用 route 攔截後端 API, 不影響 DB state
+        let buf9 = await captureNetworkError(page, lang)
+        writeBaseline(lang, 'E2E-009-network-error', buf9)
+    }
+
+    //010 token失效視覺等同 007 (chPwOldError = '變更失敗'), 不另存 baseline
+    //(if需要視覺驗證, mocha case 內共用 E2E-007 baseline)
 
     // 008 會改 user.password；放最後執行避免影響其他情境
-    console.log('  008-success')
-    let buf8 = await captureSuccess(page, lang)
-    writeBaseline(lang, '008-success', buf8)
+    if (shouldGen(lang, 'E2E-008-success')) {
+        console.log('  008-success')
+        //008 自含 setup: 重新插 user/token (確保 password 為已知 originalPassword), 再 capture
+        await insertTestUserAndToken(lang)
+        let buf8 = await captureSuccess(page, lang)
+        writeBaseline(lang, 'E2E-008-success', buf8)
+    }
 }
 
 
@@ -456,22 +559,24 @@ async function generateBaseline() {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    let browser = await chromium.launch({ headless: true })
-    let page = await browser.newPage()
-
-    page.on('dialog', async (dialog) => {
-        await dialog.accept()
-    })
-
+    //每個 lang 啟動 fresh browser, 與 mocha test mode 一致 (每個 describe 各自 launch browser).
     for (let lang of langs) {
-        await generateBaselineForLang(page, lang)
-    }
+        let browser = await chromium.launch({ headless: true })
+        let page = await browser.newPage()
+        page.on('dialog', async (dialog) => {
+            await dialog.accept()
+        })
 
-    await browser.close()
+        await generateBaselineForLang(page, lang)
+
+        await browser.close()
+    }
 
     await deleteTestUsersAndTokens()
 
     console.log('=== 標準圖產生完成 ===')
+
+    cleanup()
 }
 
 
@@ -494,9 +599,12 @@ else {
         describe(`ChangePassword E2E [${lang}] — 變更密碼流程`, function() {
             this.timeout(120000)
 
-            before(async function() {
+            //per-case 獨立: fresh browser + DB (對齊 e2e-adduser 標準)
+            beforeEach(async function() {
                 this.timeout(180000)
                 await startServersOnce()
+
+                await insertTestUserAndToken(lang)
 
                 browser = await chromium.launch({ headless: true })
                 let context = await browser.newContext()
@@ -507,96 +615,116 @@ else {
                 })
             })
 
-            beforeEach(async function() {
-                // 每個 it 之前重置 user（008 會改 password；其他情境不會但保險起見）
-                await insertTestUserAndToken(lang)
-            })
-
-            after(async function() {
+            afterEach(async function() {
                 if (browser) {
                     await browser.close()
+                    browser = null
                 }
                 await deleteTestUsersAndTokens()
             })
 
-            it('001-form-initial: 點變更密碼，表單剛展開', async function() {
+            it('E2E-001-form-initial: 點變更密碼，表單剛展開', async function() {
                 let buf = await captureFormInitial(page, lang)
-                let baselinePath = bp(lang, '001-form-initial')
+                let baselinePath = bp(lang, 'E2E-001-form-initial')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-001-form-initial`)
-                await assertSpecForCase(page, lang, '001-form-initial')
+                await assertSpecForCase(page, lang, 'E2E-001-form-initial')
                 await assertSbOverflows(page, `changepassword-${lang}-001-form-initial`)
             })
 
-            it('002-old-empty: 三欄空送出 → 舊密碼下方紅字', async function() {
+            it('E2E-002-old-empty: 三欄空送出 → 舊密碼下方紅字', async function() {
                 let buf = await captureOldEmpty(page, lang)
-                await assertSpecForCase(page, lang, '002-old-empty')
-                let baselinePath = bp(lang, '002-old-empty')
+                await assertSpecForCase(page, lang, 'E2E-002-old-empty')
+                let baselinePath = bp(lang, 'E2E-002-old-empty')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-002-old-empty`)
                 await assertSbOverflows(page, `changepassword-${lang}-002-old-empty`)
             })
 
-            it('003-new-empty: 只填舊密碼送出 → 新密碼下方紅字', async function() {
+            it('E2E-003-new-empty: 只填舊密碼送出 → 新密碼下方紅字', async function() {
                 let buf = await captureNewEmpty(page, lang)
-                await assertSpecForCase(page, lang, '003-new-empty')
-                let baselinePath = bp(lang, '003-new-empty')
+                await assertSpecForCase(page, lang, 'E2E-003-new-empty')
+                let baselinePath = bp(lang, 'E2E-003-new-empty')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-003-new-empty`)
                 await assertSbOverflows(page, `changepassword-${lang}-003-new-empty`)
             })
 
-            it('004-confirm-empty: 填舊+新送出 → 確認密碼下方紅字', async function() {
+            it('E2E-004-confirm-empty: 填舊+新送出 → 確認密碼下方紅字', async function() {
                 let buf = await captureConfirmEmpty(page, lang)
-                await assertSpecForCase(page, lang, '004-confirm-empty')
-                let baselinePath = bp(lang, '004-confirm-empty')
+                await assertSpecForCase(page, lang, 'E2E-004-confirm-empty')
+                let baselinePath = bp(lang, 'E2E-004-confirm-empty')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-004-confirm-empty`)
                 await assertSbOverflows(page, `changepassword-${lang}-004-confirm-empty`)
             })
 
-            it('005-pw-mismatch: 新密碼≠確認密碼 → 確認密碼下方紅字', async function() {
+            it('E2E-005-pw-mismatch: 新密碼≠確認密碼 → 確認密碼下方紅字', async function() {
                 let buf = await capturePwMismatch(page, lang)
-                await assertSpecForCase(page, lang, '005-pw-mismatch')
-                let baselinePath = bp(lang, '005-pw-mismatch')
+                await assertSpecForCase(page, lang, 'E2E-005-pw-mismatch')
+                let baselinePath = bp(lang, 'E2E-005-pw-mismatch')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-005-pw-mismatch`)
                 await assertSbOverflows(page, `changepassword-${lang}-005-pw-mismatch`)
             })
 
-            it('006-pw-policy-fail: 新密碼不符策略 → 新密碼下方紅字', async function() {
+            it('E2E-006-pw-policy-fail: 新密碼不符策略 → 新密碼下方紅字', async function() {
                 let buf = await capturePwPolicyFail(page, lang)
-                await assertSpecForCase(page, lang, '006-pw-policy-fail')
-                let baselinePath = bp(lang, '006-pw-policy-fail')
+                await assertSpecForCase(page, lang, 'E2E-006-pw-policy-fail')
+                let baselinePath = bp(lang, 'E2E-006-pw-policy-fail')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-006-pw-policy-fail`)
                 await assertSbOverflows(page, `changepassword-${lang}-006-pw-policy-fail`)
             })
 
-            it('007-old-wrong: 舊密碼錯 → 舊密碼下方紅字「變更失敗」', async function() {
+            it('E2E-007-old-wrong: 舊密碼錯 → 舊密碼下方紅字「變更失敗」', async function() {
                 let buf = await captureOldWrong(page, lang)
-                await assertSpecForCase(page, lang, '007-old-wrong')
-                let baselinePath = bp(lang, '007-old-wrong')
+                await assertSpecForCase(page, lang, 'E2E-007-old-wrong')
+                let baselinePath = bp(lang, 'E2E-007-old-wrong')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-007-old-wrong`)
                 await assertSbOverflows(page, `changepassword-${lang}-007-old-wrong`)
             })
 
-            it('008-success: 三欄填妥+正確 → 表單收起回 user info', async function() {
+            it('E2E-009-network-error: 前端 checkUserPassword 網路錯誤 → 新密碼下方紅字', async function() {
+                let buf = await captureNetworkError(page, lang)
+                await assertSpecForCase(page, lang, 'E2E-009-network-error')
+                let baselinePath = bp(lang, 'E2E-009-network-error')
+                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
+                let baselineBuf = fs.readFileSync(baselinePath)
+                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-009-network-error`)
+            })
+
+            it('E2E-010-token-invalid: token 失效 (DB 中途刪除) → 舊密碼下方紅字「變更失敗」(共用 E2E-007 baseline)', async function() {
+                let buf = await captureTokenInvalidated(page, lang)
+                await assertSpecForCase(page, lang, 'E2E-010-token-invalid')
+                //共用 E2E-007 baseline (視覺等同, chPwOldError = '變更失敗')
+                let baselinePath = bp(lang, 'E2E-007-old-wrong')
+                assert.strict.equal(fs.existsSync(baselinePath), true, `共用標準圖不存在: ${baselinePath}`)
+                let baselineBuf = fs.readFileSync(baselinePath)
+                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與共用 E2E-007 標準圖不一致: changepassword-${lang}-010-token-invalid`)
+            })
+
+            it('E2E-008-success: 三欄填妥+正確 → 表單收起回 user info', async function() {
                 let buf = await captureSuccess(page, lang)
-                await assertSpecForCase(page, lang, '008-success')
-                let baselinePath = bp(lang, '008-success')
+                await assertSpecForCase(page, lang, 'E2E-008-success')
+                let baselinePath = bp(lang, 'E2E-008-success')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-008-success`)
             })
+
+            //
+            // 009-cancel case 已刪除 (spec/流程_使用者變更密碼.md 對應 bullet 已移除,
+            // cancel 收起表單視為元件行為非流程契約).
+            //
 
         })
 

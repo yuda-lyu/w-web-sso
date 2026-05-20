@@ -7,13 +7,13 @@ import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
 
 
 //
 // E2E register test — 驗證使用者註冊與驗證信流程畫面（中英文版）
 //
-// 對應流程文件：z流程_使用者創建帳密.md
+// 對應流程文件：spec/流程_使用者創建帳密.md
 //
 // 使用方式：
 //   1. 先產生標準圖：node test/e2e-register.test.mjs --baseline
@@ -27,8 +27,7 @@ import { startServersOnce } from './e2e-setup.mjs'
 //   故 baseline 著重於前端可見的驗證狀態與 server-rendered 結果頁。
 //
 
-let baseUrl = 'http://localhost:8080'
-let backendUrl = 'http://localhost:11007'
+let backendUrl = apiUrl
 let salt = '{salt}'
 let baselineDir = './test/pics/register'
 let langs = ['eng', 'cht']
@@ -49,50 +48,77 @@ let kpLangText = {
 
 
 // ===================================================================
-// 預期語意斷言 (從 z流程_使用者創建帳密.md + procLang.mjs 衍生, 非現狀指紋)
+// 預期語意斷言 (從 spec/流程_使用者創建帳密.md + procLang.mjs 衍生, 非現狀指紋)
 // 每張截圖必須含對應 i18n 鍵的文字; 不含 → 修系統或修 spec, 不改 baseline.
 // ===================================================================
 
 let expectedSpecText = {
-    '001-form-initial': {
+    'E2E-001-form-initial': {
         //register 模式下表單應出現 submit 按鈕文字
         eng: { mode: 'text', value: 'Submit' },
         cht: { mode: 'text', value: '送出申請' },
     },
-    '002-pw-too-short': {
+    'E2E-002-pw-too-short': {
         //userPassword_keyLimNumLenMin (minLength=8, settings.json)
         eng: { mode: 'text', value: 'Password length must be at least 8 characters' },
         cht: { mode: 'text', value: '密碼長度須大於等於8個字元' },
     },
-    '003-pw-mismatch': {
+    'E2E-003-pw-mismatch': {
         //userChangePasswordNotSame
         eng: { mode: 'text', value: 'New password and confirm password do not match' },
         cht: { mode: 'text', value: '新密碼與確認密碼不一致' },
     },
-    '004-pw-multi-errors': {
+    'E2E-004-pw-multi-errors': {
         //'12345' 觸發 RequireLetter (純數字)
         eng: { mode: 'text', value: 'Password must contain at least one letter' },
         cht: { mode: 'text', value: '密碼須包含至少一個英文字母' },
     },
-    '005-success': {
+    'E2E-005-success': {
         //form 切回 login mode, 不應再見 submit 按鈕文字
         eng: { mode: 'absentText', value: 'Submit' },
         cht: { mode: 'absentText', value: '送出申請' },
     },
-    '006-verify-success': {
+    'E2E-006-verify-success': {
         //userRegistrationVerifySuccess (server-rendered HTML)
         eng: { mode: 'text', value: 'Email verified successfully' },
         cht: { mode: 'text', value: '電子郵件驗證成功' },
     },
-    '007-verify-invalid': {
+    'E2E-007-verify-invalid': {
         //verifyEmailInvalidToken
         eng: { mode: 'text', value: 'Invalid or expired verification link' },
         cht: { mode: 'text', value: '驗證連結無效或已失效' },
     },
-    '008-verify-already': {
+    'E2E-008-verify-already': {
         //verifyEmailAlreadyVerified
         eng: { mode: 'text', value: 'This account has already been verified' },
         cht: { mode: 'text', value: '此帳號已完成驗證' },
+    },
+    'E2E-009-back-to-login': {
+        //切回 login mode, 應見 Log in 按鈕, 不應見 register 的 Submit 按鈕
+        eng: { mode: 'text', value: 'Log in' },
+        cht: { mode: 'text', value: '登入' },
+    },
+    'E2E-010-account-empty': {
+        //僅驗 form 仍在 register mode (Submit 按鈕還在, 因 account 空所以是灰態)
+        eng: { mode: 'text', value: 'Submit' },
+        cht: { mode: 'text', value: '送出申請' },
+    },
+    'E2E-011-password-empty': {
+        eng: { mode: 'text', value: 'Submit' },
+        cht: { mode: 'text', value: '送出申請' },
+    },
+    'E2E-012-email-empty': {
+        eng: { mode: 'text', value: 'Submit' },
+        cht: { mode: 'text', value: '送出申請' },
+    },
+    'E2E-013-name-empty': {
+        eng: { mode: 'text', value: 'Submit' },
+        cht: { mode: 'text', value: '送出申請' },
+    },
+    'E2E-020-resend-email-mismatch': {
+        //userRegistrationResendInvalidEmail
+        eng: { mode: 'text', value: 'The email address does not match the account' },
+        cht: { mode: 'text', value: '電子郵件與帳號不符' },
     },
 }
 
@@ -174,6 +200,10 @@ function writeBaseline(lang, name, buf) {
         return
     }
     fs.writeFileSync(bp(lang, name), buf)
+}
+//是否需要產生此 case 的標準圖. --names 指定時只有指定 case 回 true → 連「截圖」都跳過 (非僅跳寫檔).
+function shouldGen(lang, name) {
+    return !baselineNamesFilter || baselineNamesFilter.has(`${lang}-${name}`)
 }
 
 
@@ -264,6 +294,11 @@ function makeVerifyAlreadyUser(lang, tokenVerify) {
 // --- 新增/刪除測試使用者 ---
 
 async function insertVerifyTestUsers() {
+    //先重設為 base seed (清空 users/tokens/ips + 插入 3 canonical users + 4 tokens),
+    //再插入本測試自己的 verify-test users. hermetic: 每次 setup 都從乾淨 base seed 起跳.
+    //此函式為兩個 mocha beforeEach (主 describe + alert 拒絕 describe) 與 generateBaselineForLang
+    //共用唯一進入點, 故置於首行覆蓋三條路徑.
+    await resetToBaseSeed()
     let users = []
     for (let lang of langs) {
         let tk1 = `${genIDSeq()}`
@@ -278,23 +313,7 @@ async function insertVerifyTestUsers() {
 }
 
 async function deleteAllRegisterTestUsers() {
-    // 涵蓋本測試所有可能產生的 user
-    let ids = []
-    for (let lang of langs) {
-        ids.push(`id-register-verify-ok-${lang}`)
-        ids.push(`id-register-verify-already-${lang}`)
-    }
-    // 註冊成功流程產生的 user，account 為 qauser-{lang}，id 由 funNew 隨機產生
-    // 註：woItems.users.del({account:...}) 不會真的刪除（nDeleted:0），須 select 取 id 後以 del({id}) 刪
-    for (let id of ids) {
-        await woItems.users.del({ id }).catch(() => {})
-    }
-    for (let lang of langs) {
-        let us = await woItems.users.select({ account: `qauser-${lang}` }).catch(() => [])
-        for (let u of us) {
-            await woItems.users.del({ id: u.id }).catch(() => {})
-        }
-    }
+    await deleteNonBaseSeed()
     console.log(`deleted register test users`)
 }
 
@@ -342,22 +361,32 @@ async function gotoRegisterMode(page, lang) {
 //
 // register 模式下 input 順序：account, password, regConfirmPassword, regName, regEmail
 //
+async function typeIntoInput(page, locator, value) {
+    //真實 user 輸入: click → focus → 清空 → keyboard.type
+    //(全域 CLAUDE.md §6.3: act 階段禁 .fill(), 必用 keyboard.type)
+    await locator.click()
+    await page.waitForTimeout(50)
+    await page.keyboard.press('Control+A')
+    await page.keyboard.press('Delete')
+    await page.keyboard.type(value, { delay: 0 })
+}
+
 async function fillRegisterForm(page, opt = {}) {
     let inputs = page.locator('input')
     if (opt.account !== undefined) {
-        await inputs.nth(0).fill(opt.account)
+        await typeIntoInput(page, inputs.nth(0), opt.account)
     }
     if (opt.password !== undefined) {
-        await inputs.nth(1).fill(opt.password)
+        await typeIntoInput(page, inputs.nth(1), opt.password)
     }
     if (opt.confirmPassword !== undefined) {
-        await inputs.nth(2).fill(opt.confirmPassword)
+        await typeIntoInput(page, inputs.nth(2), opt.confirmPassword)
     }
     if (opt.name !== undefined) {
-        await inputs.nth(3).fill(opt.name)
+        await typeIntoInput(page, inputs.nth(3), opt.name)
     }
     if (opt.email !== undefined) {
-        await inputs.nth(4).fill(opt.email)
+        await typeIntoInput(page, inputs.nth(4), opt.email)
     }
     await page.waitForTimeout(500)
 }
@@ -367,14 +396,14 @@ async function fillRegisterForm(page, opt = {}) {
 
 async function captureFormInitial(page, lang) {
     await gotoRegisterMode(page, lang)
-    return await page.screenshot({ fullPage: true })
+    return await captureStable(page)
 }
 
 async function capturePwTooShort(page, lang) {
     await gotoRegisterMode(page, lang)
     // 6 字元短密碼，含字母+數字+特殊符號但長度 < 8
     await fillRegisterForm(page, { password: 'aB1@cd' })
-    return await page.screenshot({ fullPage: true })
+    return await captureStable(page)
 }
 
 async function capturePwMismatch(page, lang) {
@@ -383,14 +412,19 @@ async function capturePwMismatch(page, lang) {
         password: 'Pw@reg9999',
         confirmPassword: 'Pw@reg8888',
     })
-    return await page.screenshot({ fullPage: true })
+    return await captureStable(page)
 }
 
 async function capturePwMultiErrors(page, lang) {
     await gotoRegisterMode(page, lang)
     // '12345' — 5 字元 + 全數字 + 在常見密碼黑名單內，會多項違反
     await fillRegisterForm(page, { password: '12345' })
-    return await page.screenshot({ fullPage: true })
+    //等預期錯誤文字 (語意斷言目標) 浮出再截圖
+    let expected = expectedSpecText['E2E-004-pw-multi-errors'][lang].value
+    await page.waitForFunction((t) => (document.body.innerText || '').includes(t), expected, { timeout: 8000 })
+    //鼠標移到角落 (避免 hover / cursor 殘留)
+    await page.mouse.move(0, 0)
+    return await captureStable(page)
 }
 
 async function captureSuccess(page, lang) {
@@ -410,62 +444,165 @@ async function captureSuccess(page, lang) {
     // 後端 srEmail.send() 在 SMTP 不通時會等網路 timeout (~30s)，故給 60s 寬限
     await page.waitForFunction(() => document.querySelectorAll('input').length <= 2, null, { timeout: 60000 })
     await page.waitForTimeout(1500) // 給 Vue re-render 穩定
-    return await page.screenshot({ fullPage: true })
+    return await captureStable(page)
 }
 
 async function captureVerifyResult(page, lang, token) {
     let url = `${backendUrl}/api/verifyEmail?token=${token}&lang=${lang}`
     await page.goto(url, { waitUntil: 'networkidle', timeout: 15000 })
     await page.waitForTimeout(2000)
-    return await page.screenshot({ fullPage: true })
+    return await captureStable(page)
+}
+
+
+//E2E-009: 點 Back to login link, viewMode 由 register 切回 login (5 input → 2 input)
+async function captureBackToLogin(page, lang) {
+    let backText = lang === 'eng' ? 'Back to login' : '返回登入'
+    await gotoRegisterMode(page, lang)
+    //先確認進入 register mode (5 inputs)
+    await page.waitForFunction(() => document.querySelectorAll('input').length >= 5, null, { timeout: 8000 })
+    //點 Back to login link
+    await page.locator(`text="${backText}"`).first().click()
+    await page.waitForFunction(() => document.querySelectorAll('input').length <= 2, null, { timeout: 8000 })
+    await page.waitForTimeout(1500)
+    return await captureStable(page)
+}
+
+
+//E2E-010~013: register form 缺少指定欄位, Submit 灰態無法提交
+async function captureFieldEmpty(page, lang, emptyField) {
+    await gotoRegisterMode(page, lang)
+    let fill = {
+        account: `qareg-${lang}`,
+        password: 'Pw@RegFill123',
+        confirmPassword: 'Pw@RegFill123',
+        name: 'Reg Filler',
+        email: `qareg-${lang}@test.com`,
+    }
+    delete fill[emptyField]
+    await fillRegisterForm(page, fill)
+    return await captureStable(page)
+}
+
+
+//E2E-020: 未驗證帳號 login → resend UI → 填錯 email → resendError inline
+//預先 seed 未驗證 user, login → 切 resend mode → 填不符 email → reject + inline error
+async function captureResendEmailMismatch(page, lang) {
+    let t = kpLangText[lang]
+    let resendLink = lang === 'eng' ? 'Resend verification email' : '重寄驗證信'
+    let resendBtn = lang === 'eng' ? 'Send verification email' : '寄送驗證信'
+
+    //預先插入未驗證 user (timeVerified='')
+    let unverifiedAccount = `qareg-unverified-${lang}`
+    let unverifiedEmail = `qareg-unverified-${lang}@test.com`
+    let rawPw = 'Cd@9876bklm'
+    await woItems.users.del({ id: `id-${unverifiedAccount}` }).catch(() => {})
+    let u = ds.users.funNew({
+        id: `id-${unverifiedAccount}`,
+        order: 500,
+        account: unverifiedAccount,
+        password: hashPassword(rawPw, salt),
+        name: 'Unverified User',
+        email: unverifiedEmail,
+        description: '',
+        from: 'test',
+        redir: '',
+        isAdmin: 'n',
+        timeVerified: '',  //未驗證
+        timeExpired: '2030-01-01T00:00:00.000+08:00',
+        timeBlocked: '',
+        isActive: 'y',
+    })
+    u.id = `id-${unverifiedAccount}`
+    u.timeVerified = ''
+    await woItems.users.insert([u])
+
+    //navigate to login + clear LS
+    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
+    await page.evaluate(() => localStorage.clear())
+    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
+    await page.waitForTimeout(2500)
+    await setLangViaUI(page, lang)
+
+    //login with unverified account
+    let inputs = page.locator('input')
+    await typeIntoInput(page, inputs.nth(0), unverifiedAccount)
+    await typeIntoInput(page, inputs.nth(1), rawPw)
+    await page.waitForTimeout(300)
+    await page.locator(`text="${t.login}"`).first().click()
+    //等 resend UI 出現 (showResendVerify=true → "重寄驗證信" link)
+    await page.waitForFunction((n) => (document.body.innerText || '').includes(n), resendLink, { timeout: 15000 })
+    //點 "重寄驗證信" link → viewMode='resend'
+    await page.locator(`text="${resendLink}"`).first().click()
+    //等 resend form 出現 (Email input + "寄送驗證信" button)
+    await page.waitForFunction((n) => (document.body.innerText || '').includes(n), resendBtn, { timeout: 8000 })
+    await page.waitForTimeout(500)
+
+    //填錯誤 email (不符 user 實際 email)
+    let resendInputs = page.locator('input')
+    let resendInputCount = await resendInputs.count()
+    //在 resend mode 下應有 1 個 email input (前面 login 模式的 inputs 已被 resend template 取代)
+    let emailInputIdx = resendInputCount - 1  //假設最後一個是 email
+    await typeIntoInput(page, resendInputs.nth(emailInputIdx), `wrong-${lang}@notmatch.com`)
+    await page.waitForTimeout(300)
+
+    //點寄送按鈕
+    await page.locator(`text="${resendBtn}"`).first().click()
+    //等 resendError inline text 出現
+    let errText = lang === 'eng' ? 'does not match' : '電子郵件與帳號不符'
+    await page.waitForFunction((n) => (document.body.innerText || '').includes(n), errText, { timeout: 15000 })
+    await page.waitForTimeout(500)
+    return await captureStable(page)
 }
 
 
 // --- 產生標準圖模式 ---
 
-async function generateBaselineForLang(page, lang) {
+async function generateBaselineForLang(lang) {
     console.log(`=== 產生標準圖（${lang}）===`)
 
-    // 001 form initial
-    console.log('  001-form-initial')
-    let buf1 = await captureFormInitial(page, lang)
-    writeBaseline(lang, '001-form-initial', buf1)
+    let cases = [
+        { name: 'E2E-001-form-initial', fn: captureFormInitial },
+        { name: 'E2E-002-pw-too-short', fn: capturePwTooShort },
+        { name: 'E2E-003-pw-mismatch', fn: capturePwMismatch },
+        { name: 'E2E-004-pw-multi-errors', fn: capturePwMultiErrors },
+        {
+            name: 'E2E-005-success',
+            fn: captureSuccess,
+            prep: async () => deleteUserByAccount(`qauser-${lang}`),
+        },
+        { name: 'E2E-006-verify-success', fn: (page, lang) => captureVerifyResult(page, lang, verifyTokens.success[lang]) },
+        { name: 'E2E-007-verify-invalid', fn: (page, lang) => captureVerifyResult(page, lang, 'fake-token-not-in-db') },
+        { name: 'E2E-008-verify-already', fn: (page, lang) => captureVerifyResult(page, lang, verifyTokens.already[lang]) },
+        { name: 'E2E-009-back-to-login', fn: captureBackToLogin },
+        { name: 'E2E-010-account-empty', fn: (page, lang) => captureFieldEmpty(page, lang, 'account') },
+        { name: 'E2E-011-password-empty', fn: (page, lang) => captureFieldEmpty(page, lang, 'password') },
+        { name: 'E2E-012-email-empty', fn: (page, lang) => captureFieldEmpty(page, lang, 'email') },
+        { name: 'E2E-013-name-empty', fn: (page, lang) => captureFieldEmpty(page, lang, 'name') },
+        { name: 'E2E-020-resend-email-mismatch', fn: captureResendEmailMismatch },
+    ]
 
-    // 002 pw too short
-    console.log('  002-pw-too-short')
-    let buf2 = await capturePwTooShort(page, lang)
-    writeBaseline(lang, '002-pw-too-short', buf2)
+    for (let { name, fn, prep } of cases) {
+        if (!shouldGen(lang, name)) continue
+        console.log(`  ${name}`)
+        //per-case 重整 DB + fresh browser, 與 mocha beforeEach 一致, 避免 cold/warm
+        //GPU/glyph atlas 差異導致跨模式 pixel drift (§6.3 截圖穩定性已知限制)
+        await deleteAllRegisterTestUsers()
+        await insertVerifyTestUsers()
+        if (prep) await prep()
 
-    // 003 pw mismatch
-    console.log('  003-pw-mismatch')
-    let buf3 = await capturePwMismatch(page, lang)
-    writeBaseline(lang, '003-pw-mismatch', buf3)
+        let browser = await chromium.launch({ headless: true })
+        let context = await browser.newContext()
+        let page = await context.newPage()
+        page.on('dialog', async (dialog) => {
+            await dialog.accept()
+        })
 
-    // 004 pw multi errors
-    console.log('  004-pw-multi-errors')
-    let buf4 = await capturePwMultiErrors(page, lang)
-    writeBaseline(lang, '004-pw-multi-errors', buf4)
+        let buf = await fn(page, lang)
+        writeBaseline(lang, name, buf)
 
-    // 005 success → form 清空回 login mode（先清掉前次殘留 user）
-    console.log('  005-success')
-    await deleteUserByAccount(`qauser-${lang}`)
-    let buf5 = await captureSuccess(page, lang)
-    writeBaseline(lang, '005-success', buf5)
-
-    // 006 verify success（須先 reset verify users，因為 005 success 流程不影響 verify users，但保險起見）
-    console.log('  006-verify-success')
-    let buf6 = await captureVerifyResult(page, lang, verifyTokens.success[lang])
-    writeBaseline(lang, '006-verify-success', buf6)
-
-    // 007 verify invalid
-    console.log('  007-verify-invalid')
-    let buf7 = await captureVerifyResult(page, lang, 'fake-token-not-in-db')
-    writeBaseline(lang, '007-verify-invalid', buf7)
-
-    // 008 verify already
-    console.log('  008-verify-already')
-    let buf8 = await captureVerifyResult(page, lang, verifyTokens.already[lang])
-    writeBaseline(lang, '008-verify-already', buf8)
+        await browser.close()
+    }
 }
 
 
@@ -476,26 +613,15 @@ async function generateBaseline() {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    await deleteAllRegisterTestUsers()
-    await insertVerifyTestUsers()
-
-    // 每個 lang 啟動 fresh browser，與 mocha test mode（每個 describe 各自 launch browser）一致
-    // 避免「warm 跑 baseline / cold 跑 test」造成 cht-001-form-initial 等首次截圖 pixel 微差
     for (let lang of langs) {
-        let browser = await chromium.launch({ headless: true })
-        let page = await browser.newPage()
-        page.on('dialog', async (dialog) => {
-            await dialog.accept()
-        })
-
-        await generateBaselineForLang(page, lang)
-
-        await browser.close()
+        await generateBaselineForLang(lang)
     }
 
     await deleteAllRegisterTestUsers()
 
     console.log('=== 標準圖產生完成 ===')
+
+    cleanup()
 }
 
 
@@ -518,7 +644,8 @@ else {
         describe(`Register E2E [${lang}] — 註冊與驗證信流程`, function() {
             this.timeout(120000)
 
-            before(async function() {
+            //per-case 獨立: fresh browser + DB (對齊 e2e-adduser 標準)
+            beforeEach(async function() {
                 this.timeout(180000) // 第一次須等前端首次編譯（~15-30s），給寬鬆 timeout
                 await startServersOnce()
 
@@ -534,92 +661,295 @@ else {
                 })
             })
 
-            after(async function() {
+            afterEach(async function() {
                 if (browser) {
                     await browser.close()
+                    browser = null
                 }
                 await deleteAllRegisterTestUsers()
             })
 
-            it('001-form-initial: 進入 register 模式，表單空白', async function() {
+            it('E2E-001-form-initial: 進入 register 模式，表單空白', async function() {
                 let buf = await captureFormInitial(page, lang)
-                await assertSpecForCase(page, lang, '001-form-initial')
-                let baselinePath = bp(lang, '001-form-initial')
+                await assertSpecForCase(page, lang, 'E2E-001-form-initial')
+                let baselinePath = bp(lang, 'E2E-001-form-initial')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-001-form-initial`)
                 await assertSbOverflows(page, `register-${lang}-001-form-initial`)
             })
 
-            it('002-pw-too-short: 密碼長度不足 → inline 紅字', async function() {
+            it('E2E-002-pw-too-short: 密碼長度不足 → inline 紅字', async function() {
                 let buf = await capturePwTooShort(page, lang)
-                await assertSpecForCase(page, lang, '002-pw-too-short')
-                let baselinePath = bp(lang, '002-pw-too-short')
+                await assertSpecForCase(page, lang, 'E2E-002-pw-too-short')
+                let baselinePath = bp(lang, 'E2E-002-pw-too-short')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-002-pw-too-short`)
                 await assertSbOverflows(page, `register-${lang}-002-pw-too-short`)
             })
 
-            it('003-pw-mismatch: 密碼≠確認密碼 → inline 紅字', async function() {
+            it('E2E-003-pw-mismatch: 密碼≠確認密碼 → inline 紅字', async function() {
                 let buf = await capturePwMismatch(page, lang)
-                await assertSpecForCase(page, lang, '003-pw-mismatch')
-                let baselinePath = bp(lang, '003-pw-mismatch')
+                await assertSpecForCase(page, lang, 'E2E-003-pw-mismatch')
+                let baselinePath = bp(lang, 'E2E-003-pw-mismatch')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-003-pw-mismatch`)
                 await assertSbOverflows(page, `register-${lang}-003-pw-mismatch`)
             })
 
-            it('004-pw-multi-errors: 密碼觸發多項策略違反 → 多條紅字', async function() {
+            it('E2E-004-pw-multi-errors: 密碼觸發多項策略違反 → 多條紅字', async function() {
                 let buf = await capturePwMultiErrors(page, lang)
-                await assertSpecForCase(page, lang, '004-pw-multi-errors')
-                let baselinePath = bp(lang, '004-pw-multi-errors')
+                await assertSpecForCase(page, lang, 'E2E-004-pw-multi-errors')
+                let baselinePath = bp(lang, 'E2E-004-pw-multi-errors')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-004-pw-multi-errors`)
                 await assertSbOverflows(page, `register-${lang}-004-pw-multi-errors`)
             })
 
-            it('005-success: 註冊成功 → form 清空回 login mode', async function() {
+            it('E2E-005-success: 註冊成功 → form 清空回 login mode', async function() {
                 await deleteUserByAccount(`qauser-${lang}`)
                 let buf = await captureSuccess(page, lang)
-                await assertSpecForCase(page, lang, '005-success')
-                let baselinePath = bp(lang, '005-success')
+                await assertSpecForCase(page, lang, 'E2E-005-success')
+                let baselinePath = bp(lang, 'E2E-005-success')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-005-success`)
             })
 
-            it('006-verify-success: 驗證連結 token 正確 → server-rendered 成功頁', async function() {
+            it('E2E-006-verify-success: 驗證連結 token 正確 → server-rendered 成功頁', async function() {
                 let buf = await captureVerifyResult(page, lang, verifyTokens.success[lang])
-                await assertSpecForCase(page, lang, '006-verify-success')
-                let baselinePath = bp(lang, '006-verify-success')
+                await assertSpecForCase(page, lang, 'E2E-006-verify-success')
+                let baselinePath = bp(lang, 'E2E-006-verify-success')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-006-verify-success`)
             })
 
-            it('007-verify-invalid: 驗證連結 token 無效 → server-rendered 失敗頁', async function() {
+            it('E2E-007-verify-invalid: 驗證連結 token 無效 → server-rendered 失敗頁', async function() {
                 let buf = await captureVerifyResult(page, lang, 'fake-token-not-in-db')
-                await assertSpecForCase(page, lang, '007-verify-invalid')
-                let baselinePath = bp(lang, '007-verify-invalid')
+                await assertSpecForCase(page, lang, 'E2E-007-verify-invalid')
+                let baselinePath = bp(lang, 'E2E-007-verify-invalid')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-007-verify-invalid`)
             })
 
-            it('008-verify-already: 驗證連結 token 已驗證 → server-rendered 已驗證頁', async function() {
+            it('E2E-008-verify-already: 驗證連結 token 已驗證 → server-rendered 已驗證頁', async function() {
                 let buf = await captureVerifyResult(page, lang, verifyTokens.already[lang])
-                await assertSpecForCase(page, lang, '008-verify-already')
-                let baselinePath = bp(lang, '008-verify-already')
+                await assertSpecForCase(page, lang, 'E2E-008-verify-already')
+                let baselinePath = bp(lang, 'E2E-008-verify-already')
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-008-verify-already`)
             })
 
+            it('E2E-009-back-to-login: 點 Back to login link → input 從 5 回到 2 (登入頁)', async function() {
+                let buf = await captureBackToLogin(page, lang)
+                await assertSpecForCase(page, lang, 'E2E-009-back-to-login')
+                let baselinePath = bp(lang, 'E2E-009-back-to-login')
+                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
+                let baselineBuf = fs.readFileSync(baselinePath)
+                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-009-back-to-login`)
+                //驗證 input 數 = 2 (代表確實回到 login mode)
+                let inpCount = await page.locator('input').count()
+                assert.strict.equal(inpCount, 2, `Back to login 後應有 2 個 input, 實際 ${inpCount}`)
+            })
+
+            it('E2E-010-account-empty: register 缺帳號 → Submit 灰態無法觸發', async function() {
+                let buf = await captureFieldEmpty(page, lang, 'account')
+                await assertSpecForCase(page, lang, 'E2E-010-account-empty')
+                let baselinePath = bp(lang, 'E2E-010-account-empty')
+                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
+                let baselineBuf = fs.readFileSync(baselinePath)
+                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-010-account-empty`)
+                //驗證 register form 仍有 5 input (未送出, viewMode 仍為 register)
+                let inpCount = await page.locator('input').count()
+                assert.strict.equal(inpCount, 5, `account 空 + Submit 灰態, form 仍應 5 input, 實際 ${inpCount}`)
+            })
+
+            it('E2E-011-password-empty: register 缺密碼 → Submit 灰態無法觸發', async function() {
+                let buf = await captureFieldEmpty(page, lang, 'password')
+                await assertSpecForCase(page, lang, 'E2E-011-password-empty')
+                let baselinePath = bp(lang, 'E2E-011-password-empty')
+                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
+                let baselineBuf = fs.readFileSync(baselinePath)
+                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-011-password-empty`)
+                let inpCount = await page.locator('input').count()
+                assert.strict.equal(inpCount, 5, `password 空 + Submit 灰態, form 仍應 5 input, 實際 ${inpCount}`)
+            })
+
+            it('E2E-012-email-empty: register 缺 email → Submit 灰態無法觸發', async function() {
+                let buf = await captureFieldEmpty(page, lang, 'email')
+                await assertSpecForCase(page, lang, 'E2E-012-email-empty')
+                let baselinePath = bp(lang, 'E2E-012-email-empty')
+                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
+                let baselineBuf = fs.readFileSync(baselinePath)
+                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-012-email-empty`)
+                let inpCount = await page.locator('input').count()
+                assert.strict.equal(inpCount, 5, `email 空 + Submit 灰態, form 仍應 5 input, 實際 ${inpCount}`)
+            })
+
+            it('E2E-013-name-empty: register 缺姓名 → Submit 灰態無法觸發', async function() {
+                let buf = await captureFieldEmpty(page, lang, 'name')
+                await assertSpecForCase(page, lang, 'E2E-013-name-empty')
+                let baselinePath = bp(lang, 'E2E-013-name-empty')
+                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
+                let baselineBuf = fs.readFileSync(baselinePath)
+                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-013-name-empty`)
+                let inpCount = await page.locator('input').count()
+                assert.strict.equal(inpCount, 5, `name 空 + Submit 灰態, form 仍應 5 input, 實際 ${inpCount}`)
+            })
+
+            it('E2E-020-resend-email-mismatch: 未驗證 login → resend UI → 錯 email → resendError inline 紅字', async function() {
+                let buf = await captureResendEmailMismatch(page, lang)
+                await assertSpecForCase(page, lang, 'E2E-020-resend-email-mismatch')
+                let baselinePath = bp(lang, 'E2E-020-resend-email-mismatch')
+                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
+                let baselineBuf = fs.readFileSync(baselinePath)
+                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-020-resend-email-mismatch`)
+            })
+
+        })
+
+
+        //E2E-014~016: backend reject 走 alert, 無法 pixel baseline. 改用 dialog text 斷言.
+        //per-case 獨立 dialog capture; 不重用 lang 主 describe 的 dialog handler (那邊只 accept 不 capture).
+        describe(`Register E2E [${lang}] — alert 拒絕情境 (E2E-014~016)`, function() {
+            this.timeout(120000)
+
+            let browser
+            let page
+            let capturedAlerts
+
+            beforeEach(async function() {
+                this.timeout(180000)
+                await startServersOnce()
+                await deleteAllRegisterTestUsers()
+                await insertVerifyTestUsers()
+
+                browser = await chromium.launch({ headless: true })
+                let context = await browser.newContext()
+                page = await context.newPage()
+                capturedAlerts = []
+                page.on('dialog', async (dialog) => {
+                    capturedAlerts.push(dialog.message())
+                    await dialog.accept()
+                })
+            })
+
+            afterEach(async function() {
+                if (browser) {
+                    await browser.close()
+                    browser = null
+                }
+                await deleteAllRegisterTestUsers()
+            })
+
+            async function fillAndSubmit(opt) {
+                let t = kpLangText[lang]
+                await gotoRegisterMode(page, lang)
+                await fillRegisterForm(page, opt)
+                await page.locator(`text="${t.submit}"`).first().click().catch(() => {})
+                //等 alert 出現 (capturedAlerts.length > 0)
+                let start = Date.now()
+                while (capturedAlerts.length === 0 && Date.now() - start < 60000) {
+                    await page.waitForTimeout(200)
+                }
+            }
+
+            it('E2E-014-email-format-invalid: email 格式不合 → alert 顯示對應錯誤', async function() {
+                let badEmail = 'not-an-email-format'
+                await fillAndSubmit({
+                    account: `qareg-bad-email-${lang}`,
+                    password: 'Pw@RegFill123',
+                    confirmPassword: 'Pw@RegFill123',
+                    name: 'Reg Filler',
+                    email: badEmail,
+                })
+                assert.strict.equal(capturedAlerts.length >= 1, true, `應有 alert 出現, 實際 ${capturedAlerts.length}`)
+                let msg = capturedAlerts.join(' | ')
+                let expected = lang === 'eng' ? 'email' : '電子郵件'
+                assert.strict.equal(msg.toLowerCase().includes('email') || msg.includes(expected), true,
+                    `alert 應提示 email 相關錯誤, 實際: ${msg}`)
+            })
+
+            it('E2E-015-account-duplicate: 帳號已被註冊 → alert 顯示對應錯誤', async function() {
+                //預先插入一個 user, 占用 account
+                //note: account 用 'jb-oldusr-{lang}' 規避所有跟密碼字元的 2-char 重疊
+                //(後端 checkUserPassword 在帳號唯一性檢查前, 密碼撞 noConsecutiveCharsFromAccount 會先 reject)
+                let existAccount = `jb-oldusr-${lang}`
+                let existEmail = `jb-oldusr-${lang}@test.com`
+                await woItems.users.insert([
+                    ds.users.funNew({
+                        id: `id-${existAccount}`,
+                        account: existAccount,
+                        password: hashPassword('Cd@9876bklm', salt),
+                        name: 'Exist User',
+                        email: existEmail,
+                        from: 'test',
+                        timeVerified: '2025-01-01T00:00:00.000+08:00',
+                        timeExpired: '2030-01-01T00:00:00.000+08:00',
+                        timeBlocked: '',
+                        isActive: 'y',
+                    }),
+                ])
+
+                await fillAndSubmit({
+                    account: existAccount,  //撞 account
+                    password: 'Cd@9876bklm',
+                    confirmPassword: 'Cd@9876bklm',
+                    name: 'Reg Filler',
+                    email: `jb-fresh-${lang}@test.com`,
+                })
+                assert.strict.equal(capturedAlerts.length >= 1, true, `應有 alert 出現, 實際 ${capturedAlerts.length}`)
+                let msg = capturedAlerts.join(' | ')
+                let expected = lang === 'eng' ? 'account' : '帳號'
+                assert.strict.equal(msg.toLowerCase().includes('account') || msg.includes(expected), true,
+                    `alert 應提示 account 相關錯誤 (重複), 實際: ${msg}`)
+            })
+
+            it('E2E-016-email-duplicate: email 已被註冊 → alert 顯示對應錯誤', async function() {
+                let existAccount = `jb-mailusr-${lang}`
+                let existEmail = `jb-mailusr-${lang}@test.com`
+                await woItems.users.insert([
+                    ds.users.funNew({
+                        id: `id-${existAccount}`,
+                        account: existAccount,
+                        password: hashPassword('Cd@9876bklm', salt),
+                        name: 'Exist User',
+                        email: existEmail,
+                        from: 'test',
+                        timeVerified: '2025-01-01T00:00:00.000+08:00',
+                        timeExpired: '2030-01-01T00:00:00.000+08:00',
+                        timeBlocked: '',
+                        isActive: 'y',
+                    }),
+                ])
+
+                await fillAndSubmit({
+                    account: `jb-newusr-${lang}`,
+                    password: 'Cd@9876bklm',
+                    confirmPassword: 'Cd@9876bklm',
+                    name: 'Reg Filler',
+                    email: existEmail,  //撞 email
+                })
+                assert.strict.equal(capturedAlerts.length >= 1, true, `應有 alert 出現, 實際 ${capturedAlerts.length}`)
+                let msg = capturedAlerts.join(' | ')
+                let expected = lang === 'eng' ? 'email' : '電子郵件'
+                assert.strict.equal(msg.toLowerCase().includes('email') || msg.includes(expected), true,
+                    `alert 應提示 email 相關錯誤 (重複), 實際: ${msg}`)
+            })
+
         })
 
     }
+
+    //
+    // (註: 原 viewMode / Back to login 獨立 describe 已合併至 lang loop 內 E2E-009-back-to-login,
+    //  涵蓋 register → login 切換 + baseline pixel 比對 (兩語系各一份), 行為更完整.)
+    //
 
 }

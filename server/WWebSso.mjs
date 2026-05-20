@@ -241,6 +241,28 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     }
 
 
+    //cleanKpIpCallApiForIps, 允許呼叫 /api/cleanKpIpCallApi 的連線 IP 白名單
+    let cleanKpIpCallApiForIps = get(opt, 'cleanKpIpCallApiForIps', [])
+    if (!isearr(cleanKpIpCallApiForIps)) {
+        cleanKpIpCallApiForIps = ['127.0.0.1', '::1', '::ffff:127.0.0.1']
+    }
+
+
+    //cleanKpIpCallApiForToken, 呼叫 /api/cleanKpIpCallApi 須附帶之識別 token
+    let cleanKpIpCallApiForToken = get(opt, 'cleanKpIpCallApiForToken', '')
+
+
+    //cleanKpAccountLoginFailedForIps, 允許呼叫 /api/cleanKpAccountLoginFailed 的連線 IP 白名單
+    let cleanKpAccountLoginFailedForIps = get(opt, 'cleanKpAccountLoginFailedForIps', [])
+    if (!isearr(cleanKpAccountLoginFailedForIps)) {
+        cleanKpAccountLoginFailedForIps = ['127.0.0.1', '::1', '::ffff:127.0.0.1']
+    }
+
+
+    //cleanKpAccountLoginFailedForToken, 呼叫 /api/cleanKpAccountLoginFailed 須附帶之識別 token
+    let cleanKpAccountLoginFailedForToken = get(opt, 'cleanKpAccountLoginFailedForToken', '')
+
+
     //allowUserRegistration
     let allowUserRegistration = get(opt, 'allowUserRegistration', true)
     if (allowUserRegistration !== true && allowUserRegistration !== false) {
@@ -764,6 +786,120 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         //     method: 'GET',
         //     path: '/api/getUserByToken', //未登入主頁時需先檢測token, getUserByToken為w-ui-loginout預設值, 若要更改兩邊須同時修改
         // },
+
+        {
+            method: 'GET',
+            path: '/api/cleanKpIpCallApi',
+            handler: async function (req, res) {
+                // console.log('cleanKpIpCallApi', req)
+
+                async function core() {
+
+                    //token
+                    let token = get(req, 'query.token', '')
+                    // console.log('token', token)
+
+                    //比對 token 是否為 settings 的 cleanKpIpCallApiForToken, 未設定或不符一律拒絕
+                    if (!isestr(cleanKpIpCallApiForToken)) {
+                        return Promise.reject(`invalid cleanKpIpCallApiForToken`)
+                    }
+
+                    //比對 token 是否為 settings 的 cleanKpIpCallApiForToken, 未設定或不符一律拒絕
+                    if (token !== cleanKpIpCallApiForToken) {
+                        return Promise.reject(`cleanKpIpCallApi invalid token`)
+                    }
+
+                    //檢測ip須為 127.0.0.1 或 localhost
+                    //realIp, 取 socket 真實連線位址 (不讀 x-forwarded-for, 該 header 可偽造會繞過本機限制)
+                    let realIp = get(req, 'info.remoteAddress', '')
+                    if (!isestr(realIp)) {
+                        realIp = get(req, 'socket.remoteAddress', '')
+                    }
+                    if (!isestr(realIp)) {
+                        realIp = get(req, 'connection.remoteAddress', '')
+                    }
+
+                    //僅放行 settings 的 cleanKpIpCallApiForIps 白名單內之連入 IP (供 e2e 防禦性清理 in-memory IP 計數器使用), 其餘一律拒絕
+                    if (!cleanKpIpCallApiForIps.includes(realIp)) {
+                        return Promise.reject(`cleanKpIpCallApi only allowed from cleanKpIpCallApiForIps, got realIp[${realIp}]`)
+                    }
+
+                    //info
+                    srLog.info({ event: 'api/cleanKpIpCallApi', realIp })
+
+                    //cleanKpIpCallApi, 清空 server in-memory 的 kpIpCallApi (所有 IP 的調用 API 計數)
+                    await pp.cleanKpIpCallApi()
+
+                    return true
+                }
+
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                if (isErr(r.msg)) {
+                    r.msg = r.msg.message
+                }
+                // console.log('cleanKpIpCallApi', r)
+
+                return r
+            },
+        },
+
+        {
+            method: 'GET',
+            path: '/api/cleanKpAccountLoginFailed',
+            handler: async function (req, res) {
+                // console.log('cleanKpAccountLoginFailed', req)
+
+                async function core() {
+
+                    //token
+                    let token = get(req, 'query.token', '')
+                    // console.log('token', token)
+
+                    //比對 token 是否為 settings 的 cleanKpAccountLoginFailedForToken, 未設定或不符一律拒絕
+                    if (!isestr(cleanKpAccountLoginFailedForToken)) {
+                        return Promise.reject(`invalid cleanKpAccountLoginFailedForToken`)
+                    }
+
+                    //比對 token 是否為 settings 的 cleanKpAccountLoginFailedForToken, 未設定或不符一律拒絕
+                    if (token !== cleanKpAccountLoginFailedForToken) {
+                        return Promise.reject(`cleanKpAccountLoginFailed invalid token`)
+                    }
+
+                    //檢測ip須為 127.0.0.1 或 localhost
+                    //realIp, 取 socket 真實連線位址 (不讀 x-forwarded-for, 該 header 可偽造會繞過本機限制)
+                    let realIp = get(req, 'info.remoteAddress', '')
+                    if (!isestr(realIp)) {
+                        realIp = get(req, 'socket.remoteAddress', '')
+                    }
+                    if (!isestr(realIp)) {
+                        realIp = get(req, 'connection.remoteAddress', '')
+                    }
+
+                    //僅放行 settings 的 cleanKpAccountLoginFailedForIps 白名單內之連入 IP (供 e2e 防禦性清理 in-memory 失敗計數器使用), 其餘一律拒絕
+                    if (!cleanKpAccountLoginFailedForIps.includes(realIp)) {
+                        return Promise.reject(`cleanKpAccountLoginFailed only allowed from cleanKpAccountLoginFailedForIps, got realIp[${realIp}]`)
+                    }
+
+                    //info
+                    srLog.info({ event: 'api/cleanKpAccountLoginFailed', realIp })
+
+                    //cleanKpAccountLoginFailed, 清空 server in-memory 的 kpAccountLoginFailed (所有帳號的登入失敗計數)
+                    await pp.cleanKpAccountLoginFailed()
+
+                    return true
+                }
+
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                if (isErr(r.msg)) {
+                    r.msg = r.msg.message
+                }
+                // console.log('cleanKpAccountLoginFailed', r)
+
+                return r
+            },
+        },
 
         {
             method: 'GET',

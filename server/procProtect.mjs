@@ -50,6 +50,12 @@ function proc(woItems, p, opt = {}) {
     let kpAccountLoginFailed = {}
 
 
+    //cleanKpAccountLoginFailed
+    let cleanKpAccountLoginFailed = async () => {
+        kpAccountLoginFailed = {}
+    }
+
+
     //getBlockedByUser
     let getBlockedByUser = async(u) => {
 
@@ -233,7 +239,7 @@ function proc(woItems, p, opt = {}) {
             // console.log(account, 'nrecs', nrecs)
 
             //check
-            if (nrecs > numForAccountLoginFailed) {
+            if (nrecs >= numForAccountLoginFailed) {
                 // console.log(`account[${account}]: nrecs[${nrecs}] > numForAccountLoginFailed[${numForAccountLoginFailed}]`)
 
                 //blockAccount, 封鎖使用者, 亦會直接刪除使用userId之token
@@ -370,7 +376,7 @@ function proc(woItems, p, opt = {}) {
             // console.log(token, 'nrecs', nrecs)
 
             //check
-            if (nrecs > numForTokenCallApi) {
+            if (nrecs >= numForTokenCallApi) {
                 // console.log(`token[${token}]: nrecs[${nrecs}] > numForTokenCallApi[${numForTokenCallApi}]`)
 
                 //blockAccountByToken, 沒封鎖token, 是通過封鎖使用者且直接刪除使用userId之token
@@ -391,6 +397,12 @@ function proc(woItems, p, opt = {}) {
 
     //kpIpCallApi
     let kpIpCallApi = {}
+
+
+    //cleanKpIpCallApi
+    let cleanKpIpCallApi = async () => {
+        kpIpCallApi = {}
+    }
 
 
     //getIpByHeaders
@@ -747,7 +759,7 @@ function proc(woItems, p, opt = {}) {
             // console.log(ip, 'nrecs', nrecs)
 
             //check
-            if (nrecs > numForIpCallApi) {
+            if (nrecs >= numForIpCallApi) {
                 // console.log(`ip[${ip}]: nrecs[${nrecs}] > numForIpCallApi[${numForIpCallApi}]`)
 
                 //blockIpByIp
@@ -773,6 +785,9 @@ function proc(woItems, p, opt = {}) {
     let pp = {
 
         loginByAccountAndPassword,
+
+        cleanKpAccountLoginFailed,
+        cleanKpIpCallApi,
 
         // getEndByToken, //等同於p._checkToken(此未提供外部使用), 類似p.checkToken(resolve只回傳true, reject代表無效token與錯誤)
         getBlockedByAccount,

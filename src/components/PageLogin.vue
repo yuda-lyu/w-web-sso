@@ -112,11 +112,29 @@
 
                             <div style="display:flex; align-items:stretch;">
                                 <div style="display:flex; align-items:center; padding:0px 10px; background:rgba(34, 44, 77, 0.9);">
-                                    <WIcon :icon="'mdi-lock-check'" :color="'#ddd'" :colorHover="'#eee'" :size="24"></WIcon>
+                                    <WIcon
+                                        :icon="'mdi-lock-check'"
+                                        :color="'#ddd'"
+                                        :colorHover="'#eee'"
+                                        :size="24"
+                                    ></WIcon>
                                 </div>
                                 <div style="width:100%; padding:5px 10px; background:rgba(34, 44, 77, 0.8);">
                                     <div :style="`font-size:0.8rem; color:#eee;`">{{$t('userRegistrationConfirmPassword')}}</div>
-                                    <WText :textColor="'#fff'" :bottomLineBorderColor="'#b6b6b6'" :bottomLineBorderColorHover="'#ccc'" :bottomLineBorderColorFocus="'#ddd'" :rightIcon="showPassword ? 'mdi-eye' : 'mdi-eye-off'" :rightIconColor="'#ddd'" :rightIconColorHover="'#eee'" :rightIconColorFocus="'#ddd'" :rightIconTooltip="showPassword ? $t('toggleToHidePassword') : $t('toggleToShowPassword')" :password="!showPassword" v-model="regConfirmPassword" @click-right="showPassword=!showPassword"></WText>
+                                    <WText
+                                        :textColor="'#fff'"
+                                        :bottomLineBorderColor="'#b6b6b6'"
+                                        :bottomLineBorderColorHover="'#ccc'"
+                                        :bottomLineBorderColorFocus="'#ddd'"
+                                        :rightIcon="showPassword ? 'mdi-eye' : 'mdi-eye-off'"
+                                        :rightIconColor="'#ddd'"
+                                        :rightIconColorHover="'#eee'"
+                                        :rightIconColorFocus="'#ddd'"
+                                        :rightIconTooltip="showPassword ? $t('toggleToHidePassword') : $t('toggleToShowPassword')"
+                                        :password="!showPassword"
+                                        v-model="regConfirmPassword"
+                                        @click-right="showPassword=!showPassword"
+                                    ></WText>
                                 </div>
                             </div>
 
@@ -130,11 +148,22 @@
 
                             <div style="display:flex; align-items:stretch;">
                                 <div style="display:flex; align-items:center; padding:0px 10px; background:rgba(34, 44, 77, 0.9);">
-                                    <WIcon :icon="'mdi-rename-box'" :color="'#ddd'" :colorHover="'#eee'" :size="24"></WIcon>
+                                    <WIcon
+                                        :icon="'mdi-rename-box'"
+                                        :color="'#ddd'"
+                                        :colorHover="'#eee'"
+                                        :size="24"
+                                    ></WIcon>
                                 </div>
                                 <div style="width:100%; padding:5px 10px; background:rgba(34, 44, 77, 0.8);">
                                     <div :style="`font-size:0.8rem; color:#eee;`">{{$t('userRegistrationName')}}</div>
-                                    <WText :textColor="'#fff'" :bottomLineBorderColor="'#b6b6b6'" :bottomLineBorderColorHover="'#ccc'" :bottomLineBorderColorFocus="'#ddd'" v-model="regName"></WText>
+                                    <WText
+                                        :textColor="'#fff'"
+                                        :bottomLineBorderColor="'#b6b6b6'"
+                                        :bottomLineBorderColorHover="'#ccc'"
+                                        :bottomLineBorderColorFocus="'#ddd'"
+                                        v-model="regName"
+                                    ></WText>
                                 </div>
                             </div>
 
@@ -142,11 +171,22 @@
 
                             <div style="display:flex; align-items:stretch;">
                                 <div style="display:flex; align-items:center; padding:0px 10px; background:rgba(34, 44, 77, 0.9);">
-                                    <WIcon :icon="'mdi-email'" :color="'#ddd'" :colorHover="'#eee'" :size="24"></WIcon>
+                                    <WIcon
+                                        :icon="'mdi-email'"
+                                        :color="'#ddd'"
+                                        :colorHover="'#eee'"
+                                        :size="24"
+                                    ></WIcon>
                                 </div>
                                 <div style="width:100%; padding:5px 10px; background:rgba(34, 44, 77, 0.8);">
                                     <div :style="`font-size:0.8rem; color:#eee;`">{{$t('userRegistrationEmail')}}</div>
-                                    <WText :textColor="'#fff'" :bottomLineBorderColor="'#b6b6b6'" :bottomLineBorderColorHover="'#ccc'" :bottomLineBorderColorFocus="'#ddd'" v-model="regEmail"></WText>
+                                    <WText
+                                        :textColor="'#fff'"
+                                        :bottomLineBorderColor="'#b6b6b6'"
+                                        :bottomLineBorderColorHover="'#ccc'"
+                                        :bottomLineBorderColorFocus="'#ddd'"
+                                        v-model="regEmail"
+                                    ></WText>
                                 </div>
                             </div>
 
@@ -214,11 +254,22 @@
 
                             <div style="display:flex; align-items:stretch;">
                                 <div style="display:flex; align-items:center; padding:0px 10px; background:rgba(34, 44, 77, 0.9);">
-                                    <WIcon :icon="'mdi-email'" :color="'#ddd'" :colorHover="'#eee'" :size="24"></WIcon>
+                                    <WIcon
+                                        :icon="'mdi-email'"
+                                        :color="'#ddd'"
+                                        :colorHover="'#eee'"
+                                        :size="24"
+                                    ></WIcon>
                                 </div>
                                 <div style="width:100%; padding:5px 10px; background:rgba(34, 44, 77, 0.8);">
                                     <div :style="`font-size:0.8rem; color:#eee;`">{{$t('userRegistrationEmail')}}</div>
-                                    <WText :textColor="'#fff'" :bottomLineBorderColor="'#b6b6b6'" :bottomLineBorderColorHover="'#ccc'" :bottomLineBorderColorFocus="'#ddd'" v-model="resendEmail"></WText>
+                                    <WText
+                                        :textColor="'#fff'"
+                                        :bottomLineBorderColor="'#b6b6b6'"
+                                        :bottomLineBorderColorHover="'#ccc'"
+                                        :bottomLineBorderColorFocus="'#ddd'"
+                                        v-model="resendEmail"
+                                    ></WText>
                                 </div>
                             </div>
 
@@ -538,7 +589,7 @@ export default {
                 .then(() => {
 
                     //success
-                    alert(vo.$t('userRegistrationSuccess'))
+                    vo.$alert(vo.$t('userRegistrationSuccess'))
 
                     //reset
                     vo.regName = ''
@@ -548,7 +599,7 @@ export default {
 
                 })
                 .catch((err) => {
-                    alert(err)
+                    vo.$alert(`${err}`, { type: 'error' })
                 })
 
         },
@@ -557,37 +608,66 @@ export default {
             let vo = this
             let lang = get(vo, '$store.state.lang', 'eng')
 
-            //清除上次錯誤
-            vo.resendError = ''
+            let core = async () => {
 
-            //show loading
-            vo.$ui.updateLoading(true)
+                //1) 初始化：清空上次 inline 錯誤
+                vo.resendError = ''
 
-            vo.$fapi.resendVerifyEmail(lang, vo.account, vo.resendEmail)
-                .then(async () => {
-                    vo.$ui.updateLoading(false)
-                    await vo.$dg.showCheckYes(vo.$t('userRegistrationResendSuccess'))
-                    vo.showResendVerify = false
-                    vo.loginError = ''
-                    vo.viewMode = 'login'
-                })
+                //2) 事先檢測：email 為空不送出 (送出鈕未 disabled, 須在此擋, 避免空 email 打 API)
+                if (!isestr(vo.resendEmail)) {
+                    vo.resendError = vo.$t('userRegistrationResendInvalidEmail')
+                    return
+                }
+
+                //3) 確定要打 API 才開 loading
+                vo.$ui.updateLoading(true)
+
+                await vo.$fapi.resendVerifyEmail(lang, vo.account, vo.resendEmail)
+                    .catch((err) => {
+                        let errMsg = (err && typeof err === 'string') ? err : ''
+                        if (errMsg === 'invalid account or email') {
+                            vo.resendError = vo.$t('userRegistrationResendInvalidEmail')
+                        }
+                        else if (errMsg === 'account already verified') {
+                            vo.resendError = vo.$t('userRegistrationAlreadyVerified')
+                        }
+                        else if (errMsg === 'send email failed') {
+                            vo.resendError = vo.$t('userRegistrationResendFailed')
+                        }
+                        else {
+                            console.log('resend unknown error', err)
+                            vo.resendError = vo.$t('loginUnknownError')
+                        }
+                    })
+
+                //API 有錯 (catch 已設 vo.resendError inline 紅字) → 中止, 不往下走成功流程
+                if (isestr(vo.resendError)) {
+                    return
+                }
+
+                //成功: 重導前(此處為換 viewMode)先關 loading, 再開成功對話框 (避免 loading 蓋住對話框)
+                vo.$ui.updateLoading(false)
+                await vo.$dg.showCheckYes(vo.$t('userRegistrationResendSuccess'))
+                vo.showResendVerify = false
+                vo.loginError = ''
+                vo.viewMode = 'login'
+
+                return 'ok'
+            }
+
+            //core
+            core()
                 .catch((err) => {
-                    vo.$ui.updateLoading(false)
-                    let errMsg = (err && typeof err === 'string') ? err : ''
-                    if (errMsg === 'invalid account or email') {
-                        vo.resendError = vo.$t('userRegistrationResendInvalidEmail')
-                    }
-                    else if (errMsg === 'account already verified') {
-                        vo.resendError = vo.$t('userRegistrationAlreadyVerified')
-                    }
-                    else if (errMsg === 'send email failed') {
-                        vo.resendError = vo.$t('userRegistrationResendFailed')
-                    }
-                    else {
-                        console.log('resend unknown error', err)
-                        vo.resendError = vo.$t('loginUnknownError')
-                    }
+                    console.log('catch', err)
+                    vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
                 })
+                .finally(() => {
+
+                    //hide loading
+                    vo.$ui.updateLoading(false)
+
+                })
+
         },
 
         login: function() {
@@ -652,7 +732,7 @@ export default {
                     }
                     else if (errMsg === 'invalid redir') {
                         //view=login 模式下 user.redir 為空, mUI 已 alert 但 4s 後消失;
-                        //inline 紅字保留訊息與設計意圖一致 (參見 z流程_使用者一般登入.md)
+                        //inline 紅字保留訊息與設計意圖一致 (參見 spec/流程_使用者一般登入.md)
                         vo.loginError = vo.$t('failedLoginForNoRedir')
                     }
                     else {
