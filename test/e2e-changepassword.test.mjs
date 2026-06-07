@@ -107,9 +107,9 @@ let expectedSpecText = {
         cht: { mode: 'text', value: '密碼變更失敗' },
     },
     'E2E-008-success': {
-        //成功後表單收起, 不應再見 Send 按鈕
-        eng: { mode: 'absentText', value: 'Send' },
-        cht: { mode: 'absentText', value: '送出' },
+        //成功後 showCheckYes modal 顯示變更成功訊息 (modal 持久, assert 安全)
+        eng: { mode: 'text', value: 'Password change successful' },
+        cht: { mode: 'text', value: '密碼變更成功' },
     },
     'E2E-009-network-error': {
         //userChangePasswordForNetError
@@ -423,13 +423,10 @@ async function captureSuccess(page, lang) {
         confirmPassword: newPassword,
     })
     await clickSend(page, lang)
-    // 等後端 checkUserPassword + changeUserPassword + 寄信 + alert dismiss + cancelChangePassword
-    // 寄信 SMTP timeout 較長，須等表單收起（showChangePassword=false）
-    await page.waitForFunction(() => {
-        // 表單收起時應只有 user info 欄位（無 password type input）
-        return document.querySelectorAll('input[type="password"]').length === 0
-    }, null, { timeout: 60000 })
-    await page.waitForTimeout(1500) // 給 Vue re-render 穩定
+    // 成功 → 持久 showCheckYes modal (System message) 顯示 userChangePasswordSuccess; 等其文字出現
+    let needle = lang === 'eng' ? 'Password change successful' : '密碼變更成功'
+    await page.waitForFunction((t) => (document.body.innerText || '').includes(t), needle, { timeout: 60000 })
+    await page.waitForTimeout(1000)
     return await captureStable(page)
 }
 
@@ -548,6 +545,9 @@ async function generateBaselineForLang(page, lang) {
         await insertTestUserAndToken(lang)
         let buf8 = await captureSuccess(page, lang)
         writeBaseline(lang, 'E2E-008-success', buf8)
+        let okText = lang === 'eng' ? 'OK' : '確認'
+        await page.locator(`text="${okText}"`).first().click().catch(() => {})
+        await page.waitForTimeout(500)
     }
 }
 
@@ -719,6 +719,10 @@ else {
                 assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-008-success`)
+                //dismiss success modal (點 OK) 留乾淨終態
+                let okText = lang === 'eng' ? 'OK' : '確認'
+                await page.locator(`text="${okText}"`).first().click().catch(() => {})
+                await page.waitForTimeout(500)
             })
 
             //

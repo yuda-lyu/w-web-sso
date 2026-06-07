@@ -1,4 +1,6 @@
 import { spawn, execSync } from 'child_process'
+import fs from 'fs'
+import JSON5 from 'json5'
 import sharp from 'sharp'
 import { woItems } from '../g.mOrm.mjs'
 import { buildBaseUsers, buildBaseTokens } from '../g.initialData.mjs'
@@ -113,6 +115,31 @@ async function startServersOnce() {
         await waitForPort(8080, 90000)
         console.log('[e2e-setup] frontend ready')
     }
+}
+
+
+//產生臨時 settings.json: 複製 ./settings.json, 套用 overrides, 寫到 ./tmp/ 回傳路徑.
+//用於 e2e 需要不同設定啟動 backend 的情境 (如 allowUserRegistration=false 測「不允許註冊」).
+//注意: 本專案 ./settings.json 為 JSON5 格式 (無引號鍵 / 單引號字串 / 註解 / 尾逗號),
+//backend 用 JSON5 解析 (server/procSettings.mjs), 故此處讀檔須用 JSON5.parse 不可用 JSON.parse.
+//寫出時用 JSON.stringify 產出純 JSON — JSON5 解析器吃純 JSON 沒問題, backend 啟動可正常讀取.
+function genTempSettings(overrides = {}) {
+    let base = JSON5.parse(fs.readFileSync('./settings.json', 'utf8'))
+    let merged = { ...base, ...overrides }
+    if (!fs.existsSync('./tmp')) fs.mkdirSync('./tmp', { recursive: true })
+    let p = `./tmp/settings-e2e-${Date.now()}.json`
+    fs.writeFileSync(p, JSON.stringify(merged, null, 2))
+    return p
+}
+
+
+//以指定 settings 檔重啟 backend (殺掉現有 backendProc, 用 node srv.mjs <pathSettings> 重啟並等 ready).
+//給「需要特殊 settings 的單一 describe」用: before() restartBackend(genTempSettings({...})), after() restartBackend('./settings.json') 還原.
+async function restartBackend(pathSettings = './settings.json') {
+    killProc(backendProc)
+    backendProc = null
+    backendProc = spawn('node', ['srv.mjs', pathSettings], { stdio: 'ignore' })
+    await waitForPort(11007, 30000)
 }
 
 
@@ -336,4 +363,4 @@ async function deleteNonBaseSeed() {
 }
 
 
-export { startServersOnce, cleanup, captureStable, baseUrl, apiUrl, maskRegions, maskBelowY, resetToBaseSeed, deleteNonBaseSeed }
+export { startServersOnce, cleanup, captureStable, baseUrl, apiUrl, maskRegions, maskBelowY, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend }

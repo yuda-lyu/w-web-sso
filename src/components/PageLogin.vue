@@ -207,6 +207,10 @@
                                 ></WButtonChip>
                             </div>
 
+                            <div style="padding-top:8px; font-size:0.85rem; color:#c62828; text-align:center; font-weight:500;" v-if="viewMode==='register' && regError">
+                                {{regError}}
+                            </div>
+
                             <div style="padding:5px 0px; text-align:center;">
                                 <div style="padding-top:10px;">
                                     <span style="font-size:0.85rem; color:rgba(80,60,40,0.7); cursor:pointer; text-decoration:underline;" @click="viewMode='login'">{{$t('userRegistrationBackToLogin')}}</span>
@@ -390,6 +394,8 @@ export default {
             showResendVerify: false,
             resendEmail: '',
             resendError: '',
+
+            regError: '',
 
             loginError: '',
 
@@ -580,26 +586,71 @@ export default {
 
         register: function() {
             let vo = this
-
-            //lang
             let lang = get(vo, '$store.state.lang', 'eng')
 
-            //createUser
-            vo.$fapi.createUser(lang, vo.account, vo.password, vo.regConfirmPassword, vo.regName, vo.regEmail)
-                .then(() => {
+            let core = async () => {
 
-                    //success
-                    vo.$alert(vo.$t('userRegistrationSuccess'))
+                //1) 初始化：清空上次 inline 錯誤
+                vo.regError = ''
 
-                    //reset
-                    vo.regName = ''
-                    vo.regEmail = ''
-                    vo.regConfirmPassword = ''
-                    vo.viewMode = 'login'
+                //2) 無事先檢測：送出鈕已由 hasRegFields computed 控管 (欄位齊全才可點), 直接打 API
 
-                })
+                //3) 確定要打 API 才開 loading
+                vo.$ui.updateLoading(true)
+
+                let ok = false
+                await vo.$fapi.createUser(lang, vo.account, vo.password, vo.regConfirmPassword, vo.regName, vo.regEmail)
+                    .then(() => { ok = true })
+                    .catch((err) => {
+                        let errMsg = (err && typeof err === 'string') ? err : ''
+                        //後端以「字面英文字串」reject 的三類 (invalid account / email format / name): 對應 i18n inline 訊息
+                        if (errMsg === 'invalid account') {
+                            vo.regError = vo.$t('userRegistrationAccountInvalid')
+                        }
+                        else if (errMsg === 'invalid email format') {
+                            vo.regError = vo.$t('userRegistrationEmailFormatInvalid')
+                        }
+                        else if (errMsg === 'invalid name') {
+                            vo.regError = vo.$t('userRegistrationNameInvalid')
+                        }
+                        //後端其餘可預期錯誤 (帳號/email 已存在、密碼規則不符、確認密碼不一致、不開放註冊)
+                        //已由後端依 lang 回傳「已在地化」的訊息字串, 直接顯示即可
+                        else if (isestr(errMsg)) {
+                            vo.regError = errMsg
+                        }
+                        else {
+                            console.log('register unknown error', err)
+                            vo.regError = vo.$t('loginUnknownError')
+                        }
+                    })
+
+                //API 有錯 (catch 已設 vo.regError inline 紅字) → 中止, 不往下走成功流程
+                if (!ok) {
+                    return
+                }
+
+                //4) 成功 (非重導, 僅切回 login viewMode)
+                vo.$ui.updateLoading(false)
+                await vo.$dg.showCheckYes(vo.$t('userRegistrationSuccess'))
+                vo.regName = ''
+                vo.regEmail = ''
+                vo.regConfirmPassword = ''
+                vo.viewMode = 'login'
+
+                return 'ok'
+            }
+
+            //core
+            core()
                 .catch((err) => {
-                    vo.$alert(`${err}`, { type: 'error' })
+                    console.log('catch', err)
+                    vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
+                })
+                .finally(() => {
+
+                    //hide loading
+                    vo.$ui.updateLoading(false)
+
                 })
 
         },

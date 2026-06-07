@@ -489,9 +489,10 @@ async function captureAfterSuccess(page, lang, target) {
 
     //送出
     await page.locator(`text="${t.send}"`).first().click().catch(() => {})
-    //等表單收起 (showChangePassword=false → 沒有 password type input)
-    await page.waitForFunction(() => document.querySelectorAll('input[type="password"]').length === 0, null, { timeout: 60000 })
-    await page.waitForTimeout(1500)
+    // 強制變更成功 → 持久 showCheckYes modal 顯示 userChangePasswordSuccess; 等其文字出現
+    let needle = lang === 'eng' ? 'Password change successful' : '密碼變更成功'
+    await page.waitForFunction((t) => (document.body.innerText || '').includes(t), needle, { timeout: 60000 })
+    await page.waitForTimeout(1000)
     return await captureStable(page)
 }
 
@@ -610,6 +611,14 @@ async function captureForceRedirectToUser(page, lang, target) {
 
 //=== admin-ui 共用 helper (multi-lang aware) ===
 
+//admin-UI 截圖前 park mouse 到 (0,0) 並等 1.5s, 讓左側 WDrawer drag-bar 收斂到一致 (no-hover) 態
+//(§6.3 殷鑑: 抽屜 bistability 的 canonical 修法), 再 captureStable.
+async function captureAdminUiStable(page) {
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(1500)
+    return await captureStable(page)
+}
+
 let mdiPlus = 'M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z'
 
 async function adminLoginAndOpenUsersList(page, lang) {
@@ -696,13 +705,13 @@ async function generateAdminUiBaselinesForLang(page, lang) {
     //在 target 列觸發 modal → screenshot (001) → 點 No → screenshot (002)
     await clickResetPasswordOnRow(page, target.account, lang)
     if (shouldGen(lang, 'E2E-001-admin-ui-modal-opened')) {
-        let buf001 = await captureStable(page)
+        let buf001 = await captureAdminUiStable(page)
         writeBaseline(lang, 'E2E-001-admin-ui-modal-opened', buf001)
     }
     await page.locator(`text="${kpLangText[lang].no}"`).first().click()
     await page.waitForTimeout(1500)
     if (shouldGen(lang, 'E2E-002-admin-ui-cancel-clean')) {
-        let buf002 = await captureStable(page)
+        let buf002 = await captureAdminUiStable(page)
         writeBaseline(lang, 'E2E-002-admin-ui-cancel-clean', buf002)
     }
 
@@ -716,7 +725,7 @@ async function generateAdminUiBaselinesForLang(page, lang) {
     await page.waitForFunction((needle) => document.body.innerText.includes(needle), kpLangText[lang].resetSuccess, { timeout: 30000 })
     await page.waitForTimeout(1000)
     if (shouldGen(lang, 'E2E-003-admin-ui-success-alert')) {
-        let buf003 = await captureStable(page)
+        let buf003 = await captureAdminUiStable(page)
         writeBaseline(lang, 'E2E-003-admin-ui-success-alert', buf003)
     }
     //dismiss alert
@@ -730,7 +739,7 @@ async function generateAdminUiBaselinesForLang(page, lang) {
     await page.waitForFunction((needle) => document.body.innerText.includes(needle), kpLangText[lang].resetCannotSelf, { timeout: 30000 })
     await page.waitForTimeout(1000)
     if (shouldGen(lang, 'E2E-004-admin-ui-self-reject-alert')) {
-        let buf006 = await captureStable(page)
+        let buf006 = await captureAdminUiStable(page)
         writeBaseline(lang, 'E2E-004-admin-ui-self-reject-alert', buf006)
     }
     //dismiss alert
@@ -767,6 +776,8 @@ async function generateUserFlowBaselinesForLang(page, lang) {
         console.log('  015-after-success')
         let buf015 = await captureAfterSuccess(page, lang, target)
         writeBaseline(lang, 'E2E-007-after-success', buf015)
+        await page.locator(`text="${kpLangText[lang].ok}"`).first().click().catch(() => {})
+        await page.waitForTimeout(500)
     }
 
     //=== 三、強制變更 inline 錯誤 (017/018/019/020) ===
@@ -871,11 +882,16 @@ if (process.argv.includes('--baseline')) {
 else {
 
     //=== baseline 比對 helper (內含: 檔存在 / byte-equal / spec 語意斷言) ===
-    async function verifyBaseline(page, lang, name, buf) {
-        await assertSpecForCase(page, lang, name)
+    async function verifyBaseline(page, lang, name, buf, skipSpec = false) {
+        if (!skipSpec) {
+            await assertSpecForCase(page, lang, name)
+        }
         let baselinePath = bp(lang, name)
         assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
         let baselineBuf = fs.readFileSync(baselinePath)
+        //debug: assertion 前先存 test capture, 確保 fail 時有證據可 diff
+        if (!fs.existsSync('./tmp')) fs.mkdirSync('./tmp', { recursive: true })
+        fs.writeFileSync(`./tmp/resetpassword-${lang}-${name}-test.png`, buf)
         assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: resetpassword-${lang}-${name}`)
     }
 
@@ -916,7 +932,7 @@ else {
                 await simulateAdminReset(target)
                 await adminLoginAndOpenUsersList(page, lang)
                 await clickResetPasswordOnRow(page, target.account, lang)
-                let buf = await captureStable(page)
+                let buf = await captureAdminUiStable(page)
                 await verifyBaseline(page, lang, 'E2E-001-admin-ui-modal-opened', buf)
                 //dismiss modal 留給下一個 case 乾淨起點
                 await page.locator(`text="${kpLangText[lang].no}"`).first().click()
@@ -939,7 +955,7 @@ else {
                 await page.locator(`text="${kpLangText[lang].no}"`).first().click()
                 await page.waitForTimeout(1500)
 
-                let buf = await captureStable(page)
+                let buf = await captureAdminUiStable(page)
                 await verifyBaseline(page, lang, 'E2E-002-admin-ui-cancel-clean', buf)
 
                 //無 unhandled rejection
@@ -967,9 +983,10 @@ else {
                 //等 success alert (vo.$alert -> WAlert)
                 await page.waitForFunction((needle) => document.body.innerText.includes(needle), kpLangText[lang].resetSuccess, { timeout: 30000 })
                 await page.waitForTimeout(1000)
+                await assertSpecForCase(page, lang, 'E2E-003-admin-ui-success-alert')
 
-                let buf = await captureStable(page)
-                await verifyBaseline(page, lang, 'E2E-003-admin-ui-success-alert', buf)
+                let buf = await captureAdminUiStable(page)
+                await verifyBaseline(page, lang, 'E2E-003-admin-ui-success-alert', buf, true)
 
                 //dismiss alert 留給下一個 case 乾淨起點
                 await page.locator(`text="${kpLangText[lang].ok}"`).first().click().catch(() => {})
@@ -990,9 +1007,10 @@ else {
                 await page.locator(`text="${kpLangText[lang].yes}"`).first().click()
                 await page.waitForFunction((needle) => document.body.innerText.includes(needle), kpLangText[lang].resetCannotSelf, { timeout: 30000 })
                 await page.waitForTimeout(1000)
+                await assertSpecForCase(page, lang, 'E2E-004-admin-ui-self-reject-alert')
 
-                let buf = await captureStable(page)
-                await verifyBaseline(page, lang, 'E2E-004-admin-ui-self-reject-alert', buf)
+                let buf = await captureAdminUiStable(page)
+                await verifyBaseline(page, lang, 'E2E-004-admin-ui-self-reject-alert', buf, true)
 
                 //dismiss alert
                 await page.locator(`text="${kpLangText[lang].ok}"`).first().click().catch(() => {})
@@ -1061,6 +1079,11 @@ else {
                 let us = await woItems.users.select({ id: target.id })
                 assert.strict.equal(us.length, 1, `target user 應存在`)
                 assert.strict.equal(us[0].isForceChangePw, 'n', `變更成功後 isForceChangePw 應為 'n', 實際 ${us[0].isForceChangePw}`)
+
+                //dismiss success modal
+                let t = kpLangText[lang]
+                await page.locator(`text="${t.ok}"`).first().click().catch(() => {})
+                await page.waitForTimeout(500)
             })
 
             it('017-inline-error-old-password-empty: 強制變更頁 → 空舊密 → inline 紅字「請輸入舊密碼」', async function() {

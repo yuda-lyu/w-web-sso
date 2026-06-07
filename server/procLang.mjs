@@ -720,6 +720,18 @@ let kpLang = {
         eng: 'User registration is not available.',
         cht: '目前不開放使用者自行申請帳號。',
     },
+    userRegistrationAccountInvalid: {
+        eng: 'Please enter a valid account.',
+        cht: '請輸入有效的帳號。',
+    },
+    userRegistrationEmailFormatInvalid: {
+        eng: 'Please enter a valid email address.',
+        cht: '請輸入有效的電子郵件格式。',
+    },
+    userRegistrationNameInvalid: {
+        eng: 'Please enter a valid name.',
+        cht: '請輸入有效的姓名。',
+    },
     userRegistrationAccountExists: {
         eng: 'This account already exists.',
         cht: '此帳號已存在。',

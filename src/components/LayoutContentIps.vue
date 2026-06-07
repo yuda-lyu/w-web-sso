@@ -396,6 +396,7 @@ export default {
         },
 
         isError: function() {
+            //待日後擴充, 先不刪
             return ''
         },
 
@@ -690,7 +691,8 @@ export default {
 
                 //check
                 if (isestr(vo.isError)) {
-                    vo.$alert(`${vo.isError}`, { type: 'error' })
+                    vo.$ui.updateLoading(false)
+                    await vo.$dg.showCheckYes(`${vo.isError}`)
                     return
                 }
 
@@ -715,7 +717,8 @@ export default {
 
                 //check
                 if (errTemp !== null) {
-                    vo.$alert(`${vo.$t('ipSaveIpsFail')}: ${errTemp}`, { type: 'error' })
+                    vo.$ui.updateLoading(false)
+                    await vo.$dg.showCheckYes(`${vo.$t('ipSaveIpsFail')}: ${errTemp}`)
                     return
                 }
 
@@ -723,7 +726,8 @@ export default {
                 vo.isModified = false
 
                 //alert
-                vo.$alert(vo.$t('ipSaveIpsSuccess'))
+                vo.$ui.updateLoading(false)
+                await vo.$dg.showCheckYes(vo.$t('ipSaveIpsSuccess'))
 
             }
 

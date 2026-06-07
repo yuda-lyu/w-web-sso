@@ -14,7 +14,7 @@
     "w-serv-hapi": "^1.0.72",
     "w-serv-orm": "^1.0.38",
     "w-syslog": "^1.0.8",
-    "wsemi": "^1.8.54"
+    "wsemi": "^1.8.55"
   },
   "devDependencies": {
     "@vue/cli-plugin-babel": "^5.0.8",
@@ -31,7 +31,7 @@
     "vue": "^2.6.14",
     "vuex": "^3.6.2",
     "w-orm-lmdb": "^1.0.6",
-    "w-screenctl": "^1.0.0",
+    "w-screenctl": "^1.0.1",
     "w-package-tools": "^1.1.7"
   },
   "scripts": {

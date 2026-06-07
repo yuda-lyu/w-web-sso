@@ -476,8 +476,6 @@ export default {
 
                         //cancelChangePassword
                         vo.cancelChangePassword()
-
-                        vo.$alert(vo.$t('userChangePasswordSuccess'))
                     })
                     .catch((err) => {
                         console.log('catch', err)
@@ -488,6 +486,9 @@ export default {
                 if (!bChPw) {
                     return
                 }
+
+                vo.$ui.updateLoading(false)
+                await vo.$dg.showCheckYes(vo.$t('userChangePasswordSuccess'))
 
                 return 'ok'
             }

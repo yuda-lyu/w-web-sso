@@ -8,7 +8,7 @@ let st = getSettings()
 
 let url = st.dbUrl
 let db = st.dbName
-let pathSettings = './settings.json'
+let pathSettings = process.argv[2] || './settings.json'
 
 //WWebSso
 let instWWebSso = WWebSso(WOrm, url, db, pathSettings, st)

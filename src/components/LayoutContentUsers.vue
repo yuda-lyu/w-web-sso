@@ -1148,6 +1148,7 @@ export default {
                 let lang = get(vo, '$store.state.lang', 'eng')
 
                 let ok = false
+                let errKey = ''
                 await vo.$fapi.adminResetUserPassword(token, lang, id)
                     .then(() => {
                         ok = true
@@ -1155,26 +1156,29 @@ export default {
                     .catch((err) => {
                         let errMsg = (err && typeof err === 'string') ? err : ''
                         if (errMsg === 'cannot reset self') {
-                            vo.$alert(vo.$t('adminResetPasswordCannotResetSelf'), { type: 'error' })
+                            errKey = 'adminResetPasswordCannotResetSelf'
                         }
                         else if (errMsg === 'forbidden') {
-                            vo.$alert(vo.$t('adminResetPasswordForbidden'), { type: 'error' })
+                            errKey = 'adminResetPasswordForbidden'
                         }
                         else if (errMsg === 'user not found') {
-                            vo.$alert(vo.$t('adminResetPasswordUserNotFound'), { type: 'error' })
+                            errKey = 'adminResetPasswordUserNotFound'
                         }
                         else {
                             console.log('adminResetUserPassword unknown error', err)
-                            vo.$alert(vo.$t('adminResetPasswordFailed'), { type: 'error' })
+                            errKey = 'adminResetPasswordFailed'
                         }
                     })
                 if (!ok) {
+                    vo.$ui.updateLoading(false)
+                    await vo.$dg.showCheckYes(vo.$t(errKey))
                     return
                 }
 
                 //成功
+                vo.$ui.updateLoading(false)
                 let msg = vo.$t('adminResetPasswordSuccess').replace('{email}', email)
-                vo.$alert(msg)
+                await vo.$dg.showCheckYes(msg)
 
                 return 'ok'
             }

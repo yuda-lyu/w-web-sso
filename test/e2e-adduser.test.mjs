@@ -122,6 +122,11 @@ let expectedModalText = {
         eng: 'Duplicate email of user',
         cht: '使用者Email出現重複',
     },
+    'E2E-015-token-expired-backend': {
+        //後端 token 過期 / 非 admin 共用 userSaveUsersFail 前綴 (不洩露身分檢查細節)
+        eng: 'Failed to save users',
+        cht: '儲存使用者數據失敗',
+    },
     //001 不檢查 modal text (儲存成功後立即重 fetch + dismiss CheckYes), 改檢查表內含新帳號
 }
 
@@ -258,6 +263,17 @@ async function resetAdminToken() {
     t.timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
     userTokens[testUsers.admin.id] = t.token
     await woItems.tokens.insert([t])
+}
+
+
+//強制將 admin token 設為過期 (case E2E-015 用): 模擬「填完新列後 token 才過期」場景,
+//下次點儲存時後端 checkToken reject → CheckYes modal 含 userSaveUsersFail 前綴.
+async function forceExpireAdminToken() {
+    let _tks = await woItems.tokens.select({ userId: testUsers.admin.id }).catch(() => [])
+    for (let _tk of _tks) {
+        _tk.timeEnd = ot().subtract(1, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+        await woItems.tokens.save(_tk).catch(() => {})
+    }
 }
 
 
@@ -852,6 +868,29 @@ async function captureEmailConflictBackend(page, lang) {
 }
 
 
+//015 token 過期 / 非 admin 共用 (spec 不洩露身分檢查):
+//   1. 進 backstage Users list (token 有效) → 點 + 新增一列 → 填妥合法欄位 (前端 isError 全過)
+//   2. 後端 DB 操作: 把 admin token timeEnd 設為過去 (模擬「填完新列後 token 才過期」)
+//   3. clickSave → 後端 checkToken reject → CheckYes modal 含 userSaveUsersFail 前綴
+async function captureTokenExpiredBackend(page, lang) {
+    await loginAsAdminAndOpenUsersList(page, lang)
+
+    let newAccount = `au-newuser-015`
+    await clickPlusToAddRow(page)
+    await fillAgGridCell(page, 0, 'account', newAccount)
+    await fillAgGridCell(page, 0, 'password', 'Pw@KLMN5678')
+    await fillAgGridCell(page, 0, 'email', `${newAccount}@test.com`)
+    await fillAgGridCell(page, 0, 'redir', `${baseUrl}/?view=user&token={token}`)
+
+    //儲存前讓 token 過期 (繞過前端時序, 模擬「修改完之後 token 才過期」場景)
+    await forceExpireAdminToken()
+
+    await clickSave(page)
+    await waitCheckYes(page, lang)
+    return await captureStable(page)
+}
+
+
 // ===================================================================
 // 產生標準圖
 // ===================================================================
@@ -874,6 +913,7 @@ async function generateBaselineForLang(lang) {
         ['E2E-012-password-policy-backend', capturePasswordPolicyBackend],
         ['E2E-013-account-conflict-backend', captureAccountConflictBackend],
         ['E2E-014-email-conflict-backend', captureEmailConflictBackend],
+        ['E2E-015-token-expired-backend', captureTokenExpiredBackend],
     ]
 
     //per-case fresh browser + DB setup, 與 mocha test 端 beforeEach/afterEach 對稱.
@@ -1160,6 +1200,7 @@ else {
                 ['E2E-012-password-policy-backend', capturePasswordPolicyBackend],
                 ['E2E-013-account-conflict-backend', captureAccountConflictBackend],
                 ['E2E-014-email-conflict-backend', captureEmailConflictBackend],
+                ['E2E-015-token-expired-backend', captureTokenExpiredBackend],
             ]
 
             for (let [name, fn] of cases) {
@@ -1220,6 +1261,12 @@ else {
                             let dump = await collectVisibleText()
                             assert.fail(`預期 modal 含 "${expected}" (來自 spec), 實際可見文字: ${dump}`)
                         }
+                    }
+
+                    //E2E-015: token 過期 → 後端 reject → 新使用者不應被建立 (DB 副作用驗證)
+                    if (name === 'E2E-015-token-expired-backend') {
+                        let created = await woItems.users.select({ account: 'au-newuser-015' }).catch(() => [])
+                        assert.strict.equal(created.length, 0, `token 過期 reject 後新使用者 au-newuser-015 不應被建立, 實際 ${created.length} 筆`)
                     }
 
                     //像素斷言 (補強, 視覺回歸)
