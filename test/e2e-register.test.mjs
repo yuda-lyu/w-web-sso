@@ -25,8 +25,8 @@ import { startServersOnce, cleanup, captureStable, baseUrl, apiUrl, resetToBaseS
 // - 後端錯誤（invalid email format / 帳號已存在 / email 已存在）已改為 PageLogin register()
 //   的 inline 紅字 (reactive regError, 模板 v-if="viewMode==='register' && regError" 的 div),
 //   viewMode 維持 register (5 inputs), 為穩定 DOM 視覺終態 → E2E-014~016 升級為完整 baseline E2E。
-// - 註冊成功改用 vo.$alert (= WAlert/domAlert, top-right 4s 自動消失的 toast), 接著 form 清空回
-//   login mode (viewMode='login', 5→2 inputs)。E2E-005 baseline 等 toast 消失後截穩定 login 表單。
+// - 註冊成功改用 vo.$dg.showCheckYes (= CheckYes modal 對話框, 持久顯示須點 OK 確認), 點 OK 後
+//   form 清空回 login mode (viewMode='login', 5→2 inputs)。E2E-005 baseline 等 modal 確認後截穩定 login 表單。
 //
 
 let backendUrl = apiUrl

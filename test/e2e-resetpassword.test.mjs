@@ -721,7 +721,7 @@ async function generateAdminUiBaselinesForLang(page, lang) {
     //仍在 Users list (admin 未登出), 直接觸發 modal → 點 Yes → 等 success alert
     await clickResetPasswordOnRow(page, target.account, lang)
     await page.locator(`text="${kpLangText[lang].yes}"`).first().click()
-    //等 success alert (vo.$alert -> WAlert) 浮出: 偵測 resetSuccess 文字
+    //等 success modal (vo.$dg.showCheckYes -> CheckYes 對話框) 浮出: 偵測 resetSuccess 文字
     await page.waitForFunction((needle) => document.body.innerText.includes(needle), kpLangText[lang].resetSuccess, { timeout: 30000 })
     await page.waitForTimeout(1000)
     if (shouldGen(lang, 'E2E-003-admin-ui-success-alert')) {
@@ -980,7 +980,7 @@ else {
 
                 await clickResetPasswordOnRow(page, target.account, lang)
                 await page.locator(`text="${kpLangText[lang].yes}"`).first().click()
-                //等 success alert (vo.$alert -> WAlert)
+                //等 success modal (vo.$dg.showCheckYes -> CheckYes 對話框)
                 await page.waitForFunction((needle) => document.body.innerText.includes(needle), kpLangText[lang].resetSuccess, { timeout: 30000 })
                 await page.waitForTimeout(1000)
                 await assertSpecForCase(page, lang, 'E2E-003-admin-ui-success-alert')
