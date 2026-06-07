@@ -1107,11 +1107,11 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     //userTarget
                     let userTarget = null
                     if (key === 'token') {
-                        userTarget = await p.checkTokenAndGetUserByToken(token, value)
+                        userTarget = await p.checkTokenAndGetUserByToken(token, value, { fun: funCheckAdmin })
                         // console.log('checkTokenAndGetUserByToken userTarget', userTarget)
                     }
                     else {
-                        userTarget = await p.checkTokenAndGetUserInfor(token, key, value)
+                        userTarget = await p.checkTokenAndGetUserInfor(token, key, value, { fun: funCheckAdmin })
                         // console.log('checkTokenAndGetUserInfor userTarget', userTarget)
                     }
 
@@ -1338,7 +1338,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             getUserInfor: async (_t, token, key, value) => {
                 srLog.info({ event: 'kpfun-getUserInfor', token, key, value })
                 //console.log('call getUserInfor...')
-                let r = await p.checkTokenAndGetUserInfor(token, key, value)
+                let r = await p.checkTokenAndGetUserInfor(token, key, value, { fun: funCheckAdmin })
                 //console.log('call getUserInfor end')
                 return r
             },
