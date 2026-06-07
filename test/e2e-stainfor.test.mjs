@@ -21,12 +21,12 @@ import { startServersOnce, cleanup, baseUrl, resetToBaseSeed, deleteNonBaseSeed 
 //
 // 標準圖存放：test/pics/stainfor/stainfor-{lang}-{number}-{name}.png
 //
-// 涵蓋 1 個 UI distinct 狀態 (× 2 lang = 2 baselines):
-//   E2E-001-page-loaded:    進 Statistics 頁顯示初始檢視態 (admin valid)
+// 涵蓋 2 個 UI distinct 狀態 (× 2 lang = 4 baselines):
+//   E2E-001-page-loaded:                  進 Statistics 頁顯示初始檢視態 (admin valid)
+//   E2E-002-admin-token-expired-page-empty: token 過期後重新 mount Stainfor, 6 個 API
+//                                          全 reject, 卡片呈空狀態 (與 E2E-001 同款驗證)
 //
 // 本檔不含 ag-grid 互動 (本頁無 grid). 純頁面導覽 + cards 區 byte-equal 比對.
-// E2E-002 (token expired) 暫緩, 因 procStaInfor.mjs 之 3 個 Summary 函式未驗 token
-// (見 spec/流程_後台統計資訊.md「已知 production gap」), 修補後再加入.
 //
 
 let salt = '{salt}'
@@ -67,6 +67,11 @@ function bp(lang, name) {
 let expectedSpecText = {
     //E2E-001: 頁面載入後應見卡片標籤 (i18n 鍵 totalUsers: 'Total Users' / '總使用者')
     'E2E-001-page-loaded': {
+        eng: { mode: 'text', value: 'Total Users' },
+        cht: { mode: 'text', value: '總使用者' },
+    },
+    //E2E-002: token 過期後 6 個 API 全 reject, 卡片區仍應見標籤 (i18n 鍵 totalUsers)
+    'E2E-002-admin-token-expired-page-empty': {
         eng: { mode: 'text', value: 'Total Users' },
         cht: { mode: 'text', value: '總使用者' },
     },
@@ -148,6 +153,17 @@ async function resetAdminToken() {
     t.timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
     userTokens[testUsers.admin.id] = t.token
     await woItems.tokens.insert([t])
+}
+
+
+//強制將 admin token 設為過期 (case E2E-002 用): 模擬「已登入 backstage 後 token 才過期」場景,
+//下次切回 Stainfor 時 6 個 getSta* API 用過期 token 全 reject → 卡片區呈空狀態.
+async function forceExpireAdminToken() {
+    let _tks = await woItems.tokens.select({ userId: testUsers.admin.id }).catch(() => [])
+    for (let _tk of _tks) {
+        _tk.timeEnd = ot().subtract(1, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+        await woItems.tokens.save(_tk).catch(() => {})
+    }
 }
 
 
@@ -341,6 +357,32 @@ async function capturePageLoaded(page, lang) {
 }
 
 
+//E2E-002 token 過期後重新 mount 之空狀態:
+//  登入 admin → 進 Statistics → 切去 Users list (Stainfor unmount) → 過期 admin token →
+//  切回 Statistics (Stainfor 重新 mount, 6 個 getSta* API 用過期 token 全 reject) → 截圖
+async function captureAdminTokenExpiredPageEmpty(page, lang) {
+    let t = kpUiText[lang]
+    await loginAsAdmin(page, lang)
+    await waitStaInforReady(page, lang)
+
+    //切去 Users list (Stainfor unmount)
+    await page.locator(`text="${t.usersList}"`).first().waitFor({ state: 'visible', timeout: 15000 })
+    await page.locator(`text="${t.usersList}"`).first().click()
+    await page.waitForTimeout(3000)
+
+    //過期 admin token
+    await forceExpireAdminToken()
+
+    //切回 Statistics (Stainfor 重新 mount, 6 API 用過期 token 全 reject)
+    await page.locator(`text="${t.statisticsMenu}"`).first().waitFor({ state: 'visible', timeout: 15000 })
+    await page.locator(`text="${t.statisticsMenu}"`).first().click()
+    await page.waitForTimeout(3000)
+    await waitStaInforReady(page, lang)
+
+    return await captureCardsOnly(page)
+}
+
+
 // ===================================================================
 // 產生標準圖
 // ===================================================================
@@ -350,6 +392,7 @@ async function generateBaselineForLang(lang) {
 
     let cases = [
         ['E2E-001-page-loaded', capturePageLoaded],
+        ['E2E-002-admin-token-expired-page-empty', captureAdminTokenExpiredPageEmpty],
     ]
 
     for (let [name, fn] of cases) {
@@ -451,6 +494,7 @@ else {
 
             let cases = [
                 ['E2E-001-page-loaded', capturePageLoaded],
+                ['E2E-002-admin-token-expired-page-empty', captureAdminTokenExpiredPageEmpty],
             ]
 
             for (let [name, fn] of cases) {

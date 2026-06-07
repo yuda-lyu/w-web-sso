@@ -91,6 +91,19 @@ function proc(woItems, p, opt = {}) {
     }
 
 
+    //checkTokenAndGetStaUserSummary
+    let checkTokenAndGetStaUserSummary = async (token, opt = {}) => {
+
+        //checkToken
+        await p.checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+
+        //getStaUserSummary
+        let rs = await getStaUserSummary()
+
+        return rs
+    }
+
+
     //getStaTokenSummary
     let getStaTokenSummary = async() => {
 
@@ -147,6 +160,19 @@ function proc(woItems, p, opt = {}) {
     }
 
 
+    //checkTokenAndGetStaTokenSummary
+    let checkTokenAndGetStaTokenSummary = async (token, opt = {}) => {
+
+        //checkToken
+        await p.checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+
+        //getStaTokenSummary
+        let rs = await getStaTokenSummary()
+
+        return rs
+    }
+
+
     //getStaIpSummary
     let getStaIpSummary = async() => {
 
@@ -192,6 +218,19 @@ function proc(woItems, p, opt = {}) {
         }
 
         return r
+    }
+
+
+    //checkTokenAndGetStaIpSummary
+    let checkTokenAndGetStaIpSummary = async (token, opt = {}) => {
+
+        //checkToken
+        await p.checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+
+        //getStaIpSummary
+        let rs = await getStaIpSummary()
+
+        return rs
     }
 
 
@@ -371,8 +410,13 @@ function proc(woItems, p, opt = {}) {
     let pl = {
 
         getStaUserSummary,
+        checkTokenAndGetStaUserSummary,
+
         getStaTokenSummary,
+        checkTokenAndGetStaTokenSummary,
+
         getStaIpSummary,
+        checkTokenAndGetStaIpSummary,
 
         getStaUserAccountLogin,
         checkTokenAndGetStaUserAccountLogin,

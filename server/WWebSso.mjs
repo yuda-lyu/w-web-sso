@@ -1412,21 +1412,21 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             getStaUserSummary: async (_t, token) => {
                 srLog.info({ event: 'kpfun-getStaUserSummary', token })
                 //console.log('call getStaUserSummary...')
-                let r = await pf.getStaUserSummary(token, { fun: funCheckAdmin })
+                let r = await pf.checkTokenAndGetStaUserSummary(token, { fun: funCheckAdmin })
                 //console.log('call getStaUserSummary end')
                 return r
             },
             getStaTokenSummary: async (_t, token) => {
                 srLog.info({ event: 'kpfun-getStaTokenSummary', token })
                 //console.log('call getStaTokenSummary...')
-                let r = await pf.getStaTokenSummary(token, { fun: funCheckAdmin })
+                let r = await pf.checkTokenAndGetStaTokenSummary(token, { fun: funCheckAdmin })
                 //console.log('call getStaTokenSummary end')
                 return r
             },
             getStaIpSummary: async (_t, token) => {
                 srLog.info({ event: 'kpfun-getStaIpSummary', token })
                 //console.log('call getStaIpSummary...')
-                let r = await pf.getStaIpSummary(token, { fun: funCheckAdmin })
+                let r = await pf.checkTokenAndGetStaIpSummary(token, { fun: funCheckAdmin })
                 //console.log('call getStaIpSummary end')
                 return r
             },
