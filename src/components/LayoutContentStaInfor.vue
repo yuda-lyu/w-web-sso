@@ -729,6 +729,9 @@ export default {
                     vo.isLoading = false
                 })
 
+            //primary grStaUserSummary 由外層 catch+finally 控制 isLoading + errMsg; secondary 5 條
+            //(grStaTokenSummary/grStaIpSummary/grStaUserAccountLogin/grStaToken/grStaIp) 各自內部已 console.log,
+            //外層空 catch 純為防 unhandled rejection, fire-and-forget.
             vo.grStaTokenSummary()
                 .catch(() => { })
 

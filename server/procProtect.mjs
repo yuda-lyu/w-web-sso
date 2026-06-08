@@ -552,6 +552,7 @@ function proc(woItems, p, opt = {}) {
 
 
     //blockIpByIp
+    // blockIpByIp 由 timer 單一 caller 觸發, pmSeries 保證序列化, 無 race; 詳 audit F-052 verifier 結論
     let blockIpByIp = async (ip) => {
         let errTemp = null
 

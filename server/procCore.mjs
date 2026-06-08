@@ -409,6 +409,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         let b1 = tn < timeEnd //現在時間<到期時間, 代表尚未到期
         let b2 = true
+        // app token (isApp='y') 預設視同 admin, 跳過 fun 驗證; 應僅由內部 token creation 路徑簽發, 不開放外部註冊.
         if (isApp !== 'y') {
             //token來自使用者
 
@@ -444,6 +445,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
     let _checkToken = async (token, opt = {}) => {
 
         //tks
+        // token = UUIDv7 (128-bit entropy) + LMDB in-memory, timing side-channel 無實務利用空間; password 已修 timing-safe 但 token 比對保留 === 為設計取捨.
         let tks = await woItems.tokens.select({ token })
         //console.log(`...tokens.select`)
         // console.log('tks', tks)
@@ -519,6 +521,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         await _checkToken(token, opt)
             .then((res) => {
                 if (res === false) {
+                    // 對外統一 'token expired' 為防 information leakage; 內部 log 保留布林細節供 audit (見 line ~467).
                     errTemp = 'token expired'
                 }
             })
@@ -889,18 +892,6 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         }
 
         return { state: 'success', msg: 'ok' }
-    }
-
-
-    //modifyUser
-    let modifyUser = async () => {
-        //bbb 待開發 modifyUser
-    }
-
-
-    //deleteUser
-    let deleteUser = async () => {
-        //bbb 待開發 deleteUser
     }
 
 
@@ -1616,50 +1607,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
     }
 
 
-    // //cleanTokens
-    // let cleanTokens = async (opt = {}) => {
-
-    //     //tks
-    //     let tks = await woItems.tokens.select()
-    //     //console.log(`...tokens.select`)
-    //     // console.log('tks', tks)
-
-    //     //tksDels
-    //     let tksDels = []
-    //     await pmSeries(tks, async (tk) => {
-
-    //         //checkTokenByObj
-    //         let errTemp = null
-    //         await checkTokenByObj(tk, opt)
-    //             .catch((err) => {
-    //                 // console.log('checkTokenByObj catch', err)
-    //                 errTemp = err
-    //             })
-
-    //         //check
-    //         if (errTemp) {
-    //             tksDels.push(tk)
-    //         }
-
-    //     })
-
-    //     //check
-    //     if (size(tksDels) > 0) {
-    //         // console.log('tksDels', tksDels)
-
-    //         await pmSeries(tksDels, async (tk) => {
-
-    //             //del
-    //             await woItems.tokens.del({ id: tk.id })
-    //                 .catch((err) => {
-    //                     console.log('tokens.del catch', err)
-    //                 })
-
-    //         })
-
-    //     }
-
-    // }
+    //cleanTokens timer 已 disable 因避免無法展延金鑰 (詳 line ~1774).
 
 
     //getTokensList
@@ -1669,19 +1617,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         let ts = await woItems.tokens.select()
         //console.log(`...tokens.select`)
 
-        // //needNoEnd
-        // if (needNoEnd) {
-
-        //     //tn
-        //     let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-        //     // console.log('tn', tn)
-
-        //     //filter
-        //     ts = filter(ts, (v) => {
-        //         return v.timeEnd >= tn //tn<=到期時間, 代表有效
-        //     })
-
-        // }
+        //list 包含過期 token 供 admin 判斷.
 
         return ts
     }

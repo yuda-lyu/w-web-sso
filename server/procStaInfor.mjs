@@ -43,6 +43,7 @@ import staIp from './staLogs/staIp.callWorker.mjs'
 function proc(woItems, p, opt = {}) {
 
 
+    // 30s cache: admin 寫入後由 procCore.mjs updateUsersList/updateTokensList/updateIpsList 之 ocGetXxxList.clear() 即時 invalidate (audit F-050); 對 admin 操作 dashboard 立刻同步, 對外部讀取仍享 cache 加速.
     //getStaUserSummary
     let getStaUserSummary = async() => {
 
@@ -221,6 +222,7 @@ function proc(woItems, p, opt = {}) {
     }
 
 
+    // caller 端透過 opt.fun = funCheckAdmin 強制 admin 驗證; 詳 WWebSso.mjs:1437,1444,1451 + Phase A 修補 1415/1422/1429
     //checkTokenAndGetStaIpSummary
     let checkTokenAndGetStaIpSummary = async (token, opt = {}) => {
 
