@@ -686,6 +686,11 @@ export default {
             async function core() {
                 let errTemp = null
 
+                //本函式之 updateLoading(false) 多處散落 + finally 一處收尾為刻意設計 (非 §5.1 canonical):
+                //每個 await $dg.showCheckYes(...) 前先關 loading, 避免 modal 等待期間 loading spinner 疊在底下
+                //造成 UX 怪 (使用者見 modal 但底下還轉圈). finally 統一保險, 即使中間漏關亦保證最終關閉.
+                //對應 ADR-002 訊息呈現分流之 showCheckYes modal 持久阻塞語意.
+
                 //show loading
                 vo.$ui.updateLoading(true)
 

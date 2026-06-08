@@ -441,11 +441,11 @@ export default {
                 vo.$ui.updateLoading(true)
 
                 //checkUserPassword
-                let bCkPw = false
+                let okCkPw = false
                 await vo.$fapi.checkUserPassword(vo.lang, vo.newPassword)
                     .then((res) => {
                         if (res.state === 'success') {
-                            bCkPw = true
+                            okCkPw = true
                         }
                         else if (res.state === 'error') {
                             vo.chPwNewError = res.msg
@@ -459,23 +459,15 @@ export default {
                         console.log('catch', err)
                         vo.chPwNewError = vo.$t('userChangePasswordForNetError')
                     })
-                if (!bCkPw) {
+                if (!okCkPw) {
                     return
                 }
 
                 //changeUserPassword
-                let bChPw = false
+                let okChPw = false
                 await vo.$fapi.changeUserPassword(vo.userToken, vo.lang, vo.oldPassword, vo.newPassword)
-                    .then((res) => {
-                        bChPw = true
-
-                        //成功後 isForceChangePw 已被後端清為 'n', 同步刷新 store.userSelf,
-                        //讓 isForceChangePw computed 重新求值, 解除強制變更模式
-                        let u = { ...vo.$store.state.userSelf, isForceChangePw: 'n' }
-                        vo.$store.commit(vo.$store.types.UpdateUserSelf, u)
-
-                        //cancelChangePassword
-                        vo.cancelChangePassword()
+                    .then(() => {
+                        okChPw = true
                     })
                     .catch((err) => {
                         console.log('catch', err)
@@ -483,10 +475,20 @@ export default {
                         //最常見原因為舊密碼錯，放此位置最直覺；其他原因（如 token 失效）顯示同一訊息
                         vo.chPwOldError = vo.$t('userChangePasswordFail')
                     })
-                if (!bChPw) {
+                if (!okChPw) {
                     return
                 }
 
+                //成功後 isForceChangePw 已被後端清為 'n', 同步刷新 store.userSelf,
+                //讓 isForceChangePw computed 重新求值, 解除強制變更模式
+                let u = { ...vo.$store.state.userSelf, isForceChangePw: 'n' }
+                vo.$store.commit(vo.$store.types.UpdateUserSelf, u)
+
+                //cancelChangePassword
+                vo.cancelChangePassword()
+
+                //close before showCheckYes (ADR-002 modal 等待期避免 loading 疊著);
+                //finally 仍會再呼叫一次當作兜底, updateLoading 對重複關閉是 idempotent
                 vo.$ui.updateLoading(false)
                 await vo.$dg.showCheckYes(vo.$t('userChangePasswordSuccess'))
 

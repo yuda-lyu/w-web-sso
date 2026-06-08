@@ -600,7 +600,9 @@ export default {
 
                 let ok = false
                 await vo.$fapi.createUser(lang, vo.account, vo.password, vo.regConfirmPassword, vo.regName, vo.regEmail)
-                    .then(() => { ok = true })
+                    .then(() => {
+                        ok = true
+                    })
                     .catch((err) => {
                         let errMsg = (err && typeof err === 'string') ? err : ''
                         //後端以「字面英文字串」reject 的三類 (invalid account / email format / name): 對應 i18n inline 訊息
@@ -673,7 +675,12 @@ export default {
                 //3) 確定要打 API 才開 loading
                 vo.$ui.updateLoading(true)
 
+                //4) 執行: 用 okX 旗標 + 短路 (canonical §5.1 style, 與 submitRegister 對齊)
+                let ok = false
                 await vo.$fapi.resendVerifyEmail(lang, vo.account, vo.resendEmail)
+                    .then(() => {
+                        ok = true
+                    })
                     .catch((err) => {
                         let errMsg = (err && typeof err === 'string') ? err : ''
                         if (errMsg === 'invalid account or email') {
@@ -690,14 +697,11 @@ export default {
                             vo.resendError = vo.$t('loginUnknownError')
                         }
                     })
-
-                //API 有錯 (catch 已設 vo.resendError inline 紅字) → 中止, 不往下走成功流程
-                if (isestr(vo.resendError)) {
+                if (!ok) {
                     return
                 }
 
-                //成功: 重導前(此處為換 viewMode)先關 loading, 再開成功對話框 (避免 loading 蓋住對話框)
-                vo.$ui.updateLoading(false)
+                //5) 成功 (非重導, 僅切回 login viewMode); loading 由外層 finally 一處關閉
                 await vo.$dg.showCheckYes(vo.$t('userRegistrationResendSuccess'))
                 vo.showResendVerify = false
                 vo.loginError = ''
