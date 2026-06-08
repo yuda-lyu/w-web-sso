@@ -342,9 +342,6 @@
 <script>
 import get from 'lodash-es/get.js'
 import isestr from 'wsemi/src/isestr.mjs'
-import isDev from 'wsemi/src/isDev.mjs'
-import delay from 'wsemi/src/delay.mjs'
-import waitFun from 'wsemi/src/waitFun.mjs'
 import WIcon from 'w-component-vue/src/components/WIcon.vue'
 import WText from 'w-component-vue/src/components/WText.vue'
 import WTextSelect from 'w-component-vue/src/components/WTextSelect.vue'
@@ -739,9 +736,7 @@ export default {
 
             //login
             //強制變更密碼模式: 若 userSelf.isForceChangePw === 'y', 不走 useRedir,
-            //而是登入後 showCheckYes 提示再進 user view (見 .then 內部處理)
-            let userSelfBeforeLogin = get(vo, '$store.state.userSelf', {})
-            void userSelfBeforeLogin //僅參考; 真正判斷在 .then 內讀最新 userSelf
+            //而是登入後 showCheckYes 提示再進 user view (見 .then 內部讀最新 userSelf 處理)
             vo.$ui.login(vo.account, vo.password, { useRedir: view === 'login' })
                 .then(async () => {
 
