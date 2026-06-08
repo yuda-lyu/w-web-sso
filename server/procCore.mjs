@@ -1,5 +1,6 @@
 import path from 'path'
 import fs from 'fs'
+import crypto from 'crypto'
 import ot from 'dayjs'
 import get from 'lodash-es/get.js'
 import each from 'lodash-es/each.js'
@@ -38,6 +39,17 @@ import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
 import hashPassword from './hashPassword.mjs'
 import genRandomPassword from './genRandomPassword.mjs'
+
+
+//timing-safe hash compare: 防 password / token hash 比對之 timing side-channel attack.
+//hashPassword 產出固定長度字串, 但仍加長度檢查防呆 (DB 紀錄損壞 / 空字串等邊界).
+function timingSafePasswordEqual(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string') return false
+    let bufA = Buffer.from(a)
+    let bufB = Buffer.from(b)
+    if (bufA.length !== bufB.length) return false
+    return crypto.timingSafeEqual(bufA, bufB)
+}
 
 
 function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pathTemplate, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl }) {
@@ -280,7 +292,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         // console.log('passwordTrue', passwordTrue)
 
         //check
-        if (passwordTest !== passwordTrue) {
+        if (!timingSafePasswordEqual(passwordTest, passwordTrue)) {
             return Promise.reject(`incorrect user account or password`)
         }
 
@@ -993,7 +1005,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         let passwordTest = hashPassword(oldPassword, salt)
 
         //check
-        if (passwordTest !== passwordTrue) {
+        if (!timingSafePasswordEqual(passwordTest, passwordTrue)) {
             return Promise.reject(`incorrect old password`)
         }
 
