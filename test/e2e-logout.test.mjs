@@ -162,21 +162,19 @@ async function getLsToken(page) {
 }
 
 
-async function pageHasText(page, text) {
-    return await page.evaluate((t) => {
-        let walk = (el) => {
-            if (!el) return false
-            if (el.nodeType === 3) return (el.nodeValue || '').includes(t)
-            if (el.nodeType !== 1) return false
-            let tag = el.tagName
-            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return false
-            for (let c of el.childNodes) {
-                if (walk(c)) return true
-            }
-            return false
-        }
-        return walk(document.body)
-    }, text)
+//等指定文字出現在頁面 (user-facing observation), timeout 拋錯
+async function waitForTextVisible(page, text, timeout = 10000) {
+    await page.getByText(text, { exact: false }).first().waitFor({ state: 'visible', timeout })
+}
+
+
+//斷言指定文字不存在於頁面 (settle 後檢查 count, 對齊 §6.3 e2e rubric 反向斷言策略).
+//先等 1500ms 給 page DOM 與 SPA 路由 settle, 再用 locator.count() 確認 0.
+//不採 waitFor({state:'hidden'}) 因若元素根本不在 DOM 內, hidden 不會 fire.
+async function assertTextNotVisible(page, text, label = '') {
+    await page.waitForTimeout(1500)
+    let count = await page.getByText(text, { exact: false }).count()
+    assert.strict.equal(count, 0, label || `預期不見「${text}」, 實際出現 ${count} 處`)
 }
 
 
@@ -435,8 +433,7 @@ else {
                 await loginViaAutoLogin(page, testUsers.admin, 'backstage', lang)
 
                 //語意斷言 1: 已進 backstage
-                let inBackstage = await pageHasText(page, t.statistics)
-                assert.strict.equal(inBackstage, true, `應已進 backstage (見 ${t.statistics}), 實際未見`)
+                await waitForTextVisible(page, t.statistics, 10000)
 
                 //語意斷言 2: token 存在
                 let tokenBefore = await getLsToken(page)
@@ -464,8 +461,7 @@ else {
                 assert.strict.equal(tokenAfter, '', `logout 後 LS token 應為空字串, 實際: ${JSON.stringify(tokenAfter)}`)
 
                 //語意斷言 4: backstage nav 已消失
-                let stillInBackstage = await pageHasText(page, t.statistics)
-                assert.strict.equal(stillInBackstage, false, `logout 後不應再見 backstage nav (${t.statistics})`)
+                await assertTextNotVisible(page, t.statistics, `logout 後不應再見 backstage nav (${t.statistics})`)
             })
 
 
@@ -473,8 +469,7 @@ else {
                 let t = kpUiText[lang]
                 await loginViaAutoLogin(page, testUsers.user, 'user', lang)
 
-                let inUserView = await pageHasText(page, testUsers.user.name)
-                assert.strict.equal(inUserView, true, `應已進 user view (見 user name), 實際未見`)
+                await waitForTextVisible(page, testUsers.user.name, 10000)
 
                 let tokenBefore = await getLsToken(page)
                 assert.strict.equal(tokenBefore, userTokens[testUsers.user.id], `登入後 token 應存在 LS`)
@@ -578,8 +573,7 @@ else {
                 assert.strict.equal(tokenAfter, userTokens[testUsers.user.id], `webKey 缺失時 LS token 應仍保留, 實際: ${JSON.stringify(tokenAfter)}`)
 
                 //語意斷言: 仍在 user view (viewState 未切 login, 仍見 user name)
-                let stillInUserView = await pageHasText(page, testUsers.user.name)
-                assert.strict.equal(stillInUserView, true, `webKey 缺失 logout 後仍應在 user view, 實際未見 ${testUsers.user.name}`)
+                await waitForTextVisible(page, testUsers.user.name, 10000)
             })
 
 
@@ -605,12 +599,10 @@ else {
                 assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: logout-${lang}-005-logout-then-reload`)
 
                 //語意斷言: 仍在 login 頁
-                let stillLogin = await pageHasText(page, t.login)
-                assert.strict.equal(stillLogin, true, `reload 後應仍見 login 頁 (${t.login})`)
+                await waitForTextVisible(page, t.login, 10000)
 
                 //語意斷言: 不在 user view (不應見 user name)
-                let backInUserView = await pageHasText(page, testUsers.user.name)
-                assert.strict.equal(backInUserView, false, `reload 不應 autoLogin 回 user view, 但見 user name`)
+                await assertTextNotVisible(page, testUsers.user.name, `reload 不應 autoLogin 回 user view, 但見 user name`)
 
                 //語意斷言: token 仍為空
                 let tokenAfter = await getLsToken(page)
