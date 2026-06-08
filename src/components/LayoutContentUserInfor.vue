@@ -249,13 +249,9 @@ import { mdiAccountCircleOutline } from '@mdi/js/mdi.js'
 import ot from 'dayjs'
 import get from 'lodash-es/get.js'
 import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
-// import WPanelLabelItem from 'w-component-vue/src/components/WPanelLabelItem.vue'
 
 
 export default {
-    components: {
-        // WPanelLabelItem,
-    },
     props: {
     },
     data: function() {
