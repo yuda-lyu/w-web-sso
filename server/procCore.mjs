@@ -1609,6 +1609,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //updateUsersList (帶 lang/operatorId 給下層用於 add 群組密碼策略檢查與 audit)
         rows = await updateUsersList(rows, { lang, operatorId })
 
+        //寫入後立即 invalidate 30s cache, 避免 admin 改完之 dashboard 顯示舊資料 (audit F-050)
+        ocGetUsersList.clear('fun')
+
         return rows
     }
 
@@ -1724,6 +1727,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //updateTokensList
         rows = await updateTokensList(rows)
 
+        //寫入後立即 invalidate 30s cache, 避免 admin 改完之 dashboard 顯示舊資料 (audit F-050)
+        ocGetTokensList.clear('fun')
+
         return rows
     }
 
@@ -1778,6 +1784,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //updateIpsList
         rows = await updateIpsList(rows)
+
+        //寫入後立即 invalidate 30s cache, 避免 admin 改完之 dashboard 顯示舊資料 (audit F-050)
+        ocGetIpsList.clear('fun')
 
         return rows
     }
