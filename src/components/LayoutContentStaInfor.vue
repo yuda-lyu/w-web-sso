@@ -8,7 +8,7 @@
 
         <div
             style="height:100%; background:#f9fafb; overflow-y:auto;"
-            v-if="!isLoading"
+            v-if="!firstLoading && !errMsg"
         >
 
             <div style="padding:20px 30px;">
@@ -300,7 +300,7 @@
         <template v-else>
             <div
                 style="padding:10px 15px; font-size:0.8rem;"
-                v-if="isLoading"
+                v-if="firstLoading"
             >
                 {{$t('waitingData')}}
             </div>
@@ -352,7 +352,7 @@ export default {
             panelWidth: 100,
             panelHeight: 100,
 
-            isLoading: true,
+            firstLoading: true,
             errMsg: '',
 
             userOverview: {},
@@ -389,8 +389,19 @@ export default {
 
         let vo = this
 
+        //firstLoading, errMsg
+        vo.firstLoading = true
+        vo.errMsg = ''
+
         //getAndRelaData
         vo.getAndRelaData()
+            .catch((err) => {
+                console.log(err)
+                vo.errMsg = vo.$t('getDataError')
+            })
+            .finally(() => {
+                vo.firstLoading = false
+            })
 
     },
     computed: {
@@ -618,6 +629,7 @@ export default {
                 })
                 .catch((err) => {
                     console.log('getStaUserSummary catch', err)
+                    throw err
                 })
 
         },
@@ -635,6 +647,7 @@ export default {
                 })
                 .catch((err) => {
                     console.log('getStaTokenSummary catch', err)
+                    throw err
                 })
 
         },
@@ -652,6 +665,7 @@ export default {
                 })
                 .catch((err) => {
                     console.log('getStaIpSummary catch', err)
+                    throw err
                 })
 
         },
@@ -671,6 +685,7 @@ export default {
                 })
                 .catch((err) => {
                     console.log('getStaUserAccountLogin catch', err)
+                    throw err
                 })
 
         },
@@ -691,6 +706,7 @@ export default {
                 })
                 .catch((err) => {
                     console.log('getStaToken catch', err)
+                    throw err
                 })
 
         },
@@ -711,6 +727,7 @@ export default {
                 })
                 .catch((err) => {
                     console.log('getStaIp catch', err)
+                    throw err
                 })
 
         },
@@ -718,35 +735,23 @@ export default {
         getAndRelaData: async function() {
             let vo = this
 
-            vo.isLoading = true
-            vo.errMsg = ''
-            vo.grStaUserSummary() //isLoading僅針對grStaUserSummary之取得成功與否做判斷
-                .catch((err) => {
-                    console.log(err)
-                    vo.errMsg = vo.$t('getDataError')
-                })
-                .finally(() => {
-                    vo.isLoading = false
-                })
+            //6 個 API 並行, 各自跑各的; Promise.allSettled 等全部 settle 才繼續
+            //(不像 Promise.all 任一 reject 即整體 reject 短路, 剩下的雖仍跑但結果丟掉)
+            let results = await Promise.allSettled([
+                vo.grStaUserSummary(),
+                vo.grStaTokenSummary(),
+                vo.grStaIpSummary(),
+                vo.grStaUserAccountLogin(),
+                vo.grStaToken(),
+                vo.grStaIp(),
+            ])
 
-            //primary grStaUserSummary 由外層 catch+finally 控制 isLoading + errMsg; secondary 5 條
-            //(grStaTokenSummary/grStaIpSummary/grStaUserAccountLogin/grStaToken/grStaIp) 各自內部已 console.log,
-            //外層空 catch 純為防 unhandled rejection, fire-and-forget.
-            vo.grStaTokenSummary()
-                .catch(() => { })
-
-            vo.grStaIpSummary()
-                .catch(() => { })
-
-            vo.grStaUserAccountLogin()
-                .catch(() => { })
-
-            vo.grStaToken()
-                .catch(() => { })
-
-            vo.grStaIp()
-                .catch(() => { })
-
+            //任一 rejected → throw 給 mounted 外層 catch 顯示 errMsg
+            let rejected = results.filter((r) => r.status === 'rejected')
+            if (rejected.length > 0) {
+                rejected.forEach((r, i) => console.log('getAndRelaData rejected', i, r.reason))
+                throw rejected[0].reason
+            }
         },
 
         updateCharts: function() {

@@ -70,10 +70,11 @@ let expectedSpecText = {
         eng: { mode: 'text', value: 'Total Users' },
         cht: { mode: 'text', value: '總使用者' },
     },
-    //E2E-002: token 過期後 6 個 API 全 reject, 卡片區仍應見標籤 (i18n 鍵 totalUsers)
+    //E2E-002: token 過期後 6 個 API 全 reject, Promise.allSettled throw → mounted catch
+    //設 errMsg='getDataError', 主內容隱藏 v-else 顯示載入失敗訊息 (F-035 fix)
     'E2E-002-admin-token-expired-page-empty': {
-        eng: { mode: 'text', value: 'Total Users' },
-        cht: { mode: 'text', value: '總使用者' },
+        eng: { mode: 'text', value: 'Failed to get data, please try again later' },
+        cht: { mode: 'text', value: '取得數據失敗，請稍後再試' },
     },
 }
 
@@ -172,8 +173,8 @@ async function forceExpireAdminToken() {
 // ===================================================================
 
 let kpUiText = {
-    eng: { login: 'Log in', statisticsMenu: 'Statistics information', statisticsTitle: 'Statistics', usersList: 'Users list', ok: 'OK', totalUsers: 'Total Users' },
-    cht: { login: '登入', statisticsMenu: '統計資訊', statisticsTitle: '統計', usersList: '使用者清單', ok: '確認', totalUsers: '總使用者' },
+    eng: { login: 'Log in', statisticsMenu: 'Statistics information', statisticsTitle: 'Statistics', usersList: 'Users list', ok: 'OK', totalUsers: 'Total Users', errMsgGetData: 'Failed to get data, please try again later' },
+    cht: { login: '登入', statisticsMenu: '統計資訊', statisticsTitle: '統計', usersList: '使用者清單', ok: '確認', totalUsers: '總使用者', errMsgGetData: '取得數據失敗，請稍後再試' },
 }
 
 
@@ -257,12 +258,24 @@ async function loginAsAdmin(page, lang) {
 
 
 //等 Statistics 頁完整 render: 等 6 個 getSta* API 全回完 + 卡片數字綁定完成 + chart instance 初始化完成
+//timeout 設 60s: cht 路徑因 lang switch 額外開銷, 加上 chart 大量 echarts 初始化, 20s 對 cht 易卡 (race 觀察)
 async function waitStaInforReady(page, lang) {
     let t = kpUiText[lang]
     //等卡片標籤出現 (代表主 layout 渲染完成)
-    await waitUntilExist(page, `Statistics 頁卡片 "${t.totalUsers}"`, (s) => document.body.innerText.includes(s), { arg: t.totalUsers, timeout: 20000 })
+    await waitUntilExist(page, `Statistics 頁卡片 "${t.totalUsers}"`, (s) => document.body.innerText.includes(s), { arg: t.totalUsers, timeout: 60000 })
     //再等待固定時間, 給 6 個 async API + chart resize debounce 充分 settle
     await page.waitForTimeout(8000)
+}
+
+
+//等 Statistics 頁顯示「載入失敗」訊息 (F-035 fix 後 token 失效時走此路徑):
+//token 過期 → 6 個 getSta* reject → Promise.allSettled throw → mounted catch 設 errMsg → v-else 顯示
+async function waitStaInforErrMsg(page, lang) {
+    let t = kpUiText[lang]
+    //等 errMsg 文字出現 (代表 mounted catch 設了 errMsg 且 v-else 已 render)
+    await waitUntilExist(page, `Statistics errMsg "${t.errMsgGetData}"`, (s) => document.body.innerText.includes(s), { arg: t.errMsgGetData, timeout: 20000 })
+    //再等待固定時間給 DOM settle
+    await page.waitForTimeout(3000)
 }
 
 
@@ -373,11 +386,11 @@ async function captureAdminTokenExpiredPageEmpty(page, lang) {
     //過期 admin token
     await forceExpireAdminToken()
 
-    //切回 Statistics (Stainfor 重新 mount, 6 API 用過期 token 全 reject)
+    //切回 Statistics (Stainfor 重新 mount, 6 API 用過期 token 全 reject → errMsg 顯示)
     await page.locator(`text="${t.statisticsMenu}"`).first().waitFor({ state: 'visible', timeout: 15000 })
     await page.locator(`text="${t.statisticsMenu}"`).first().click()
     await page.waitForTimeout(3000)
-    await waitStaInforReady(page, lang)
+    await waitStaInforErrMsg(page, lang)
 
     return await captureCardsOnly(page)
 }

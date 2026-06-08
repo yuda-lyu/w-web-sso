@@ -223,7 +223,6 @@
                 </div>
 
 
-
             </div>
 
         </div>
@@ -250,12 +249,12 @@ import { mdiAccountCircleOutline } from '@mdi/js/mdi.js'
 import ot from 'dayjs'
 import get from 'lodash-es/get.js'
 import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
-import WPanelLabelItem from 'w-component-vue/src/components/WPanelLabelItem.vue'
+// import WPanelLabelItem from 'w-component-vue/src/components/WPanelLabelItem.vue'
 
 
 export default {
     components: {
-        WPanelLabelItem,
+        // WPanelLabelItem,
     },
     props: {
     },
@@ -328,33 +327,6 @@ export default {
             let b = vo.$s.getIsVerified(user)
 
             return b
-
-            // //timeVerified
-            // let timeVerified = get(vo, 'user.timeVerified', '')
-            // // console.log('timeVerified', timeVerified)
-
-            // // //check
-            // // if (istimemsTZ(timeVerified)) {
-            // //     return true //有驗證時間, 代表已驗證
-            // // }
-
-            // // //tt
-            // // let tt = ot(timeVerified, 'YYYY-MM-DDTHH:mm:ss.SSSZ')
-            // // // console.log('tt', tt)
-
-            // // //tn
-            // // let tn = ot()
-
-            // // //tds
-            // // let tds = tt.diff(tn, 'second')
-            // // // console.log('tds', tds)
-
-            // // //check
-            // // if (tds > 0) {
-            // //     return false
-            // // }
-
-            // return istimemsTZ(timeVerified) //有驗證時間, 代表已驗證
         },
 
         timeVerifiedToDay: function() {
@@ -389,33 +361,6 @@ export default {
             let b = vo.$s.getIsExpired(user)
 
             return b
-
-            // //timeExpired
-            // let timeExpired = get(vo, 'user.timeExpired', '')
-            // // console.log('timeExpired', timeExpired)
-
-            // //check
-            // if (!istimemsTZ(timeExpired)) {
-            //     return false //無過期時間, 代表未過期
-            // }
-
-            // // //tt
-            // // let tt = ot(timeExpired, 'YYYY-MM-DDTHH:mm:ss.SSSZ')
-            // // // console.log('tt', tt)
-
-            // //tn
-            // let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-
-            // // //tds
-            // // let tds = tt.diff(tn, 'second')
-            // // // console.log('tds', tds)
-
-            // // //check
-            // // if (tn > timeExpired) {
-            // //     return true
-            // // }
-
-            // return tn >= timeExpired //現在時間>=過期時間, 代表已過期
         },
 
         timeExpiredToDay: function() {
@@ -450,33 +395,6 @@ export default {
             let b = vo.$s.getIsBlocked(user)
 
             return b
-
-            // //timeBlocked
-            // let timeBlocked = get(vo, 'user.timeBlocked', '')
-            // // console.log('timeBlocked', timeBlocked)
-
-            // //check
-            // if (!istimemsTZ(timeBlocked)) {
-            //     return false //無封鎖時間, 代表未封鎖
-            // }
-
-            // // //tt
-            // // let tt = ot(timeBlocked, 'YYYY-MM-DDTHH:mm:ss.SSSZ')
-            // // // console.log('tt', tt)
-
-            // //tn
-            // let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-
-            // // //tds
-            // // let tds = tt.diff(tn, 'second')
-            // // // console.log('tds', tds)
-
-            // // //check
-            // // if (tn > timeBlocked) {
-            // //     return false
-            // // }
-
-            // return tn <= timeBlocked //現在時間<=封鎖時間, 代表封鎖中
         },
 
         timeBlockedToDay: function() {
@@ -500,59 +418,6 @@ export default {
 
             return t
         },
-
-        // users: function() {
-        //     return get(this, `$store.state.users`)
-        // },
-
-        // usersGroups: function() {
-        //     let gs = groupBy(this.users, 'from')
-        //     let ks = keys(gs)
-        //     ks = sortBy(ks)
-        //     let gsTemp = {}
-        //     each(ks, (k) => {
-        //         gsTemp[k] = gs[k]
-        //     })
-        //     gs = gsTemp
-        //     return gs
-        // },
-
-        // changeParams: function() {
-        //     // console.log('computed changeParams')
-
-        //     let vo = this
-
-        //     // //check
-        //     // if (size(vo.users) === 0) {
-        //     //     return ''
-        //     // }
-
-        //     // //firstLoading
-        //     // vo.firstLoading = false
-
-        //     return ''
-        // },
-
-        // spacePading: function() {
-        //     let vo = this
-        //     if (vo.panelWidth < 400) {
-        //         return 0
-        //     }
-        //     else if (vo.panelWidth < 800) {
-        //         return 10
-        //     }
-        //     return 20
-        // },
-
-        // usersGroupsHeight: function() {
-        //     let vo = this
-
-        //     //h
-        //     let h = vo.panelHeight - vo.headHeight - 2 * vo.spacePading - vo.groupInforHeight
-        //     h = Math.max(h, 0)
-
-        //     return h
-        // },
 
     },
     methods: {
