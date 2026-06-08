@@ -124,7 +124,7 @@
                                                         :borderRadius="4"
                                                         _shadow="false"
                                                         :promiseUnlock="true"
-                                                        @click="async ({ pm }) => { try { await submitChangePassword(); pm.resolve() } catch (e) { pm.reject(e) } }"
+                                                        @click="onClickSubmitChangePasswordBtn"
                                                     ></WButtonChip>
                                                     <WButtonChip
                                                         v-if="!isForceChangePw"
@@ -509,6 +509,17 @@ export default {
 
                 })
 
+        },
+
+        onClickSubmitChangePasswordBtn: async function(msg) {
+            let vo = this
+            try {
+                await vo.submitChangePassword()
+                msg.pm.resolve()
+            }
+            catch (e) {
+                msg.pm.reject(e)
+            }
         },
 
         logout: function() {

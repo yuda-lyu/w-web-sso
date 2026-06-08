@@ -234,7 +234,7 @@
                                         :shadow="false"
                                         :editable="isEditable"
                                         :promiseUnlock="true"
-                                        @click="async ({ pm }) => { try { await $dg.modifyItemPasswordById($ui.gv(props.row, 'id')); pm.resolve() } catch (e) { pm.reject(e) } }"
+                                        @click="(msg) => onClickModifyItemPasswordByIdBtn(msg, $ui.gv(props.row, 'id'))"
                                     ></WButtonChip>
                                 </div>
                             </template>
@@ -1093,6 +1093,17 @@ export default {
             cmp.showKeys(vo.tabKeysShow)
             // console.log('tabKeysShow', vo.tabKeysShow)
 
+        },
+
+        onClickModifyItemPasswordByIdBtn: async function(msg, id) {
+            let vo = this
+            try {
+                await vo.modifyItemPasswordById(id)
+                msg.pm.resolve()
+            }
+            catch (e) {
+                msg.pm.reject(e)
+            }
         },
 
         modifyItemPasswordById: function(id) {

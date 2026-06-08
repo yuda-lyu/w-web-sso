@@ -204,7 +204,7 @@
                                     _shadow="false"
                                     :editable="hasRegFields"
                                     :promiseUnlock="true"
-                                    @click="async ({ pm }) => { try { await register(); pm.resolve() } catch (e) { pm.reject(e) } }"
+                                    @click="onClickRegisterBtn"
                                 ></WButtonChip>
                             </div>
 
@@ -290,7 +290,7 @@
                                     :backgroundColorHover="'rgba(255,255,255,0.7)'"
                                     _shadow="false"
                                     :promiseUnlock="true"
-                                    @click="async ({ pm }) => { try { await resendVerify(); pm.resolve() } catch (e) { pm.reject(e) } }"
+                                    @click="onClickResendVerifyBtn"
                                 ></WButtonChip>
                             </div>
 
@@ -658,6 +658,17 @@ export default {
 
         },
 
+        onClickRegisterBtn: async function(msg) {
+            let vo = this
+            try {
+                await vo.register()
+                msg.pm.resolve()
+            }
+            catch (e) {
+                msg.pm.reject(e)
+            }
+        },
+
         resendVerify: function() {
             let vo = this
             let lang = get(vo, '$store.state.lang', 'eng')
@@ -727,6 +738,17 @@ export default {
 
                 })
 
+        },
+
+        onClickResendVerifyBtn: async function(msg) {
+            let vo = this
+            try {
+                await vo.resendVerify()
+                msg.pm.resolve()
+            }
+            catch (e) {
+                msg.pm.reject(e)
+            }
         },
 
         login: function() {
