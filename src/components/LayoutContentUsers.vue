@@ -233,7 +233,8 @@
                                         :borderRadius="4"
                                         :shadow="false"
                                         :editable="isEditable"
-                                        @click="$dg.modifyItemPasswordById($ui.gv(props.row, 'id'))"
+                                        :promiseUnlock="true"
+                                        @click="async ({ pm }) => { try { await $dg.modifyItemPasswordById($ui.gv(props.row, 'id')); pm.resolve() } catch (e) { pm.reject(e) } }"
                                     ></WButtonChip>
                                 </div>
                             </template>
@@ -1182,7 +1183,7 @@ export default {
 
                 return 'ok'
             }
-            core()
+            return core()
                 .catch((err) => {
                     console.log('modifyItemPasswordById catch', err)
                     vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })

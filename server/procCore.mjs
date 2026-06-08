@@ -39,6 +39,7 @@ import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
 import hashPassword from './hashPassword.mjs'
 import genRandomPassword from './genRandomPassword.mjs'
+import procMutex from './procMutex.mjs'
 
 
 //timing-safe hash compare: 防 password / token hash 比對之 timing side-channel attack.
@@ -54,6 +55,18 @@ function timingSafePasswordEqual(a, b) {
 
 function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pathTemplate, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl }) {
 
+
+    //procMutex: 同 key 序列化, 用於 createUser / resendVerifyEmail /
+    //checkTokenAndChangePassword / adminResetUserPassword 等 critical 路徑,
+    //防同 key 並行 race (重複帳號 / lost update / 重複寄信).
+    let { withLock } = procMutex()
+
+    //throttle 紀錄: key → timestamp(ms), 用於 resendVerifyEmail / adminResetUserPassword
+    //之 30s 內第二次重複觸發判定. 與 mutex 配合: mutex 確保同 key 序列化,
+    //throttle 確保序列化後第二次仍會被 reject (避免重複寄信).
+    let lastResendTime = new Map()
+    let lastResetTime = new Map()
+    let throttleMs = 30 * 1000 //30 秒
 
     //email title 從 procLang 取
     let getEmailTitle = (key, lang) => {
@@ -743,42 +756,50 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             return Promise.reject('invalid name')
         }
 
-        //check account unique (全域唯一，不限 isActive)
-        let allUsers = await woItems.users.select()
-        let existAccount = allUsers.some((u) => get(u, 'account', '') === account)
-        if (existAccount) {
-            let msg = get(kpLang, `${lang}.userRegistrationAccountExists`, 'account already exists')
-            return Promise.reject(msg)
-        }
+        //序列化同 account / email 之並行請求: 防兩條 race 都通過 select 後雙重 insert
+        //(同 key 第二次進來時 mutex 排到第一次之後, 第二次 select 會看到第一次 insert,
+        // 走既有 reject 'account already exists' / 'email already exists').
+        //範圍: select unique check → procOrm insert. 後續寄信放鎖外, SMTP 慢不阻塞後續同 key 排隊.
+        let tokenVerify
+        await withLock(`createUser:${account}:${email}`, async () => {
 
-        //check email unique (全域唯一，不限 isActive)
-        let existEmail = allUsers.some((u) => get(u, 'email', '') === email)
-        if (existEmail) {
-            let msg = get(kpLang, `${lang}.userRegistrationEmailExists`, 'email already exists')
-            return Promise.reject(msg)
-        }
+            //check account unique (全域唯一，不限 isActive)
+            let allUsers = await woItems.users.select()
+            let existAccount = allUsers.some((u) => get(u, 'account', '') === account)
+            if (existAccount) {
+                let msg = get(kpLang, `${lang}.userRegistrationAccountExists`, 'account already exists')
+                return Promise.reject(msg)
+            }
 
-        //hashPassword
-        let passwordHashed = hashPassword(password, salt)
+            //check email unique (全域唯一，不限 isActive)
+            let existEmail = allUsers.some((u) => get(u, 'email', '') === email)
+            if (existEmail) {
+                let msg = get(kpLang, `${lang}.userRegistrationEmailExists`, 'email already exists')
+                return Promise.reject(msg)
+            }
 
-        //tokenVerify
-        let tokenVerify = `${genIDSeq()}`
+            //hashPassword
+            let passwordHashed = hashPassword(password, salt)
 
-        //new user (timeVerified 為空，須完成 email 驗證才能登入)
-        let u = ds.users.funNew({
-            account,
-            password: passwordHashed,
-            name,
-            email,
-            tokenVerify,
-            isAdmin: 'n',
-            isActive: 'y',
+            //tokenVerify
+            tokenVerify = `${genIDSeq()}`
+
+            //new user (timeVerified 為空，須完成 email 驗證才能登入)
+            let u = ds.users.funNew({
+                account,
+                password: passwordHashed,
+                name,
+                email,
+                tokenVerify,
+                isAdmin: 'n',
+                isActive: 'y',
+            })
+
+            //insert
+            //operatorId 傳 u.id (自我參照): 自助註冊本人即創建者, userId / userIdUpdate 寫入自己的 id,
+            //可由 userId === id 判斷此 user 為自助註冊（後台 admin 建立則 userId 為 admin id）
+            await procOrm(u.id, 'users', 'insert', [u])
         })
-
-        //insert
-        //operatorId 傳 u.id (自我參照): 自助註冊本人即創建者, userId / userIdUpdate 寫入自己的 id,
-        //可由 userId === id 判斷此 user 為自助註冊（後台 admin 建立則 userId 為 admin id）
-        await procOrm(u.id, 'users', 'insert', [u])
 
         //send verify email (若失敗，使用者可透過「重寄驗證信」補救)
         try {
@@ -845,55 +866,70 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             return Promise.reject('invalid account or email')
         }
 
-        //getGenUserByAccount
-        let u = null
-        try {
-            u = await _getGenUserByKV('account', account)
-        }
-        catch (err) {}
-        if (!u) {
-            return Promise.reject('invalid account or email') //不洩露帳號是否存在
-        }
+        //序列化同 account 之並行請求, 並於鎖內 throttle 30s 內第二次 resend
+        //(mutex 確保 throttle 紀錄寫入無 race; 30s 內第二次直接 reject 'resend throttled').
+        return await withLock(`resendVerifyEmail:${account}`, async () => {
 
-        //check email match
-        let uEmail = get(u, 'email', '')
-        if (uEmail !== email) {
-            return Promise.reject('invalid account or email')
-        }
+            //throttle 檢查 (30s 內第二次同 account 直接 reject)
+            let now = Date.now()
+            let last = lastResendTime.get(account)
+            if (last && (now - last) < throttleMs) {
+                return Promise.reject('resend throttled')
+            }
 
-        //check timeVerified
-        let timeVerified = get(u, 'timeVerified', '')
-        if (isestr(timeVerified)) {
-            return Promise.reject('account already verified')
-        }
+            //getGenUserByAccount
+            let u = null
+            try {
+                u = await _getGenUserByKV('account', account)
+            }
+            catch (err) {}
+            if (!u) {
+                return Promise.reject('invalid account or email') //不洩露帳號是否存在
+            }
 
-        //userId
-        let userId = get(u, 'id', '')
-        let name = get(u, 'name', '')
+            //check email match
+            let uEmail = get(u, 'email', '')
+            if (uEmail !== email) {
+                return Promise.reject('invalid account or email')
+            }
 
-        //產生新 tokenVerify 並更新至 users
-        let tokenVerify = `${genIDSeq()}`
-        await woItems.users.save({
-            id: userId,
-            tokenVerify,
-        })
+            //check timeVerified
+            let timeVerified = get(u, 'timeVerified', '')
+            if (isestr(timeVerified)) {
+                return Promise.reject('account already verified')
+            }
 
-        //send verify email
-        try {
-            let sender = get(kpLang, `${lang}.webName`, '')
-            let title = getEmailTitle('regVerifyEmTitle', lang)
-            let verifyUrl = `${verifyBaseUrl}/api/verifyEmail?token=${tokenVerify}&lang=${lang}`
-            let content = renderEmailBody('regVerifyEmail', lang, {
-                sender, name, verifyUrl,
+            //userId
+            let userId = get(u, 'id', '')
+            let name = get(u, 'name', '')
+
+            //產生新 tokenVerify 並更新至 users
+            let tokenVerify = `${genIDSeq()}`
+            await woItems.users.save({
+                id: userId,
+                tokenVerify,
             })
-            await srEmail.send(sender, title, content, email)
-        }
-        catch (err) {
-            console.log('resend verify email error', err)
-            return Promise.reject('send email failed')
-        }
 
-        return { state: 'success', msg: 'ok' }
+            //寫 throttle 時間戳 (放在 save 後, 確認此次 resend 已生效才記)
+            lastResendTime.set(account, now)
+
+            //send verify email
+            try {
+                let sender = get(kpLang, `${lang}.webName`, '')
+                let title = getEmailTitle('regVerifyEmTitle', lang)
+                let verifyUrl = `${verifyBaseUrl}/api/verifyEmail?token=${tokenVerify}&lang=${lang}`
+                let content = renderEmailBody('regVerifyEmail', lang, {
+                    sender, name, verifyUrl,
+                })
+                await srEmail.send(sender, title, content, email)
+            }
+            catch (err) {
+                console.log('resend verify email error', err)
+                return Promise.reject('send email failed')
+            }
+
+            return { state: 'success', msg: 'ok' }
+        })
     }
 
 
@@ -979,85 +1015,92 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         let uToken = await getUserByToken(token)
         let userId = get(uToken, 'id', '')
 
-        //getGenUserByUserId (with password)
-        let u = await _getGenUserByKV('id', userId, { deletePassword: false })
+        //序列化同 userId 之並行 change-password 請求: 防 lost update + 重複寄信.
+        //第二次同 userId 進入時 mutex 序列化, 第二次因 password 已被第一次改, 走既有
+        //'incorrect old password' reject 路徑, 自然不會多寄信.
+        return await withLock(`changeUserPassword:${userId}`, async () => {
 
-        //account
-        let account = get(u, 'account', '')
+            //getGenUserByUserId (with password)
+            let u = await _getGenUserByKV('id', userId, { deletePassword: false })
 
-        //check newPassword
-        let r = checkUserPassword(lang, newPassword, { account })
-        if (r.state === 'error') {
-            return Promise.reject(r.msg)
-        }
+            //account
+            let account = get(u, 'account', '')
 
-        //passwordTrue
-        let passwordTrue = get(u, 'password', '')
-
-        //hashPassword
-        let passwordTest = hashPassword(oldPassword, salt)
-
-        //check
-        if (!timingSafePasswordEqual(passwordTest, passwordTrue)) {
-            return Promise.reject(`incorrect old password`)
-        }
-
-        //email
-        let email = get(u, 'email', '')
-        if (!isestr(email)) {
-            console.log('token', token)
-            console.log('u', u)
-            return Promise.reject(`invalid email`)
-        }
-        // console.log('email', email)
-
-        //hash newPassword
-        let passwordNew = hashPassword(newPassword, salt)
-
-        //save (清 isForceChangePw='n', 變更密碼成功後即解除強制變更)
-        await woItems.users.save({
-            id: userId,
-            password: passwordNew,
-            isForceChangePw: 'n',
-        })
-
-        //若已變更密碼, 但寄送email失敗時, 不能報錯中斷流程
-        try {
-
-            //sender
-            let sender = get(kpLang, `${lang}.webName`, '')
-            if (!isestr(sender)) {
-                console.log('get(kpLang, lang)', get(kpLang, lang))
-                console.log('lang', lang)
-                return Promise.reject(`invalid sender`)
+            //check newPassword
+            let r = checkUserPassword(lang, newPassword, { account })
+            if (r.state === 'error') {
+                return Promise.reject(r.msg)
             }
 
-            //name
-            let name = get(u, 'name', 'unknow')
+            //passwordTrue
+            let passwordTrue = get(u, 'password', '')
 
-            //title from procLang
-            let title = getEmailTitle('chpwEmTitle', lang)
-            if (!isestr(title)) {
-                console.log('chpwEmTitle 取不到, lang', lang)
-                return Promise.reject(`invalid title`)
+            //hashPassword
+            let passwordTest = hashPassword(oldPassword, salt)
+
+            //check
+            if (!timingSafePasswordEqual(passwordTest, passwordTrue)) {
+                return Promise.reject(`incorrect old password`)
             }
 
-            //body from server/template/changePasswordEmail-{lang}.html
-            let content = renderEmailBody('changePasswordEmail', lang, {
-                sender, name,
+            //email
+            let email = get(u, 'email', '')
+            if (!isestr(email)) {
+                console.log('token', token)
+                console.log('u', u)
+                return Promise.reject(`invalid email`)
+            }
+            // console.log('email', email)
+
+            //hash newPassword
+            let passwordNew = hashPassword(newPassword, salt)
+
+            //save (清 isForceChangePw='n', 變更密碼成功後即解除強制變更)
+            await woItems.users.save({
+                id: userId,
+                password: passwordNew,
+                isForceChangePw: 'n',
             })
 
-            //send
-            await srEmail.send(sender, title, content, email)
+            //若已變更密碼, 但寄送email失敗時, 不能報錯中斷流程
+            try {
 
-        }
-        catch (err) {
-            console.log(err)
+                //sender
+                let sender = get(kpLang, `${lang}.webName`, '')
+                if (!isestr(sender)) {
+                    console.log('get(kpLang, lang)', get(kpLang, lang))
+                    console.log('lang', lang)
+                    return Promise.reject(`invalid sender`)
+                }
 
-            //error
-            srLog.error({ event: 'fun-changePassword-sendEmail', token, lang, oldPassword, newPassword, err: getErrorMessage(err) })
+                //name
+                let name = get(u, 'name', 'unknow')
 
-        }
+                //title from procLang
+                let title = getEmailTitle('chpwEmTitle', lang)
+                if (!isestr(title)) {
+                    console.log('chpwEmTitle 取不到, lang', lang)
+                    return Promise.reject(`invalid title`)
+                }
+
+                //body from server/template/changePasswordEmail-{lang}.html
+                let content = renderEmailBody('changePasswordEmail', lang, {
+                    sender, name,
+                })
+
+                //send
+                await srEmail.send(sender, title, content, email)
+
+            }
+            catch (err) {
+                console.log(err)
+
+                //error
+                srLog.error({ event: 'fun-changePassword-sendEmail', token, lang, oldPassword, newPassword, err: getErrorMessage(err) })
+
+            }
+
+        })
 
     }
 
@@ -1103,72 +1146,88 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             return Promise.reject(`cannot reset self`)
         }
 
-        //目標 user (含 password 拿到也不用, 只是確認存在)
-        let uTarget = null
-        try {
-            uTarget = await _getGenUserByKV('id', targetUserId, { deletePassword: true })
-        }
-        catch (err) {
-            return Promise.reject(`user not found`)
-        }
-        if (!iseobj(uTarget)) {
-            return Promise.reject(`user not found`)
-        }
+        //序列化同 targetUserId 之並行 reset 請求, 並於鎖內 throttle 30s 內第二次觸發.
+        //(mutex 確保 throttle 紀錄寫入無 race; 30s 內第二次 reject
+        // 'reset already triggered, please wait', 避免 lost update + 雙重亂數密碼 + 雙封信.)
+        return await withLock(`adminResetUserPassword:${targetUserId}`, async () => {
 
-        let targetAccount = get(uTarget, 'account', '')
-        let targetName = get(uTarget, 'name', 'unknow')
-        let targetEmail = get(uTarget, 'email', '')
+            //throttle 檢查 (30s 內第二次同 targetUserId 直接 reject)
+            let now = Date.now()
+            let last = lastResetTime.get(targetUserId)
+            if (last && (now - last) < throttleMs) {
+                return Promise.reject('reset already triggered, please wait')
+            }
 
-        //產生隨機新密碼 (符合 passwordPolicy + account 限制)
-        let newPassword = genRandomPassword(passwordPolicy, targetAccount)
+            //目標 user (含 password 拿到也不用, 只是確認存在)
+            let uTarget = null
+            try {
+                uTarget = await _getGenUserByKV('id', targetUserId, { deletePassword: true })
+            }
+            catch (err) {
+                return Promise.reject(`user not found`)
+            }
+            if (!iseobj(uTarget)) {
+                return Promise.reject(`user not found`)
+            }
 
-        //hash + save (含 isForceChangePw='y')
-        let hashed = hashPassword(newPassword, salt)
-        await woItems.users.save({
-            id: targetUserId,
-            password: hashed,
-            isForceChangePw: 'y',
+            let targetAccount = get(uTarget, 'account', '')
+            let targetName = get(uTarget, 'name', 'unknow')
+            let targetEmail = get(uTarget, 'email', '')
+
+            //產生隨機新密碼 (符合 passwordPolicy + account 限制)
+            let newPassword = genRandomPassword(passwordPolicy, targetAccount)
+
+            //hash + save (含 isForceChangePw='y')
+            let hashed = hashPassword(newPassword, salt)
+            await woItems.users.save({
+                id: targetUserId,
+                password: hashed,
+                isForceChangePw: 'y',
+            })
+
+            //寫 throttle 時間戳 (放在 save 後, 確認此次 reset 已生效才記)
+            lastResetTime.set(targetUserId, now)
+
+            //寄信附明文新密碼 (SMTP 失敗不阻斷)
+            try {
+
+                if (!isestr(targetEmail)) {
+                    //email 缺失就不寄, 但密碼已重設; admin 須由其他管道告知
+                    srLog.error({ event: 'fun-adminResetUserPassword-noEmail', token, targetUserId })
+                }
+                else {
+
+                    //sender
+                    let sender = get(kpLang, `${lang}.webName`, '')
+                    if (!isestr(sender)) {
+                        return Promise.reject(`invalid sender`)
+                    }
+
+                    //title from procLang
+                    let title = getEmailTitle('resetPwEmTitle', lang)
+                    if (!isestr(title)) {
+                        return Promise.reject(`invalid title`)
+                    }
+
+                    //body from server/template/resetPasswordEmail-{lang}.html
+                    let content = renderEmailBody('resetPasswordEmail', lang, {
+                        sender, name: targetName, account: targetAccount, newPassword,
+                    })
+
+                    //send
+                    await srEmail.send(sender, title, content, targetEmail)
+
+                }
+
+            }
+            catch (err) {
+                console.log(err)
+                //僅記 log, 不記明文密碼
+                srLog.error({ event: 'fun-adminResetUserPassword-sendEmail', token, targetUserId, err: getErrorMessage(err) })
+            }
+
+            return { state: 'success' }
         })
-
-        //寄信附明文新密碼 (SMTP 失敗不阻斷)
-        try {
-
-            if (!isestr(targetEmail)) {
-                //email 缺失就不寄, 但密碼已重設; admin 須由其他管道告知
-                srLog.error({ event: 'fun-adminResetUserPassword-noEmail', token, targetUserId })
-            }
-            else {
-
-                //sender
-                let sender = get(kpLang, `${lang}.webName`, '')
-                if (!isestr(sender)) {
-                    return Promise.reject(`invalid sender`)
-                }
-
-                //title from procLang
-                let title = getEmailTitle('resetPwEmTitle', lang)
-                if (!isestr(title)) {
-                    return Promise.reject(`invalid title`)
-                }
-
-                //body from server/template/resetPasswordEmail-{lang}.html
-                let content = renderEmailBody('resetPasswordEmail', lang, {
-                    sender, name: targetName, account: targetAccount, newPassword,
-                })
-
-                //send
-                await srEmail.send(sender, title, content, targetEmail)
-
-            }
-
-        }
-        catch (err) {
-            console.log(err)
-            //僅記 log, 不記明文密碼
-            srLog.error({ event: 'fun-adminResetUserPassword-sendEmail', token, targetUserId, err: getErrorMessage(err) })
-        }
-
-        return { state: 'success' }
     }
 
 

@@ -203,7 +203,8 @@
                                     :backgroundColorHover="'rgba(255,255,255,0.7)'"
                                     _shadow="false"
                                     :editable="hasRegFields"
-                                    @click="register"
+                                    :promiseUnlock="true"
+                                    @click="async ({ pm }) => { try { await register(); pm.resolve() } catch (e) { pm.reject(e) } }"
                                 ></WButtonChip>
                             </div>
 
@@ -288,7 +289,8 @@
                                     :backgroundColor="'rgba(255,255,255,0.5)'"
                                     :backgroundColorHover="'rgba(255,255,255,0.7)'"
                                     _shadow="false"
-                                    @click="resendVerify"
+                                    :promiseUnlock="true"
+                                    @click="async ({ pm }) => { try { await resendVerify(); pm.resolve() } catch (e) { pm.reject(e) } }"
                                 ></WButtonChip>
                             </div>
 
@@ -640,7 +642,7 @@ export default {
             }
 
             //core
-            core()
+            return core()
                 .catch((err) => {
                     console.log('catch', err)
                     vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
@@ -708,7 +710,7 @@ export default {
             }
 
             //core
-            core()
+            return core()
                 .catch((err) => {
                     console.log('catch', err)
                     vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })

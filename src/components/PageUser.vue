@@ -123,7 +123,8 @@
                                                         :backgroundColorHover="'rgba(255,255,255,0.7)'"
                                                         :borderRadius="4"
                                                         _shadow="false"
-                                                        @click="submitChangePassword"
+                                                        :promiseUnlock="true"
+                                                        @click="async ({ pm }) => { try { await submitChangePassword(); pm.resolve() } catch (e) { pm.reject(e) } }"
                                                     ></WButtonChip>
                                                     <WButtonChip
                                                         v-if="!isForceChangePw"
