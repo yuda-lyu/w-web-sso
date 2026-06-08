@@ -631,6 +631,8 @@ export default {
                 }
 
                 //4) 成功 (非重導, 僅切回 login viewMode)
+                //close before showCheckYes (ADR-002 modal 等待期避免 loading 疊著);
+                //finally 仍會再呼叫一次當作兜底, updateLoading 對重複關閉是 idempotent
                 vo.$ui.updateLoading(false)
                 await vo.$dg.showCheckYes(vo.$t('userRegistrationSuccess'))
                 vo.regName = ''
@@ -700,7 +702,10 @@ export default {
                     return
                 }
 
-                //5) 成功 (非重導, 僅切回 login viewMode); loading 由外層 finally 一處關閉
+                //5) 成功 (非重導, 僅切回 login viewMode)
+                //close before showCheckYes (ADR-002 modal 等待期避免 loading 疊著);
+                //finally 仍會再呼叫一次當作兜底, updateLoading 對重複關閉是 idempotent
+                vo.$ui.updateLoading(false)
                 await vo.$dg.showCheckYes(vo.$t('userRegistrationResendSuccess'))
                 vo.showResendVerify = false
                 vo.loginError = ''
