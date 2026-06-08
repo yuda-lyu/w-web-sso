@@ -819,11 +819,13 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             return Promise.reject('verifyEmailAlreadyVerified')
         }
 
-        //update timeVerified + 清空 tokenVerify
+        //update timeVerified
         await woItems.users.save({
             id: user.id,
             timeVerified: now2str(),
-            tokenVerify: '',
+            //F-053 fix (lazy clear): 不主動清 tokenVerify, 避免並發 resendVerifyEmail 寫的新 token
+            //被此處 race window 覆蓋. token 重用風險由 line ~818 之 isestr(timeVerified) → reject
+            //'verifyEmailAlreadyVerified' 擋住, 已驗證 user 點舊連結會得友善訊息.
         })
 
         return { state: 'success', msg: 'ok' }
