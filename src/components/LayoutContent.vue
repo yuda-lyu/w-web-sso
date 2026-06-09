@@ -179,6 +179,12 @@ export default {
             return get(vo, '$store.state.syncState')
         },
 
+        isAdmin: function() {
+            let vo = this
+            let userSelf = get(vo, '$store.state.userSelf', {})
+            return get(userSelf, 'isAdmin', '') === 'y'
+        },
+
         menus: function() {
             let vo = this
             let ms = [
@@ -186,6 +192,7 @@ export default {
                     key: 'mmStaInfor',
                     text: vo.$t('mmStaInfor'),
                     icon: mdiChartBar,
+                    adminOnly: true,
                 },
                 {
                     key: 'mmUserInfor',
@@ -196,18 +203,24 @@ export default {
                     key: 'mmUsersList',
                     text: vo.$t('mmUsersList'),
                     icon: mdiAccountGroupOutline,
+                    adminOnly: true,
                 },
                 {
                     key: 'mmTokensList',
                     text: vo.$t('mmTokensList'),
                     icon: mdiShieldKeyOutline,
+                    adminOnly: true,
                 },
                 {
                     key: 'mmIpsList',
                     text: vo.$t('mmIpsList'),
                     icon: mdiIpNetwork,
+                    adminOnly: true,
                 },
             ]
+            if (!vo.isAdmin) {
+                ms = ms.filter((m) => !m.adminOnly)
+            }
             return ms
         },
 
@@ -218,6 +231,16 @@ export default {
             return r
         },
 
+    },
+    mounted: function() {
+        let vo = this
+
+        //非 admin 進 ?view=backstage 時 menu 已過濾為僅 mmUserInfor;
+        //預設 menuKey='mmStaInfor' 對應 admin-only 內容 → 改設為 mmUserInfor,
+        //避免 mount LayoutContentStaInfor 而觸發 6 個 admin-only API 全 reject → 整頁崩.
+        if (!vo.isAdmin) {
+            vo.menuKey = 'mmUserInfor'
+        }
     },
     methods: {
 

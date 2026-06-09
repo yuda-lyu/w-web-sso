@@ -180,6 +180,23 @@ let testUsers = [
         timeBlocked: '',
     },
     {
+        //E2E-002-ok-backstage 專用 admin user (view=backstage 須由 admin 觸發, 非 admin 由 LayoutContent
+        //之 isAdmin 過濾只能看 mmUserInfor — 詳 LayoutContent.vue 之 isAdmin computed + menus filter).
+        //另建 user 而非把 id-autologin-ok 改 isAdmin='y', 避免影響 E2E-001/E2E-003 之 user view baseline
+        //(admin 進 user view 之 Role 顯示「Administrator」, 跟 General 像素不同).
+        id: 'id-autologin-ok-admin',
+        account: 'autologin-ok-admin',
+        password: hashPassword('Pw@auto001admin', salt),
+        name: 'AutoLogin OK Admin',
+        email: 'autologin-ok-admin@test.com',
+        redir: `${baseUrl}/?view=backstage&token={token}`,
+        isAdmin: 'y',
+        isActive: 'y',
+        timeVerified: '2025-01-01T00:00:00.000+08:00',
+        timeExpired: '2030-01-01T00:00:00.000+08:00',
+        timeBlocked: '',
+    },
+    {
         id: 'id-autologin-no-redir',
         account: 'autologin-no-redir',
         password: hashPassword('Pw@auto002', salt),
@@ -334,7 +351,32 @@ async function autoLoginScreenshot(page, lang, opt = {}) {
 //bounding rect 在截圖後填黑. baseline 與 verify 兩端皆遮同一組區塊 → 只比對上半「使用者資訊
 //統計卡」靜態區域, 動態區用黑塊穩定化. 各區塊 rect 為右側內容欄寬度, 不會覆蓋左側抽屜.
 async function autoLoginBackstageMasked(page, lang, opt = {}) {
-    let buf = await autoLoginScreenshot(page, lang, { ...opt, viewParam: 'backstage' })
+    //admin 進 backstage 6 個 grSta 全跑 + echarts canvas init, 對 fresh admin user (無歷史 stats)
+    //需 ~26s; 對 base seed user ~16s. 不能用固定 waitMs (§6.3「偵測 driven 步驟流程」), 改 waitForSelector
+    //等 chart icon 出現確保載入完成, 再加 3s buffer 給 echarts 動畫 settle, 最後才 captureStable.
+    let token = opt.token || ''
+
+    //Step 1: setup LS token
+    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
+    await page.evaluate(({ key, val }) => {
+        localStorage.clear()
+        if (val) {
+            localStorage.setItem(key, val)
+        }
+    }, { key: lsKey, val: token })
+
+    //Step 2: navigate to backstage
+    let url = `${baseUrl}/?view=backstage${lang ? '&lang=' + lang : ''}`
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 15000 })
+
+    //Step 3: 等 chart icon 出現 (admin 完整載入 backstage 之 marker)
+    await page.waitForSelector('i.mdi-chart-box-outline', { timeout: 60000 })
+
+    //Step 4: echarts 動畫 settle buffer
+    await page.waitForTimeout(3000)
+
+    let buf = await captureStable(page)
+
     //取「存取活動監測」區塊及其後所有 sibling 區塊的 rect (fullPage 座標 = viewport rect + scroll)
     let rects = await page.evaluate(() => {
         let icon = document.querySelector('i.mdi-chart-box-outline')
@@ -368,6 +410,7 @@ async function generateBaselineForLang(page, lang) {
     await insertTestUsersAndTokens()
 
     let okToken = userTokens['id-autologin-ok']
+    let okAdminToken = userTokens['id-autologin-ok-admin']
     let noRedirToken = userTokens['id-autologin-no-redir']
 
     // 001: token 有效 + view=login → autoLogin 成功 → redirect 到 user view
@@ -377,11 +420,12 @@ async function generateBaselineForLang(page, lang) {
         writeBaseline(lang, 'E2E-001-ok-redir', buf1)
     }
 
-    // 002: token 有效 + view=backstage → autoLogin 成功 → 停留 backstage
+    // 002: token 有效 (admin) + view=backstage → autoLogin 成功 → 停留 backstage 看 full dashboard
     // (「存取活動監測」以下即時圖表填黑遮蔽, 穩定 pixel baseline)
+    // admin user: view=backstage 須由 admin 觸發, 否則 LayoutContent isAdmin filter 只能看 mmUserInfor.
     if (shouldGen(lang, 'E2E-002-ok-backstage')) {
         console.log(`  002-ok-backstage`)
-        let buf2 = await autoLoginBackstageMasked(page, lang, { token: okToken })
+        let buf2 = await autoLoginBackstageMasked(page, lang, { token: okAdminToken })
         writeBaseline(lang, 'E2E-002-ok-backstage', buf2)
     }
 
@@ -493,7 +537,7 @@ else {
             })
 
             it('E2E-002-ok-backstage: token 有效 + view=backstage → 停留 backstage', async function() {
-                let okToken = userTokens['id-autologin-ok']
+                let okToken = userTokens['id-autologin-ok-admin']
                 let buf = await autoLoginBackstageMasked(page, lang, { token: okToken })
                 await assertSpecForCase(page, lang, 'E2E-002-ok-backstage')
                 let baselinePath = bp(lang, 'E2E-002-ok-backstage')

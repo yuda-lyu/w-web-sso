@@ -511,15 +511,14 @@ export default {
 
         },
 
-        onClickSubmitChangePasswordBtn: async function(msg) {
+        onClickSubmitChangePasswordBtn: function(msg) {
+            //pm.resolve 立即釋放 button 視覺鎖 (對齊 w-component-vue 設計意圖: 「需使用promise解鎖」=釋放鎖,
+            //不該 gate 在下游 modal 關閉). 同步雙擊已被 WButtonChip clickBtn 之 `if (loadingTrans) return` 擋住,
+            //非同步雙擊由 submitChangePassword 內部 updateLoading(true) 全頁 overlay 接管, 不需 button 持續鎖.
+            //若 gate 在 await fn(), fn 內部 await showCheckYes 會把 button 鎖到使用者點 OK → e2e 截圖卡 loading 微差.
             let vo = this
-            try {
-                await vo.submitChangePassword()
-                msg.pm.resolve()
-            }
-            catch (e) {
-                msg.pm.reject(e)
-            }
+            msg.pm.resolve()
+            vo.submitChangePassword()
         },
 
         logout: function() {

@@ -1095,15 +1095,12 @@ export default {
 
         },
 
-        onClickModifyItemPasswordByIdBtn: async function(msg, id) {
+        onClickModifyItemPasswordByIdBtn: function(msg, id) {
+            //同 PageUser.onClickSubmitChangePasswordBtn: handler 立刻 pm.resolve, fire-and-forget innerFn.
+            //modifyItemPasswordById 內部一開 showCheckYesNo 確認 modal, 不需 button 持續鎖 (modal 已擋互動).
             let vo = this
-            try {
-                await vo.modifyItemPasswordById(id)
-                msg.pm.resolve()
-            }
-            catch (e) {
-                msg.pm.reject(e)
-            }
+            msg.pm.resolve()
+            vo.modifyItemPasswordById(id)
         },
 
         modifyItemPasswordById: function(id) {

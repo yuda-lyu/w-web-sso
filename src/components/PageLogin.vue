@@ -658,15 +658,13 @@ export default {
 
         },
 
-        onClickRegisterBtn: async function(msg) {
+        onClickRegisterBtn: function(msg) {
+            //pm.resolve 立即釋放 button 視覺鎖 (對齊 w-component-vue「需使用promise解鎖」設計意圖).
+            //同步雙擊由 WButtonChip clickBtn `if (loadingTrans) return` 擋, 非同步雙擊由 register 內部
+            //updateLoading 全頁 overlay 接管. 詳見 PageUser.onClickSubmitChangePasswordBtn 註解.
             let vo = this
-            try {
-                await vo.register()
-                msg.pm.resolve()
-            }
-            catch (e) {
-                msg.pm.reject(e)
-            }
+            msg.pm.resolve()
+            vo.register()
         },
 
         resendVerify: function() {
@@ -740,15 +738,11 @@ export default {
 
         },
 
-        onClickResendVerifyBtn: async function(msg) {
+        onClickResendVerifyBtn: function(msg) {
+            //同 onClickRegisterBtn: handler 立刻 pm.resolve, fire-and-forget resendVerify.
             let vo = this
-            try {
-                await vo.resendVerify()
-                msg.pm.resolve()
-            }
-            catch (e) {
-                msg.pm.reject(e)
-            }
+            msg.pm.resolve()
+            vo.resendVerify()
         },
 
         login: function() {

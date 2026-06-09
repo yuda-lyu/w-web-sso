@@ -135,8 +135,57 @@ function genTempSettings(overrides = {}) {
 
 //以指定 settings 檔重啟 backend (殺掉現有 backendProc, 用 node srv.mjs <pathSettings> 重啟並等 ready).
 //給「需要特殊 settings 的單一 describe」用: before() restartBackend(genTempSettings({...})), after() restartBackend('./settings.json') 還原.
+//若 port 11007 已被佔用但 backendProc=null (代表「startServersOnce 階段偵測到外部已啟動的 backend 直接 reuse」場景),
+//原本實作 killProc(null) noop → spawn 新 backend 撞 port silent fail → 舊 backend 仍跑舊 settings → E2E-017 之類「settings overide」測試失敗.
+//修法: backendProc=null 時用 OS-level 查 port 11007 之 PID + taskkill, 殺乾淨後才 spawn 新.
 async function restartBackend(pathSettings = './settings.json') {
-    killProc(backendProc)
+    if (backendProc) {
+        killProc(backendProc)
+    }
+    else {
+        //backendProc=null 但 port 11007 可能被外部 backend 佔用 (startServersOnce reuse 過); OS-level 查 PID 殺乾淨
+        if (await isPortUp(11007)) {
+            if (process.platform === 'win32') {
+                try {
+                    let netstat = execSync('netstat -ano | findstr ":11007"', { encoding: 'utf8' })
+                    let lines = netstat.split(/\r?\n/).filter((l) => /LISTENING/.test(l))
+                    let pids = new Set()
+                    for (let line of lines) {
+                        let m = line.match(/\s(\d+)\s*$/)
+                        if (m) {
+                            pids.add(m[1])
+                        }
+                    }
+                    for (let pid of pids) {
+                        try {
+                            execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' })
+                        }
+                        catch (err) { /* already dead */ }
+                    }
+                }
+                catch (err) { /* netstat 失敗, fallback 不殺 (spawn 可能撞 port 但至少不 throw) */ }
+            }
+            else {
+                try {
+                    let out = execSync('lsof -ti:11007', { encoding: 'utf8' })
+                    let pids = out.trim().split(/\s+/).filter(Boolean)
+                    for (let pid of pids) {
+                        try {
+                            execSync(`kill -9 ${pid}`, { stdio: 'ignore' })
+                        }
+                        catch (err) { /* already dead */ }
+                    }
+                }
+                catch (err) { /* lsof 失敗, fallback */ }
+            }
+            //等舊 port 確實釋放, 避免新 spawn 立即被舊 socket 殘留干擾
+            let waitStart = Date.now()
+            while (Date.now() - waitStart < 5000) {
+                if (!(await isPortUp(11007))) break
+                await new Promise((r) => setTimeout(r, 200))
+            }
+        }
+    }
     backendProc = null
     backendProc = spawn('node', ['srv.mjs', pathSettings], { stdio: 'ignore' })
     await waitForPort(11007, 30000)
@@ -301,19 +350,33 @@ async function captureStable(page, opts = {}) {
 //那塊區域填純色 → 跨 session pixel 完全一致, baseline 比對穩定.
 //預設黑色 (而非白色): 黑色區塊明顯, 一眼看出是「刻意遮蔽動態內容」, 不會被誤解為「該處無內容」.
 async function maskRegions(buf, rects, color = { r: 0, g: 0, b: 0 }) {
+    //讀 image 邊界, clamp rect 避免 sharp composite "Image to composite must have same dimensions
+    //or smaller" 錯誤 (rect 部分區域超出 image 時須裁切)
+    let meta = await sharp(buf).metadata()
+    let imgW = meta.width
+    let imgH = meta.height
     let composite = rects
         .filter((r) => r.w > 0 && r.h > 0)
-        .map((r) => ({
+        .map((r) => {
+            let left = Math.max(0, Math.round(r.x))
+            let top = Math.max(0, Math.round(r.y))
+            //clamp width/height 至 image 邊界內
+            let width = Math.min(Math.round(r.w), imgW - left)
+            let height = Math.min(Math.round(r.h), imgH - top)
+            return { left, top, width, height }
+        })
+        .filter((c) => c.width > 0 && c.height > 0 && c.left < imgW && c.top < imgH)
+        .map((c) => ({
             input: {
                 create: {
-                    width: Math.max(1, Math.round(r.w)),
-                    height: Math.max(1, Math.round(r.h)),
+                    width: c.width,
+                    height: c.height,
                     channels: 3,
                     background: color,
                 },
             },
-            left: Math.max(0, Math.round(r.x)),
-            top: Math.max(0, Math.round(r.y)),
+            left: c.left,
+            top: c.top,
         }))
     if (composite.length === 0) return buf
     return await sharp(buf).composite(composite).png().toBuffer()
