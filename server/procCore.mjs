@@ -1070,7 +1070,10 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
                 if (!isestr(sender)) {
                     console.log('get(kpLang, lang)', get(kpLang, lang))
                     console.log('lang', lang)
-                    return Promise.reject(`invalid sender`)
+                    //須用 throw 讓下方 catch 接住對齊「寄送 email 失敗時, 不能報錯中斷流程」設計
+                    //(async function 內 return Promise.reject 不被 try/catch 攔截 → 跳過外圍 catch
+                    //→ 密碼已寫但 API reject 給前端, 使用者以為失敗實際舊密碼已失效).
+                    throw new Error(`invalid sender`)
                 }
 
                 //name
@@ -1080,7 +1083,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
                 let title = getEmailTitle('chpwEmTitle', lang)
                 if (!isestr(title)) {
                     console.log('chpwEmTitle 取不到, lang', lang)
-                    return Promise.reject(`invalid title`)
+                    throw new Error(`invalid title`)
                 }
 
                 //body from server/template/changePasswordEmail-{lang}.html
@@ -1095,8 +1098,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             catch (err) {
                 console.log(err)
 
-                //error
-                srLog.error({ event: 'fun-changePassword-sendEmail', token, lang, oldPassword, newPassword, err: getErrorMessage(err) })
+                //error (不記任何密碼明文; ADR-014 連 hash 都不該外洩)
+                srLog.error({ event: 'fun-changePassword-sendEmail', token, lang, err: getErrorMessage(err) })
 
             }
 
@@ -1200,13 +1203,14 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
                     //sender
                     let sender = get(kpLang, `${lang}.webName`, '')
                     if (!isestr(sender)) {
-                        return Promise.reject(`invalid sender`)
+                        //須用 throw 讓下方 catch 接住對齊「SMTP 失敗不阻斷」設計 (詳 F4-001 註解).
+                        throw new Error(`invalid sender`)
                     }
 
                     //title from procLang
                     let title = getEmailTitle('resetPwEmTitle', lang)
                     if (!isestr(title)) {
-                        return Promise.reject(`invalid title`)
+                        throw new Error(`invalid title`)
                     }
 
                     //body from server/template/resetPasswordEmail-{lang}.html
@@ -1481,6 +1485,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             timeExpired: u.timeExpired,
             timeBlocked: u.timeBlocked,
             isActive: u.isActive,
+            isForceChangePw: u.isForceChangePw, //對齊 loginByAccountAndPassword 之 r shape; 前端 autoLogin (mUI.mjs:617) 同款判斷, 否則 admin 重設密碼後使用者 reload 即可繞過強制變更
         }
 
         return uu

@@ -43,7 +43,6 @@ import arrInsert from 'wsemi/src/arrInsert.mjs'
 import replace from 'wsemi/src/replace.mjs'
 import timemsTZ2past from 'wsemi/src/timemsTZ2past.mjs'
 import convertToTree from 'wsemi/src/convertToTree.mjs'
-// import WUiDwload from 'w-ui-dwload/src/WUiDwload.mjs'
 
 
 let vo = Vue.prototype

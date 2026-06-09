@@ -426,4 +426,48 @@ async function deleteNonBaseSeed() {
 }
 
 
-export { startServersOnce, cleanup, captureStable, baseUrl, apiUrl, maskRegions, maskBelowY, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend }
+//真實 user 輸入 helper (Pattern D, 對齊全域 CLAUDE.md §6.3「Vue v-model 文字輸入 race」).
+//
+//click → 驗證 activeElement === 該 locator (防 focus 被父元素 @mousedown.prevent 攔截) → Backspace 清空
+//→ keyboard.insertText 整段 → 驗證 inputValue → 不符則 retry 最多 3 次.
+//
+//用 insertText (非 keyboard.type): type 逐字打在 Vue v-model 場景觸發 N 次 input event → N 次 re-render
+//→ focus 中途被吃掉導致漏字 (殷鑑: 11 字密碼只進 1 字). insertText 一次 inject 全段 (1 個 input event).
+//本專案 WText / WTextCore 沒 hook keydown listener, 所以 insertText 跟 type 行為等價.
+//
+//用 Backspace N 次 (非 Ctrl+A / Ctrl+X / 剪貼簿): 避免跟 OS 全域 shortcut / 其他平行 agent 測試衝突.
+//
+//此 helper 為 5 個 e2e 檔 (login / register / changepassword / resetpassword / deleteuser) 共用,
+//避免每檔 ad-hoc typeIntoInput 各自漂移. 對 Vue v-model input 必用此函式, 不准用 keyboard.type.
+async function typeIntoInput(page, locator, value) {
+    await locator.waitFor({ state: 'visible', timeout: 5000 })
+    //editor mount / focus transfer / Vue model binding settle buffer (對 ag-grid cellEditor 之 transient state 有效)
+    await page.waitForTimeout(1000)
+
+    let maxAttempts = 3
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        await locator.click()
+        //驗證 focus 真落在 input (被父元素 @mousedown.prevent 攔截的話這裡就抓到, 不會變成靜默漏字)
+        let handle = await locator.elementHandle()
+        await page.waitForFunction((el) => document.activeElement === el, handle, { timeout: 3000 })
+        //清空既有值 (Backspace N 次)
+        let cur = await locator.inputValue()
+        if (cur) {
+            await page.keyboard.press('End')
+            for (let k = 0; k < cur.length + 2; k++) await page.keyboard.press('Backspace')
+        }
+        //一次性 inject
+        await page.keyboard.insertText(value)
+        await page.waitForTimeout(200)
+        //驗證
+        let got = await locator.inputValue()
+        if (got === value) return
+        console.warn(`typeIntoInput attempt ${attempt}/${maxAttempts}: 預期「${value}」實得「${got}」, 重試`)
+        await page.waitForTimeout(400)
+    }
+    let final = await locator.inputValue()
+    throw new Error(`typeIntoInput ${maxAttempts} 次仍漏字: 預期「${value}」(${value.length} 字), 最終「${final}」(${(final || '').length} 字)`)
+}
+
+
+export { startServersOnce, cleanup, captureStable, baseUrl, apiUrl, maskRegions, maskBelowY, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput }

@@ -7,10 +7,12 @@ import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
 
-let agentmailApiKey = 'am_us_95ca6a0ff720d8d7eb96437bd10e81fcd03b20ec7d0a81f963a2dfc63421bf8a'
-let agentmailInboxId = 'ager@agentmail.to'
+//AgentMail key / inbox: 由 env var 提供, 不寫死 in repo (避免 public open-source repo 內含 live secret).
+//使用前 export AGENTMAIL_API_KEY=<key> AGENTMAIL_INBOX_ID=<inbox> (對 notverify-flow 之 email 驗證 case 必要).
+let agentmailApiKey = process.env.AGENTMAIL_API_KEY || ''
+let agentmailInboxId = process.env.AGENTMAIL_INBOX_ID || 'ager@agentmail.to'
 
 
 //
@@ -467,15 +469,7 @@ async function setLangViaUI(page, lang) {
 }
 
 
-//真實 user 輸入: click → focus → 清空 → keyboard.type
-//(全域 CLAUDE.md §6.3: act 階段禁 .fill(), 必用 keyboard.type)
-async function typeIntoInput(page, locator, value) {
-    await locator.click()
-    await page.waitForTimeout(50)
-    await page.keyboard.press('Control+A')
-    await page.keyboard.press('Delete')
-    await page.keyboard.type(value, { delay: 0 })
-}
+//typeIntoInput 改用 e2e-setup.mjs 之 shared Pattern D 實作 (insertText + retry × 3, 防 Vue v-model 漏字 race)
 
 
 // --- 未驗證使用者完整流程 ---
@@ -489,6 +483,11 @@ async function typeIntoInput(page, locator, value) {
 //
 async function notVerifiedFullFlow(page, lang) {
     let t = kpLangText[lang]
+    //此流程須抓 AgentMail 信箱實際信件 — 須先 export AGENTMAIL_API_KEY (詳 L14 註解).
+    //本機開發若未設, fail-fast 顯示明確錯誤而非默默走到 401 Authorization fail.
+    if (!agentmailApiKey) {
+        throw new Error(`notVerifiedFullFlow 須 export AGENTMAIL_API_KEY=<key> (此案測試會打 AgentMail API 抓驗證信). 若不需測 notverify 流程, 用 --grep 過濾 (但須含 main loop case 之 it, 詳全域 CLAUDE.md §6.3「--grep 過濾 outer it 時 nested describe 的 before 會在 DB 尚未 setup 前執行」)`)
+    }
     // 減 1 分鐘緩衝，避免本機時鐘與 AgentMail 伺服器時鐘差異導致抓不到信
     let emailSendStart = Date.now() - 60000
     let bufs = {}

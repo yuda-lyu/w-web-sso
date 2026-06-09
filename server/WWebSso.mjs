@@ -499,242 +499,6 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let pf = procStaInfor(woItems, p, {})
 
 
-    // //parseToken
-    // let parseToken = (req) => {
-
-    //     //token
-    //     let token = get(req, 'query.token', '')
-    //     // console.log('token', token)
-
-    //     return token
-    // }
-
-
-    // //getTokenUser
-    // let getTokenUser = async(token) => {
-
-    //     //userSelf
-    //     let userSelf = null
-    //     if (isestr(token)) {
-    //         userSelf = getUserByToken(token)
-    //         if (ispm(userSelf)) {
-    //             userSelf = await userSelf
-    //         }
-    //     }
-    //     // console.log('userSelf', userSelf)
-
-    //     //check
-    //     if (!iseobj(userSelf)) {
-    //         console.log(`token`, token)
-    //         console.log(`can not find the user from token`)
-    //         throw new Error(`can not find the user from token`)
-    //     }
-
-    //     //check userSelf
-    //     if (true) {
-    //         let id = get(userSelf, 'id', '')
-    //         if (!isestr(id)) {
-    //             console.log('userSelf', userSelf)
-    //             console.log('can not get the userId')
-    //             throw new Error(`can not get the userId`)
-    //         }
-    //         let email = get(userSelf, 'email', '')
-    //         if (!isestr(email)) {
-    //             console.log('userSelf', userSelf)
-    //             console.log('can not get the email of user')
-    //             throw new Error(`can not get the email of user`)
-    //         }
-    //         let name = get(userSelf, 'name', '')
-    //         if (!isestr(name)) {
-    //             console.log('userSelf', userSelf)
-    //             console.log('can not get userName')
-    //             throw new Error(`can not get userName`)
-    //         }
-    //         let isAdmin = get(userSelf, 'isAdmin', '')
-    //         if (isAdmin !== 'y' && isAdmin !== 'n') {
-    //             console.log('userSelf', userSelf)
-    //             console.log('userSelf.isAdmin is not y or n', userSelf.isAdmin)
-    //             console.log('can not get the role of user')
-    //             throw new Error(`can not get the role of user`)
-    //         }
-    //     }
-
-    //     //須反查sso內users, 提供正規化屬性
-    //     let vSelf = get(userSelf, mappingBy, '')
-    //     // console.log('vSelf', vSelf)
-
-    //     //check
-    //     if (!isestr(vSelf)) {
-    //         console.log('userSelf', userSelf)
-    //         console.log('mappingBy', mappingBy)
-    //         console.log('can not get the prop of user by mappingBy')
-    //         throw new Error(`can not get the prop of user by mappingBy`)
-    //     }
-
-    //     //userFind
-    //     let userFind = await woItems.users.select({ [mappingBy]: vSelf, isActive: 'y' })
-    //     userFind = get(userFind, 0, null)
-    //     // console.log('userFind', userFind)
-
-    //     //check
-    //     if (!iseobj(userFind)) {
-    //         console.log('userSelf', userSelf)
-    //         console.log('mappingBy', mappingBy)
-    //         console.log('can not get the user from sso')
-    //         throw new Error(`can not get the user from sso`)
-    //     }
-
-    //     //複寫isAdmin
-    //     let isAdminSrc = get(userSelf, 'isAdmin', '')
-    //     let isAdminSelf = get(userFind, 'isAdmin', '')
-    //     if (isAdminSrc !== isAdminSelf) {
-    //         userFind.isAdmin = isAdminSelf
-    //     }
-    //     // console.log('userFind(isAdmin)', userFind)
-
-    //     return userFind
-    // }
-
-
-    // //getAndVerifyBrowserTokenUser
-    // let getAndVerifyBrowserTokenUser = async (token, caller = '') => {
-
-    //     //getTokenUser
-    //     let userSelf = await getTokenUser(token)
-
-    //     //verifyClientUser
-    //     let b = verifyClientUser(userSelf, caller)
-    //     if (ispm(b)) {
-    //         b = await b
-    //     }
-
-    //     //check
-    //     if (!b) {
-    //         console.log('userSelf', userSelf)
-    //         console.log(`user does not have permission`)
-    //         throw new Error(`user does not have permission`)
-    //     }
-
-    //     return userSelf
-    // }
-
-
-    // //getAndVerifyAppTokenUser
-    // let getAndVerifyAppTokenUser = async (token, caller = '') => {
-
-    //     //getTokenUser
-    //     let userSelf = await getTokenUser(token)
-
-    //     //verifyAppUser
-    //     let b = verifyAppUser(userSelf, caller)
-    //     if (ispm(b)) {
-    //         b = await b
-    //     }
-
-    //     //check
-    //     if (!b) {
-    //         console.log('userSelf', userSelf)
-    //         console.log(`user does not have permission`)
-    //         throw new Error(`user does not have permission`)
-    //     }
-
-    //     return userSelf
-    // }
-
-
-    // //parsePayload
-    // let parsePayload = async (req, key) => {
-
-    //     //inp
-    //     let inp = get(req, 'payload')
-
-    //     //to obj
-    //     if (isestr(inp)) {
-    //         inp = j2o(inp)
-    //     }
-
-    //     //check
-    //     if (!iseobj(inp)) {
-    //         console.log('inp', inp)
-    //         console.log('invalid inp from req')
-    //         throw new Error(`invalid inp from req`)
-    //     }
-
-    //     //from
-    //     let from = get(inp, 'from', '')
-
-    //     //check
-    //     if (!isestr(from)) {
-    //         console.log('inp', inp)
-    //         console.log('from', from)
-    //         console.log('invalid from from inp')
-    //         throw new Error(`invalid from from inp`)
-    //     }
-
-
-    //     //vs
-    //     let vs = get(inp, key, [])
-
-    //     //check
-    //     if (!isearr(vs)) {
-    //         console.log('inp', inp)
-    //         console.log(key, vs)
-    //         console.log(`invalid ${key} from inp`)
-    //         throw new Error(`invalid ${key} from inp`)
-    //     }
-
-    //     //r
-    //     let r = {
-    //         from,
-    //         [key]: vs,
-    //     }
-
-    //     return r
-    // }
-
-
-    // //syncAndReplaceRows
-    // let syncAndReplaceRows = async (params, key) => {
-
-    //     //from
-    //     let from = get(params, 'from', '')
-    //     // console.log('from', from)
-
-    //     //check
-    //     if (!isestr(from)) {
-    //         console.log('params', params)
-    //         console.log('from', from)
-    //         console.log(`invalid from`)
-    //         throw new Error(`invalid from`)
-    //     }
-
-    //     //vs
-    //     let vs = get(params, key, [])
-    //     // console.log(key, vs)
-
-    //     //check
-    //     if (!isearr(vs)) {
-    //         console.log('params', params)
-    //         console.log(key, vs)
-    //         console.log(`invalid ${key}`)
-    //         throw new Error(`invalid ${key}`)
-    //     }
-
-    //     //save from
-    //     each(vs, (v, k) => {
-    //         vs[k].from = from
-    //     })
-
-    //     //delAll from
-    //     await woItems[key].delAll({ from })
-
-    //     //insert
-    //     let r = await woItems[key].insert(vs)
-
-    //     return r
-    // }
-
-
     //funCheckAdmin
     let funCheckAdmin = (tk, u) => {
         // console.log('tk', tk, 'u', u)
@@ -1060,8 +824,9 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     //callApiByToken
                     pp.callApiByToken(token)
 
-                    //getSsoUsersList
-                    let us = await p.checkTokenAndGetUsersList(token, {})
+                    //getSsoUsersList: 收緊為 admin-only (對齊 ADR-004 同款 IDOR 收緊 + 下方 kpfun 版本帶 funCheckAdmin).
+                    //app token (isApp='y') 由 _checkTokenByObj 之 ADR-005 語意自動 bypass fun, 系統介接不影響.
+                    let us = await p.checkTokenAndGetUsersList(token, { fun: funCheckAdmin })
                     // console.log('us', us)
 
                     return us
@@ -1344,14 +1109,16 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
             checkUserPassword: async (_t, lang, pw) => {
-                srLog.info({ event: 'kpfun-checkUserPassword', lang, pw })
+                //僅記 event / lang, 不記任何密碼明文 (對齊 ADR-014 + adminResetUserPassword 之記法).
+                srLog.info({ event: 'kpfun-checkUserPassword', lang })
                 //console.log('call checkUserPassword...')
                 let r = await p.checkUserPassword(lang, pw)
                 //console.log('call checkUserPassword end')
                 return r
             },
             changeUserPassword: async (_t, token, lang, pwOld, pwNew) => {
-                srLog.info({ event: 'kpfun-changeUserPassword', token, lang, pwOld, pwNew })
+                //僅記 event / token / lang, 不記任何密碼明文 (對齊 ADR-014 + adminResetUserPassword 之記法).
+                srLog.info({ event: 'kpfun-changeUserPassword', token, lang })
                 //console.log('call checkTokenAndChangePassword...')
                 let r = await p.checkTokenAndChangePassword(token, lang, pwOld, pwNew)
                 //console.log('call checkTokenAndChangePassword end')

@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
 
 
 //
@@ -312,16 +312,7 @@ async function gotoUserViewAndOpenChangePw(page, lang) {
 // 由於 user info 區塊也有顯示型 input，需以表單區塊內的相對位置取值。
 // 改用 input[type="password"]:not([disabled]) 取變更密碼三欄（其他 user info 欄位非 password type）。
 //
-async function typeIntoInput(page, locator, value) {
-    //真實 user 輸入: click → focus → 清空 → keyboard.type
-    //(全域 CLAUDE.md §6.3: act 階段禁 .fill(), 必用 keyboard.type)
-    await locator.click()
-    await page.waitForTimeout(50)
-    //已聚焦, 全選 + 刪除以清空 (避免殘留干擾)
-    await page.keyboard.press('Control+A')
-    await page.keyboard.press('Delete')
-    await page.keyboard.type(value, { delay: 0 })
-}
+//typeIntoInput 改用 e2e-setup.mjs 之 shared Pattern D 實作 (insertText + retry × 3, 防 Vue v-model 漏字 race)
 
 async function fillChangePwForm(page, opt = {}) {
     // input[type="password"] 篩出三個密碼欄位（Old / New / Confirm）

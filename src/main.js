@@ -9,7 +9,6 @@ import App from './App.vue'
 import store from './store/index.mjs'
 import ui from './plugins/mUI.mjs'
 import mDataSelectorSchema from './plugins/mDataSelectorSchema.mjs'
-// import mDataSupport from './plugins/mDataSupport.mjs'
 import * as s from './plugins/mShare.mjs'
 import ds from './schema/index.mjs'
 // console.log('ds', ds)
@@ -30,15 +29,11 @@ Vue.prototype.$alert = function() {
 //dssm
 let dssm = mDataSelectorSchema(ds)
 
-// //dspt
-// let dspt = mDataSupport(Vue.prototype)
-
 //prototype
 Vue.prototype.$ui = ui
 Vue.prototype.$t = ui.getKpText
 Vue.prototype.$s = s
 Vue.prototype.$dssm = dssm
-// Vue.prototype.$dspt = dspt
 Vue.prototype.$ds = ds
 Vue.prototype.$dg = {}
 

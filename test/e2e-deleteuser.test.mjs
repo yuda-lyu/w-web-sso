@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
 
 
 //
@@ -239,13 +239,7 @@ async function locateMdiButton(page, dPath) {
 }
 
 
-async function typeIntoInput(page, locator, value) {
-    await locator.click()
-    await page.waitForTimeout(50)
-    await page.keyboard.press('Control+A')
-    await page.keyboard.press('Delete')
-    await page.keyboard.type(value, { delay: 0 })
-}
+//typeIntoInput 改用 e2e-setup.mjs 之 shared Pattern D 實作 (insertText + retry × 3, 防 Vue v-model 漏字 race)
 
 
 //API 拒絕情境用 — 經由 SPA $fapi 直接打後端 API, 不需 UI 互動.
