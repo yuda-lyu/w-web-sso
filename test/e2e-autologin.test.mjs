@@ -99,6 +99,13 @@ let expectedSpecText = {
         eng: { mode: 'text', value: 'Log in' },
         cht: { mode: 'text', value: '登入' },
     },
+    'E2E-009-ok-backstage-nonadmin': {
+        //非 admin token + view=backstage → 停留 backstage 但 LayoutContent isAdmin filter
+        //只顯示 mmUserInfor menu, 主內容區為 UserInfor (User information / 使用者資訊).
+        //對應 LayoutContent.vue 之 menus computed + mounted hook 行為.
+        eng: { mode: 'text', value: 'User information' },
+        cht: { mode: 'text', value: '使用者資訊' },
+    },
 }
 
 
@@ -451,6 +458,16 @@ async function generateBaselineForLang(page, lang) {
         writeBaseline(lang, 'E2E-005-no-redir', buf5)
     }
 
+    // 009: token 有效 (非 admin) + view=backstage → autoLogin 成功 → 停留 backstage 但僅
+    // mmUserInfor menu (LayoutContent isAdmin filter 阻擋 admin-only menu 與 admin-only API).
+    // 對應 LayoutContent.vue: isAdmin computed + menus.adminOnly flag 過濾 + mounted hook
+    // 設 menuKey='mmUserInfor'. 議題 1 fix 驗 (commit 5006ac0).
+    if (shouldGen(lang, 'E2E-009-ok-backstage-nonadmin')) {
+        console.log(`  009-ok-backstage-nonadmin`)
+        let buf9 = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'backstage' })
+        writeBaseline(lang, 'E2E-009-ok-backstage-nonadmin', buf9)
+    }
+
     await deleteTestUsersAndTokens()
 }
 
@@ -601,6 +618,26 @@ else {
                 let baselinePath = bp(lang, 'E2E-004-no-token')
                 let baselineBuf = fs.readFileSync(baselinePath)
                 assert.strict.equal(buf.equals(baselineBuf), true, '截圖與 E2E-004-no-token 不一致（expired token 應與無 token 視覺相同）')
+            })
+
+            it('E2E-009-ok-backstage-nonadmin: 非 admin token + view=backstage → 停留 backstage 但僅 UserInfor (LayoutContent isAdmin filter)', async function() {
+                let okToken = userTokens['id-autologin-ok']
+                let buf = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'backstage' })
+                //語意斷言: 顯示 User information sidebar text (mmUserInfor menu 可見)
+                await assertSpecForCase(page, lang, 'E2E-009-ok-backstage-nonadmin')
+                //語意斷言補強: 不顯示 Statistics Information sidebar text (admin-only mmStaInfor 被過濾)
+                let bodyText = await page.evaluate(() => document.body.innerText)
+                let staTitle = lang === 'eng' ? 'Statistics information' : '統計資訊'
+                assert.strict.equal(
+                    bodyText.includes(staTitle),
+                    false,
+                    `非 admin 進 view=backstage 不應顯示 "${staTitle}" sidebar item (admin-only menu 須被 LayoutContent isAdmin filter 阻擋), 但實際有顯示`
+                )
+                //視覺斷言: pixel baseline byte-equal
+                let baselinePath = bp(lang, 'E2E-009-ok-backstage-nonadmin')
+                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
+                let baselineBuf = fs.readFileSync(baselinePath)
+                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: autologin-${lang}-E2E-009-ok-backstage-nonadmin`)
             })
 
         })
