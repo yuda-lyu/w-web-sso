@@ -1,3 +1,7 @@
+//auto-load 專案根目錄之 .env 到 process.env (供 AGENTMAIL_API_KEY 等 secret 用).
+//.env 已 gitignore, 不會進 repo. mocha 跑時須先有此檔; 若無則 env var 用呼叫端
+//export 提供, 或單一 case 自行檢查並 throw (詳 e2e-login.test.mjs:14 註解).
+import 'dotenv/config'
 import { spawn, execSync } from 'child_process'
 import fs from 'fs'
 import JSON5 from 'json5'
