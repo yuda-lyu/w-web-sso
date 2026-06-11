@@ -295,17 +295,13 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         // console.log('passwordTest', passwordTest)
 
         //getGenUserByAccount, 不限 isActive 查詢，以便逐一檢查各狀態
+        //(NB: 主路徑 inactive user 在 procProtect.getBlockedByAccount 階段已被 _getGenUserByKV 過濾 isActive='y' 後 reject
+        //'can not find the user by account', 不會走到此處, 故此處不再額外檢查 isActive — 對齊 ADR-003 Round-3 audit dead branch 清理.)
         let us = await woItems.users.select({ account })
         if (size(us) === 0) {
             return Promise.reject(`incorrect user account or password`)
         }
         let u = us[0]
-
-        //check isActive
-        let isActive = get(u, 'isActive', '')
-        if (isActive !== 'y') {
-            return Promise.reject('account inactive')
-        }
 
         //passwordTrue
         let passwordTrue = get(u, 'password', '')

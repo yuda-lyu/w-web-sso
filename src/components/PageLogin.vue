@@ -791,12 +791,10 @@ export default {
                     else if (errMsg === 'account blocked') {
                         vo.loginError = vo.$t('loginAccountBlocked')
                     }
-                    // else if (errMsg === 'account inactive') {
-                    //     vo.loginError = vo.$t('loginAccountInactive')
-                    // }
-                    // 備註：inactive 帳號在 procProtect.getBlockedByAccount 階段就會被
-                    // reject('can not find the user by account')，不會到達 procCore 的 isActive 檢查，
-                    // 故 'account inactive' 實際不會發生，由下方 'can not find the user by account' 處理
+                    //inactive 帳號在 procProtect.getBlockedByAccount 階段由 _getGenUserByKV (isActive='y')
+                    //過濾後 reject('can not find the user by account'), 不會走到 procCore 之 isActive 檢查;
+                    //該 reject 字串於下方 'incorrect user account or password' 同步走 failedLoginForCatch.
+                    //(原 'account inactive' reject 已於 Round-3 audit Phase 2 移除, 為 dead branch.)
                     else if (errMsg === 'account expired') {
                         vo.loginError = vo.$t('loginAccountExpired')
                     }

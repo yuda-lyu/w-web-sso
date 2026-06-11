@@ -789,10 +789,6 @@ let kpLang = {
         eng: 'Your account has been temporarily locked due to multiple failed login attempts. Please try again later.',
         cht: '您的帳號因多次登入失敗已被暫時鎖定，請稍後再試。',
     },
-    loginAccountInactive: {
-        eng: 'Your account has been deactivated. Please contact the administrator.',
-        cht: '您的帳號已被停用，請聯繫管理員。',
-    },
     loginAccountExpired: {
         eng: 'Your account has expired. Please contact the administrator.',
         cht: '您的帳號已過期，請聯繫管理員。',
