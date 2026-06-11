@@ -14,7 +14,7 @@
     "w-serv-hapi": "^1.0.72",
     "w-serv-orm": "^1.0.38",
     "w-syslog": "^1.0.8",
-    "wsemi": "^1.8.55"
+    "wsemi": "^1.8.57"
   },
   "devDependencies": {
     "@vue/cli-plugin-babel": "^5.0.8",

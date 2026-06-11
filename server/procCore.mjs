@@ -8,6 +8,7 @@ import map from 'lodash-es/map.js'
 import size from 'lodash-es/size.js'
 import keys from 'lodash-es/keys.js'
 import filter from 'lodash-es/filter.js'
+import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
 import ispint from 'wsemi/src/ispint.mjs'
@@ -29,17 +30,17 @@ import haskey from 'wsemi/src/haskey.mjs'
 import arrHas from 'wsemi/src/arrHas.mjs'
 import pm2resolve from 'wsemi/src/pm2resolve.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
+import pmKeyMutex from 'wsemi/src/pmKeyMutex.mjs'
+import cache from 'wsemi/src/cache.mjs'
+import cacheSt from 'wsemi/src/cacheSt.mjs'
 import waitFun from 'wsemi/src/waitFun.mjs'
 import delay from 'wsemi/src/delay.mjs'
 import now2str from 'wsemi/src/now2str.mjs'
-import cache from 'wsemi/src/cache.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
-import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
 import hashPassword from './hashPassword.mjs'
 import genRandomPassword from './genRandomPassword.mjs'
-import procMutex from './procMutex.mjs'
 
 
 //timing-safe hash compare: 防 password / token hash 比對之 timing side-channel attack.
@@ -56,10 +57,16 @@ function timingSafePasswordEqual(a, b) {
 function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pathTemplate, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl }) {
 
 
-    //procMutex: 同 key 序列化, 用於 createUser / resendVerifyEmail /
-    //checkTokenAndChangePassword / adminResetUserPassword 等 critical 路徑,
-    //防同 key 並行 race (重複帳號 / lost update / 重複寄信).
-    let { withLock } = procMutex()
+    //pmKeyMutex: per-key in-memory mutex, 同 key 序列化、不同 key 並行.
+    //用於 resendVerifyEmail / checkTokenAndChangePassword / adminResetUserPassword 等
+    //critical 路徑, 防同 key 並行 race (lost update / 重複寄信).
+    let kmx = pmKeyMutex()
+
+    //cacheSt: in-process 多 key 原子占位 + auto-cleanup (TTL).
+    //用於 createUser race (同 account 不同 email 之雙重 insert) — 原 kmx 之複合 key
+    //`account:email` 不同組合走不同鎖完全不互斥, 改用 cst.setWithFree 兩段獨立 key 原子占位
+    //(`createUser:account:<a>` 與 `createUser:email:<e>` 任一衝突即 reject), 避免繞鎖雙重 insert.
+    let cst = cacheSt()
 
     //throttle 紀錄: key → timestamp(ms), 用於 resendVerifyEmail / adminResetUserPassword
     //之 30s 內第二次重複觸發判定. 與 mutex 配合: mutex 確保同 key 序列化,
@@ -756,12 +763,19 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             return Promise.reject('invalid name')
         }
 
-        //序列化同 account / email 之並行請求: 防兩條 race 都通過 select 後雙重 insert
-        //(同 key 第二次進來時 mutex 排到第一次之後, 第二次 select 會看到第一次 insert,
-        // 走既有 reject 'account already exists' / 'email already exists').
+        //原子占位「account 鎖」與「email 鎖」兩段獨立 key, 任一衝突即 reject:
+        //- 同 account 不同 email 並行 → 第 2 條撞 `createUser:account:<a>` 占位失敗, reject 'key in use'.
+        //- 不同 account 同 email 並行 → 第 2 條撞 `createUser:email:<e>` 占位失敗, reject 'key in use'.
+        //(原寫法 `kmx('createUser:${account}:${email}', ...)` 用複合 key, 不同 email 走不同
+        // key 完全不互斥, 雙重 insert 漏網; 詳 R2L1-001 audit finding.)
         //範圍: select unique check → procOrm insert. 後續寄信放鎖外, SMTP 慢不阻塞後續同 key 排隊.
+        //
+        //setWithFree 之 'key in use' reject 訊息對使用者語意不友善, 須 remap 回原本之 i18n
+        //「帳號已存在 / email 已存在」訊息 (對齊 e2e-doubleclick DC-02 之 assertion + 業務契約).
+        let keyAccount = `createUser:account:${account}`
+        let keyEmail = `createUser:email:${email}`
         let tokenVerify
-        await withLock(`createUser:${account}:${email}`, async () => {
+        await cst.setWithFree([keyAccount, keyEmail], async () => {
 
             //check account unique (全域唯一，不限 isActive)
             let allUsers = await woItems.users.select()
@@ -800,6 +814,21 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             //可由 userId === id 判斷此 user 為自助註冊（後台 admin 建立則 userId 為 admin id）
             await procOrm(u.id, 'users', 'insert', [u])
         })
+            .catch((err) => {
+                //remap setWithFree 之 'key in use' reject → 業務語意之 i18n 訊息.
+                //其他 reject (select unique check 之 'account/email already exists', insert 失敗等)
+                //原樣 bubble.
+                let errMsg = (err && typeof err === 'string') ? err : (err && err.message) || String(err)
+                if (errMsg.includes(keyAccount)) {
+                    let msg = get(kpLang, `${lang}.userRegistrationAccountExists`, 'account already exists')
+                    return Promise.reject(msg)
+                }
+                if (errMsg.includes(keyEmail)) {
+                    let msg = get(kpLang, `${lang}.userRegistrationEmailExists`, 'email already exists')
+                    return Promise.reject(msg)
+                }
+                return Promise.reject(err)
+            })
 
         //send verify email (若失敗，使用者可透過「重寄驗證信」補救)
         try {
@@ -868,7 +897,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //序列化同 account 之並行請求, 並於鎖內 throttle 30s 內第二次 resend
         //(mutex 確保 throttle 紀錄寫入無 race; 30s 內第二次直接 reject 'resend throttled').
-        return await withLock(`resendVerifyEmail:${account}`, async () => {
+        return await kmx(`resendVerifyEmail:${account}`, async () => {
 
             //throttle 檢查 (30s 內第二次同 account 直接 reject)
             let now = Date.now()
@@ -1018,7 +1047,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //序列化同 userId 之並行 change-password 請求: 防 lost update + 重複寄信.
         //第二次同 userId 進入時 mutex 序列化, 第二次因 password 已被第一次改, 走既有
         //'incorrect old password' reject 路徑, 自然不會多寄信.
-        return await withLock(`changeUserPassword:${userId}`, async () => {
+        return await kmx(`changeUserPassword:${userId}`, async () => {
 
             //getGenUserByUserId (with password)
             let u = await _getGenUserByKV('id', userId, { deletePassword: false })
@@ -1152,7 +1181,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //序列化同 targetUserId 之並行 reset 請求, 並於鎖內 throttle 30s 內第二次觸發.
         //(mutex 確保 throttle 紀錄寫入無 race; 30s 內第二次 reject
         // 'reset already triggered, please wait', 避免 lost update + 雙重亂數密碼 + 雙封信.)
-        return await withLock(`adminResetUserPassword:${targetUserId}`, async () => {
+        return await kmx(`adminResetUserPassword:${targetUserId}`, async () => {
 
             //throttle 檢查 (30s 內第二次同 targetUserId 直接 reject)
             let now = Date.now()

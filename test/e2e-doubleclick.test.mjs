@@ -11,9 +11,11 @@ import { startServersOnce, cleanup, apiUrl, resetToBaseSeed, deleteNonBaseSeed }
 //
 // E2E doubleclick test — 4 個雙擊防護議題之 backend mutex 序列化回歸測試
 //
-// 對應後端 server/procCore.mjs 之 mutex / throttle 機制 (見 procMutex.mjs + procCore.mjs
-// 之 withLock(`adminResetUserPassword:${targetUserId}`) / withLock(`createUser:${account}:${email}`) /
-// withLock(`resendVerifyEmail:${account}`) / withLock(`changeUserPassword:${userId}`)).
+// 對應後端 server/procCore.mjs 之 mutex / cacheSt / throttle 機制:
+//   - withLock(`adminResetUserPassword:${targetUserId}`) / withLock(`resendVerifyEmail:${account}`) /
+//     withLock(`changeUserPassword:${userId}`) ← 用 wsemi pmKeyMutex (原 server/procMutex.mjs 已抽至套件)
+//   - cs.setWithFree([`createUser:account:<a>`, `createUser:email:<e>`], fn) ← 用 wsemi cacheSt
+//     (R2L1-001 fix: 複合 key 無法擋同 account 不同 email 之繞鎖雙重 insert, 改 cacheSt 兩段獨立 key 原子占位)
 //
 // 本檔為 API-only 測試 (無 UI / 無 Playwright / 無 baseline 截圖):
 //   - 不走 Playwright UI (前端 promiseUnlock 已防 race; 測試重點是 backend mutex 在 API 直打場景仍守)
