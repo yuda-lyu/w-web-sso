@@ -542,7 +542,11 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
                 }
             })
             .catch((err) => {
-                errTemp = err
+                //對外統一 'token expired' 為防 information leakage (ADR-006)
+                //—— 原樣 bubble err 會洩漏 _checkToken 之 'invalid token' / 'duplicate tokens'
+                //等具體 reject 字串 (Round-3 audit B-02 fix); 內部仍 console.log 保留 audit 細節.
+                console.log('checkToken inner reject', err)
+                errTemp = 'token expired'
             })
 
         //check

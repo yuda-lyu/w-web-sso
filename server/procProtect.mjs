@@ -141,13 +141,17 @@ function proc(woItems, p, opt = {}) {
             timeBlocked,
         })
 
-        //getTokenByKV
-        let t = await p.getTokenByKV('userId', u.id)
-
-        //封鎖使用者, 須刪除所用token
-        await woItems.tokens.del({
-            id: t.id,
-        })
+        //封鎖使用者, 須刪除該 user 名下所有 token (multi-session 強制全部登出)
+        //(原本走 p.getTokenByKV('userId', u.id) 取單筆, 但 ADR-001 接受同帳號多 active token,
+        //getTokenByKV 之 nts>=2 reject 'duplicate token' 對 multi-session user 必觸發 → token
+        //完全沒刪 → 帳號被鎖但既有 session 仍可用. 改用 select 直接取陣列 + 迴圈逐筆 del,
+        //對齊 spec/流程_自動封鎖機制.md A32「強制登出」契約 — Round-3 audit B-01 fix.)
+        let ts = await woItems.tokens.select({ userId: u.id })
+        for (let t of ts) {
+            await woItems.tokens.del({
+                id: t.id,
+            })
+        }
 
     }
 
