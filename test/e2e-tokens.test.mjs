@@ -151,10 +151,12 @@ async function insertTestUsersAndTokensAndTestTokens() {
 
     //admin token (此 token 由 admin 登入後台用, 與 testTokens seed 不同, id 用 id-tokens-admin-token 區隔)
     //token 值固定為決定性字串 (本檔 Tokens list 會顯示 token 值, funNew 自動產 UUID 每跑都變 → pixel mismatch; 此處鎖定可 byte-equal)
+    //timeEnd 用未來固定字串 (與 testTokens 同, 凍結 baseline; 原 ot().add(60, 'minute') 為動態 wall-clock,
+    //跑測試時與 baseline 凍結時間不同 → 第 1 列 timeEnd 字串浮動 → pixel mismatch — Round-3 audit pre-existing fix)
     let t = ds.tokens.funNew({ userId: testUsers.admin.id })
     t.id = 'id-tokens-admin-token'
     t.token = 'fixed-tokens-admin-session-token'
-    t.timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+    t.timeEnd = '2030-01-01T00:00:00.000+08:00'
     t.timeCreate = FIX_TIME
     t.timeUpdate = FIX_TIME
     userTokens[testUsers.admin.id] = t.token
@@ -212,7 +214,8 @@ async function resetAdminToken() {
     let t = ds.tokens.funNew({ userId: testUsers.admin.id })
     t.id = 'id-tokens-admin-token'
     t.token = 'fixed-tokens-admin-session-token'
-    t.timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+    //timeEnd 對齊 insertTestUsersAndTokensAndTestTokens 用固定未來時間 (Round-3 audit pre-existing fix, 詳該處註解)
+    t.timeEnd = '2030-01-01T00:00:00.000+08:00'
     t.timeCreate = FIX_TIME
     t.timeUpdate = FIX_TIME
     userTokens[testUsers.admin.id] = t.token
