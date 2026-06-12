@@ -519,11 +519,13 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         await _checkTokenByObj(tk, opt)
             .then((res) => {
                 if (res === false) {
-                    errTemp = 'token expired'
+                    errTemp = 'tokenExpired'
                 }
             })
             .catch((err) => {
-                errTemp = err
+                //對外統一 key 'tokenExpired' 防 information leakage (對齊 checkToken B-02); 內部 log 保留
+                console.log('checkTokenByObj inner reject', err)
+                errTemp = 'tokenExpired'
             })
 
         //check
@@ -538,9 +540,10 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
     //checkToken
     let checkToken = async (token, opt = {}) => {
 
-        //defense-in-depth NoSQL operator injection guard (對齊 ADR-006 統一 'token expired' 防 information leakage)
+        //defense-in-depth NoSQL operator injection guard. reject key 名 (對齊 ADR-006 統一防 information leakage);
+        //由 kpfun _tErr 依 lang 翻譯 tokenExpired 訊息回前端 (E2E-011 中英混雜 fix).
         if (!isestr(token)) {
-            return Promise.reject('token expired')
+            return Promise.reject('tokenExpired')
         }
 
         let errTemp = null
@@ -549,16 +552,16 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         await _checkToken(token, opt)
             .then((res) => {
                 if (res === false) {
-                    // 對外統一 'token expired' 為防 information leakage; 內部 log 保留布林細節供 audit (見 line ~467).
-                    errTemp = 'token expired'
+                    // 對外統一 key 'tokenExpired' 為防 information leakage; 內部 log 保留布林細節供 audit (見 line ~467).
+                    errTemp = 'tokenExpired'
                 }
             })
             .catch((err) => {
-                //對外統一 'token expired' 為防 information leakage (ADR-006)
+                //對外統一 key 'tokenExpired' 為防 information leakage (ADR-006)
                 //—— 原樣 bubble err 會洩漏 _checkToken 之 'invalid token' / 'duplicate tokens'
                 //等具體 reject 字串 (Round-3 audit B-02 fix); 內部仍 console.log 保留 audit 細節.
                 console.log('checkToken inner reject', err)
-                errTemp = 'token expired'
+                errTemp = 'tokenExpired'
             })
 
         //check
@@ -573,9 +576,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
     //refreshToken
     let refreshToken = async (token) => {
 
-        //defense-in-depth NoSQL operator injection guard
+        //defense-in-depth NoSQL operator injection guard (reject key 名, 對齊 token 鏈統一 tokenExpired)
         if (!isestr(token)) {
-            return Promise.reject('token expired')
+            return Promise.reject('tokenExpired')
         }
 
         let errTemp = null
@@ -625,7 +628,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             console.log(`tn`, tn)
             console.log(`timeEnd`, timeEnd)
             console.log(`token expired`)
-            return Promise.reject(`token expired`)
+            return Promise.reject(`tokenExpired`)
         }
 
         //timeEndNew, 依照minExpired(min)更新到期時間
@@ -660,9 +663,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
     //logoutByToken
     let logoutByToken = async (token) => {
 
-        //defense-in-depth NoSQL operator injection guard
+        //defense-in-depth NoSQL operator injection guard (reject key 名, 對齊 token 鏈統一 tokenExpired)
         if (!isestr(token)) {
-            return Promise.reject('token expired')
+            return Promise.reject('tokenExpired')
         }
 
         let errTemp = null

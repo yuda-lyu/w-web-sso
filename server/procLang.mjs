@@ -797,6 +797,21 @@ let kpLang = {
         eng: 'An unexpected error occurred during login. Please try again later.',
         cht: '登入時發生未預期的錯誤，請稍後再試。',
     },
+    //token 驗證失敗 (對外統一收斂, 防 information leakage; 對齊 ADR-006). 後端 reject key 名,
+    //由 kpfun _tErr 依 lang 翻譯回前端顯示. tokenInvalid (查無 token) 與 tokenExpired 對外同義訊息.
+    tokenExpired: {
+        eng: 'Your session has expired. Please log in again.',
+        cht: '登入逾時，請重新登入。',
+    },
+    tokenInvalid: {
+        eng: 'Your session has expired. Please log in again.',
+        cht: '登入逾時，請重新登入。',
+    },
+    //admin 批次更新 (users/tokens/ips) 之 rows 非合法陣列 (防 NoSQL operator injection guard)
+    invalidRows: {
+        eng: 'Invalid data format.',
+        cht: '資料格式錯誤。',
+    },
     // msgSendChangePasswordEmailSuccess: {
     //     eng: 'Verification email sent. Please check your inbox and click the link to change your password.',
     //     cht: '驗證信已發送，請至信箱收取並點擊連結以變更密碼。',

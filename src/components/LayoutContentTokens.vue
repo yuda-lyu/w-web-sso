@@ -865,12 +865,13 @@ export default {
                 //     return
                 // }
 
-                //token
+                //token / lang
                 let token = vo.userToken
+                let lang = get(vo, '$store.state.lang', 'eng')
                 // console.log('token', token)
 
-                //updateTokensList
-                await vo.$fapi.updateTokensList(token, rows)
+                //updateTokensList (帶 lang, 後端 reject { key, msg } 之 msg 依 lang 翻譯)
+                await vo.$fapi.updateTokensList(token, lang, rows)
                     .catch((err) => {
                         errTemp = err
                     })
@@ -878,7 +879,9 @@ export default {
                 //check
                 if (errTemp !== null) {
                     vo.$ui.updateLoading(false)
-                    await vo.$dg.showCheckYes(`${vo.$t('tokenSaveTokensFail')}: ${errTemp}`)
+                    //後端 reject { key, msg }: msg 已依 lang 翻譯, 直接顯示
+                    let msg = (errTemp && errTemp.msg) ? errTemp.msg : vo.$t('anUnexpectedErrorOccurred')
+                    await vo.$dg.showCheckYes(`${vo.$t('tokenSaveTokensFail')}: ${msg}`)
                     return
                 }
 

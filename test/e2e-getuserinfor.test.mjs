@@ -184,15 +184,16 @@ describe('getSsoUserInfor API E2E — token 權限驗證', function() {
         assert.strict.equal(status, 200, `預期 HTTP 200, 實際: ${status}`)
         //應 reject → state=error
         assert.strict.equal(body.state, 'error', `預期 state=error (非 admin 不可查他人), 實際: ${JSON.stringify(body)}`)
-        //msg 應為 "token expired" — non-admin 觸發 funCheckAdmin 失敗時, procCore.mjs:_checkTokenByObj
-        //之 b2=false 路徑統一 reject 為 "token expired" (與 timeEnd 過期同訊息, 為防 information leakage
-        //之安全設計). 'token does not have permission' 為 handler 之另一條 path (line 1122-1123) — checkToken
-        //通過但 target 查不到 user 時才走, 與本 case 之 caller-auth-fail 路徑不同.
+        //msg 應為 key "tokenExpired" — non-admin 觸發 funCheckAdmin 失敗時, procCore.mjs:_checkTokenByObj
+        //之 b2=false 路徑統一 reject 為 key "tokenExpired" (與 timeEnd 過期同訊息, 為防 information leakage
+        //之安全設計). getSsoUserInfor 為 server-to-server REST endpoint, 回 machine-readable key 供 API caller 判斷.
+        //'token does not have permission' 為 handler 之另一條 path — checkToken 通過但 target 查不到 user 時才走.
+        //(批 A: token 驗證鏈 reject 改回 key 名 'tokenExpired'.)
         let msgStr = typeof body.msg === 'string' ? body.msg : JSON.stringify(body.msg)
         assert.strict.equal(
-            msgStr.includes('token expired'),
+            msgStr.includes('tokenExpired'),
             true,
-            `預期 msg 含 "token expired" (caller funCheckAdmin 失敗統一收斂), 實際: ${msgStr}`
+            `預期 msg 含 key "tokenExpired" (caller funCheckAdmin 失敗統一收斂), 實際: ${msgStr}`
         )
     })
 

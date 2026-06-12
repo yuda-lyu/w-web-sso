@@ -1506,7 +1506,9 @@ export default {
                 if (errTemp !== null) {
                     //hide loading 因 showCheckYes 是 modal, 等待期間 loading 會疊著
                     vo.$ui.updateLoading(false)
-                    await vo.$dg.showCheckYes(`${vo.$t('userSaveUsersFail')}: ${errTemp}`)
+                    //後端 reject { key, msg }: msg 已依 lang 翻譯, 直接顯示 (不再內插 raw 英文 errTemp)
+                    let msg = (errTemp && errTemp.msg) ? errTemp.msg : vo.$t('anUnexpectedErrorOccurred')
+                    await vo.$dg.showCheckYes(`${vo.$t('userSaveUsersFail')}: ${msg}`)
                     return
                 }
 

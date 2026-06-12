@@ -898,9 +898,10 @@ else {
 
                 //API 拒絕
                 assert.strict.equal(r.result.state, 'error', `應 reject, 實際 state=${r.result.state}`)
-                //ADR-006 對外統一 'token expired' 防 information leakage (B-02 修後 checkToken catch
-                //路徑統一映射, 原 _checkToken reject 之 'invalid token' / 'duplicate tokens' 字串不對外洩漏)
-                assert.strict.equal(r.result.msg, 'token expired', `應回報 'token expired' (ADR-006 統一), 實際 msg=${r.result.msg}`)
+                //ADR-006 對外統一 防 information leakage. getSsoUserInfor 為 server-to-server REST endpoint
+                //(非 kpfun, 不經 _tErr 翻譯), 回 machine-readable key 'tokenExpired' 供 API caller 判斷.
+                //(批 A: token 驗證鏈 reject 改回 key 名, checkToken/checkTokenByObj catch 統一 'tokenExpired'.)
+                assert.strict.equal(r.result.msg, 'tokenExpired', `應回報 key 'tokenExpired' (ADR-006 統一), 實際 msg=${r.result.msg}`)
 
                 //DB token 已刪
                 let tokens = await woItems.tokens.select({ userId: r.userId })

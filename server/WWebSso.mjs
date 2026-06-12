@@ -508,6 +508,22 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let _strictStr = (...vals) => vals.every((v) => isestr(v))
 
 
+    //_tErr: kpfun 邊界層統一把後端 reject 轉成 { key, msg } 回前端.
+    //- key: 機器可讀識別碼 (= procLang 字典 key 名), 供前端「判斷錯誤種類」(如 showResendVerify) + 後端 log.
+    //- msg: 依 lang 查 kpLang 翻譯後之文字, 供前端「直接顯示」(前端不再自行 $t 映射 raw 英文).
+    //設計對齊 verifyEmail HTTP handler 模式 (底層 reject key 名 → 邊界層依 lang 產製訊息).
+    //err 為非字串 (Error / 物件, 屬 internal invariant violation) → 統一收斂為 anUnexpectedErrorOccurred.
+    //查不到 key → msg fallback 回 err 原值 (相容 procCore 已自行 get(kpLang) 翻譯的舊訊息, 不必動已 work 者).
+    let _tErr = (lang, err) => {
+        if (lang !== 'eng' && lang !== 'cht') {
+            lang = 'eng'
+        }
+        let key = isestr(err) ? err : 'anUnexpectedErrorOccurred'
+        let msg = get(kpLang, `${lang}.${key}`, key)
+        return { key, msg }
+    }
+
+
     //funCheckAdmin
     let funCheckAdmin = (tk, u) => {
         // console.log('tk', tk, 'u', u)
@@ -1045,12 +1061,14 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 let r = await p.checkToken(token)
                 return r
             },
+
             refreshToken: async (_t, token) => { //sso前端通過$fapi.refreshToken調用
                 if (!_strictStr(token)) return Promise.reject('token expired')
                 srLog.info({ event: 'kpfun-refreshToken', token })
                 let r = await p.refreshToken(token)
                 return r
             },
+
             loginByAccountAndPassword: async (_t, account, password) => {
                 if (!_strictStr(account, password)) return Promise.reject('incorrect user account or password')
 
@@ -1080,6 +1098,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 }
                 return Promise.reject(msg)
             },
+
             logoutByToken: async (_t, token) => {
                 if (!_strictStr(token)) return Promise.reject('token expired')
                 srLog.info({ event: 'kpfun-logoutByToken', token })
@@ -1114,6 +1133,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 //console.log('call getUserByToken end')
                 return r
             },
+
             getUserInfor: async (_t, token, key, value) => {
                 if (!_strictStr(token, key, value)) return Promise.reject('token expired')
                 srLog.info({ event: 'kpfun-getUserInfor', token, key, value })
@@ -1131,6 +1151,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 //console.log('call checkUserPassword end')
                 return r
             },
+
             changeUserPassword: async (_t, token, lang, pwOld, pwNew) => {
                 if (!_strictStr(token)) return Promise.reject('token expired')
                 //僅記 event / token / lang, 不記任何密碼明文 (對齊 ADR-014 + adminResetUserPassword 之記法).
@@ -1140,6 +1161,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 //console.log('call checkTokenAndChangePassword end')
                 return r
             },
+
             adminResetUserPassword: async (_t, token, lang, targetUserId) => {
                 if (!_strictStr(token, targetUserId)) return Promise.reject('token expired')
                 //僅記 event / token / targetUserId, 不記任何密碼明文
@@ -1156,12 +1178,15 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 //console.log('call getUsersList end')
                 return rs
             },
+
             updateUsersList: async (_t, token, lang, rows) => {
                 if (!_strictStr(token)) return Promise.reject('token expired')
-                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject('invalid rows')
+                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject(_tErr(lang, 'invalidRows'))
                 srLog.info({ event: 'kpfun-updateUsersList', token, lang })
                 //console.log('call updateUsersList...')
+                //catch → _tErr: 後端 reject key 名 (含 checkToken 之 'tokenExpired'), kpfun 邊界依 lang 翻譯回 { key, msg }
                 let rs = await p.checkTokenAndUpdateUsersList(token, lang, rows, { fun: funCheckAdmin })
+                    .catch((err) => Promise.reject(_tErr(lang, err)))
                 //console.log('call updateUsersList end')
                 return rs
             },
@@ -1174,12 +1199,14 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 //console.log('call getTokensList end')
                 return rs
             },
-            updateTokensList: async (_t, token, rows) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject('invalid rows')
-                srLog.info({ event: 'kpfun-updateTokensList', token })
+
+            updateTokensList: async (_t, token, lang, rows) => {
+                if (!_strictStr(token)) return Promise.reject(_tErr(lang, 'tokenExpired'))
+                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject(_tErr(lang, 'invalidRows'))
+                srLog.info({ event: 'kpfun-updateTokensList', token, lang })
                 //console.log('call updateTokensList...')
                 let rs = await p.checkTokenAndUpdateTokensList(token, rows, { fun: funCheckAdmin })
+                    .catch((err) => Promise.reject(_tErr(lang, err)))
                 //console.log('call updateTokensList end')
                 return rs
             },
@@ -1192,12 +1219,14 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 //console.log('call getIpsList end')
                 return rs
             },
-            updateIpsList: async (_t, token, rows) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject('invalid rows')
-                srLog.info({ event: 'kpfun-updateIpsList', token })
+
+            updateIpsList: async (_t, token, lang, rows) => {
+                if (!_strictStr(token)) return Promise.reject(_tErr(lang, 'tokenExpired'))
+                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject(_tErr(lang, 'invalidRows'))
+                srLog.info({ event: 'kpfun-updateIpsList', token, lang })
                 //console.log('call updateIpsList...')
                 let rs = await p.checkTokenAndUpdateIpsList(token, rows, { fun: funCheckAdmin })
+                    .catch((err) => Promise.reject(_tErr(lang, err)))
                 //console.log('call updateIpsList end')
                 return rs
             },
@@ -1210,6 +1239,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 //console.log('call getStaUserSummary end')
                 return r
             },
+
             getStaTokenSummary: async (_t, token) => {
                 if (!_strictStr(token)) return Promise.reject('token expired')
                 srLog.info({ event: 'kpfun-getStaTokenSummary', token })
@@ -1218,6 +1248,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 //console.log('call getStaTokenSummary end')
                 return r
             },
+
             getStaIpSummary: async (_t, token) => {
                 if (!_strictStr(token)) return Promise.reject('token expired')
                 srLog.info({ event: 'kpfun-getStaIpSummary', token })
@@ -1235,6 +1266,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 //console.log('call getStaUserAccountLogin end')
                 return r
             },
+
             getStaToken: async (_t, token) => {
                 if (!_strictStr(token)) return Promise.reject('token expired')
                 srLog.info({ event: 'kpfun-getStaToken', token })
@@ -1243,6 +1275,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 //console.log('call getStaToken end')
                 return r
             },
+
             getStaIp: async (_t, token) => {
                 if (!_strictStr(token)) return Promise.reject('token expired')
                 srLog.info({ event: 'kpfun-getStaIp', token })
@@ -1251,21 +1284,6 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 //console.log('call getStaIp end')
                 return r
             },
-
-            // getSettings: async (_t, token) => {
-
-            //     //checkToken
-            //     await p.checkToken(token)
-
-            //     return procSettings.getSettings()
-            // },
-            // updateSettings: async (_t, token, st) => {
-
-            //     //checkToken
-            //     await p.checkToken(token)
-
-            //     return procSettings.setSettings(st)
-            // },
 
         },
         fnTableTags: 'tableTags-web-sso.json',
