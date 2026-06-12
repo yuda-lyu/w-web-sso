@@ -289,6 +289,12 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
     //loginByAccountAndPassword
     let loginByAccountAndPassword = async (account, password) => {
 
+        //defense-in-depth NoSQL operator injection guard (詳 db_query攻擊問題.md / WWebSso.mjs _strictStr).
+        //外層 kpfun 已 guard; 此 inner check 是「procCore 函式被 kpfun 外其他 caller 直接呼叫時」之保險.
+        if (!isestr(account) || !isestr(password)) {
+            return Promise.reject(`incorrect user account or password`)
+        }
+
         //hashPassword
         let passwordTest = hashPassword(password, salt)
         // console.log('password', password, 'salt', salt)
@@ -531,6 +537,12 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
     //checkToken
     let checkToken = async (token, opt = {}) => {
+
+        //defense-in-depth NoSQL operator injection guard (對齊 ADR-006 統一 'token expired' 防 information leakage)
+        if (!isestr(token)) {
+            return Promise.reject('token expired')
+        }
+
         let errTemp = null
 
         //_checkToken
@@ -560,6 +572,12 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
     //refreshToken
     let refreshToken = async (token) => {
+
+        //defense-in-depth NoSQL operator injection guard
+        if (!isestr(token)) {
+            return Promise.reject('token expired')
+        }
+
         let errTemp = null
 
         //tks
@@ -641,6 +659,12 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
     //logoutByToken
     let logoutByToken = async (token) => {
+
+        //defense-in-depth NoSQL operator injection guard
+        if (!isestr(token)) {
+            return Promise.reject('token expired')
+        }
+
         let errTemp = null
 
         //tks

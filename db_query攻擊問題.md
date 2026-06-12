@@ -1,8 +1,29 @@
 # DB query 攻擊問題：NoSQL operator injection via mingo
 
-**狀態**：已知待修 (Round-3 audit 2026-06-11)
+**狀態**：✅ 已修 (Round-3 audit Phase 5, 2026-06-12)
 **嚴重度**：medium (深度防禦級, 無立即危害)
 **對應 audit**：Round-3 finding `input-validation-03`
+
+## 修復摘要 (2026-06-12)
+
+採方案 3 + 4 雙層 guard:
+- **Outer (kpfun 入口, `server/WWebSso.mjs`)**: 加 `_strictStr(...vals) => vals.every(v => isestr(v))` helper +
+  22 處 kpfun 第一行 `if (!_strictStr(...)) return Promise.reject(...)`. 錯訊統一映射至 ADR-006
+  'token expired' (token 系) / ADR-003 'incorrect user account or password' (login 系) /
+  'invalid rows' (admin batch update 系), 不洩 type-check 失敗 vs business 失敗.
+- **Inner (procCore 入口, `server/procCore.mjs`)**: `loginByAccountAndPassword` / `checkToken` /
+  `refreshToken` / `logoutByToken` 4 處補既有 isestr canonical pattern (對齊 createUser line 734
+  / verifyEmail line 855 / resendVerifyEmail line 894 已有的內部 type check). defense-in-depth
+  防 procCore 函式被 kpfun 外其他 caller 直接呼叫繞過 outer.
+- **updateXxxList(rows) array deep check**: 3 處 `updateUsersList` / `updateTokensList` /
+  `updateIpsList` 加 `isearr(rows) + rows.every(r => isestr(get(r, 'id', '')))` 防 row.id 為 operator object.
+
+e2e regression: 跑 e2e-login + e2e-doubleclick + e2e-autoblock + e2e-tokens 4 個關鍵 e2e,
+65 passing / 0 failing — Y-03 改動不影響任何既有路徑.
+
+以下為原問題分析記錄 (保留供未來 audit 參考).
+
+---
 
 ## 問題描述
 
