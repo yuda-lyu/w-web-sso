@@ -752,26 +752,19 @@ export default {
                 })
                 .catch((err) => {
 
-                    //依錯誤類型設定登入錯誤訊息（顯示於登入按鈕下方紅字）
-                    let errMsg = (err && typeof err === 'string') ? err : ''
-                    if (errMsg === 'account not verified') {
-                        vo.showResendVerify = true
-                        vo.loginError = vo.$t('userRegistrationNotVerified')
+                    //err 來源有二:
+                    //(1) 後端登入失敗 → mUI 上拋之 { key, msg } (key 機器可讀供判斷種類, msg 已依 lang 翻譯供顯示)
+                    //(2) mUI 前端層 reject 之字串 (invalid redir / invalid user / invalid token / invalid $keyLS)
+                    if (err && err.key) {
+                        //未驗證帳號: 以 key 判斷 → 顯示「重寄驗證信」連結 (不以 raw 英文字串比對, 對齊 i18n key 架構)
+                        if (err.key === 'userRegistrationNotVerified') {
+                            vo.showResendVerify = true
+                        }
+                        //其餘 (failedLoginForCatch 含帳號不存在/密碼錯/inactive 過濾後 / loginAccountBlocked /
+                        // loginAccountExpired) 一律直接顯示後端翻譯訊息
+                        vo.loginError = err.msg
                     }
-                    else if (errMsg === 'account blocked') {
-                        vo.loginError = vo.$t('loginAccountBlocked')
-                    }
-                    //inactive 帳號在 procProtect.getBlockedByAccount 階段由 _getGenUserByKV (isActive='y')
-                    //過濾後 reject('can not find the user by account'), 不會走到 procCore 之 isActive 檢查;
-                    //該 reject 字串於下方 'incorrect user account or password' 同步走 failedLoginForCatch.
-                    //(原 'account inactive' reject 已於 Round-3 audit Phase 2 移除, 為 dead branch.)
-                    else if (errMsg === 'account expired') {
-                        vo.loginError = vo.$t('loginAccountExpired')
-                    }
-                    else if (errMsg === 'incorrect user account or password' || errMsg === 'can not find the user by account') {
-                        vo.loginError = vo.$t('failedLoginForCatch')
-                    }
-                    else if (errMsg === 'invalid redir') {
+                    else if (err === 'invalid redir') {
                         //view=login 模式下 user.redir 為空, mUI 已 alert 但 4s 後消失;
                         //inline 紅字保留訊息與設計意圖一致 (參見 spec/流程_使用者一般登入.md)
                         vo.loginError = vo.$t('failedLoginForNoRedir')
@@ -783,7 +776,7 @@ export default {
 
                     //錯誤發生時提交變更viewState返回登入頁
                     vo.$ui.updateViewState('login')
-                    console.log(`login err[${err}], goto view['login'] page`)
+                    console.log(`login err[${JSON.stringify(err)}], goto view['login'] page`)
 
                 })
 

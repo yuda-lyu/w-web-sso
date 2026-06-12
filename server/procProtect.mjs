@@ -160,12 +160,20 @@ function proc(woItems, p, opt = {}) {
     let loginByAccountAndPassword = async(account, password) => {
 
         //blocked
-        let blocked = await getBlockedByAccount(account)
+        //getBlockedByAccount: 帳號不存在 (_getGenUserByKV reject 'can not find...') → 統一轉 key
+        //'failedLoginForCatch' (anti-enum, 與密碼錯同訊息, 不洩漏帳號是否存在); 由 kpfun _tErr 翻譯.
+        let blocked = false
+        try {
+            blocked = await getBlockedByAccount(account)
+        }
+        catch (err) {
+            return Promise.reject(`failedLoginForCatch`)
+        }
         // console.log(account, 'blocked', blocked)
 
         //check
         if (blocked) {
-            return Promise.reject(`account blocked`)
+            return Promise.reject(`loginAccountBlocked`)
         }
 
         //loginByAccountAndPassword

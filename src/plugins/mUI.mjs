@@ -376,8 +376,9 @@ function login(account, password, opt = {}) {
             return
         }
 
-        //loginByAccountAndPassword
-        let u = await vo.$fapi.loginByAccountAndPassword(account, password)
+        //loginByAccountAndPassword (帶 lang, 後端 reject { key, msg } 之 msg 依 lang 翻譯)
+        let langLogin = get(vo, '$store.state.lang', 'eng')
+        let u = await vo.$fapi.loginByAccountAndPassword(langLogin, account, password)
         // console.log('u', u)
 
         //key

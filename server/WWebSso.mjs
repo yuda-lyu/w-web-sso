@@ -1069,8 +1069,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 return r
             },
 
-            loginByAccountAndPassword: async (_t, account, password) => {
-                if (!_strictStr(account, password)) return Promise.reject('incorrect user account or password')
+            loginByAccountAndPassword: async (_t, lang, account, password) => {
+                if (!_strictStr(account, password)) return Promise.reject(_tErr(lang, 'failedLoginForCatch'))
 
                 //info, 使用者登入前
                 srLog.info({ event: 'kpfun-loginByAccountAndPassword-before', account })
@@ -1096,7 +1096,9 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 if (iseobj(u)) {
                     return u
                 }
-                return Promise.reject(msg)
+                //msg 為 procCore/procProtect reject 之 key (failedLoginForCatch / userRegistrationNotVerified
+                /// loginAccountExpired / loginAccountBlocked), 經 _tErr 依 lang 翻譯成 { key, msg } 回前端
+                return Promise.reject(_tErr(lang, msg))
             },
 
             logoutByToken: async (_t, token) => {

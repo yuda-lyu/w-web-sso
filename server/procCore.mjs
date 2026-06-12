@@ -292,7 +292,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //defense-in-depth NoSQL operator injection guard (詳 db_query攻擊問題.md / WWebSso.mjs _strictStr).
         //外層 kpfun 已 guard; 此 inner check 是「procCore 函式被 kpfun 外其他 caller 直接呼叫時」之保險.
         if (!isestr(account) || !isestr(password)) {
-            return Promise.reject(`incorrect user account or password`)
+            return Promise.reject(`failedLoginForCatch`)
         }
 
         //hashPassword
@@ -305,7 +305,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //'can not find the user by account', 不會走到此處, 故此處不再額外檢查 isActive — 對齊 ADR-003 Round-3 audit dead branch 清理.)
         let us = await woItems.users.select({ account })
         if (size(us) === 0) {
-            return Promise.reject(`incorrect user account or password`)
+            return Promise.reject(`failedLoginForCatch`)
         }
         let u = us[0]
 
@@ -315,13 +315,13 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //check
         if (!timingSafePasswordEqual(passwordTest, passwordTrue)) {
-            return Promise.reject(`incorrect user account or password`)
+            return Promise.reject(`failedLoginForCatch`)
         }
 
         //check timeVerified
         let timeVerified = get(u, 'timeVerified', '')
         if (!isestr(timeVerified)) {
-            return Promise.reject('account not verified')
+            return Promise.reject('userRegistrationNotVerified')
         }
 
         //check timeExpired
@@ -329,7 +329,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         if (isestr(timeExpired) && istimemsTZ(timeExpired)) {
             let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
             if (tn > timeExpired) {
-                return Promise.reject('account expired')
+                return Promise.reject('loginAccountExpired')
             }
         }
 
