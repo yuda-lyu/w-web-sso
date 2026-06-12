@@ -1157,30 +1157,18 @@ export default {
                 let lang = get(vo, '$store.state.lang', 'eng')
 
                 let ok = false
-                let errKey = ''
+                let errMsg = ''
                 await vo.$fapi.adminResetUserPassword(token, lang, id)
                     .then(() => {
                         ok = true
                     })
                     .catch((err) => {
-                        let errMsg = (err && typeof err === 'string') ? err : ''
-                        if (errMsg === 'cannot reset self') {
-                            errKey = 'adminResetPasswordCannotResetSelf'
-                        }
-                        else if (errMsg === 'forbidden') {
-                            errKey = 'adminResetPasswordForbidden'
-                        }
-                        else if (errMsg === 'user not found') {
-                            errKey = 'adminResetPasswordUserNotFound'
-                        }
-                        else {
-                            console.log('adminResetUserPassword unknown error', err)
-                            errKey = 'adminResetPasswordFailed'
-                        }
+                        //後端統一 reject { key, msg }: msg 已依 lang 翻譯, 直接顯示
+                        errMsg = (err && err.msg) ? err.msg : vo.$t('adminResetPasswordFailed')
                     })
                 if (!ok) {
                     vo.$ui.updateLoading(false)
-                    await vo.$dg.showCheckYes(vo.$t(errKey))
+                    await vo.$dg.showCheckYes(errMsg)
                     return
                 }
 

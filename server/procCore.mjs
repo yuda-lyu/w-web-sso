@@ -759,13 +759,13 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //account
         let account = get(data, 'account', '')
         if (!isestr(account)) {
-            return Promise.reject('invalid account')
+            return Promise.reject('userRegistrationAccountInvalid')
         }
 
         //email
         let email = get(data, 'email', '')
         if (!isestr(email) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-            return Promise.reject('invalid email format')
+            return Promise.reject('userRegistrationEmailFormatInvalid')
         }
 
         //password
@@ -787,7 +787,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //name
         let name = get(data, 'name', '')
         if (!isestr(name)) {
-            return Promise.reject('invalid name')
+            return Promise.reject('userRegistrationNameInvalid')
         }
 
         //原子占位「account 鎖」與「email 鎖」兩段獨立 key, 任一衝突即 reject:
@@ -919,7 +919,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //check
         if (!isestr(account) || !isestr(email)) {
-            return Promise.reject('invalid account or email')
+            return Promise.reject('userRegistrationResendInvalidEmail')
         }
 
         //序列化同 account 之並行請求, 並於鎖內 throttle 30s 內第二次 resend
@@ -930,7 +930,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             let now = Date.now()
             let last = lastResendTime.get(account)
             if (last && (now - last) < throttleMs) {
-                return Promise.reject('resend throttled')
+                return Promise.reject('userRegistrationResendThrottled')
             }
 
             //getGenUserByAccount
@@ -940,19 +940,19 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             }
             catch (err) {}
             if (!u) {
-                return Promise.reject('invalid account or email') //不洩露帳號是否存在
+                return Promise.reject('userRegistrationResendInvalidEmail') //不洩露帳號是否存在
             }
 
             //check email match
             let uEmail = get(u, 'email', '')
             if (uEmail !== email) {
-                return Promise.reject('invalid account or email')
+                return Promise.reject('userRegistrationResendInvalidEmail')
             }
 
             //check timeVerified
             let timeVerified = get(u, 'timeVerified', '')
             if (isestr(timeVerified)) {
-                return Promise.reject('account already verified')
+                return Promise.reject('userRegistrationAlreadyVerified')
             }
 
             //userId
@@ -981,7 +981,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             }
             catch (err) {
                 console.log('resend verify email error', err)
-                return Promise.reject('send email failed')
+                return Promise.reject('userRegistrationResendFailed')
             }
 
             return { state: 'success', msg: 'ok' }
@@ -1064,7 +1064,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //check oldPassword
         if (!isestr(oldPassword)) {
-            return Promise.reject(`invalid oldPassword`)
+            return Promise.reject('userChangePasswordFail')
         }
 
         //getUserByToken
@@ -1096,7 +1096,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
             //check
             if (!timingSafePasswordEqual(passwordTest, passwordTrue)) {
-                return Promise.reject(`incorrect old password`)
+                return Promise.reject('userChangePasswordIncorrectOld')
             }
 
             //email
@@ -1104,7 +1104,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             if (!isestr(email)) {
                 console.log('token', token)
                 console.log('u', u)
-                return Promise.reject(`invalid email`)
+                return Promise.reject('anUnexpectedErrorOccurred')
             }
             // console.log('email', email)
 
@@ -1188,7 +1188,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //check targetUserId
         if (!isestr(targetUserId)) {
-            return Promise.reject(`invalid userId`)
+            return Promise.reject('anUnexpectedErrorOccurred')
         }
 
         //getUserByToken (操作者)
@@ -1197,12 +1197,12 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //operator 必須為 admin
         if (get(uOperator, 'isAdmin', '') !== 'y') {
-            return Promise.reject(`forbidden`)
+            return Promise.reject('adminResetPasswordForbidden')
         }
 
         //不可對自己觸發
         if (operatorId === targetUserId) {
-            return Promise.reject(`cannot reset self`)
+            return Promise.reject('adminResetPasswordCannotResetSelf')
         }
 
         //序列化同 targetUserId 之並行 reset 請求, 並於鎖內 throttle 30s 內第二次觸發.
@@ -1214,7 +1214,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             let now = Date.now()
             let last = lastResetTime.get(targetUserId)
             if (last && (now - last) < throttleMs) {
-                return Promise.reject('reset already triggered, please wait')
+                return Promise.reject('adminResetPasswordAlreadyTriggered')
             }
 
             //目標 user (含 password 拿到也不用, 只是確認存在)
@@ -1223,10 +1223,10 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
                 uTarget = await _getGenUserByKV('id', targetUserId, { deletePassword: true })
             }
             catch (err) {
-                return Promise.reject(`user not found`)
+                return Promise.reject('adminResetPasswordUserNotFound')
             }
             if (!iseobj(uTarget)) {
-                return Promise.reject(`user not found`)
+                return Promise.reject('adminResetPasswordUserNotFound')
             }
 
             let targetAccount = get(uTarget, 'account', '')

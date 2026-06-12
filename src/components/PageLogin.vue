@@ -603,26 +603,8 @@ export default {
                         ok = true
                     })
                     .catch((err) => {
-                        let errMsg = (err && typeof err === 'string') ? err : ''
-                        //後端以「字面英文字串」reject 的三類 (invalid account / email format / name): 對應 i18n inline 訊息
-                        if (errMsg === 'invalid account') {
-                            vo.regError = vo.$t('userRegistrationAccountInvalid')
-                        }
-                        else if (errMsg === 'invalid email format') {
-                            vo.regError = vo.$t('userRegistrationEmailFormatInvalid')
-                        }
-                        else if (errMsg === 'invalid name') {
-                            vo.regError = vo.$t('userRegistrationNameInvalid')
-                        }
-                        //後端其餘可預期錯誤 (帳號/email 已存在、密碼規則不符、確認密碼不一致、不開放註冊)
-                        //已由後端依 lang 回傳「已在地化」的訊息字串, 直接顯示即可
-                        else if (isestr(errMsg)) {
-                            vo.regError = errMsg
-                        }
-                        else {
-                            console.log('register unknown error', err)
-                            vo.regError = vo.$t('loginUnknownError')
-                        }
+                        //後端統一 reject { key, msg }: msg 已依 lang 翻譯, 直接顯示 (不再以 raw 英文字串判斷種類)
+                        vo.regError = (err && err.msg) ? err.msg : vo.$t('loginUnknownError')
                     })
 
                 //API 有錯 (catch 已設 vo.regError inline 紅字) → 中止, 不往下走成功流程
@@ -692,20 +674,8 @@ export default {
                         ok = true
                     })
                     .catch((err) => {
-                        let errMsg = (err && typeof err === 'string') ? err : ''
-                        if (errMsg === 'invalid account or email') {
-                            vo.resendError = vo.$t('userRegistrationResendInvalidEmail')
-                        }
-                        else if (errMsg === 'account already verified') {
-                            vo.resendError = vo.$t('userRegistrationAlreadyVerified')
-                        }
-                        else if (errMsg === 'send email failed') {
-                            vo.resendError = vo.$t('userRegistrationResendFailed')
-                        }
-                        else {
-                            console.log('resend unknown error', err)
-                            vo.resendError = vo.$t('loginUnknownError')
-                        }
+                        //後端統一 reject { key, msg }: msg 已依 lang 翻譯, 直接顯示
+                        vo.resendError = (err && err.msg) ? err.msg : vo.$t('loginUnknownError')
                     })
                 if (!ok) {
                     return

@@ -1110,6 +1110,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 srLog.info({ event: 'kpfun-createUser', lang, account })
                 let data = { lang, account, password, confirmPassword, name, email }
                 let r = await p.createUser(lang, data)
+                    .catch((err) => Promise.reject(_tErr(lang, err)))
                 return r
             },
 
@@ -1122,6 +1123,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             resendVerifyEmail: async (_t, lang, account, email) => {
                 srLog.info({ event: 'kpfun-resendVerifyEmail', lang, account })
                 let r = await p.resendVerifyEmail(lang, account, email)
+                    .catch((err) => Promise.reject(_tErr(lang, err)))
                 return r
             },
 
@@ -1153,20 +1155,22 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
             changeUserPassword: async (_t, token, lang, pwOld, pwNew) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
+                if (!_strictStr(token)) return Promise.reject(_tErr(lang, 'tokenExpired'))
                 //僅記 event / token / lang, 不記任何密碼明文 (對齊 ADR-014 + adminResetUserPassword 之記法).
                 srLog.info({ event: 'kpfun-changeUserPassword', token, lang })
                 //console.log('call checkTokenAndChangePassword...')
                 let r = await p.checkTokenAndChangePassword(token, lang, pwOld, pwNew)
+                    .catch((err) => Promise.reject(_tErr(lang, err)))
                 //console.log('call checkTokenAndChangePassword end')
                 return r
             },
 
             adminResetUserPassword: async (_t, token, lang, targetUserId) => {
-                if (!_strictStr(token, targetUserId)) return Promise.reject('token expired')
+                if (!_strictStr(token, targetUserId)) return Promise.reject(_tErr(lang, 'tokenExpired'))
                 //僅記 event / token / targetUserId, 不記任何密碼明文
                 srLog.info({ event: 'kpfun-adminResetUserPassword', token, lang, targetUserId })
                 let r = await p.adminResetUserPassword(token, lang, targetUserId)
+                    .catch((err) => Promise.reject(_tErr(lang, err)))
                 return r
             },
 

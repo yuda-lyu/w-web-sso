@@ -219,7 +219,7 @@ async function callRpc(funcName, args, token = 'dummy') {
                     return { ok: true, state, msg }
                 }
                 //pmm.reject → output.state='error'
-                let msgStr = (typeof msg === 'string') ? msg : (msg?.message ?? JSON.stringify(msg))
+                let msgStr = (typeof msg === 'string') ? msg : (msg?.key ?? msg?.message ?? JSON.stringify(msg))
                 return { ok: false, state, msg: msgStr }
             }
         }
@@ -295,7 +295,7 @@ describe('doubleclick API E2E — backend mutex 並行序列化回歸', function
         let errMsg = msgs.find((m) => !m || m === 'ok' ? false : true) //取出 error 訊息 (非 'ok')
         let combined = msgs.join(' | ')
         assert.strict.equal(
-            combined.includes('reset already triggered') || combined.includes('please wait'),
+            combined.includes('adminResetPasswordAlreadyTriggered'),
             true,
             `預期失敗訊息含 'reset already triggered' / 'please wait' (throttle), 實際: ${combined}`
         )
@@ -368,7 +368,7 @@ describe('doubleclick API E2E — backend mutex 並行序列化回歸', function
         let combined = msgs.join(' | ')
         assert.strict.equal(errorCount >= 1, true, `預期至少 1 次失敗 (第 2 次 throttle / 第 1 次 SMTP fail), 實際 errorCount=${errorCount}, msgs=${JSON.stringify(msgs)}`)
         assert.strict.equal(
-            combined.includes('resend throttled') || combined.includes('send email failed'),
+            combined.includes('userRegistrationResendThrottled') || combined.includes('userRegistrationResendFailed'),
             true,
             `預期失敗訊息含 'resend throttled' (mutex/throttle) 或 'send email failed' (SMTP 未配置), 實際: ${combined}`
         )
@@ -409,7 +409,7 @@ describe('doubleclick API E2E — backend mutex 並行序列化回歸', function
         //對應 procCore.mjs line 1043: reject('incorrect old password')
         let combined = msgs.join(' | ')
         assert.strict.equal(
-            combined.includes('incorrect old password'),
+            combined.includes('userChangePasswordIncorrectOld'),
             true,
             `預期失敗訊息含 'incorrect old password', 實際: ${combined}`
         )

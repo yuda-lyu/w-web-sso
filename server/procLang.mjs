@@ -679,6 +679,12 @@ let kpLang = {
         eng: 'Password change failed.',
         cht: '密碼變更失敗，請確認輸入密碼是否正確',
     },
+    //舊密碼不正確. 後端 reject 具體 key 供 log 識別 + kpfun _tErr 翻譯; 但前端 changePassword
+    //catch 統一顯示 userChangePasswordFail (anti-information-leakage, 不洩漏「舊密碼錯」vs「token 失效」).
+    userChangePasswordIncorrectOld: {
+        eng: 'The old password is incorrect.',
+        cht: '舊密碼不正確。',
+    },
     userChangePasswordForNetError: {
         eng: 'Password validation failed. Please try again later.',
         cht: '密碼檢測失敗，請稍後再試',
@@ -771,6 +777,10 @@ let kpLang = {
     userRegistrationResendFailed: {
         eng: 'Failed to send verification email. Please try again later.',
         cht: '驗證信寄送失敗，請稍後再試。',
+    },
+    userRegistrationResendThrottled: {
+        eng: 'A verification email was just sent. Please wait a moment before trying again.',
+        cht: '剛才已寄出驗證信，請稍候片刻再試。',
     },
     verifyEmailInvalidToken: {
         eng: 'Invalid or expired verification link.',
@@ -1095,6 +1105,10 @@ let kpLang = {
     adminResetPasswordFailed: {
         eng: `Failed to reset password`,
         cht: `重設密碼失敗`,
+    },
+    adminResetPasswordAlreadyTriggered: {
+        eng: `A password reset was just triggered. Please wait a moment before trying again.`,
+        cht: `剛才已觸發重設密碼，請稍候片刻再試。`,
     },
 
     //強制變更密碼 (使用者收信登入後 CheckYes 文字)
