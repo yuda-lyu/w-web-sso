@@ -867,6 +867,10 @@ let kpLang = {
     //     eng: `No token`,
     //     cht: `尚未新增金鑰資料`,
     // },
+    tokenDeleteCheckTokens: {
+        eng: `Delete checked token(s)`,
+        cht: `刪除勾選金鑰`,
+    },
     tokenSaveTokensFail: {
         eng: `Failed to save tokens`,
         cht: `儲存金鑰數據失敗`,
