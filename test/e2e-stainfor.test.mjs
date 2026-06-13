@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, baseUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, baseUrl, resetToBaseSeed, deleteNonBaseSeed, waitDrawerReady } from './e2e-setup.mjs'
 
 
 //
@@ -287,6 +287,11 @@ async function waitStaInforErrMsg(page, lang) {
 async function captureCardsOnly(page) {
     await page.mouse.move(0, 0)
     await page.waitForTimeout(500)
+    //clip 區 (x:0..1280, y:0..330) 含左側 WDrawer sidebar — captureCardsOnly 走裸 clip screenshot
+    //繞過 captureStable, 故須各自呼叫共用 waitDrawerReady, 等 sidebar drawer 展開到位才截圖,
+    //否則 token expired re-mount 時 sidebar 滑左外 (x<0) 之 flake 會被 clip 截入 (殷鑑: stainfor
+    //E2E-002-admin-token-expired-page-empty 偶發 sidebar 空白). 對齊「進後台截圖皆先 waitDrawerReady」.
+    await waitDrawerReady(page)
     let opts = { animations: 'disabled', clip: { x: 0, y: 0, width: 1280, height: 330 } }
     let prev = await page.screenshot(opts)
     for (let i = 0; i < 8; i++) {

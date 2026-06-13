@@ -234,17 +234,64 @@ if (typeof globalThis.after === 'function') {
 //CJK glyph lazy rasterization / GPU init / paint timing 等不可預測 pixel drift.
 //策略與 Playwright 內建 expect(page).toHaveScreenshot() 一致 (反覆截圖直到 settled).
 //
-//initialWaitMs 預設 500ms: 開頭等一段, 因為 retry-until-stable 治不了 setTimeout-based
+//initialWaitMs 預設 1500ms: 開頭等一段, 因為 retry-until-stable 治不了 setTimeout-based
 //delayed-reveal (如 WDrawer 內 setTimeout 300ms 後才把拖曳分隔條 opacity 0→1).
 //Playwright animations:'disabled' 不 fast-forward setTimeout, 所以 captureStable 若
 //在 300ms 內 settle 會 catch 到「未 reveal」state, 跨 session 與「已 reveal」state
-//byte-mismatch. 500ms initial wait 過了大部分 component lib 的 ~300ms 線 → 確定性
-//永遠 catch 到 reveal 後的 final state.
+//byte-mismatch. 1500ms initial wait 涵蓋 300ms × 3-5 連鎖動畫 + 確保 backstage sidebar
+//葉節點已 mount (供其後 drawer-ready 偵測判斷展開到位) → 確定性 catch reveal 後 final state.
 //
 //(詳: 全域 CLAUDE.md §6.3「截圖穩定性」+「setTimeout-based delayed reveal 的限制」)
 //
 //所有 baseline 端 (regen) 與比對端 (mocha) 都應用此 helper, 不要用裸 page.screenshot();
 //兩邊用同款 helper 才能保證 cold/warm browser 都產生一致的「page settled」截圖.
+//主動等 WDrawer drawer 整體「展開到位」(sidebar 導航項目 getBoundingClientRect x>=0) 之共用前置.
+//凡「進後台 (backstage)」之頁面都用 LayoutContent.vue 之 WDrawer 渲染左側 sidebar, 故所有
+//backstage 截圖前都須呼叫此 helper, 避免截到「sidebar 未展開」之 flake。
+//
+//根因 (w-screenctl 實測): backstage mount 後 navVisible (body innerText) 立即 ready, 但
+//WDrawer drawer 初始滑在 viewport 左外 (sidebar 導航項目 x≈-185), @domresize/autoSwitch
+//異步觸發後才滑入展開 (x>=0), 滯後 navDOM-ready ~150ms; 偶發 (CJK 字型光柵化 / 連跑資源
+//累積 / CPU 忙) 超過上游 wait → 截到 sidebar 空白 (flake: adduser-007 / resetpassword-
+//002/003/006 / modifyuser / stainfor-002 等 backstage 截圖, 後者 clip 區含 sidebar)。
+//
+//設計:
+//- 呼叫端須先確保 backstage sidebar 葉節點已 mount (captureStable 之 initialWaitMs=1500 /
+//  stainfor 之 waitStaInforReady/ErrMsg 已足); 此 helper 只負責「等 drawer 展開 x>=0」。
+//- 無 WDrawer 頁 (login / register / user view) 無 sidebar 帶導航葉節點 → items 為空 → 立即放行不卡。
+//- 偵測點用導航文字錨點 (eng + cht 全集) 而非 class (WDrawer 渲染後 DOM 無穩定 class)。
+//  ★ NAV 須與 LayoutContent.vue menus computed (mmStaInfor/mmUserInfor/mmUsersList/mmTokensList/
+//    mmIpsList) + server/procLang.mjs 對應 eng/cht 翻譯逐字同步; 未來新增/改名導航項須一併更新。
+//- 用 x < SIDEBAR_X_MAX 過濾「只看 viewport 左側 sidebar 帶」, 排除 content 區置中標題干擾:
+//  PageUser (user view) 以 $t('mmUserInfor') 置中當頁標題 (x≈viewport 中央); backstage content
+//  頁標題 x>=260; sidebar 導航項目 x: 展開 ~24-45 / flake 滑左外 ~-185, 皆 < 250。
+//- 失敗 (timeout) 不阻塞: .catch 吞掉, 交由呼叫端後續 retry-until-stable 兜底。
+async function waitDrawerReady(page) {
+    await page.waitForFunction(() => {
+        let NAV = [
+            'Statistics information', 'User information', 'Users list', 'Tokens list', 'Ips list',
+            '統計資訊', '使用者資訊', '使用者清單', '金鑰清單', 'IP清單',
+        ]
+        let SIDEBAR_X_MAX = 250
+        let items = Array.from(document.querySelectorAll('*')).filter((e) => {
+            if (e.children.length !== 0 || !NAV.includes((e.innerText || '').trim())) {
+                return false
+            }
+            //只取 viewport 左側 sidebar 帶之導航項目 (排除 content/user view 置中標題)
+            return e.getBoundingClientRect().x < SIDEBAR_X_MAX
+        })
+        if (items.length === 0) {
+            return true //無 sidebar 帶導航項目 (login/register/user view 等非 backstage 頁), 放行
+        }
+        //所有 sidebar 導航項目須展開到位 (width>0 且 x>=0, 排除 drawer 滑左外之 x<0 flake 態)
+        return items.every((el) => {
+            let b = el.getBoundingClientRect()
+            return b.width > 0 && b.x >= 0
+        })
+    }, null, { timeout: 10000, polling: 100 }).catch(() => {})
+}
+
+
 async function captureStable(page, opts = {}) {
     let { maxRetries = 8, intervalMs = 200, initialWaitMs = 1500 } = opts
     //animations: 'disabled' 是 baseline 的標配 (finite 動畫跳完, infinite 動畫 reset),
@@ -280,6 +327,12 @@ async function captureStable(page, opts = {}) {
             await new Promise(r => setTimeout(r, 50))
         }
     })
+
+    //主動等 WDrawer drawer 整體「展開到位」(共用 helper, 詳 waitDrawerReady 定義處註解).
+    //凡「進後台 (backstage)」之截圖都會遇 WDrawer sidebar, 都須先 waitDrawerReady 才截圖 —
+    //captureStable 內建涵蓋所有經 captureStable 之 backstage 截圖; 另有 stainfor captureCardsOnly
+    //(裸 clip screenshot 繞過 captureStable) 亦各自呼叫 waitDrawerReady 補上 (見該處).
+    await waitDrawerReady(page)
 
     //凍結 inline <svg> 的 SMIL animation: pauseAnimations() + setCurrentTime(0) 凍在 t=0
     //(Playwright animations:'disabled' 只凍 CSS, 不影響 SVG SMIL <animate> 標籤)
@@ -474,4 +527,4 @@ async function typeIntoInput(page, locator, value) {
 }
 
 
-export { startServersOnce, cleanup, captureStable, baseUrl, apiUrl, maskRegions, maskBelowY, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput }
+export { startServersOnce, cleanup, captureStable, waitDrawerReady, baseUrl, apiUrl, maskRegions, maskBelowY, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput }

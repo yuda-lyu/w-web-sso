@@ -796,27 +796,15 @@ async function captureRedirEmpty(page, lang) {
 
 //009 全表空 (header checkbox 全選 + trash 刪光 → save → CheckYes 'userAddEmpty')
 //刪光所有 row 後 layout 縮窄, 觸發 WDrawer ResizeObserver → autoSwitchToHide/Show, 此切換
-//可能在 waitCheckYes 結束後才完成, 導致 captureStable 抓到「sidebar 收合中」與「展開後」
-//兩個 stable state 隨機收斂. 額外等 sidebar 寬度連續 ~2s 不變才視為 settle.
+//可能在 waitCheckYes 結束後才完成, sidebar 在「收合中 (drawer 滑左外)」與「展開後」間隨機收斂.
+//drawer 展開到位偵測 (sidebar 導航項目 x>=0) 已抽成 captureStable 共用前置 (取代原本只在本
+//case 局部、且 '.w-drawer' selector 實際未命中 DOM 而空轉的 drawer width settle 偵測).
+//詳 e2e-setup.mjs captureStable 之「主動等 WDrawer drawer 整體展開到位」段.
 async function captureRowsEmpty(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
     await clickTrashAfterSelectAll(page)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    await page.waitForFunction(() => {
-        let drawer = document.querySelector('.w-drawer .panel') || document.querySelector('.w-drawer')
-        if (!drawer) return true
-        let key = '__drawerWidthSamples'
-        if (!window[key]) window[key] = []
-        let w = Math.round(drawer.getBoundingClientRect().width)
-        window[key].push({ t: Date.now(), w })
-        //保留最近 2 秒 samples
-        let cutoff = Date.now() - 2000
-        window[key] = window[key].filter(s => s.t >= cutoff)
-        //需要 >=10 samples 且寬度全部一致才視為 settle
-        if (window[key].length < 10) return false
-        return window[key].every(s => s.w === window[key][0].w)
-    }, null, { timeout: 10000, polling: 200 }).catch(() => {})
     return await captureStable(page)
 }
 
