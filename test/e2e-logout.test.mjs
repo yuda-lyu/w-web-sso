@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
 
 
 //
@@ -452,9 +452,7 @@ else {
                 //像素斷言 (補強)
                 let buf = await captureStable(page)
                 let baselinePath = bp(lang, 'E2E-001-logout-from-backstage')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}, 請先執行 node test/e2e-logout.test.mjs --baseline`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: logout-${lang}-001-logout-from-backstage`)
+                assertBaselineMatch(buf, baselinePath, `logout-${lang}-001-logout-from-backstage`)
 
                 //語意斷言 3: token 清空 (mUI.logout 用 setItem('', '') 不 removeItem)
                 let tokenAfter = await getLsToken(page)
@@ -481,9 +479,7 @@ else {
 
                 let buf = await captureStable(page)
                 let baselinePath = bp(lang, 'E2E-002-logout-from-user-view')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}, 請先執行 node test/e2e-logout.test.mjs --baseline`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: logout-${lang}-002-logout-from-user-view`)
+                assertBaselineMatch(buf, baselinePath, `logout-${lang}-002-logout-from-user-view`)
 
                 let tokenAfter = await getLsToken(page)
                 assert.strict.equal(tokenAfter, '', `logout 後 LS token 應為空字串, 實際: ${JSON.stringify(tokenAfter)}`)
@@ -509,9 +505,7 @@ else {
                 //像素斷言 (補強) — 終態 login 頁應與 Item 2 (logout-from-user-view) 視覺一致, 但獨立 baseline 留住規格意圖
                 let buf = await captureStable(page)
                 let baselinePath = bp(lang, 'E2E-003-logout-backend-reject')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}, 請先執行 node test/e2e-logout.test.mjs --baseline`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: logout-${lang}-003-logout-backend-reject`)
+                assertBaselineMatch(buf, baselinePath, `logout-${lang}-003-logout-backend-reject`)
 
                 //語意斷言: token 已被清空 (後端 reject 不阻擋前端 LS 清空)
                 let tokenAfter = await getLsToken(page)
@@ -564,9 +558,7 @@ else {
                 //像素斷言 (補強) — 終態仍在 user view (viewState 未切 login)
                 let buf = await captureStable(page)
                 let baselinePath = bp(lang, 'E2E-004-logout-webkey-missing')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}, 請先執行 node test/e2e-logout.test.mjs --baseline`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: logout-${lang}-004-logout-webkey-missing`)
+                assertBaselineMatch(buf, baselinePath, `logout-${lang}-004-logout-webkey-missing`)
 
                 //語意斷言: LS token 仍存在 (未被清空, 因 logout 前置 reject)
                 let tokenAfter = await getLsToken(page)
@@ -594,9 +586,7 @@ else {
                 //像素斷言
                 let buf = await captureStable(page)
                 let baselinePath = bp(lang, 'E2E-005-logout-then-reload')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}, 請先執行 node test/e2e-logout.test.mjs --baseline`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: logout-${lang}-005-logout-then-reload`)
+                assertBaselineMatch(buf, baselinePath, `logout-${lang}-005-logout-then-reload`)
 
                 //語意斷言: 仍在 login 頁
                 await waitForTextVisible(page, t.login, 10000)

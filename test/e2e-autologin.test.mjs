@@ -7,7 +7,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, maskRegions, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, assertBaselineMatch, baseUrl, maskRegions, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
 
 
 //
@@ -548,9 +548,7 @@ else {
                 let buf = await autoLoginScreenshot(page, lang, { token: okToken })
                 await assertSpecForCase(page, lang, 'E2E-001-ok-redir')
                 let baselinePath = bp(lang, 'E2E-001-ok-redir')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: autologin-${lang}-001-ok-redir`)
+                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-001-ok-redir`)
             })
 
             it('E2E-002-ok-backstage: token 有效 + view=backstage → 停留 backstage', async function() {
@@ -558,9 +556,7 @@ else {
                 let buf = await autoLoginBackstageMasked(page, lang, { token: okToken })
                 await assertSpecForCase(page, lang, 'E2E-002-ok-backstage')
                 let baselinePath = bp(lang, 'E2E-002-ok-backstage')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: autologin-${lang}-002-ok-backstage`)
+                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-002-ok-backstage`)
             })
 
             it('E2E-003-ok-user: token 有效 + view=user → 停留 user view', async function() {
@@ -568,18 +564,14 @@ else {
                 let buf = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'user' })
                 await assertSpecForCase(page, lang, 'E2E-003-ok-user')
                 let baselinePath = bp(lang, 'E2E-003-ok-user')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: autologin-${lang}-003-ok-user`)
+                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-003-ok-user`)
             })
 
             it('E2E-004-no-token: 無 token → 回登入頁', async function() {
                 let buf = await autoLoginScreenshot(page, lang, { token: '' })
                 await assertSpecForCase(page, lang, 'E2E-004-no-token')
                 let baselinePath = bp(lang, 'E2E-004-no-token')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: autologin-${lang}-004-no-token`)
+                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-004-no-token`)
             })
 
             it('E2E-005-no-redir: token 有效但 user.redir 為空 → alert + 回登入頁', async function() {
@@ -587,9 +579,7 @@ else {
                 let buf = await autoLoginScreenshot(page, lang, { token: noRedirToken, waitMs: 3500 })
                 await assertSpecForCase(page, lang, 'E2E-005-no-redir')
                 let baselinePath = bp(lang, 'E2E-005-no-redir')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: autologin-${lang}-005-no-redir`)
+                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-005-no-redir`)
             })
 
             // 以下情境視覺結果與 E2E-004-no-token 相同（autoLogin reject 後 App.vue catch 統一回登入頁，無顯示錯誤）
@@ -600,24 +590,21 @@ else {
                 let buf = await autoLoginScreenshot(page, lang, { token: inactiveToken })
                 await assertSpecForCase(page, lang, 'E2E-006-inactive-user')
                 let baselinePath = bp(lang, 'E2E-004-no-token')
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, '截圖與 E2E-004-no-token 不一致（inactive user 應與無 token 視覺相同）')
+                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-006-inactive-user-shared-E2E-004`)
             })
 
             it('E2E-007-stale-token: LS 有 token 但 DB 查無 → 共用 E2E-004 baseline', async function() {
                 let buf = await autoLoginScreenshot(page, lang, { token: 'fake-token-not-in-db' })
                 await assertSpecForCase(page, lang, 'E2E-007-stale-token')
                 let baselinePath = bp(lang, 'E2E-004-no-token')
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, '截圖與 E2E-004-no-token 不一致（stale token 應與無 token 視覺相同）')
+                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-007-stale-token-shared-E2E-004`)
             })
 
             it('E2E-008-expired-token: token 在 DB 但 timeEnd 已過 → 共用 E2E-004 baseline', async function() {
                 let buf = await autoLoginScreenshot(page, lang, { token: expiredToken })
                 await assertSpecForCase(page, lang, 'E2E-008-expired-token')
                 let baselinePath = bp(lang, 'E2E-004-no-token')
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, '截圖與 E2E-004-no-token 不一致（expired token 應與無 token 視覺相同）')
+                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-008-expired-token-shared-E2E-004`)
             })
 
             it('E2E-009-ok-backstage-nonadmin: 非 admin token + view=backstage → 停留 backstage 但僅 UserInfor (LayoutContent isAdmin filter)', async function() {
@@ -635,9 +622,7 @@ else {
                 )
                 //視覺斷言: pixel baseline byte-equal
                 let baselinePath = bp(lang, 'E2E-009-ok-backstage-nonadmin')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: autologin-${lang}-E2E-009-ok-backstage-nonadmin`)
+                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-E2E-009-ok-backstage-nonadmin`)
             })
 
         })

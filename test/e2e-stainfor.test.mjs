@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, baseUrl, resetToBaseSeed, deleteNonBaseSeed, waitDrawerReady } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, baseUrl, resetToBaseSeed, deleteNonBaseSeed, waitDrawerReady, assertBaselineMatch } from './e2e-setup.mjs'
 
 
 //
@@ -470,11 +470,8 @@ else {
             await assertSpecForCase(page, lang, name)
         }
         let baselinePath = bp(lang, name)
-        assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-        let baselineBuf = fs.readFileSync(baselinePath)
-        if (!fs.existsSync('./tmp')) fs.mkdirSync('./tmp', { recursive: true })
-        fs.writeFileSync(`./tmp/stainfor-${lang}-${name}-test.png`, buf)
-        assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: stainfor-${lang}-${name}`)
+        //fail 時自動保留 capture + baseline 到 ./testPending (不覆蓋, 帶 timestamp) 供 diff
+        assertBaselineMatch(buf, baselinePath, `stainfor-${lang}-${name}`)
     }
 
 

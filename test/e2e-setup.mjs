@@ -4,6 +4,7 @@
 import 'dotenv/config'
 import { spawn, execSync } from 'child_process'
 import fs from 'fs'
+import path from 'path'
 import JSON5 from 'json5'
 import sharp from 'sharp'
 import { woItems } from '../g.mOrm.mjs'
@@ -527,4 +528,42 @@ async function typeIntoInput(page, locator, value) {
 }
 
 
-export { startServersOnce, cleanup, captureStable, waitDrawerReady, baseUrl, apiUrl, maskRegions, maskBelowY, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput }
+//baseline 比對 + fail 時保留證據到 ./testPending (不覆蓋), 供事後 pixel diff 定位 flake/破壞.
+//pass: 靜默通過. fail: 將「當次 capture」與「baseline」雙雙存檔 (帶 timestamp 不覆蓋) 後 throw.
+//統一取代各 e2e 散落的 `assert.strict.equal(buf.equals(baselineBuf), true, msg)` + tmp dump:
+//  - tmp dump 每跑覆蓋, 偶發 flake 當次證據常被後續跑蓋掉 → 無法 diff (殷鑑: adduser E2E-003
+//    drawer 第一批 fail, dump 已被覆蓋, 後續 7 情境無法重現 → 無證據可指根因).
+//  - ./testPending 帶 timestamp 保留, 任何 fail 當次 capture+baseline 都留存, 下次必有 diff 證據.
+//label: 給檔名用之可讀標籤 (如 'adduser-cht-E2E-003-account-duplicate'); 省略則用 baseline 檔名.
+//./testPending 為 debug 暫存產物, 已 gitignore, 不進 repo.
+function assertBaselineMatch(buf, baselinePath, label) {
+    if (!fs.existsSync(baselinePath)) {
+        throw new Error(`標準圖不存在: ${baselinePath} (請先執行對應 e2e --baseline 產製)`)
+    }
+    let baselineBuf = fs.readFileSync(baselinePath)
+    if (buf.equals(baselineBuf)) {
+        return
+    }
+    //fail: 保留 capture + baseline 到 ./testPending (不覆蓋, 帶 timestamp)
+    let dir = './testPending'
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true })
+    }
+    let safe = (label || path.basename(baselinePath, '.png')).replace(/[^\w.-]/g, '_')
+    //ms 精度 timestamp (2026-06-13_14-30-45-123); 同 label 同毫秒撞檔機率近 0, 仍加 -N 後綴保證絕不覆蓋
+    let ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 23)
+    let stem = `${dir}/${safe}__${ts}`
+    let n = 0
+    while (fs.existsSync(`${stem}__capture.png`) || fs.existsSync(`${stem}__baseline.png`)) {
+        n += 1
+        stem = `${dir}/${safe}__${ts}-${n}`
+    }
+    let capPath = `${stem}__capture.png`
+    let basePath = `${stem}__baseline.png`
+    fs.writeFileSync(capPath, buf)
+    fs.writeFileSync(basePath, baselineBuf)
+    throw new Error(`截圖與標準圖不一致: ${safe} — capture + baseline 已存 ${capPath} / ${basePath} 供 diff`)
+}
+
+
+export { startServersOnce, cleanup, captureStable, waitDrawerReady, assertBaselineMatch, baseUrl, apiUrl, maskRegions, maskBelowY, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput }

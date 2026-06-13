@@ -4,6 +4,7 @@ node_modules
 CLAUDE.md
 .env
 tmp
+testPending
 user_data
 
 _logs

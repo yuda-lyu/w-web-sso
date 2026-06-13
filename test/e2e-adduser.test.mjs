@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
 
 
 //
@@ -1259,12 +1259,8 @@ else {
 
                     //像素斷言 (補強, 視覺回歸)
                     let baselinePath = bp(lang, name)
-                    assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                    let baselineBuf = fs.readFileSync(baselinePath)
-                    //debug: assertion 前先存 test capture, 確保 fail 時有證據可 diff
-                    if (!fs.existsSync('./tmp')) fs.mkdirSync('./tmp', { recursive: true })
-                    fs.writeFileSync(`./tmp/adduser-${lang}-${name}-test.png`, buf)
-                    assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: adduser-${lang}-${name}`)
+                    //fail 時自動保留 capture + baseline 到 ./testPending (不覆蓋, 帶 timestamp) 供 diff
+                    assertBaselineMatch(buf, baselinePath, `adduser-${lang}-${name}`)
                 })
             }
 

@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, assertBaselineMatch } from './e2e-setup.mjs'
 
 
 //
@@ -567,15 +567,8 @@ else {
             //工具: 比對 buf 與 baseline + 文件存在性
             function assertBaseline(buf, name) {
                 let baselinePath = bp(lang, name)
-                assert.strict.equal(fs.existsSync(baselinePath), true, `baseline 不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                if (!buf.equals(baselineBuf)) {
-                    //落地供 diff (§6.3 標準圖管理「例外」)
-                    if (!fs.existsSync('./tmp')) fs.mkdirSync('./tmp', { recursive: true })
-                    let diffPath = `./tmp/deleteuser-${lang}-${name}-test.png`
-                    fs.writeFileSync(diffPath, buf)
-                    assert.fail(`pixel mismatch: deleteuser-${lang}-${name} (test buf=${buf.length}B 落地至 ${diffPath}, baseline=${baselineBuf.length}B at ${baselinePath})`)
-                }
+                //fail 時自動保留 capture + baseline 到 ./testPending (不覆蓋, 帶 timestamp) 供 diff
+                assertBaselineMatch(buf, baselinePath, `deleteuser-${lang}-${name}`)
             }
 
 

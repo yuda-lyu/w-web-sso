@@ -7,7 +7,7 @@ import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, baseUrl, apiUrl, assertBaselineMatch, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput } from './e2e-setup.mjs'
 
 
 //
@@ -872,9 +872,7 @@ else {
                 let buf = await captureFormInitial(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-001-form-initial')
                 let baselinePath = bp(lang, 'E2E-001-form-initial')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-001-form-initial`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-001-form-initial`)
                 await assertSbOverflows(page, `register-${lang}-001-form-initial`)
             })
 
@@ -882,9 +880,7 @@ else {
                 let buf = await capturePwTooShort(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-002-pw-too-short')
                 let baselinePath = bp(lang, 'E2E-002-pw-too-short')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-002-pw-too-short`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-002-pw-too-short`)
                 await assertSbOverflows(page, `register-${lang}-002-pw-too-short`)
             })
 
@@ -892,9 +888,7 @@ else {
                 let buf = await capturePwMismatch(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-003-pw-mismatch')
                 let baselinePath = bp(lang, 'E2E-003-pw-mismatch')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-003-pw-mismatch`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-003-pw-mismatch`)
                 await assertSbOverflows(page, `register-${lang}-003-pw-mismatch`)
             })
 
@@ -902,9 +896,7 @@ else {
                 let buf = await capturePwMultiErrors(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-004-pw-multi-errors')
                 let baselinePath = bp(lang, 'E2E-004-pw-multi-errors')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-004-pw-multi-errors`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-004-pw-multi-errors`)
                 await assertSbOverflows(page, `register-${lang}-004-pw-multi-errors`)
             })
 
@@ -913,9 +905,7 @@ else {
                 let buf = await captureSuccess(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-005-success')
                 let baselinePath = bp(lang, 'E2E-005-success')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-005-success`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-005-success`)
                 let okText = lang === 'eng' ? 'OK' : '確認'
                 await page.locator(`text="${okText}"`).first().click().catch(() => {})
                 await page.waitForTimeout(500)
@@ -925,36 +915,28 @@ else {
                 let buf = await captureVerifyResult(page, lang, verifyTokens.success[lang])
                 await assertSpecForCase(page, lang, 'E2E-006-verify-success')
                 let baselinePath = bp(lang, 'E2E-006-verify-success')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-006-verify-success`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-006-verify-success`)
             })
 
             it('E2E-007-verify-invalid: 驗證連結 token 無效 → server-rendered 失敗頁', async function() {
                 let buf = await captureVerifyResult(page, lang, 'fake-token-not-in-db')
                 await assertSpecForCase(page, lang, 'E2E-007-verify-invalid')
                 let baselinePath = bp(lang, 'E2E-007-verify-invalid')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-007-verify-invalid`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-007-verify-invalid`)
             })
 
             it('E2E-008-verify-already: 驗證連結 token 已驗證 → server-rendered 已驗證頁', async function() {
                 let buf = await captureVerifyResult(page, lang, verifyTokens.already[lang])
                 await assertSpecForCase(page, lang, 'E2E-008-verify-already')
                 let baselinePath = bp(lang, 'E2E-008-verify-already')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-008-verify-already`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-008-verify-already`)
             })
 
             it('E2E-009-back-to-login: 點 Back to login link → input 從 5 回到 2 (登入頁)', async function() {
                 let buf = await captureBackToLogin(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-009-back-to-login')
                 let baselinePath = bp(lang, 'E2E-009-back-to-login')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-009-back-to-login`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-009-back-to-login`)
                 //驗證 input 數 = 2 (代表確實回到 login mode)
                 let inpCount = await page.locator('input').count()
                 assert.strict.equal(inpCount, 2, `Back to login 後應有 2 個 input, 實際 ${inpCount}`)
@@ -964,9 +946,7 @@ else {
                 let buf = await captureFieldEmpty(page, lang, 'account')
                 await assertSpecForCase(page, lang, 'E2E-010-account-empty')
                 let baselinePath = bp(lang, 'E2E-010-account-empty')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-010-account-empty`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-010-account-empty`)
                 //驗證 register form 仍有 5 input (未送出, viewMode 仍為 register)
                 let inpCount = await page.locator('input').count()
                 assert.strict.equal(inpCount, 5, `account 空 + Submit 灰態, form 仍應 5 input, 實際 ${inpCount}`)
@@ -976,9 +956,7 @@ else {
                 let buf = await captureFieldEmpty(page, lang, 'password')
                 await assertSpecForCase(page, lang, 'E2E-011-password-empty')
                 let baselinePath = bp(lang, 'E2E-011-password-empty')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-011-password-empty`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-011-password-empty`)
                 let inpCount = await page.locator('input').count()
                 assert.strict.equal(inpCount, 5, `password 空 + Submit 灰態, form 仍應 5 input, 實際 ${inpCount}`)
             })
@@ -987,9 +965,7 @@ else {
                 let buf = await captureFieldEmpty(page, lang, 'email')
                 await assertSpecForCase(page, lang, 'E2E-012-email-empty')
                 let baselinePath = bp(lang, 'E2E-012-email-empty')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-012-email-empty`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-012-email-empty`)
                 let inpCount = await page.locator('input').count()
                 assert.strict.equal(inpCount, 5, `email 空 + Submit 灰態, form 仍應 5 input, 實際 ${inpCount}`)
             })
@@ -998,9 +974,7 @@ else {
                 let buf = await captureFieldEmpty(page, lang, 'name')
                 await assertSpecForCase(page, lang, 'E2E-013-name-empty')
                 let baselinePath = bp(lang, 'E2E-013-name-empty')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-013-name-empty`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-013-name-empty`)
                 let inpCount = await page.locator('input').count()
                 assert.strict.equal(inpCount, 5, `name 空 + Submit 灰態, form 仍應 5 input, 實際 ${inpCount}`)
             })
@@ -1024,9 +998,7 @@ else {
                 assert.strict.equal(inpCount, 5, `後端 reject 後 form 仍應為 register mode (5 input), 實際 ${inpCount}`)
                 //pixel baseline
                 let baselinePath = bp(lang, 'E2E-014-email-format-invalid')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-E2E-014-email-format-invalid`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-E2E-014-email-format-invalid`)
             })
 
             it('E2E-015-account-duplicate: 帳號已被註冊 → 後端 reject → inline regError 紅字', async function() {
@@ -1046,9 +1018,7 @@ else {
                 let inpCount = await page.locator('input').count()
                 assert.strict.equal(inpCount, 5, `後端 reject 後 form 仍應為 register mode (5 input), 實際 ${inpCount}`)
                 let baselinePath = bp(lang, 'E2E-015-account-duplicate')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-E2E-015-account-duplicate`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-E2E-015-account-duplicate`)
             })
 
             it('E2E-016-email-duplicate: email 已被註冊 → 後端 reject → inline regError 紅字', async function() {
@@ -1068,18 +1038,14 @@ else {
                 let inpCount = await page.locator('input').count()
                 assert.strict.equal(inpCount, 5, `後端 reject 後 form 仍應為 register mode (5 input), 實際 ${inpCount}`)
                 let baselinePath = bp(lang, 'E2E-016-email-duplicate')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-E2E-016-email-duplicate`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-E2E-016-email-duplicate`)
             })
 
             it('E2E-020-resend-email-mismatch: 未驗證 login → resend UI → 錯 email → resendError inline 紅字', async function() {
                 let buf = await captureResendEmailMismatch(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-020-resend-email-mismatch')
                 let baselinePath = bp(lang, 'E2E-020-resend-email-mismatch')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-020-resend-email-mismatch`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-020-resend-email-mismatch`)
             })
 
         })
@@ -1143,9 +1109,7 @@ else {
 
                 //pixel baseline
                 let baselinePath = bp(lang, 'E2E-017-registration-not-allowed')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: register-${lang}-E2E-017-registration-not-allowed`)
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-E2E-017-registration-not-allowed`)
             })
         }
 

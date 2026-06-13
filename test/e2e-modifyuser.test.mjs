@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch } from './e2e-setup.mjs'
 
 
 //
@@ -914,12 +914,8 @@ else {
             //通用斷言: 截圖比對 baseline (語意斷言由各 case 內補)
             async function assertBaseline(buf, caseName) {
                 let baselinePath = bp(lang, caseName)
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}, 請先執行 node test/e2e-modifyuser.test.mjs --baseline`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                //debug: assertion 前先存 test capture, 確保 fail 時有證據可 diff
-                if (!fs.existsSync('./tmp')) fs.mkdirSync('./tmp', { recursive: true })
-                fs.writeFileSync(`./tmp/modifyuser-${lang}-${caseName}-test.png`, buf)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: modifyuser-${lang}-${caseName}`)
+                //fail 時自動保留 capture + baseline 到 ./testPending (不覆蓋, 帶 timestamp) 供 diff
+                assertBaselineMatch(buf, baselinePath, `modifyuser-${lang}-${caseName}`)
             }
 
 

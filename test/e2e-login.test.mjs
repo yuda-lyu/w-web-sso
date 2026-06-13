@@ -7,7 +7,7 @@ import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
 
 //AgentMail key / inbox: 由 env var 提供, 不寫死 in repo (避免 public open-source repo 內含 live secret).
 //使用前 export AGENTMAIL_API_KEY=<key> AGENTMAIL_INBOX_ID=<inbox> (對 notverify-flow 之 email 驗證 case 必要).
@@ -880,14 +880,7 @@ else {
                     await assertSpecForCase(page, lang, u.screenshotName)
 
                     //像素斷言 (補強)
-                    assert.strict.equal(
-                        fs.existsSync(baselinePath),
-                        true,
-                        `標準圖不存在: ${baselinePath}，請先執行 node test/e2e-login.test.mjs --baseline`
-                    )
-
-                    let baselineBuf = fs.readFileSync(baselinePath)
-                    assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: login-${lang}-${u.screenshotName}`)
+                    assertBaselineMatch(buf, baselinePath, `login-${lang}-${u.screenshotName}`)
                 })
             }
 
@@ -919,9 +912,7 @@ else {
 
                         //像素斷言 (補強)
                         let baselinePath = bp(lang, name)
-                        assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                        let baselineBuf = fs.readFileSync(baselinePath)
-                        assert.strict.equal(bufs[name].equals(baselineBuf), true, `截圖與標準圖不一致: login-${lang}-${name}`)
+                        assertBaselineMatch(bufs[name], baselinePath, `login-${lang}-${name}`)
                     })
                 }
             })
@@ -935,9 +926,7 @@ else {
                 it('E2E-011-view-backstage', async function() {
                     await assertSpecForCase(page, lang, 'E2E-011-view-backstage')
                     let baselinePath = bp(lang, 'E2E-011-view-backstage')
-                    assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                    let baselineBuf = fs.readFileSync(baselinePath)
-                    assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: login-${lang}-011-view-backstage`)
+                    assertBaselineMatch(buf, baselinePath, `login-${lang}-011-view-backstage`)
                 })
             })
 
@@ -950,9 +939,7 @@ else {
                 it('E2E-012-view-user', async function() {
                     await assertSpecForCase(page, lang, 'E2E-012-view-user')
                     let baselinePath = bp(lang, 'E2E-012-view-user')
-                    assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                    let baselineBuf = fs.readFileSync(baselinePath)
-                    assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: login-${lang}-012-view-user`)
+                    assertBaselineMatch(buf, baselinePath, `login-${lang}-012-view-user`)
                 })
             })
 
@@ -965,9 +952,7 @@ else {
                 it('E2E-013-resend-invalid-account', async function() {
                     await assertSpecForCase(page, lang, 'E2E-013-resend-invalid-account')
                     let baselinePath = bp(lang, 'E2E-013-resend-invalid-account')
-                    assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                    let baselineBuf = fs.readFileSync(baselinePath)
-                    assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: login-${lang}-013-resend-invalid-account`)
+                    assertBaselineMatch(buf, baselinePath, `login-${lang}-013-resend-invalid-account`)
                 })
             })
 
@@ -982,9 +967,7 @@ else {
                 it('E2E-014-resend-already-verified', async function() {
                     await assertSpecForCase(page, lang, 'E2E-014-resend-already-verified')
                     let baselinePath = bp(lang, 'E2E-014-resend-already-verified')
-                    assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                    let baselineBuf = fs.readFileSync(baselinePath)
-                    assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: login-${lang}-014-resend-already-verified`)
+                    assertBaselineMatch(buf, baselinePath, `login-${lang}-014-resend-already-verified`)
                 })
             })
 
@@ -999,9 +982,7 @@ else {
                 it(`015-account-not-exist (共用 login-${lang}-002-wrong-pw baseline)`, async function() {
                     await assertSpecForCase(page, lang, 'E2E-015-account-not-exist')
                     let baselinePath = bp(lang, 'E2E-002-wrong-pw')
-                    assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                    let baselineBuf = fs.readFileSync(baselinePath)
-                    assert.strict.equal(buf.equals(baselineBuf), true, `截圖與 login-${lang}-002 不一致（帳號不存在應與密碼錯顯示完全相同，防帳號列舉）`)
+                    assertBaselineMatch(buf, baselinePath, `login-${lang}-015-account-not-exist-shared-002`)
                 })
             })
 
@@ -1014,9 +995,7 @@ else {
                 it('E2E-016-login-no-redir', async function() {
                     await assertSpecForCase(page, lang, 'E2E-016-login-no-redir')
                     let baselinePath = bp(lang, 'E2E-016-login-no-redir')
-                    assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                    let baselineBuf = fs.readFileSync(baselinePath)
-                    assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: login-${lang}-016-login-no-redir`)
+                    assertBaselineMatch(buf, baselinePath, `login-${lang}-016-login-no-redir`)
                 })
             })
         })
@@ -1100,9 +1079,7 @@ else {
             //baseline pixel 比對 (eng 一份)
             let buf = await captureEyeStable(page)
             let baselinePath = bp('eng', 'E2E-017-password-hidden')
-            assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-            let baselineBuf = fs.readFileSync(baselinePath)
-            assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: login-eng-E2E-017-password-hidden`)
+            assertBaselineMatch(buf, baselinePath, `login-eng-E2E-017-password-hidden`)
         })
 
         it('E2E-018-password-shown: 點 eye icon → 切換明文 (input type=text, eye icon = mdi-eye)', async function() {
@@ -1116,9 +1093,7 @@ else {
             //baseline pixel 比對
             let buf = await captureEyeStable(page)
             let baselinePath = bp('eng', 'E2E-018-password-shown')
-            assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-            let baselineBuf = fs.readFileSync(baselinePath)
-            assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: login-eng-E2E-018-password-shown`)
+            assertBaselineMatch(buf, baselinePath, `login-eng-E2E-018-password-shown`)
         })
 
         it('toggle-back-to-hidden: 點兩次 eye 回隱藏態 (DOM only, 與 E2E-017 視覺等同, 不重複 baseline)', async function() {

@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, assertBaselineMatch } from './e2e-setup.mjs'
 
 
 //
@@ -879,12 +879,8 @@ else {
             await assertSpecForCase(page, lang, name)
         }
         let baselinePath = bp(lang, name)
-        assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-        let baselineBuf = fs.readFileSync(baselinePath)
-        //debug: assertion 前先存 test capture, 確保 fail 時有證據可 diff
-        if (!fs.existsSync('./tmp')) fs.mkdirSync('./tmp', { recursive: true })
-        fs.writeFileSync(`./tmp/resetpassword-${lang}-${name}-test.png`, buf)
-        assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: resetpassword-${lang}-${name}`)
+        //fail 時自動保留 capture + baseline 到 ./testPending (不覆蓋, 帶 timestamp) 供 diff
+        assertBaselineMatch(buf, baselinePath, `resetpassword-${lang}-${name}`)
     }
 
     for (let lang of langs) {

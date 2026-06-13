@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
 
 
 //
@@ -617,9 +617,7 @@ else {
             it('E2E-001-form-initial: 點變更密碼，表單剛展開', async function() {
                 let buf = await captureFormInitial(page, lang)
                 let baselinePath = bp(lang, 'E2E-001-form-initial')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-001-form-initial`)
+                assertBaselineMatch(buf, baselinePath, `changepassword-${lang}-001-form-initial`)
                 await assertSpecForCase(page, lang, 'E2E-001-form-initial')
                 await assertSbOverflows(page, `changepassword-${lang}-001-form-initial`)
             })
@@ -628,9 +626,7 @@ else {
                 let buf = await captureOldEmpty(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-002-old-empty')
                 let baselinePath = bp(lang, 'E2E-002-old-empty')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-002-old-empty`)
+                assertBaselineMatch(buf, baselinePath, `changepassword-${lang}-002-old-empty`)
                 await assertSbOverflows(page, `changepassword-${lang}-002-old-empty`)
             })
 
@@ -638,9 +634,7 @@ else {
                 let buf = await captureNewEmpty(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-003-new-empty')
                 let baselinePath = bp(lang, 'E2E-003-new-empty')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-003-new-empty`)
+                assertBaselineMatch(buf, baselinePath, `changepassword-${lang}-003-new-empty`)
                 await assertSbOverflows(page, `changepassword-${lang}-003-new-empty`)
             })
 
@@ -648,9 +642,7 @@ else {
                 let buf = await captureConfirmEmpty(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-004-confirm-empty')
                 let baselinePath = bp(lang, 'E2E-004-confirm-empty')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-004-confirm-empty`)
+                assertBaselineMatch(buf, baselinePath, `changepassword-${lang}-004-confirm-empty`)
                 await assertSbOverflows(page, `changepassword-${lang}-004-confirm-empty`)
             })
 
@@ -658,9 +650,7 @@ else {
                 let buf = await capturePwMismatch(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-005-pw-mismatch')
                 let baselinePath = bp(lang, 'E2E-005-pw-mismatch')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-005-pw-mismatch`)
+                assertBaselineMatch(buf, baselinePath, `changepassword-${lang}-005-pw-mismatch`)
                 await assertSbOverflows(page, `changepassword-${lang}-005-pw-mismatch`)
             })
 
@@ -668,9 +658,7 @@ else {
                 let buf = await capturePwPolicyFail(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-006-pw-policy-fail')
                 let baselinePath = bp(lang, 'E2E-006-pw-policy-fail')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-006-pw-policy-fail`)
+                assertBaselineMatch(buf, baselinePath, `changepassword-${lang}-006-pw-policy-fail`)
                 await assertSbOverflows(page, `changepassword-${lang}-006-pw-policy-fail`)
             })
 
@@ -678,9 +666,7 @@ else {
                 let buf = await captureOldWrong(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-007-old-wrong')
                 let baselinePath = bp(lang, 'E2E-007-old-wrong')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-007-old-wrong`)
+                assertBaselineMatch(buf, baselinePath, `changepassword-${lang}-007-old-wrong`)
                 await assertSbOverflows(page, `changepassword-${lang}-007-old-wrong`)
             })
 
@@ -688,9 +674,7 @@ else {
                 let buf = await captureNetworkError(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-009-network-error')
                 let baselinePath = bp(lang, 'E2E-009-network-error')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-009-network-error`)
+                assertBaselineMatch(buf, baselinePath, `changepassword-${lang}-009-network-error`)
             })
 
             it('E2E-010-token-invalid: token 失效 (DB 中途刪除) → 舊密碼下方紅字「變更失敗」(共用 E2E-007 baseline)', async function() {
@@ -698,18 +682,14 @@ else {
                 await assertSpecForCase(page, lang, 'E2E-010-token-invalid')
                 //共用 E2E-007 baseline (視覺等同, chPwOldError = '變更失敗')
                 let baselinePath = bp(lang, 'E2E-007-old-wrong')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `共用標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與共用 E2E-007 標準圖不一致: changepassword-${lang}-010-token-invalid`)
+                assertBaselineMatch(buf, baselinePath, `changepassword-${lang}-010-token-invalid`)
             })
 
             it('E2E-008-success: 三欄填妥+正確 → 表單收起回 user info', async function() {
                 let buf = await captureSuccess(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-008-success')
                 let baselinePath = bp(lang, 'E2E-008-success')
-                assert.strict.equal(fs.existsSync(baselinePath), true, `標準圖不存在: ${baselinePath}`)
-                let baselineBuf = fs.readFileSync(baselinePath)
-                assert.strict.equal(buf.equals(baselineBuf), true, `截圖與標準圖不一致: changepassword-${lang}-008-success`)
+                assertBaselineMatch(buf, baselinePath, `changepassword-${lang}-008-success`)
                 //dismiss success modal (點 OK) 留乾淨終態
                 let okText = lang === 'eng' ? 'OK' : '確認'
                 await page.locator(`text="${okText}"`).first().click().catch(() => {})
