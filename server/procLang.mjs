@@ -103,10 +103,10 @@ let kpLang = {
         cht: '等待數據中...',
     },
 
-    isEditabled: {
-        eng: 'Editable',
-        cht: '是否編輯',
-    },
+    // isEditabled: {
+    //     eng: 'Editable',
+    //     cht: '是否編輯',
+    // },
     saveChanges: {
         eng: `Save changes`,
         cht: `儲存變更`,
@@ -144,10 +144,10 @@ let kpLang = {
         cht: `取得數據失敗，請稍後再試`,
     },
 
-    userIdCreate: {
-        eng: `ID of the created user`,
-        cht: '創建使用者主鍵',
-    },
+    // userIdCreate: {
+    //     eng: `ID of the created user`,
+    //     cht: '創建使用者主鍵',
+    // },
     timeCreate: {
         eng: `Created time`,
         cht: '創建時間',
@@ -213,10 +213,10 @@ let kpLang = {
         eng: `Description`,
         cht: `說明`,
     },
-    noDescription: {
-        eng: `No description`,
-        cht: `無說明`,
-    },
+    // noDescription: {
+    //     eng: `No description`,
+    //     cht: `無說明`,
+    // },
     redir: {
         eng: `Redirect`,
         cht: `登入後轉至網址`,
@@ -244,10 +244,10 @@ let kpLang = {
         eng: `Statistics information`,
         cht: `統計資訊`,
     },
-    mmStaInforMsg: {
-        eng: `Provides important statistical information such as the current system user login frequency, key usage frequency, IP connection frequency, etc.`,
-        cht: `提供目前系統使用者登入頻率、金鑰使用頻率、IP連線頻率等重要統計資訊。`,
-    },
+    // mmStaInforMsg: {
+    //     eng: `Provides important statistical information such as the current system user login frequency, key usage frequency, IP connection frequency, etc.`,
+    //     cht: `提供目前系統使用者登入頻率、金鑰使用頻率、IP連線頻率等重要統計資訊。`,
+    // },
 
     mmUserInfor: {
         eng: `User information`,
@@ -281,18 +281,18 @@ let kpLang = {
         cht: `提供目前存取IP清單，可進行封鎖等作業。`,
     },
 
-    nowTokensList: {
-        eng: `Tokens list`,
-        cht: `金鑰清單`,
-    },
-    nowBlockList: {
-        eng: `Block list`,
-        cht: `封鎖清單`,
-    },
-    systemTokenList: {
-        eng: `System token list`,
-        cht: `系統金鑰清單`,
-    },
+    // nowTokensList: {
+    //     eng: `Tokens list`,
+    //     cht: `金鑰清單`,
+    // },
+    // nowBlockList: {
+    //     eng: `Block list`,
+    //     cht: `封鎖清單`,
+    // },
+    // systemTokenList: {
+    //     eng: `System token list`,
+    //     cht: `系統金鑰清單`,
+    // },
 
     // invalidToken: {
     //     eng: 'No valid token',
@@ -401,14 +401,14 @@ let kpLang = {
         eng: `Administrator`,
         cht: `是否為系統管理者`,
     },
-    isAdminY: {
-        eng: `System Administrator`,
-        cht: `系統管理者`,
-    },
-    isAdminN: {
-        eng: `Non-System Administrator`,
-        cht: `非系統管理者`,
-    },
+    // isAdminY: {
+    //     eng: `System Administrator`,
+    //     cht: `系統管理者`,
+    // },
+    // isAdminN: {
+    //     eng: `Non-System Administrator`,
+    //     cht: `非系統管理者`,
+    // },
     userRole: {
         eng: `Role`,
         cht: `角色`,
@@ -443,18 +443,18 @@ let kpLang = {
         cht: '已停用',
     },
 
-    errInNames: {
-        eng: `Name errors`,
-        cht: `名稱出現錯誤待修復`,
-    },
+    // errInNames: {
+    //     eng: `Name errors`,
+    //     cht: `名稱出現錯誤待修復`,
+    // },
     errInAccounts: {
         eng: `Account errors`,
         cht: `帳號出現錯誤待修復`,
     },
-    errInEmails: {
-        eng: `Email errors`,
-        cht: `Email出現錯誤待修復`,
-    },
+    // errInEmails: {
+    //     eng: `Email errors`,
+    //     cht: `Email出現錯誤待修復`,
+    // },
     errItemsByRedir: {
         eng: `Redirect errors`,
         cht: `登入後轉址出現錯誤待修復`,
@@ -473,22 +473,22 @@ let kpLang = {
         cht: `請選擇日期`,
     },
 
-    userList: {
-        eng: `User list`,
-        cht: `使用者清單`,
-    },
+    // userList: {
+    //     eng: `User list`,
+    //     cht: `使用者清單`,
+    // },
     userName: {
         eng: `Name of user`,
         cht: `使用者名稱`,
     },
-    userNameEmpty: {
-        eng: `Invalid name of user`,
-        cht: `尚未給予有效使用者名稱`,
-    },
-    userNameDuplicate: {
-        eng: `Duplicate name of user`,
-        cht: `使用者名稱出現重複`,
-    },
+    // userNameEmpty: {
+    //     eng: `Invalid name of user`,
+    //     cht: `尚未給予有效使用者名稱`,
+    // },
+    // userNameDuplicate: {
+    //     eng: `Duplicate name of user`,
+    //     cht: `使用者名稱出現重複`,
+    // },
     userAccountEmpty: {
         eng: `Invalid account of user`,
         cht: `尚未給予有效使用者帳號`,
@@ -517,14 +517,14 @@ let kpLang = {
         eng: `Empty password of user`,
         cht: `尚未給予使用者密碼`,
     },
-    errInPasswords: {
-        eng: `Password errors`,
-        cht: `密碼出現錯誤待修復`,
-    },
-    userTimeEmpty: {
-        eng: `Invalid time`,
-        cht: `無`,
-    },
+    // errInPasswords: {
+    //     eng: `Password errors`,
+    //     cht: `密碼出現錯誤待修復`,
+    // },
+    // userTimeEmpty: {
+    //     eng: `Invalid time`,
+    //     cht: `無`,
+    // },
     userAddEmpty: {
         eng: `No user`,
         cht: `尚未新增使用者資料`,
@@ -557,10 +557,10 @@ let kpLang = {
         eng: `Reset password`,
         cht: `重設密碼`,
     },
-    userSaveUsersEmpty: {
-        eng: `No user`,
-        cht: `未有變更使用者資料`,
-    },
+    // userSaveUsersEmpty: {
+    //     eng: `No user`,
+    //     cht: `未有變更使用者資料`,
+    // },
     userSaveUsersFail: {
         eng: `Failed to save users`,
         cht: `儲存使用者數據失敗`,
@@ -694,10 +694,10 @@ let kpLang = {
         eng: 'Register',
         cht: '申請帳號',
     },
-    userRegistrationAccount: {
-        eng: 'Account',
-        cht: '帳號',
-    },
+    // userRegistrationAccount: {
+    //     eng: 'Account',
+    //     cht: '帳號',
+    // },
     userRegistrationName: {
         eng: 'Name',
         cht: '姓名',
@@ -706,10 +706,10 @@ let kpLang = {
         eng: 'Email',
         cht: '電子郵件',
     },
-    userRegistrationPassword: {
-        eng: 'Password',
-        cht: '密碼',
-    },
+    // userRegistrationPassword: {
+    //     eng: 'Password',
+    //     cht: '密碼',
+    // },
     userRegistrationConfirmPassword: {
         eng: 'Confirm password',
         cht: '確認密碼',
@@ -813,10 +813,10 @@ let kpLang = {
         eng: 'Your session has expired. Please log in again.',
         cht: '登入逾時，請重新登入。',
     },
-    tokenInvalid: {
-        eng: 'Your session has expired. Please log in again.',
-        cht: '登入逾時，請重新登入。',
-    },
+    // tokenInvalid: {
+    //     eng: 'Your session has expired. Please log in again.',
+    //     cht: '登入逾時，請重新登入。',
+    // },
     //admin 批次更新 (users/tokens/ips) 之 rows 非合法陣列 (防 NoSQL operator injection guard)
     invalidRows: {
         eng: 'Invalid data format.',
@@ -851,18 +851,18 @@ let kpLang = {
         eng: 'End time',
         cht: '金鑰更新時間',
     },
-    tokenTimeEmpty: {
-        eng: `Invalid time`,
-        cht: `無`,
-    },
-    tokenEditNoTokenId: {
-        eng: `Can not find the id of token`,
-        cht: `無法找到金鑰Id`,
-    },
-    tokenEditNoTokenData: {
-        eng: `Can not find the data of token`,
-        cht: `無法找到金鑰數據`,
-    },
+    // tokenTimeEmpty: {
+    //     eng: `Invalid time`,
+    //     cht: `無`,
+    // },
+    // tokenEditNoTokenId: {
+    //     eng: `Can not find the id of token`,
+    //     cht: `無法找到金鑰Id`,
+    // },
+    // tokenEditNoTokenData: {
+    //     eng: `Can not find the data of token`,
+    //     cht: `無法找到金鑰數據`,
+    // },
     // tokenAddEmpty: {
     //     eng: `No token`,
     //     cht: `尚未新增金鑰資料`,
@@ -892,18 +892,18 @@ let kpLang = {
         eng: `Delete checked IP(s)`,
         cht: `刪除勾選IP`,
     },
-    ipTimeEmpty: {
-        eng: `Invalid time`,
-        cht: `無`,
-    },
-    ipEditNoIpId: {
-        eng: `Can not find the id of IP`,
-        cht: `無法找到IP Id`,
-    },
-    ipEditNoIpData: {
-        eng: `Can not find the data of IP`,
-        cht: `無法找到IP數據`,
-    },
+    // ipTimeEmpty: {
+    //     eng: `Invalid time`,
+    //     cht: `無`,
+    // },
+    // ipEditNoIpId: {
+    //     eng: `Can not find the id of IP`,
+    //     cht: `無法找到IP Id`,
+    // },
+    // ipEditNoIpData: {
+    //     eng: `Can not find the data of IP`,
+    //     cht: `無法找到IP數據`,
+    // },
     // apAddEmpty: {
     //     eng: `No ip`,
     //     cht: `尚未新增IP資料`,
