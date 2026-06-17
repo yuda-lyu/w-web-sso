@@ -2,7 +2,7 @@
     <div style="height:100svh; background:#f5f5f5;">
 
         <!-- menu top, 因窄版導致名稱換行故須使用overflow-y:hidden -->
-        <div :style="`height:${heightToolbar}px; overflow-y:hidden; padding:0px 10px; background:#fff; border-bottom:1px solid #ccc; display:flex; align-items:center;`">
+        <div :style="`height:${heightToolbar}px; box-sizing:border-box; overflow-y:hidden; padding:0px 10px; background:#fff; border-bottom:1px solid #ccc; display:flex; align-items:center;`">
 
             <div style="padding-left:5px;">
                 <div style="display:flex; align-items:center;">

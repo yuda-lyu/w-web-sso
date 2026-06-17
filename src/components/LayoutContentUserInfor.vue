@@ -51,7 +51,7 @@
                                 {{$t('isBlocked')}}
                             </div>
                             <div :class="`status-${isBlocked?'danger':'success'} flex items-center p-3 rounded-lg`">
-                                <i :class="`mdi ${isBlocked?'mdi-lock':'mdi-lock-open-variant'} mdi-24px mr-3 flex-shrink-0`"></i>
+                                <WIcon :icon="isBlocked?mdiLock:mdiLockOpenVariant" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="mr-3 flex-shrink-0"></WIcon>
                                 <div>
                                     <div class="font-semibold">
                                         {{isBlocked?$t('isBlockedY'):$t('isBlockedN')}}
@@ -78,7 +78,7 @@
                                 {{$t('timeExpired')}}
                             </div>
                             <div :class="`status-${isExpired?'danger':'success'} flex items-center p-3 rounded-lg`">
-                                <i :class="`mdi ${isExpired?'mdi-calendar-lock':'mdi-calendar-check'} mdi-24px mr-3 flex-shrink-0`"></i>
+                                <WIcon :icon="isExpired?mdiCalendarLock:mdiCalendarCheck" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="mr-3 flex-shrink-0"></WIcon>
                                 <div>
                                     <div class="font-semibold">
                                         {{isExpired?$t('isExpiredY'):$t('isExpiredN')}}
@@ -105,7 +105,7 @@
                                 {{$t('timeVerified')}}
                             </div>
                             <div :class="`status-${isVerified?'success':'danger'} flex items-center p-3 rounded-lg`">
-                                <i :class="`mdi ${isVerified?'mdi-check-decagram':'mdi-alert-decagram-outline'} mdi-24px mr-3 flex-shrink-0`"></i>
+                                <WIcon :icon="isVerified?mdiCheckDecagram:mdiAlertDecagramOutline" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="mr-3 flex-shrink-0"></WIcon>
                                 <div>
                                     <div class="font-semibold">
                                         {{isVerified?$t('isVerifiedY'):$t('isVerifiedN')}}
@@ -131,7 +131,7 @@
                                 {{$t('isActive')}}
                             </div>
                             <div :class="`status-${$ui.gv(user,'isActive','')==='y'?'success':'danger'} flex items-center p-3 rounded-lg`">
-                                <i :class="`mdi ${$ui.gv(user,'isActive','')==='y'?'mdi-toggle-switch':'mdi-toggle-switch-off-outline'} mdi-24px mr-3 flex-shrink-0`"></i>
+                                <WIcon :icon="$ui.gv(user,'isActive','')==='y'?mdiToggleSwitch:mdiToggleSwitchOffOutline" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="mr-3 flex-shrink-0"></WIcon>
                                 <div>
                                     <div class="font-semibold">
                                         {{$ui.gv(user,'isActive','')==='y'?$t('isActiveY'):$t('isActiveN')}}
@@ -152,7 +152,7 @@
 
                             <!-- 帳號 -->
                             <div class="flex items-start gap-3">
-                                <i class="mdi mdi-account-circle text-gray-400 mdi-20px mt-1 flex-shrink-0"></i>
+                                <WIcon :icon="mdiAccountCircle" :size="20" :color="'currentColor'" :colorHover="'currentColor'" class="text-gray-400 mt-1 flex-shrink-0"></WIcon>
                                 <div>
                                     <div class="text-sm text-gray-500">{{$t('account')}}</div>
                                     <div class="text-base font-medium text-gray-900">
@@ -163,7 +163,7 @@
 
                             <!-- 描述 -->
                             <div class="flex items-start gap-3">
-                                <i class="mdi mdi-comment-text-outline text-gray-400 mdi-20px mt-1 flex-shrink-0"></i>
+                                <WIcon :icon="mdiCommentTextOutline" :size="20" :color="'currentColor'" :colorHover="'currentColor'" class="text-gray-400 mt-1 flex-shrink-0"></WIcon>
                                 <div>
                                     <div class="text-sm text-gray-500">{{$t('description')}}</div>
                                     <div class="text-base font-medium text-gray-900">
@@ -174,7 +174,7 @@
 
                             <!-- 電子郵件 -->
                             <div class="flex items-start gap-3">
-                                <i class="mdi mdi-email-outline text-gray-400 mdi-20px mt-1 flex-shrink-0"></i>
+                                <WIcon :icon="mdiEmailOutline" :size="20" :color="'currentColor'" :colorHover="'currentColor'" class="text-gray-400 mt-1 flex-shrink-0"></WIcon>
                                 <div>
                                     <div class="text-sm text-gray-500">{{$t('email')}}</div>
                                     <div class="inline-block text-base bg-gray-100 mt-1 px-2 py-1 rounded-md text-gray-700 break-all text-sm">
@@ -185,7 +185,7 @@
 
                             <!-- 來源 -->
                             <div class="flex items-start gap-3">
-                                <i class="mdi mdi-source-branch text-gray-400 mdi-20px mt-1 flex-shrink-0"></i>
+                                <WIcon :icon="mdiSourceBranch" :size="20" :color="'currentColor'" :colorHover="'currentColor'" class="text-gray-400 mt-1 flex-shrink-0"></WIcon>
                                 <div>
                                     <div class="text-sm text-gray-500">{{$t('from')}}</div>
                                     <div class="inline-block text-base bg-gray-100 mt-1 px-2 py-1 rounded-md text-gray-700 break-all text-sm">
@@ -196,7 +196,7 @@
 
                             <!-- 身份 -->
                             <div class="flex items-start gap-3">
-                                <i class="mdi mdi-id-card text-gray-400 mdi-20px mt-1 flex-shrink-0"></i>
+                                <WIcon :icon="mdiIdCard" :size="20" :color="'currentColor'" :colorHover="'currentColor'" class="text-gray-400 mt-1 flex-shrink-0"></WIcon>
                                 <div>
                                     <div class="text-sm text-gray-500">{{$t('userRole')}}</div>
                                     <div class="inline-block text-base bg-blue-100 mt-1 px-2 py-1 rounded-md text-blue-700 break-all text-sm">
@@ -207,7 +207,7 @@
 
                             <!-- 登入後轉址 -->
                             <div class="flex items-start gap-3 md:col-span-2">
-                                <i class="mdi mdi-link-variant text-gray-400 mdi-20px mt-1 flex-shrink-0"></i>
+                                <WIcon :icon="mdiLinkVariant" :size="20" :color="'currentColor'" :colorHover="'currentColor'" class="text-gray-400 mt-1 flex-shrink-0"></WIcon>
                                 <div>
                                     <div class="text-sm text-gray-500">{{$t('redir')}}</div>
                                     <div class="inline-block text-base bg-gray-100 mt-1 px-2 py-1 rounded-md text-gray-700 break-all text-sm">
@@ -245,18 +245,36 @@
 </template>
 
 <script>
-import { mdiAccountCircleOutline } from '@mdi/js/mdi.js'
+import { mdiAccountCircleOutline, mdiLock, mdiLockOpenVariant, mdiCalendarLock, mdiCalendarCheck, mdiCheckDecagram, mdiAlertDecagramOutline, mdiToggleSwitch, mdiToggleSwitchOffOutline, mdiAccountCircle, mdiCommentTextOutline, mdiEmailOutline, mdiSourceBranch, mdiIdCard, mdiLinkVariant } from '@mdi/js/mdi.js'
+import WIcon from 'w-component-vue/src/components/WIcon.vue'
 import ot from 'dayjs'
 import get from 'lodash-es/get.js'
 import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
 
 
 export default {
+    components: {
+        WIcon,
+    },
     props: {
     },
     data: function() {
         return {
             mdiAccountCircleOutline,
+            mdiLock,
+            mdiLockOpenVariant,
+            mdiCalendarLock,
+            mdiCalendarCheck,
+            mdiCheckDecagram,
+            mdiAlertDecagramOutline,
+            mdiToggleSwitch,
+            mdiToggleSwitchOffOutline,
+            mdiAccountCircle,
+            mdiCommentTextOutline,
+            mdiEmailOutline,
+            mdiSourceBranch,
+            mdiIdCard,
+            mdiLinkVariant,
             // mdiAccountPlusOutline,
             // mdiCheckboxMarkedCircle,
             // mdiChessRook,
@@ -434,6 +452,57 @@ export default {
 </script>
 
 <style scoped>
+/* === Tailwind utility (非響應式) 同名定義: LayoutContentUserInfor; 由實際 Tailwind v3 產生規則抽出, 與 CDN 逐字一致 === */
+.bg-blue-100 { --tw-bg-opacity: 1; background-color: rgb(219 234 254 / var(--tw-bg-opacity, 1)); }
+.bg-gray-100 { --tw-bg-opacity: 1; background-color: rgb(243 244 246 / var(--tw-bg-opacity, 1)); }
+.border-gray-200 { --tw-border-opacity: 1; border-color: rgb(229 231 235 / var(--tw-border-opacity, 1)); }
+.border-t { border-top-width: 1px; }
+.break-all { word-break: break-all; }
+.flex { display: flex; }
+.flex-shrink-0 { flex-shrink: 0; }
+.font-medium { font-weight: 500; }
+.font-semibold { font-weight: 600; }
+.gap-3 { gap: 0.75rem; }
+.gap-4 { gap: 1rem; }
+.gap-x-8 { column-gap: 2rem; }
+.gap-y-6 { row-gap: 1.5rem; }
+.inline-block { display: inline-block; }
+.items-center { align-items: center; }
+.items-start { align-items: flex-start; }
+.mb-2 { margin-bottom: 0.5rem; }
+.mr-3 { margin-right: 0.75rem; }
+.mt-1 { margin-top: 0.25rem; }
+.p-3 { padding: 0.75rem; }
+.pt-6 { padding-top: 1.5rem; }
+.px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
+.py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+.rounded-lg { border-radius: 0.5rem; }
+.rounded-md { border-radius: 0.375rem; }
+.space-y-8 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse: 0; margin-top: calc(2rem * calc(1 - var(--tw-space-y-reverse))); margin-bottom: calc(2rem * var(--tw-space-y-reverse)); }
+.text-base { font-size: 1rem; line-height: 1.5rem; }
+.text-blue-700 { --tw-text-opacity: 1; color: rgb(29 78 216 / var(--tw-text-opacity, 1)); }
+.text-gray-400 { --tw-text-opacity: 1; color: rgb(156 163 175 / var(--tw-text-opacity, 1)); }
+.text-gray-500 { --tw-text-opacity: 1; color: rgb(107 114 128 / var(--tw-text-opacity, 1)); }
+.text-gray-700 { --tw-text-opacity: 1; color: rgb(55 65 81 / var(--tw-text-opacity, 1)); }
+.text-gray-900 { --tw-text-opacity: 1; color: rgb(17 24 39 / var(--tw-text-opacity, 1)); }
+.text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+.text-xs { font-size: 0.75rem; line-height: 1rem; }
+.text-red-800\/80 { color: rgba(153, 27, 27, 0.8); }
+.text-green-800\/80 { color: rgba(22, 101, 52, 0.8); }
+
+.grid { display: grid; }
+.grid-cols-1 { grid-template-columns: repeat(1, minmax(0px, 1fr)); }
+@media (min-width: 640px) {
+    .sm\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0px, 1fr)); }
+}
+@media (min-width: 768px) {
+    .md\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0px, 1fr)); }
+    .md\:col-span-2 { grid-column: span 2 / span 2; }
+}
+@media (min-width: 1024px) {
+    .lg\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0px, 1fr)); }
+}
+
 .status-danger {
     background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca;
 }

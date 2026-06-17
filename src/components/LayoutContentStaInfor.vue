@@ -24,14 +24,14 @@
                     <!-- 使用者資訊區區塊 -->
                     <div>
                         <div class="pb-1 text-gray-500 flex items-center">
-                            <i class="text-2xl mdi mdi-shield-account-outline mr-2"></i>
+                            <WIcon :icon="mdiShieldAccountOutline" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="mr-2"></WIcon>
                             <span class="text-sm">{{$t('userGroupInfor')}}</span>
                         </div>
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
 
                             <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 flex items-center">
                                 <div class="bg-blue-100 p-3 rounded-full">
-                                    <i class="mdi mdi-account-group-outline mdi-24px text-blue-600"></i>
+                                    <WIcon :icon="mdiAccountGroupOutline" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="text-blue-600"></WIcon>
                                 </div>
                                 <div class="ml-4">
                                     <div class="text-gray-500 text-sm">{{$t('totalUsers')}}</div>
@@ -41,7 +41,7 @@
 
                             <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 flex items-center">
                                 <div class="bg-green-100 p-3 rounded-full">
-                                    <i class="mdi mdi-account-check-outline mdi-24px text-green-600"></i>
+                                    <WIcon :icon="mdiAccountCheckOutline" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="text-green-600"></WIcon>
                                 </div>
                                 <div class="ml-4">
                                     <div class="text-gray-500 text-sm">{{$t('activeUsers')}}</div>
@@ -51,7 +51,7 @@
 
                             <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 flex items-center">
                                 <div class="bg-red-100 p-3 rounded-full">
-                                    <i class="mdi mdi-account-lock-outline mdi-24px text-red-600"></i>
+                                    <WIcon :icon="mdiAccountLockOutline" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="text-red-600"></WIcon>
                                 </div>
                                 <div class="ml-4">
                                     <div class="text-gray-500 text-sm">{{$t('blockedUsers')}}</div>
@@ -61,7 +61,7 @@
 
                             <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200 flex items-center">
                                 <div class="bg-yellow-100 p-3 rounded-full">
-                                    <i class="mdi mdi-account-clock-outline mdi-24px text-yellow-600"></i>
+                                    <WIcon :icon="mdiAccountClockOutline" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="text-yellow-600"></WIcon>
                                 </div>
                                 <div class="ml-4">
                                     <div class="text-gray-500 text-sm">{{$t('expiredUsers')}}</div>
@@ -76,7 +76,7 @@
                     <!-- 存取活動監測區塊 -->
                     <div>
                         <div class="pb-1 text-gray-500 flex items-center">
-                            <i class="text-2xl mdi mdi-chart-box-outline mr-2"></i>
+                            <WIcon :icon="mdiChartBoxOutline" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="mr-2"></WIcon>
                             <span class="text-sm">{{$t('accessActivityMonitoring')}}</span>
                         </div>
                         <div class="grid grid-cols-1 lg:grid-cols-1 gap-6">
@@ -84,7 +84,7 @@
                             <!-- 使用者登入頻率區塊 -->
                             <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
                                 <div class="pb-2 flex items-center font-semibold text-gray-700">
-                                    <i class="text-4xl mdi mdi-login-variant mr-2 text-purple-600"></i>
+                                    <WIcon :icon="mdiLoginVariant" :size="36" :color="'currentColor'" :colorHover="'currentColor'" class="text-purple-600 mr-2"></WIcon>
                                     <span class="text-lg">{{$t('userLoginFrequency')}}</span>
                                 </div>
                                 <div class="flex justify-between items-center">
@@ -112,7 +112,7 @@
                             <!-- 金鑰使用頻率區塊 -->
                             <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
                                 <div class="pb-2 flex items-center font-semibold text-gray-700">
-                                    <i class="text-2xl mdi mdi-ticket-confirmation-outline mr-2 text-purple-600"></i>
+                                    <WIcon :icon="mdiTicketConfirmationOutline" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="text-purple-600 mr-2"></WIcon>
                                     <span class="text-lg">{{$t('tokenUsageFrequency')}}</span>
                                 </div>
                                 <div class="flex justify-between items-center">
@@ -183,7 +183,7 @@
                             <!-- IP連線頻率區塊 -->
                             <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
                                 <div class="pb-2 flex items-center font-semibold text-gray-700">
-                                    <i class="text-2xl mdi mdi-access-point-network mr-2 text-purple-600"></i>
+                                    <WIcon :icon="mdiAccessPointNetwork" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="text-purple-600 mr-2"></WIcon>
                                     <span class="text-lg">{{$t('ipConnectionFrequency')}}</span>
                                 </div>
                                 <div class="flex justify-between items-center">
@@ -258,7 +258,7 @@
                     <!-- 管控狀態區塊 -->
                     <div>
                         <div class="pb-1 text-gray-500 flex items-center">
-                            <i class="text-2xl mdi mdi-monitor-account mr-2"></i>
+                            <WIcon :icon="mdiMonitorAccount" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="mr-2"></WIcon>
                             <span class="text-sm">{{$t('controlStatus')}}</span>
                         </div>
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -266,7 +266,7 @@
                             <!-- 活躍 Token -->
                             <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
                                 <div class="pb-3 flex items-center mb-2">
-                                    <i class="text-2xl mdi mdi-folder-key-network-outline text-indigo-600 mr-2"></i>
+                                    <WIcon :icon="mdiFolderKeyNetworkOutline" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="text-indigo-600 mr-2"></WIcon>
                                     <div class="font-semibold text-gray-700">{{$t('tokenCharacteristic')}}</div>
                                 </div>
                                 <div class="space-y-2 text-sm">
@@ -280,7 +280,7 @@
                             <!-- IP 管控 -->
                             <div class="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
                                 <div class="pb-3 flex items-center mb-2">
-                                    <i class="text-2xl mdi mdi-ip-network-outline text-teal-600 mr-2"></i>
+                                    <WIcon :icon="mdiIpNetworkOutline" :size="24" :color="'currentColor'" :colorHover="'currentColor'" class="text-teal-600 mr-2"></WIcon>
                                     <div class="font-semibold text-gray-700">{{$t('ipCharacteristic')}}</div>
                                 </div>
                                 <div class="space-y-2 text-sm">
@@ -334,16 +334,32 @@ import strright from 'wsemi/src/strright.mjs'
 import haskey from 'wsemi/src/haskey.mjs'
 import debounce from 'wsemi/src/debounce.mjs'
 import WEchartsVueDyn from 'w-component-vue/src/components/WEchartsVueDyn.vue'
+import { mdiShieldAccountOutline, mdiAccountGroupOutline, mdiAccountCheckOutline, mdiAccountLockOutline, mdiAccountClockOutline, mdiChartBoxOutline, mdiLoginVariant, mdiTicketConfirmationOutline, mdiAccessPointNetwork, mdiMonitorAccount, mdiFolderKeyNetworkOutline, mdiIpNetworkOutline } from '@mdi/js/mdi.js'
+import WIcon from 'w-component-vue/src/components/WIcon.vue'
 
 
 export default {
     components: {
         WEchartsVueDyn,
+        WIcon,
     },
     props: {
     },
     data: function() {
         return {
+
+            mdiShieldAccountOutline,
+            mdiAccountGroupOutline,
+            mdiAccountCheckOutline,
+            mdiAccountLockOutline,
+            mdiAccountClockOutline,
+            mdiChartBoxOutline,
+            mdiLoginVariant,
+            mdiTicketConfirmationOutline,
+            mdiAccessPointNetwork,
+            mdiMonitorAccount,
+            mdiFolderKeyNetworkOutline,
+            mdiIpNetworkOutline,
 
             dbc: debounce(300),
 
@@ -935,11 +951,92 @@ export default {
 </script>
 
 <style scoped>
+/* === Tailwind utility (非響應式) 同名定義: LayoutContentStaInfor; 由實際 Tailwind v3 產生規則抽出, 與 CDN 逐字一致 === */
+.bg-blue-100 { --tw-bg-opacity: 1; background-color: rgb(219 234 254 / var(--tw-bg-opacity, 1)); }
+.bg-gray-100 { --tw-bg-opacity: 1; background-color: rgb(243 244 246 / var(--tw-bg-opacity, 1)); }
+.bg-gray-50 { --tw-bg-opacity: 1; background-color: rgb(249 250 251 / var(--tw-bg-opacity, 1)); }
+.bg-green-100 { --tw-bg-opacity: 1; background-color: rgb(220 252 231 / var(--tw-bg-opacity, 1)); }
+.bg-red-100 { --tw-bg-opacity: 1; background-color: rgb(254 226 226 / var(--tw-bg-opacity, 1)); }
+.bg-white { --tw-bg-opacity: 1; background-color: rgb(255 255 255 / var(--tw-bg-opacity, 1)); }
+.bg-yellow-100 { --tw-bg-opacity: 1; background-color: rgb(254 249 195 / var(--tw-bg-opacity, 1)); }
+.border { border-width: 1px; }
+.border-collapse { border-collapse: collapse; }
+.border-gray-200 { --tw-border-opacity: 1; border-color: rgb(229 231 235 / var(--tw-border-opacity, 1)); }
+.border-gray-300 { --tw-border-opacity: 1; border-color: rgb(209 213 219 / var(--tw-border-opacity, 1)); }
+.border-solid { border-style: solid; }
+.cursor-pointer { cursor: pointer; }
+.flex { display: flex; }
+.focus\:ring-blue-500:focus { --tw-ring-opacity: 1; --tw-ring-color: rgb(59 130 246 / var(--tw-ring-opacity, 1)); }
+.font-bold { font-weight: 700; }
+.font-medium { font-weight: 500; }
+.font-semibold { font-weight: 600; }
+.gap-5 { gap: 1.25rem; }
+.gap-6 { gap: 1.5rem; }
+.h-4 { height: 1rem; }
+.hover\:bg-gray-50:hover { --tw-bg-opacity: 1; background-color: rgb(249 250 251 / var(--tw-bg-opacity, 1)); }
+.hover\:underline:hover { text-decoration-line: underline; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.mb-2 { margin-bottom: 0.5rem; }
+.mb-4 { margin-bottom: 1rem; }
+.mb-8 { margin-bottom: 2rem; }
+.ml-2 { margin-left: 0.5rem; }
+.ml-4 { margin-left: 1rem; }
+.mr-2 { margin-right: 0.5rem; }
+.mt-2 { margin-top: 0.5rem; }
+.mt-4 { margin-top: 1rem; }
+.overflow-x-auto { overflow-x: auto; }
+.p-3 { padding: 0.75rem; }
+.p-5 { padding: 1.25rem; }
+.pb-1 { padding-bottom: 0.25rem; }
+.pb-2 { padding-bottom: 0.5rem; }
+.pb-3 { padding-bottom: 0.75rem; }
+.px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
+.px-6 { padding-left: 1.5rem; padding-right: 1.5rem; }
+.py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+.py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+.py-4 { padding-top: 1rem; padding-bottom: 1rem; }
+.relative { position: relative; }
+.rounded { border-radius: 0.25rem; }
+.rounded-full { border-radius: 9999px; }
+.rounded-lg { border-radius: 0.5rem; }
+.shadow-md { --tw-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); --tw-shadow-colored: 0 4px 6px -1px var(--tw-shadow-color), 0 2px 4px -2px var(--tw-shadow-color); box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow); }
+.shadow-sm { --tw-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); --tw-shadow-colored: 0 1px 2px 0 var(--tw-shadow-color); box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow); }
+.space-x-4 > :not([hidden]) ~ :not([hidden]) { --tw-space-x-reverse: 0; margin-right: calc(1rem * var(--tw-space-x-reverse)); margin-left: calc(1rem * calc(1 - var(--tw-space-x-reverse))); }
+.space-y-2 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse: 0; margin-top: calc(0.5rem * calc(1 - var(--tw-space-y-reverse))); margin-bottom: calc(0.5rem * var(--tw-space-y-reverse)); }
+.space-y-8 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse: 0; margin-top: calc(2rem * calc(1 - var(--tw-space-y-reverse))); margin-bottom: calc(2rem * var(--tw-space-y-reverse)); }
+.sticky { position: sticky; }
+.text-2xl { font-size: 1.5rem; line-height: 2rem; }
+.text-blue-600 { --tw-text-opacity: 1; color: rgb(37 99 235 / var(--tw-text-opacity, 1)); }
+.text-gray-500 { --tw-text-opacity: 1; color: rgb(107 114 128 / var(--tw-text-opacity, 1)); }
+.text-gray-700 { --tw-text-opacity: 1; color: rgb(55 65 81 / var(--tw-text-opacity, 1)); }
+.text-gray-900 { --tw-text-opacity: 1; color: rgb(17 24 39 / var(--tw-text-opacity, 1)); }
+.text-green-600 { --tw-text-opacity: 1; color: rgb(22 163 74 / var(--tw-text-opacity, 1)); }
+.text-indigo-600 { --tw-text-opacity: 1; color: rgb(79 70 229 / var(--tw-text-opacity, 1)); }
+.text-left { text-align: left; }
+.text-lg { font-size: 1.125rem; line-height: 1.75rem; }
+.text-purple-600 { --tw-text-opacity: 1; color: rgb(147 51 234 / var(--tw-text-opacity, 1)); }
+.text-red-600 { --tw-text-opacity: 1; color: rgb(220 38 38 / var(--tw-text-opacity, 1)); }
+.text-right { text-align: right; }
+.text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+.text-teal-600 { --tw-text-opacity: 1; color: rgb(13 148 136 / var(--tw-text-opacity, 1)); }
+.text-xs { font-size: 0.75rem; line-height: 1rem; }
+.text-yellow-600 { --tw-text-opacity: 1; color: rgb(202 138 4 / var(--tw-text-opacity, 1)); }
+.top-0 { top: 0px; }
+.transition-colors { transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, -webkit-text-decoration-color; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }
+.w-4 { width: 1rem; }
+.w-7 { width: 1.75rem; }
+.w-full { width: 100%; }
+.z-10 { z-index: 10; }
+
+.grid { display: grid; }
+.grid-cols-1 { grid-template-columns: repeat(1, minmax(0px, 1fr)); }
 @media (min-width: 640px) {
     .sm\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 1024px) {
     .lg\:grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+    .lg\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0px, 1fr)); }
     .lg\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 </style>

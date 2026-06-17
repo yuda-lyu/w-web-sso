@@ -61,7 +61,7 @@
                                                         :bottomLineBorderColor="'#888'"
                                                         :bottomLineBorderColorHover="'#888'"
                                                         :bottomLineBorderColorFocus="'#888'"
-                                                        :rightIcon="showOldPassword ? 'mdi-eye' : 'mdi-eye-off'"
+                                                        :rightIcon="showOldPassword ? mdiEye : mdiEyeOff"
                                                         :rightIconColor="'#777'"
                                                         :rightIconColorHover="'#666'"
                                                         :rightIconColorFocus="'#555'"
@@ -81,7 +81,7 @@
                                                         :bottomLineBorderColor="'#888'"
                                                         :bottomLineBorderColorHover="'#888'"
                                                         :bottomLineBorderColorFocus="'#888'"
-                                                        :rightIcon="showNewPassword ? 'mdi-eye' : 'mdi-eye-off'"
+                                                        :rightIcon="showNewPassword ? mdiEye : mdiEyeOff"
                                                         :rightIconColor="'#777'"
                                                         :rightIconColorHover="'#666'"
                                                         :rightIconColorFocus="'#555'"
@@ -101,7 +101,7 @@
                                                         :bottomLineBorderColor="'#888'"
                                                         :bottomLineBorderColorHover="'#888'"
                                                         :bottomLineBorderColorFocus="'#888'"
-                                                        :rightIcon="showConfirmPassword ? 'mdi-eye' : 'mdi-eye-off'"
+                                                        :rightIcon="showConfirmPassword ? mdiEye : mdiEyeOff"
                                                         :rightIconColor="'#777'"
                                                         :rightIconColorHover="'#666'"
                                                         :rightIconColorFocus="'#555'"
@@ -210,6 +210,7 @@ import WButtonChip from 'w-component-vue/src/components/WButtonChip.vue'
 import WTextSelect from 'w-component-vue/src/components/WTextSelect.vue'
 import WIcon from 'w-component-vue/src/components/WIcon.vue'
 import WText from 'w-component-vue/src/components/WText.vue'
+import { mdiAccountCircle, mdiAccount, mdiEmail, mdiKey, mdiFileDocumentOutline, mdiWeb, mdiShieldAccount, mdiToggleSwitch, mdiEye, mdiEyeOff } from '@mdi/js/mdi.js'
 
 export default {
     components: {
@@ -222,6 +223,9 @@ export default {
     },
     data: function() {
         return {
+            mdiEye,
+            mdiEyeOff,
+
             contentWidth: 450,
             contentPadding: 30,
 
@@ -322,36 +326,36 @@ export default {
             return {
                 'account': {
                     value: u.account,
-                    icon: 'fas fa-user-circle',
+                    icon: mdiAccountCircle,
                 },
                 'name': {
                     value: u.name,
-                    icon: 'fas fa-user',
+                    icon: mdiAccount,
                 },
                 'email': {
                     value: u.email,
-                    icon: 'fas fa-envelope',
+                    icon: mdiEmail,
                 },
                 'password': {
                     value: '',
-                    icon: 'fas fa-key',
+                    icon: mdiKey,
                 },
                 'description': {
                     value: u.description,
-                    icon: 'fas fa-file-alt',
+                    icon: mdiFileDocumentOutline,
                 },
                 'from': {
                     value: u.from,
-                    icon: 'fas fa-globe',
+                    icon: mdiWeb,
                 },
                 'isAdmin': {
                     value: u.isAdmin,
-                    icon: 'fas fa-shield-alt',
+                    icon: mdiShieldAccount,
                     enumerable: true,
                 },
                 'isActive': {
                     value: u.isActive,
-                    icon: 'fas fa-toggle-on',
+                    icon: mdiToggleSwitch,
                     enumerable: true,
                 },
             }

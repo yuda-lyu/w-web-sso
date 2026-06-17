@@ -289,7 +289,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
     //loginByAccountAndPassword
     let loginByAccountAndPassword = async (account, password) => {
 
-        //defense-in-depth NoSQL operator injection guard (詳 db_query攻擊問題.md / WWebSso.mjs _strictStr).
+        //defense-in-depth NoSQL operator injection guard (對應 WWebSso.mjs _strictStr 外層; 詳 ADR-003 Consequences).
         //外層 kpfun 已 guard; 此 inner check 是「procCore 函式被 kpfun 外其他 caller 直接呼叫時」之保險.
         if (!isestr(account) || !isestr(password)) {
             return Promise.reject(`failedLoginForCatch`)

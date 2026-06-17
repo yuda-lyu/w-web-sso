@@ -35,7 +35,7 @@
 
                             <div style="display:flex; align-items:center; padding:0px 10px; background:rgba(34, 44, 77, 0.9);">
                                 <WIcon
-                                    :icon="'mdi-account'"
+                                    :icon="mdiAccount"
                                     :color="'#ddd'"
                                     :colorHover="'#eee'"
                                     :size="24"
@@ -67,7 +67,7 @@
 
                             <div style="display:flex; align-items:center; padding:0px 10px; background:rgba(34, 44, 77, 0.9);">
                                 <WIcon
-                                    :icon="'mdi-lock'"
+                                    :icon="mdiLock"
                                     :color="'#ddd'"
                                     :colorHover="'#eee'"
                                     :size="24"
@@ -85,7 +85,7 @@
                                     :bottomLineBorderColor="'#b6b6b6'"
                                     :bottomLineBorderColorHover="'#ccc'"
                                     :bottomLineBorderColorFocus="'#ddd'"
-                                    :rightIcon="showPassword ? 'mdi-eye' : 'mdi-eye-off'"
+                                    :rightIcon="showPassword ? mdiEye : mdiEyeOff"
                                     :rightIconColor="'#ddd'"
                                     :rightIconColorHover="'#eee'"
                                     :rightIconColorFocus="'#ddd'"
@@ -113,7 +113,7 @@
                             <div style="display:flex; align-items:stretch;">
                                 <div style="display:flex; align-items:center; padding:0px 10px; background:rgba(34, 44, 77, 0.9);">
                                     <WIcon
-                                        :icon="'mdi-lock-check'"
+                                        :icon="mdiLockCheck"
                                         :color="'#ddd'"
                                         :colorHover="'#eee'"
                                         :size="24"
@@ -126,7 +126,7 @@
                                         :bottomLineBorderColor="'#b6b6b6'"
                                         :bottomLineBorderColorHover="'#ccc'"
                                         :bottomLineBorderColorFocus="'#ddd'"
-                                        :rightIcon="showPassword ? 'mdi-eye' : 'mdi-eye-off'"
+                                        :rightIcon="showPassword ? mdiEye : mdiEyeOff"
                                         :rightIconColor="'#ddd'"
                                         :rightIconColorHover="'#eee'"
                                         :rightIconColorFocus="'#ddd'"
@@ -149,7 +149,7 @@
                             <div style="display:flex; align-items:stretch;">
                                 <div style="display:flex; align-items:center; padding:0px 10px; background:rgba(34, 44, 77, 0.9);">
                                     <WIcon
-                                        :icon="'mdi-rename-box'"
+                                        :icon="mdiRenameBox"
                                         :color="'#ddd'"
                                         :colorHover="'#eee'"
                                         :size="24"
@@ -172,7 +172,7 @@
                             <div style="display:flex; align-items:stretch;">
                                 <div style="display:flex; align-items:center; padding:0px 10px; background:rgba(34, 44, 77, 0.9);">
                                     <WIcon
-                                        :icon="'mdi-email'"
+                                        :icon="mdiEmail"
                                         :color="'#ddd'"
                                         :colorHover="'#eee'"
                                         :size="24"
@@ -260,7 +260,7 @@
                             <div style="display:flex; align-items:stretch;">
                                 <div style="display:flex; align-items:center; padding:0px 10px; background:rgba(34, 44, 77, 0.9);">
                                     <WIcon
-                                        :icon="'mdi-email'"
+                                        :icon="mdiEmail"
                                         :color="'#ddd'"
                                         :colorHover="'#eee'"
                                         :size="24"
@@ -348,6 +348,7 @@ import WIcon from 'w-component-vue/src/components/WIcon.vue'
 import WText from 'w-component-vue/src/components/WText.vue'
 import WTextSelect from 'w-component-vue/src/components/WTextSelect.vue'
 import WButtonChip from 'w-component-vue/src/components/WButtonChip.vue'
+import { mdiAccount, mdiLock, mdiEye, mdiEyeOff, mdiLockCheck, mdiRenameBox, mdiEmail } from '@mdi/js/mdi.js'
 
 
 export default {
@@ -361,6 +362,14 @@ export default {
     },
     data: function() {
         return {
+
+            mdiAccount,
+            mdiLock,
+            mdiEye,
+            mdiEyeOff,
+            mdiLockCheck,
+            mdiRenameBox,
+            mdiEmail,
 
             firstSetting: true,
 

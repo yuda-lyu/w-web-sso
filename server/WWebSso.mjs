@@ -502,7 +502,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     //kpfun 入口統一 user-input string guard, 防 NoSQL operator injection
     //(w-orm-lmdb 之 select 內部用 mingo.Query, 接受 {$ne: null} 等 operator object
     //→ 全表 scan + log 噪音; 雖被 _getGenUserByKV duplicate check + timingSafePasswordEqual
-    //+ hashPassword 三層防住無 auth bypass, 但 DoS 風險仍存. 詳 db_query攻擊問題.md.)
+    //+ hashPassword 三層防住無 auth bypass, 但 DoS 風險仍存. 詳 ADR-003 Consequences.)
     //錯訊統一映射至 ADR-006 'token expired' (token 系) / ADR-003 'incorrect user account or password'
     //(login 系) / 'invalid rows' (admin batch update 系), 不洩 type check 失敗 vs business 失敗.
     let _strictStr = (...vals) => vals.every((v) => isestr(v))

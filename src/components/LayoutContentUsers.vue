@@ -267,7 +267,7 @@
                         <template v-else-if="props.key === 'timeVerified'">
                             <div @click.stop.prevent @mousedown.stop.prevent style="display:flex; align-items:center;">
                                 <div style="width:90px; display:inline-flex; align-items:center; vertical-align:middle;" :style="{ color: $s.getIsVerified(props.row) ? 'green' : 'red' }">
-                                    <i class="mdi" :class="$s.getIsVerified(props.row) ? 'mdi-check-bold' : 'mdi-close-thick'"></i>
+                                    <WIcon :icon="$s.getIsVerified(props.row) ? mdiCheckBold : mdiCloseThick" :size="16" :color="'currentColor'" :colorHover="'currentColor'"></WIcon>
                                     <span style="padding-left:2px;">{{ $s.getIsVerified(props.row) ? $t('isVerifiedY') : $t('isVerifiedN') }}</span>
                                 </div>
                                 <WTimeminute
@@ -300,7 +300,7 @@
                         <template v-else-if="props.key === 'timeExpired'">
                             <div @click.stop.prevent @mousedown.stop.prevent style="display:flex; align-items:center;">
                                 <div style="width:90px; display:inline-flex; align-items:center; vertical-align:middle;" :style="{ color: !$s.getIsExpired(props.row) ? 'green' : 'red' }">
-                                    <i class="mdi" :class="!$s.getIsExpired(props.row) ? 'mdi-check-bold' : 'mdi-close-thick'"></i>
+                                    <WIcon :icon="!$s.getIsExpired(props.row) ? mdiCheckBold : mdiCloseThick" :size="16" :color="'currentColor'" :colorHover="'currentColor'"></WIcon>
                                     <span style="padding-left:2px;">{{ $s.getIsExpired(props.row) ? $t('isExpiredY') : $t('isExpiredN') }}</span>
                                 </div>
                                 <WTimeminute
@@ -333,7 +333,7 @@
                         <template v-else-if="props.key === 'timeBlocked'">
                             <div @click.stop.prevent @mousedown.stop.prevent style="display:flex; align-items:center;">
                                 <div style="width:90px; display:inline-flex; align-items:center; vertical-align:middle;" :style="{ color: !$s.getIsBlocked(props.row) ? 'green' : 'red' }">
-                                    <i class="mdi" :class="!$s.getIsBlocked(props.row) ? 'mdi-check-bold' : 'mdi-close-thick'"></i>
+                                    <WIcon :icon="!$s.getIsBlocked(props.row) ? mdiCheckBold : mdiCloseThick" :size="16" :color="'currentColor'" :colorHover="'currentColor'"></WIcon>
                                     <span style="padding-left:2px;">{{ $s.getIsBlocked(props.row) ? $t('isBlockedY') : $t('isBlockedN') }}</span>
                                 </div>
                                 <WTimeminute
@@ -381,7 +381,7 @@
 </template>
 
 <script>
-import { mdiAccountGroupOutline, mdiCloudUploadOutline, mdiTrashCanOutline, mdiTableHeadersEye, mdiPlus, mdiContentCopy } from '@mdi/js/mdi.js'
+import { mdiAccountGroupOutline, mdiCloudUploadOutline, mdiTrashCanOutline, mdiTableHeadersEye, mdiPlus, mdiContentCopy, mdiCheckBold, mdiCloseThick } from '@mdi/js/mdi.js'
 import ot from 'dayjs'
 import get from 'lodash-es/get.js'
 import set from 'lodash-es/set.js'
@@ -431,6 +431,8 @@ export default {
             mdiTableHeadersEye,
             mdiPlus,
             mdiContentCopy,
+            mdiCheckBold,
+            mdiCloseThick,
 
             panelWidth: 100,
             panelHeight: 100,
