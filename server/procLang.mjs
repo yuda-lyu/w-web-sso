@@ -95,7 +95,7 @@ let kpLang = {
         cht: '於',
     },
     unknow: {
-        eng: `Unknow`,
+        eng: `Unknown`,
         cht: `未知`,
     },
     waitingData: {
@@ -277,7 +277,7 @@ let kpLang = {
         cht: `IP清單`,
     },
     mmIpsListMsg: {
-        eng: `Provide a list of tokens, which can be deleted, etc.`,
+        eng: `Provide a list of IPs, which can be blocked, etc.`,
         cht: `提供目前存取IP清單，可進行封鎖等作業。`,
     },
 
@@ -808,10 +808,15 @@ let kpLang = {
         cht: '登入時發生未預期的錯誤，請稍後再試。',
     },
     //token 驗證失敗 (對外統一收斂, 防 information leakage; 對齊 ADR-006). 後端 reject key 名,
-    //由 kpfun _tErr 依 lang 翻譯回前端顯示. tokenInvalid (查無 token) 與 tokenExpired 對外同義訊息.
+    //由前端依 lang $t/$tErr 顯示 (外部 API 則回 key 字串). tokenInvalid (查無 token) 與 tokenExpired 對外同義訊息.
     tokenExpired: {
         eng: 'Your session has expired. Please log in again.',
         cht: '登入逾時，請重新登入。',
+    },
+    //外部 API 查詢: token 無權限存取 (getSsoUserInfor 等; 對齊原則5 — 外部錯誤回 key)
+    tokenNoPermission: {
+        eng: 'Token does not have permission.',
+        cht: '權杖無存取權限。',
     },
     // tokenInvalid: {
     //     eng: 'Your session has expired. Please log in again.',
@@ -821,6 +826,21 @@ let kpLang = {
     invalidRows: {
         eng: 'Invalid data format.',
         cht: '資料格式錯誤。',
+    },
+    //admin 批次更新 users: account 欄位為空 (防直打 API 寫入空帳號)
+    accountRequired: {
+        eng: 'Account is required.',
+        cht: '帳號為必填。',
+    },
+    //admin 批次更新 users: account 與本批其他列或既有使用者重複 (帳號須全域唯一; 防直打 API 寫入重複帳號)
+    accountDuplicate: {
+        eng: 'Account already exists.',
+        cht: '帳號已存在。',
+    },
+    //統計數據取得失敗 (procStaInfor 之 getStaXxx worker reject 被 wsemi cache 吞掉回 undefined)
+    getStaDataFailed: {
+        eng: 'Failed to retrieve statistics data.',
+        cht: '統計資料取得失敗。',
     },
     // msgSendChangePasswordEmailSuccess: {
     //     eng: 'Verification email sent. Please check your inbox and click the link to change your password.',
@@ -848,7 +868,7 @@ let kpLang = {
         cht: '金鑰到期時間',
     },
     tokenTimeUpdate: {
-        eng: 'End time',
+        eng: 'Updated time',
         cht: '金鑰更新時間',
     },
     // tokenTimeEmpty: {

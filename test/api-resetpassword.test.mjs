@@ -40,6 +40,27 @@ let testUsers = {
         isAdmin: 'n',
         redir: 'http://127.0.0.1:8080/?view=user&token={token}',
     },
+    //targetEng2 / targetEng3: 獨立 target, 避開後端 lastResetTime 30s throttle.
+    //後端對「同一 targetUserId」30s 內第二次 reset 會 reject adminResetPasswordAlreadyTriggered
+    //(procCore.mjs:1209-1216), 故 API-002 與 API-008 各用自己的 target id 不共用 targetEng.
+    targetEng2: {
+        id: 'id-ap-rp-target-eng2',
+        account: 'ap-rp-target-eng2',
+        rawPassword: 'Pw@aprpEng92',
+        name: 'API RP Target Eng2',
+        email: 'ap-rp-target-eng2@test.com',
+        isAdmin: 'n',
+        redir: 'http://127.0.0.1:8080/?view=user&token={token}',
+    },
+    targetEng3: {
+        id: 'id-ap-rp-target-eng3',
+        account: 'ap-rp-target-eng3',
+        rawPassword: 'Pw@aprpEng93',
+        name: 'API RP Target Eng3',
+        email: 'ap-rp-target-eng3@test.com',
+        isAdmin: 'n',
+        redir: 'http://127.0.0.1:8080/?view=user&token={token}',
+    },
     attacker: {
         id: 'id-ap-rp-attacker',
         account: 'ap-rp-attacker',
@@ -121,28 +142,30 @@ describe('ResetPassword API — adminResetUserPassword 拒絕情境 (API-001/003
         let adminToken = userTokens[testUsers.admin.id]
         let r = await callFapi('adminResetUserPassword', [adminToken, 'eng', testUsers.admin.id])
         assert.strict.equal(r.ok, false, `預期 reject, 實際 resolve: ${JSON.stringify(r)}`)
-        assert.strict.equal(r.err, 'cannot reset self', `錯誤訊息應為 'cannot reset self', 實際: ${r.err}`)
+        assert.strict.equal(r.err, 'adminResetPasswordCannotResetSelf', `錯誤訊息應為 'adminResetPasswordCannotResetSelf', 實際: ${r.err}`)
     })
 
     it('API-004-forbidden-non-admin: 非 admin 呼叫, reject "forbidden"', async function() {
         let attackerToken = userTokens[testUsers.attacker.id]
         let r = await callFapi('adminResetUserPassword', [attackerToken, 'eng', testUsers.targetEng.id])
         assert.strict.equal(r.ok, false, `預期 reject, 實際 resolve: ${JSON.stringify(r)}`)
-        assert.strict.equal(r.err, 'forbidden', `錯誤訊息應為 'forbidden', 實際: ${r.err}`)
+        assert.strict.equal(r.err, 'adminResetPasswordForbidden', `錯誤訊息應為 'adminResetPasswordForbidden', 實際: ${r.err}`)
     })
 
     it('API-005-user-not-found: admin 對不存在 userId 觸發, reject "user not found"', async function() {
         let adminToken = userTokens[testUsers.admin.id]
         let r = await callFapi('adminResetUserPassword', [adminToken, 'eng', 'id-not-exist-xyz'])
         assert.strict.equal(r.ok, false, `預期 reject, 實際 resolve: ${JSON.stringify(r)}`)
-        assert.strict.equal(r.err, 'user not found', `錯誤訊息應為 'user not found', 實際: ${r.err}`)
+        assert.strict.equal(r.err, 'adminResetPasswordUserNotFound', `錯誤訊息應為 'adminResetPasswordUserNotFound', 實際: ${r.err}`)
     })
 
-    it('API-006-invalid-userId-empty: admin 帶空字串 userId, reject "invalid userId"', async function() {
+    it('API-006-invalid-userId-empty: admin 帶空字串 userId, reject "tokenExpired"', async function() {
         let adminToken = userTokens[testUsers.admin.id]
         let r = await callFapi('adminResetUserPassword', [adminToken, 'eng', ''])
         assert.strict.equal(r.ok, false, `預期 reject, 實際 resolve: ${JSON.stringify(r)}`)
-        assert.strict.equal(r.err, 'invalid userId', `錯誤訊息應為 'invalid userId', 實際: ${r.err}`)
+        //邊界行為: 空字串 userId 在 WWebSso.adminResetUserPassword 之 _strictStr(token, targetUserId) 守衛
+        //(WWebSso.mjs:1185) 即被攔下, 早於 procCore 的 'invalid userId' 判斷, 故實機 reject 'tokenExpired'.
+        assert.strict.equal(r.err, 'tokenExpired', `錯誤訊息應為 'tokenExpired' (空 userId 撞 _strictStr 邊界), 實際: ${r.err}`)
     })
 
     it('API-001-happy-path-side-effect: admin 對 targetEng 觸發成功, DB password 變更 + isForceChangePw=y + 回應無明文', async function() {
@@ -188,22 +211,23 @@ describe('ResetPassword API — 後端契約 (API-002/007/008/009)', function() 
     })
 
     it('API-002-smtp-fail-still-success: 測試環境 SMTP 為假, 觸發 reset 仍須 resolve success + DB 更新', async function() {
+        //用獨立 target (targetEng2) 避開 API-001 對 targetEng 之 30s throttle 污染
         await woItems.users.save({
-            id: testUsers.targetEng.id,
-            password: hashPassword(testUsers.targetEng.rawPassword, salt),
+            id: testUsers.targetEng2.id,
+            password: hashPassword(testUsers.targetEng2.rawPassword, salt),
             isForceChangePw: 'n',
         })
-        let beforeUs = await woItems.users.select({ id: testUsers.targetEng.id })
+        let beforeUs = await woItems.users.select({ id: testUsers.targetEng2.id })
         let originalPwHash = beforeUs[0].password
 
         //settings.json.emSrcPW='{pw}' (placeholder), SMTP auth 必失敗.
         //預期: procCore catch SMTP error, 仍回 {state:'success'} + DB 已更新
         let adminToken = userTokens[testUsers.admin.id]
-        let r = await callFapi('adminResetUserPassword', [adminToken, 'eng', testUsers.targetEng.id])
+        let r = await callFapi('adminResetUserPassword', [adminToken, 'eng', testUsers.targetEng2.id])
         assert.strict.equal(r.ok, true, `SMTP fail 仍須 resolve, 實際 reject: ${r.err}`)
         assert.strict.equal(r.val.state, 'success', `回應 state 應為 success`)
 
-        let afterUs = await woItems.users.select({ id: testUsers.targetEng.id })
+        let afterUs = await woItems.users.select({ id: testUsers.targetEng2.id })
         assert.strict.equal(afterUs[0].isForceChangePw, 'y', `SMTP fail 仍須 isForceChangePw='y', 實際 ${afterUs[0].isForceChangePw}`)
         assert.strict.notEqual(afterUs[0].password, originalPwHash, `SMTP fail 仍須 password hash 更新`)
     })
@@ -226,7 +250,8 @@ describe('ResetPassword API — 後端契約 (API-002/007/008/009)', function() 
     })
 
     it('API-008-multi-device-tokens-preserved: target 有 2 個既有 token, admin reset 後兩 token 仍存在', async function() {
-        let targetId = testUsers.targetEng.id
+        //用獨立 target (targetEng3) 避開其他 case 對 targetEng 之 30s throttle 污染
+        let targetId = testUsers.targetEng3.id
         let oldTks = await woItems.tokens.select({ userId: targetId }).catch(() => [])
         for (let t of oldTks) await woItems.tokens.del({ id: t.id }).catch(() => {})
         let t1 = ds.tokens.funNew({ userId: targetId })

@@ -1166,7 +1166,7 @@ export default {
                     })
                     .catch((err) => {
                         //後端統一 reject { key, msg }: msg 已依 lang 翻譯, 直接顯示
-                        errMsg = (err && err.msg) ? err.msg : vo.$t('adminResetPasswordFailed')
+                        errMsg = isestr(err) ? vo.$tErr(err) : vo.$t('adminResetPasswordFailed')
                     })
                 if (!ok) {
                     vo.$ui.updateLoading(false)
@@ -1177,7 +1177,7 @@ export default {
                 //成功
                 vo.$ui.updateLoading(false)
                 let msg = vo.$t('adminResetPasswordSuccess').replace('{email}', email)
-                await vo.$dg.showCheckYes(msg)
+                await vo.$dg.showCheckYes(msg, { type: 'success' })
 
                 return 'ok'
             }
@@ -1497,7 +1497,7 @@ export default {
                     //hide loading 因 showCheckYes 是 modal, 等待期間 loading 會疊著
                     vo.$ui.updateLoading(false)
                     //後端 reject { key, msg }: msg 已依 lang 翻譯, 直接顯示 (不再內插 raw 英文 errTemp)
-                    let msg = (errTemp && errTemp.msg) ? errTemp.msg : vo.$t('anUnexpectedErrorOccurred')
+                    let msg = isestr(errTemp) ? vo.$tErr(errTemp) : vo.$t('anUnexpectedErrorOccurred')
                     await vo.$dg.showCheckYes(`${vo.$t('userSaveUsersFail')}: ${msg}`)
                     return
                 }
@@ -1518,7 +1518,7 @@ export default {
 
                 //成功訊息: 改用 CheckYes modal 與其他訊息一致, admin 須點擊確認讀過
                 vo.$ui.updateLoading(false)
-                await vo.$dg.showCheckYes(vo.$t('userSaveUsersSuccess'))
+                await vo.$dg.showCheckYes(vo.$t('userSaveUsersSuccess'), { type: 'success' })
 
             }
 

@@ -1,14 +1,15 @@
+import crypto from 'node:crypto'
 import isUserPw from 'wsemi/src/isUserPw.mjs'
 
 
 function pick(arr) {
-    return arr[Math.floor(Math.random() * arr.length)]
+    return arr[crypto.randomInt(arr.length)]
 }
 
 
 function shuffle(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
-        let j = Math.floor(Math.random() * (i + 1))
+        let j = crypto.randomInt(i + 1)
         let t = arr[i]
         arr[i] = arr[j]
         arr[j] = t

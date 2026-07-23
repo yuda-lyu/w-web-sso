@@ -7,7 +7,8 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, assertBaselineMatch, baseUrl, maskRegions, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, maskRegions, overlayRegions, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
+import { mdiChartBoxOutline } from '@mdi/js/mdi.js'
 
 
 //
@@ -324,6 +325,11 @@ async function autoLoginScreenshot(page, lang, opt = {}) {
     let token = opt.token || ''
     // waitMs 預設 8000；含 redirect 場景用 8s，需截 WAlert 顯示中的場景需 < 4000（WAlert 預設 4s 自動消失）
     let waitMs = opt.waitMs || 8000
+    // boxTarget: captureStableWithBox 的 target。
+    //   - 登入頁 / user view → '.sb'（PageLogin.vue 與 PageUser.vue 的主卡片 class 皆為 sb）
+    //   - backstage → page.locator('[state]').first()（WDrawer 根元素，包含 sidebar 導航與右側內容）
+    // 預設 '.sb'（兩種頁面都有 .sb）；backstage case 由 caller 傳入 Locator。
+    let boxTarget = opt.boxTarget || '.sb'
 
     // 構造目標 URL（含 view 與 lang query）
     let qs = []
@@ -348,15 +354,16 @@ async function autoLoginScreenshot(page, lang, opt = {}) {
     await page.goto(url, { waitUntil: 'networkidle', timeout: 15000 })
     await page.waitForTimeout(waitMs)
 
-    return await captureStable(page)
+    return await captureStableWithBox(page, boxTarget)
 }
 
 
 //E2E-002 backstage: Statistics 頁「存取活動監測」區塊起含即時圖表 (WEchartsVueDyn canvas),
-//其 GPU/canvas 渲染跨進程 warm/cold 狀態不同 → byte-equality pixel 永遠漂移.
-//對策: 偵測「存取活動監測」區塊 div 及其下方各區塊 div (此處為「管控狀態」), 逐一取各自
-//bounding rect 在截圖後填黑. baseline 與 verify 兩端皆遮同一組區塊 → 只比對上半「使用者資訊
-//統計卡」靜態區域, 動態區用黑塊穩定化. 各區塊 rect 為右側內容欄寬度, 不會覆蓋左側抽屜.
+//其 GPU/canvas 渲染跨進程 warm/cold 狀態不同 → pixel 永遠漂移, 無法直接比對.
+//對策(改良版, 取代填黑): 偵測「存取活動監測」區塊 div 及其下方各區塊 div (含「管控狀態」), 取各自
+//bounding rect, 在截圖後用「預存的真實圖表快照 (_chartref-{lang}.png)」覆蓋這些區 → baseline 與
+//verify 兩端皆貼同一張快照, 該區永遠一致而視覺上呈現真實頻率圖 (非突兀大黑塊). 上半「使用者資訊統計卡」
+//為靜態真實截圖照常比對. 各區塊 rect 為右側內容欄寬度, 不覆蓋左側抽屜.
 async function autoLoginBackstageMasked(page, lang, opt = {}) {
     //admin 進 backstage 6 個 grSta 全跑 + echarts canvas init, 對 fresh admin user (無歷史 stats)
     //需 ~26s; 對 base seed user ~16s. 不能用固定 waitMs (§6.3「偵測 driven 步驟流程」), 改 waitForSelector
@@ -377,20 +384,27 @@ async function autoLoginBackstageMasked(page, lang, opt = {}) {
     await page.goto(url, { waitUntil: 'networkidle', timeout: 15000 })
 
     //Step 3: 等 chart icon 出現 (admin 完整載入 backstage 之 marker)
-    await page.waitForSelector('i.mdi-chart-box-outline', { timeout: 60000 })
+    //icon 已由 mdi webfont 改為 @mdi/js SVG path → 以 svg path 之 d 屬性比對 mdiChartBoxOutline 偵測
+    await page.waitForFunction((iconPath) => {
+        return Array.from(document.querySelectorAll('svg path')).some((p) => p.getAttribute('d') === iconPath)
+    }, mdiChartBoxOutline, { timeout: 60000 })
 
     //Step 4: echarts 動畫 settle buffer
     await page.waitForTimeout(3000)
 
-    let buf = await captureStable(page)
+    //框左側 sidebar 導航本體：divDrawer（WDrawer 內部 ref="divDrawer"）由 v-domstable directive 綁定時
+    //呼叫 el.setAttribute('ev-stable', id)，x≈0、寬≈229px，即左側抽屜 sidebar 實體，
+    //比 [state]（WDrawer 根、全屏）更聚焦「已進入 backstage（sidebar 出現）」這個驗證標的。
+    let buf = await captureStableWithBox(page, page.locator('[ev-stable]').first())
 
     //取「存取活動監測」區塊及其後所有 sibling 區塊的 rect (fullPage 座標 = viewport rect + scroll)
-    let rects = await page.evaluate(() => {
-        let icon = document.querySelector('i.mdi-chart-box-outline')
-        if (!icon) return null
+    let rects = await page.evaluate((iconPath) => {
+        //找 d===mdiChartBoxOutline 的 svg path (存取活動監測 header 內的 WIcon)
+        let pathEl = Array.from(document.querySelectorAll('svg path')).find((p) => p.getAttribute('d') === iconPath)
+        if (!pathEl) return null
         //結構: .space-y-8 > [使用者資訊 div, 存取活動監測 div, 管控狀態 div]
-        //icon 在「存取活動監測」div 的 header(.pb-1) 內, header.parentElement 即該區塊 div
-        let header = icon.closest('.pb-1') || icon.parentElement
+        //path 在「存取活動監測」div 的 header(.pb-1) 內, header.parentElement 即該區塊 div
+        let header = pathEl.closest('.pb-1') || pathEl.parentElement
         let section = header ? header.parentElement : null
         if (!section) return null
         let out = []
@@ -400,11 +414,19 @@ async function autoLoginBackstageMasked(page, lang, opt = {}) {
             out.push({ x: r.left + window.scrollX, y: r.top + window.scrollY, w: r.width, h: r.height })
         }
         return out
-    })
+    }, mdiChartBoxOutline)
     if (rects == null || rects.length === 0) {
-        throw new Error('autoLoginBackstageMasked: 找不到「存取活動監測」區塊 (i.mdi-chart-box-outline)')
+        throw new Error('autoLoginBackstageMasked: 找不到「存取活動監測」區塊 (svg path d=mdiChartBoxOutline)')
     }
-    return await maskRegions(buf, rects)
+    //以「真實圖表快照」覆蓋動態區 (取代填黑): baseline 與 runtime 兩端皆貼同一張 ref 圖 → 該區永遠一致
+    //(e2e 穩定), 視覺呈現真實頻率圖而非突兀黑塊 (緣由: echarts canvas GPU 跨進程漂移無法 pixel 穩定).
+    //ref 不存在時以當次真實截圖建立 (bootstrap), 之後固定沿用; 要更新快照: 刪 _chartref-{lang}.png 再重產.
+    let refPath = `./test/pics/autologin/_chartref-${lang}.png`
+    if (!fs.existsSync(refPath)) {
+        fs.writeFileSync(refPath, buf)
+    }
+    let refBuf = fs.readFileSync(refPath)
+    return await overlayRegions(buf, rects, refBuf)
 }
 
 
@@ -464,7 +486,9 @@ async function generateBaselineForLang(page, lang) {
     // 設 menuKey='mmUserInfor'. 議題 1 fix 驗 (commit 5006ac0).
     if (shouldGen(lang, 'E2E-009-ok-backstage-nonadmin')) {
         console.log(`  009-ok-backstage-nonadmin`)
-        let buf9 = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'backstage' })
+        //框左側 sidebar 導航本體（[ev-stable]，即 WDrawer 內 ref="divDrawer" + v-domstable，x≈0 寬≈229px），
+        //比 [state]（WDrawer 根、全屏）更聚焦「sidebar 導航項目（確認無 admin-only 項目）」這個驗證標的。
+        let buf9 = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'backstage', boxTarget: page.locator('[ev-stable]').first() })
         writeBaseline(lang, 'E2E-009-ok-backstage-nonadmin', buf9)
     }
 
@@ -482,7 +506,7 @@ async function generateBaseline() {
     //每個 lang 啟動 fresh browser, 與 mocha test mode 一致 (每個 describe 各自 launch browser).
     //避免「warm 跑 regen / cold 跑 test」導致 cht / chart canvas 等 process-state 累積差異.
     for (let lang of langs) {
-        let browser = await chromium.launch({ headless: true })
+        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
         let page = await browser.newPage()
         page.on('dialog', async (dialog) => {
             await dialog.accept()
@@ -526,7 +550,7 @@ else {
                 await deleteTestUsersAndTokens()
                 await insertTestUsersAndTokens()
 
-                browser = await chromium.launch({ headless: true })
+                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
                 let context = await browser.newContext()
                 page = await context.newPage()
 
@@ -609,7 +633,9 @@ else {
 
             it('E2E-009-ok-backstage-nonadmin: 非 admin token + view=backstage → 停留 backstage 但僅 UserInfor (LayoutContent isAdmin filter)', async function() {
                 let okToken = userTokens['id-autologin-ok']
-                let buf = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'backstage' })
+                //框左側 sidebar 導航本體（[ev-stable]，即 WDrawer 內 ref="divDrawer" + v-domstable，x≈0 寬≈229px），
+                //比 [state]（WDrawer 根、全屏）更聚焦「sidebar 無 admin-only 項目」這個驗證標的。
+                let buf = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'backstage', boxTarget: page.locator('[ev-stable]').first() })
                 //語意斷言: 顯示 User information sidebar text (mmUserInfor menu 可見)
                 await assertSpecForCase(page, lang, 'E2E-009-ok-backstage-nonadmin')
                 //語意斷言補強: 不顯示 Statistics Information sidebar text (admin-only mmStaInfor 被過濾)
@@ -620,7 +646,7 @@ else {
                     false,
                     `非 admin 進 view=backstage 不應顯示 "${staTitle}" sidebar item (admin-only menu 須被 LayoutContent isAdmin filter 阻擋), 但實際有顯示`
                 )
-                //視覺斷言: pixel baseline byte-equal
+                //視覺斷言: pixel baseline (pixelmatch 反鋸齒感知 + maxDiffPixels 容差)
                 let baselinePath = bp(lang, 'E2E-009-ok-backstage-nonadmin')
                 assertBaselineMatch(buf, baselinePath, `autologin-${lang}-E2E-009-ok-backstage-nonadmin`)
             })

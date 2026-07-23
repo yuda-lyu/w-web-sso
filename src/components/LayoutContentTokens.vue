@@ -880,7 +880,7 @@ export default {
                 if (errTemp !== null) {
                     vo.$ui.updateLoading(false)
                     //後端 reject { key, msg }: msg 已依 lang 翻譯, 直接顯示
-                    let msg = (errTemp && errTemp.msg) ? errTemp.msg : vo.$t('anUnexpectedErrorOccurred')
+                    let msg = isestr(errTemp) ? vo.$tErr(errTemp) : vo.$t('anUnexpectedErrorOccurred')
                     await vo.$dg.showCheckYes(`${vo.$t('tokenSaveTokensFail')}: ${msg}`)
                     return
                 }
@@ -890,7 +890,7 @@ export default {
 
                 //alert
                 vo.$ui.updateLoading(false)
-                await vo.$dg.showCheckYes(vo.$t('tokenSaveTokensSuccess'))
+                await vo.$dg.showCheckYes(vo.$t('tokenSaveTokensSuccess'), { type: 'success' })
 
             }
 

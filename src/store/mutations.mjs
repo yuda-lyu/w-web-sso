@@ -74,12 +74,6 @@ export let mutations = {
         state[msg.tableName] = msg.data
     },
 
-    [types.UpdateData] (state, msg) {
-        //msg.path內為存取路徑, 需使用set處理
-        // console.log('UpdateData msg', msg)
-        set(state, msg.path, msg.data)
-    },
-
     [types.UpdateHeightApp] (state, heightApp) {
         state.heightApp = heightApp
     },
@@ -90,10 +84,6 @@ export let mutations = {
 
     [types.UpdateHeightToolbar] (state, heightToolbar) {
         state.heightToolbar = heightToolbar
-    },
-
-    [types.UpdateMenu] (state, menu) {
-        state.menu = menu
     },
 
     [types.UpdateUserToken] (state, userToken) {

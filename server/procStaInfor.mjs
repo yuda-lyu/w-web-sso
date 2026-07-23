@@ -16,6 +16,12 @@ import staIp from './staLogs/staIp.callWorker.mjs'
 
 function proc(woItems, p, opt = {}) {
 
+    //params
+    let {
+        srLog,
+        logFd, //D43: 承接設定之 logFd, 傳給 staLogs worker 之 fdLog(取代其硬寫預設 './logs')
+    } = opt
+
 
     // 30s cache: admin 寫入後由 procCore.mjs updateUsersList/updateTokensList/updateIpsList 之 ocGetXxxList.clear() 即時 invalidate (audit F-050); 對 admin 操作 dashboard 立刻同步, 對外部讀取仍享 cache 加速.
     //getStaUserSummary
@@ -214,13 +220,19 @@ function proc(woItems, p, opt = {}) {
     let _getStaUserAccountLogin = async() => {
 
         //staUserAccountLogin
-        let rs = await staUserAccountLogin()
+        let rs = await staUserAccountLogin(7, 'hr', { fdLog: logFd })
 
         return rs
     }
     let ocGetStaUserAccountLogin = cache()
     let getStaUserAccountLogin = async () => {
         let r = await ocGetStaUserAccountLogin.getProxy('fun', { fun: _getStaUserAccountLogin, inputs: null, timeExpired: 30 * 1000 }) //快取30秒
+        if (r === undefined) { //worker reject 被 wsemi cache 吞掉回 undefined, 不可回傳 undefined
+            if (srLog) {
+                srLog.error({ event: 'fun-getStaUserAccountLogin', key: 'getStaDataFailed' })
+            }
+            return Promise.reject('getStaDataFailed')
+        }
         return r
     }
 
@@ -242,7 +254,7 @@ function proc(woItems, p, opt = {}) {
     let _getStaToken = async() => {
 
         //staToken
-        let rs = await staToken()
+        let rs = await staToken(7, 'hr', { fdLog: logFd })
 
         //kpCount
         let kpCount = {}
@@ -303,6 +315,12 @@ function proc(woItems, p, opt = {}) {
     let ocGetStaToken = cache()
     let getStaToken = async () => {
         let r = await ocGetStaToken.getProxy('fun', { fun: _getStaToken, inputs: null, timeExpired: 30 * 1000 }) //快取30秒
+        if (r === undefined) { //worker reject 被 wsemi cache 吞掉回 undefined, 不可回傳 undefined
+            if (srLog) {
+                srLog.error({ event: 'fun-getStaToken', key: 'getStaDataFailed' })
+            }
+            return Promise.reject('getStaDataFailed')
+        }
         return r
     }
 
@@ -324,7 +342,7 @@ function proc(woItems, p, opt = {}) {
     let _getStaIp = async() => {
 
         //staIp
-        let rs = await staIp()
+        let rs = await staIp(7, 'hr', { fdLog: logFd })
 
         //kpCount
         let kpCount = {}
@@ -365,6 +383,12 @@ function proc(woItems, p, opt = {}) {
     let ocGetStaIp = cache()
     let getStaIp = async () => {
         let r = await ocGetStaIp.getProxy('fun', { fun: _getStaIp, inputs: null, timeExpired: 30 * 1000 }) //快取30秒
+        if (r === undefined) { //worker reject 被 wsemi cache 吞掉回 undefined, 不可回傳 undefined
+            if (srLog) {
+                srLog.error({ event: 'fun-getStaIp', key: 'getStaDataFailed' })
+            }
+            return Promise.reject('getStaDataFailed')
+        }
         return r
     }
 

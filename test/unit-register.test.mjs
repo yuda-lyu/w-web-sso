@@ -1,9 +1,18 @@
 import assert from 'assert'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import get from 'lodash-es/get.js'
-import isUserPw from 'wsemi/src/isUserPw.mjs'
+import proc from '../server/procCore.mjs'
+import { normalizeAllowUserRegistration } from '../server/WWebSso.mjs'
 
 
-//passwordPolicy for testing (matches settings.json)
+//resolve server/template (scenario B: 路徑落在套件自身資料夾, 用 fileURLToPath, 全域 §5.2)
+let __dirname = path.dirname(fileURLToPath(import.meta.url))
+let pathTemplate = path.join(__dirname, '..', 'server', 'template')
+
+
+//passwordPolicy fixture: 與 settings.json 之 passwordPolicy 結構/值一致, 作為 SUT 的策略配置
+//「傳入」真實 procCore 工廠 (非本地複製驗證邏輯). procCore.checkUserPassword 完全依此 opt 跑.
 let passwordPolicy = {
     minLength: 8,
     maxLength: 16,
@@ -43,38 +52,59 @@ let passwordPolicy = {
 }
 
 
-//checkUserPassword (extracted from procCore logic)
-function checkUserPassword(lang, pw, opt = {}) {
-    let account = get(opt, 'account', '')
-    let keyErr = ''
+//mock factory 依賴: woItems (DB 存取層) / procOrm (寫入). checkUserPassword 為純函式不碰 DB;
+//createUser 用 select(查重)/procOrm(insert)/srEmail(寄信). 寄信失敗於 createUser 內被 catch, 不影響回傳.
+let mkWoItems = () => ({
+    users: { select: async () => [], save: async () => {} },
+    ips: { select: async () => [], save: async () => {} },
+    tokens: { select: async () => [], save: async () => {} },
+})
+let mkOpt = (over = {}) => ({
+    srLog: { log: () => {} },
+    srEmail: { send: async () => {} },
+    salt: 'unit-test-salt',
+    minExpired: 100,
+    kpLang: { eng: { webName: 'Test', regVerifyEmTitle: 'Verify' } },
+    pathTemplate,
+    passwordPolicy,
+    allowUserRegistration: true,
+    siteUrl: 'http://localhost',
+    verifyBaseUrl: 'http://localhost',
+    ...over,
+})
+
+
+//buildProc: 取得真實 procCore 工廠回傳的 p (含 checkUserPassword / createUser).
+//procCore 工廠先前裝有 cleanUsers / cleanIps 背景清理 timer, 會吊住 node process 不退;
+//該兩 timer 已於 2026-07-06 依 ADR-013 (隱性解除) 移除. 此處攔截 setInterval 之防護保留,
+//若日後 procCore 再引入 timer, unit 測試仍可獨立退出 (不需 mocha --exit, 不需起 server). 不更動 production code.
+function buildProc(woItems, procOrm, over = {}) {
+    let realSetInterval = globalThis.setInterval
+    let timers = []
+    globalThis.setInterval = (...a) => {
+        let t = realSetInterval(...a)
+        if (t && typeof t.unref === 'function') {
+            t.unref()
+        }
+        timers.push(t)
+        return t
+    }
     try {
-        isUserPw(pw, {
-            useKeyForError: true,
-            useOnlyOneError: true,
-            numLenMin: passwordPolicy.minLength,
-            numLenMax: passwordPolicy.maxLength,
-            requireLetter: passwordPolicy.requireLetter,
-            requireUppercase: passwordPolicy.requireUppercase,
-            requireLowercase: passwordPolicy.requireLowercase,
-            requireDigit: passwordPolicy.requireDigit,
-            requireSpecial: passwordPolicy.requireSpecial,
-            noSpace: passwordPolicy.noSpace,
-            onlyAscii: passwordPolicy.onlyAscii,
-            forbiddenChars: passwordPolicy.forbiddenChars,
-            commonPasswordBlacklist: passwordPolicy.commonPasswordBlacklist,
-            account,
-            noConsecutiveCharsFromAccount: passwordPolicy.noConsecutiveCharsFromAccount,
-            consecutiveCharsMinMatch: passwordPolicy.consecutiveCharsMinMatch,
-        })
+        let p = proc(woItems, procOrm, mkOpt(over))
+        for (let t of timers) {
+            clearInterval(t)
+        }
+        return p
     }
-    catch (err) {
-        keyErr = err.message
+    finally {
+        globalThis.setInterval = realSetInterval
     }
-    if (keyErr === '') {
-        return { state: 'success', msg: 'ok' }
-    }
-    return { state: 'error', msg: keyErr, key: keyErr }
 }
+
+
+//共用實例 (checkUserPassword 為純函式, 多 case 唯讀共用無副作用)
+let pCore = buildProc(mkWoItems(), async () => {})
+let checkUserPassword = (lang, pw, opt) => pCore.checkUserPassword(lang, pw, opt)
 
 
 describe('register - password validation (checkUserPassword)', function() {
@@ -95,49 +125,49 @@ describe('register - password validation (checkUserPassword)', function() {
     it('C2: should fail when password is too short', function() {
         let r = checkUserPassword('eng', 'Ab@1', { account: 'newuser' })
         assert.strict.equal(r.state, 'error')
-        assert.strict.equal(r.key, 'keyLimNumLenMin')
+        assert.strict.equal(r.key, 'userPassword_keyLimNumLenMin')
     })
 
     // C3: no special char
     it('C3: should fail when password has no special character', function() {
         let r = checkUserPassword('eng', 'Abcd1234', { account: 'newuser' })
         assert.strict.equal(r.state, 'error')
-        assert.strict.equal(r.key, 'keyLimRequireSpecial')
+        assert.strict.equal(r.key, 'userPassword_keyLimRequireSpecial')
     })
 
     // C4: blacklisted password
     it('C4: should fail when password is in blacklist', function() {
         let r = checkUserPassword('eng', '1qaz@WSX', { account: 'newuser' })
         assert.strict.equal(r.state, 'error')
-        assert.strict.equal(r.key, 'keyLimCommonPassword')
+        assert.strict.equal(r.key, 'userPassword_keyLimCommonPassword')
     })
 
     // C5: consecutive chars from account
     it('C5: should fail when password contains consecutive chars from account', function() {
         let r = checkUserPassword('eng', 'Ab@1ne34', { account: 'newuser' })
         assert.strict.equal(r.state, 'error')
-        assert.strict.equal(r.key, 'keyLimConsecutiveCharsFromAccount')
+        assert.strict.equal(r.key, 'userPassword_keyLimConsecutiveCharsFromAccount')
     })
 
     // additional: no letter
     it('should fail when password has no letter', function() {
         let r = checkUserPassword('eng', '1234@678', { account: 'newuser' })
         assert.strict.equal(r.state, 'error')
-        assert.strict.equal(r.key, 'keyLimRequireLetter')
+        assert.strict.equal(r.key, 'userPassword_keyLimRequireLetter')
     })
 
     // additional: no digit
     it('should fail when password has no digit', function() {
         let r = checkUserPassword('eng', 'Abcdefg@', { account: 'newuser' })
         assert.strict.equal(r.state, 'error')
-        assert.strict.equal(r.key, 'keyLimRequireDigit')
+        assert.strict.equal(r.key, 'userPassword_keyLimRequireDigit')
     })
 
     // additional: too long
     it('should fail when password exceeds maxLength', function() {
         let r = checkUserPassword('eng', 'Ab@12345678901234', { account: 'newuser' })
         assert.strict.equal(r.state, 'error')
-        assert.strict.equal(r.key, 'keyLimNumLenMax')
+        assert.strict.equal(r.key, 'userPassword_keyLimNumLenMax')
     })
 
     // additional: exact minLength
@@ -156,21 +186,21 @@ describe('register - password validation (checkUserPassword)', function() {
     it('should fail when password contains space', function() {
         let r = checkUserPassword('eng', 'Abc @123', { account: 'newuser' })
         assert.strict.equal(r.state, 'error')
-        assert.strict.equal(r.key, 'keyLimHasSpace')
+        assert.strict.equal(r.key, 'userPassword_keyLimHasSpace')
     })
 
     // additional: has forbidden char backslash
     it('should fail when password contains forbidden backslash', function() {
         let r = checkUserPassword('eng', 'Ab@1234\\', { account: 'newuser' })
         assert.strict.equal(r.state, 'error')
-        assert.strict.equal(r.key, 'keyLimForbiddenChar')
+        assert.strict.equal(r.key, 'userPassword_keyLimForbiddenChar')
     })
 
     // additional: blacklist case insensitive
     it('should fail when password matches blacklist case-insensitively', function() {
         let r = checkUserPassword('eng', '1QAZ@wsx', { account: 'newuser' })
         assert.strict.equal(r.state, 'error')
-        assert.strict.equal(r.key, 'keyLimCommonPassword')
+        assert.strict.equal(r.key, 'userPassword_keyLimCommonPassword')
     })
 
     // additional: blacklist substring is not exact match
@@ -195,7 +225,7 @@ describe('register - password validation (checkUserPassword)', function() {
     it('should fail when password contains non-ASCII characters', function() {
         let r = checkUserPassword('eng', 'Ab@123密碼', { account: 'newuser' })
         assert.strict.equal(r.state, 'error')
-        assert.strict.equal(r.key, 'keyLimNonAsciiChar')
+        assert.strict.equal(r.key, 'userPassword_keyLimNonAsciiChar')
     })
 
 })
@@ -217,53 +247,49 @@ describe('register - field validation logic', function() {
         assert.strict.equal(password, confirmPassword)
     })
 
-    // F4: isAdmin injection - verify funNew behavior
-    it('F4: explicit isAdmin should not be overridable by input', function() {
-        // Simulate: even if data has isAdmin:'y', the code passes isAdmin:'' to funNew
-        let dataFromAttacker = { isAdmin: 'y', account: 'hacker', name: 'hacker' }
-        let safeValues = {
-            account: dataFromAttacker.account,
-            name: dataFromAttacker.name,
-            isAdmin: '', // explicitly set
-            isActive: 'y',
-        }
-        assert.strict.equal(safeValues.isAdmin, '')
-        assert.strict.equal(safeValues.isActive, 'y')
+    // F4: isAdmin injection - createUser 強制 isAdmin='n', 不採信 caller 注入之 isAdmin
+    // (spec/流程_使用者創建帳密.md:419/474 自助註冊強制 isAdmin='n'; procCore.mjs:837-845 funNew 硬寫 isAdmin:'n')
+    it('F4: createUser should force isAdmin to "n" even when caller injects isAdmin:"y"', async function() {
+        let inserted = []
+        let p = buildProc(mkWoItems(), async (operatorId, table, op, args) => {
+            if (table === 'users' && op === 'insert') {
+                inserted.push(args[0])
+            }
+        })
+        let r = await p.createUser('eng', {
+            account: 'hacker', name: 'hacker', email: 'hacker@x.com',
+            password: 'Ab@12345', confirmPassword: 'Ab@12345',
+            isAdmin: 'y', //attacker-injected, 須被忽略
+        })
+        assert.strict.equal(r.state, 'success')
+        assert.strict.equal(inserted.length, 1)
+        //真實 createUser 強制寫入之欄位 (非假資料常數)
+        assert.strict.equal(inserted[0].isAdmin, 'n')
+        assert.strict.equal(inserted[0].isActive, 'y')
+        //timeVerified 須為空 (自助註冊須完成 email 驗證才可登入)
+        assert.strict.equal(get(inserted[0], 'timeVerified', ''), '')
     })
 
 })
 
 
 describe('register - allowUserRegistration setting', function() {
+    //呼叫 WWebSso 具名匯出之真實正規化函式, 非測試檔自行複製邏輯——
+    //WWebSso.mjs 之 normalizeAllowUserRegistration 改壞時本組 case 須轉紅(全域 §14.2)
 
     // A3: default when not set
     it('A3: should default to true when allowUserRegistration is not set', function() {
-        let opt = {}
-        let allowUserRegistration = get(opt, 'allowUserRegistration', true)
-        if (allowUserRegistration !== true && allowUserRegistration !== false) {
-            allowUserRegistration = true
-        }
-        assert.strict.equal(allowUserRegistration, true)
+        assert.strict.equal(normalizeAllowUserRegistration({}), true)
     })
 
     // A4: non-boolean should default to true
     it('A4: should default to true when allowUserRegistration is non-boolean', function() {
-        let opt = { allowUserRegistration: 'yes' }
-        let allowUserRegistration = get(opt, 'allowUserRegistration', true)
-        if (allowUserRegistration !== true && allowUserRegistration !== false) {
-            allowUserRegistration = true
-        }
-        assert.strict.equal(allowUserRegistration, true)
+        assert.strict.equal(normalizeAllowUserRegistration({ allowUserRegistration: 'yes' }), true)
     })
 
     // A2: false should stay false
     it('A2: should stay false when set to false', function() {
-        let opt = { allowUserRegistration: false }
-        let allowUserRegistration = get(opt, 'allowUserRegistration', true)
-        if (allowUserRegistration !== true && allowUserRegistration !== false) {
-            allowUserRegistration = true
-        }
-        assert.strict.equal(allowUserRegistration, false)
+        assert.strict.equal(normalizeAllowUserRegistration({ allowUserRegistration: false }), false)
     })
 
 })

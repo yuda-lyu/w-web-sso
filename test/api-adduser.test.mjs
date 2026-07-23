@@ -1,7 +1,7 @@
 import assert from 'assert'
 import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
-import hashPassword from '../server/hashPassword.mjs'
+import hashPassword, { verifyPassword } from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
 import { startServersOnce, callFapi } from './api-setup.mjs'
 
@@ -169,7 +169,8 @@ describe('AddUser API — updateUsersList 拒絕情境與副作用', function() 
         })
         let r = await callFapi('updateUsersList', [userTokens[testUsers.admin.id], 'eng', allUsers])
         assert.strict.equal(r.ok, false)
-        assert.strict.match(r.err, /[Cc]annot demote yourself|不可解除自己的管理員權限/)
+        //對應 CLAUDE.md「錯誤時回傳前端資訊須回傳 key」: 後端一律 reject 純 err-key, 由前端依 lang 翻譯
+        assert.strict.equal(r.err, 'cannotDemoteSelf')
     })
 
     it('API-007-self-lockout-isActive: reject "cannotDisableSelf"', async function() {
@@ -182,7 +183,8 @@ describe('AddUser API — updateUsersList 拒絕情境與副作用', function() 
         })
         let r = await callFapi('updateUsersList', [userTokens[testUsers.admin.id], 'eng', allUsers])
         assert.strict.equal(r.ok, false)
-        assert.strict.match(r.err, /[Cc]annot disable yourself|不可停用自己的帳號/)
+        //對應 CLAUDE.md「錯誤時回傳前端資訊須回傳 key」: 後端一律 reject 純 err-key, 由前端依 lang 翻譯
+        assert.strict.equal(r.err, 'cannotDisableSelf')
     })
 
     it('API-008-happy-path: admin 加 user, DB 驗證 hash/audit/timeVerified', async function() {
@@ -201,7 +203,7 @@ describe('AddUser API — updateUsersList 拒絕情境與副作用', function() 
         let u = us[0]
         assert.strict.notEqual(u.password, rawPw)
         assert.strict.notEqual(u.password, '')
-        assert.strict.equal(u.password, hashPassword(rawPw, salt))
+        assert.strict.equal(verifyPassword(rawPw, u.password, salt), true, `password hash 應可由 rawPw 驗證通過`)
         assert.strict.equal(u.isForceChangePw, 'n')
         assert.strict.equal(u.userId, testUsers.admin.id, `userId 應為 admin id`)
         assert.strict.equal(u.userIdUpdate, testUsers.admin.id)
@@ -213,7 +215,7 @@ describe('AddUser API — updateUsersList 拒絕情境與副作用', function() 
     it('API-009-existing-row-password-preserved: 既有 user password hash 不被洗掉', async function() {
         let before = await woItems.users.select({ id: testUsers.existing.id })
         let originalHash = before[0].password
-        assert.strict.equal(originalHash, hashPassword(testUsers.existing.rawPassword, salt))
+        assert.strict.equal(verifyPassword(testUsers.existing.rawPassword, originalHash, salt), true, `既有 user password hash 應可由原 rawPassword 驗證通過`)
 
         let allUsers = await woItems.users.select()
         allUsers = allUsers.map((u) => {

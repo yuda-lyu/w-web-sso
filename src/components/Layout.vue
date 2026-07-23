@@ -106,7 +106,6 @@ import get from 'lodash-es/get.js'
 import isestr from 'wsemi/src/isestr.mjs'
 import WIcon from 'w-component-vue/src/components/WIcon.vue'
 import WPopup from 'w-component-vue/src/components/WPopup.vue'
-import WButtonCircle from 'w-component-vue/src/components/WButtonCircle.vue'
 import WTextSelect from 'w-component-vue/src/components/WTextSelect.vue'
 import LayoutContent from './LayoutContent.vue'
 
@@ -115,7 +114,6 @@ export default {
     components: {
         WIcon,
         WPopup,
-        WButtonCircle,
         WTextSelect,
         LayoutContent,
     },
@@ -127,6 +125,9 @@ export default {
             mdiLogoutVariant,
 
             t: null,
+
+            loggingOut: false, //登出 in-flight 重入鎖: 登出觸發點為原生 popup 選單 div (非 WButton, 無 promiseUnlock),
+            //且 mUI.logout 無 updateLoading 全頁 overlay, 故以此旗標擋雙擊重入 (避免重複 logoutByToken / 清 LS / 切 viewState)
 
             firstSetting: true,
 
@@ -298,6 +299,14 @@ export default {
 
             let vo = this
 
+            //雙擊重入防護: 登出觸發點為原生 popup 選單 div (無 promiseUnlock), 且 mUI.logout 無全頁 loading,
+            //in-flight 期間擋住第二次點擊, 避免重複 logoutByToken / 清 LS / 切 viewState. 成功會轉跳登入頁
+            //(updateViewState('login')) 自然重置; 失敗 (如 webKey 缺失 reject) 於 catch 解鎖供使用者重試.
+            if (vo.loggingOut) {
+                return
+            }
+            vo.loggingOut = true
+
             //logout
             vo.$ui.logout()
                 .then(() => {
@@ -309,6 +318,9 @@ export default {
                 })
                 .catch((err) => {
                     console.log(`logout err[${err}]`)
+                })
+                .finally(() => {
+                    vo.loggingOut = false
                 })
 
         },

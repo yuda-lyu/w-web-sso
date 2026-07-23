@@ -7,7 +7,7 @@ import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, apiUrl, assertBaselineMatch, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, assertBaselineMatch, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput } from './e2e-setup.mjs'
 
 
 //
@@ -143,6 +143,13 @@ let expectedSpecText = {
         //userRegistrationResendInvalidEmail
         eng: { mode: 'text', value: 'The email address does not match the account' },
         cht: { mode: 'text', value: '電子郵件與帳號不符' },
+    },
+    'E2E-021-resend-smtp-fail': {
+        //userRegistrationResendFailed — resend 路徑「email 相符且未驗證」檢查皆過, 後端走到 srEmail.send,
+        //測試環境 SMTP 為 placeholder pw 必失敗 → 後端 reject('userRegistrationResendFailed') → 前端 inline resendError 紅字。
+        //此訊息為「確實走到寄信嘗試」的唯一證據 (email 不符分支在寄信前即 reject, 不會產生此 key)。
+        eng: { mode: 'text', value: 'Failed to send verification email. Please try again later.' },
+        cht: { mode: 'text', value: '驗證信寄送失敗，請稍後再試。' },
     },
 }
 
@@ -433,14 +440,17 @@ async function fillRegisterForm(page, opt = {}) {
 
 async function captureFormInitial(page, lang) {
     await gotoRegisterMode(page, lang)
-    return await captureStable(page)
+    return await captureStableWithBox(page, '.sb')
 }
 
 async function capturePwTooShort(page, lang) {
     await gotoRegisterMode(page, lang)
     // 6 字元短密碼，含字母+數字+特殊符號但長度 < 8
     await fillRegisterForm(page, { password: 'aB1@cd' })
-    return await captureStable(page)
+    //框 regPasswordErrors 單條紅字 (aB1@cd 只觸發 minLength 一條; letter/digit/special 皆滿足)
+    //getByText 精準命中葉節點文字，不受 inline style 正規化影響
+    let errText = expectedSpecText['E2E-002-pw-too-short'][lang].value
+    return await captureStableWithBox(page, page.getByText(errText, { exact: false }).first())
 }
 
 async function capturePwMismatch(page, lang) {
@@ -449,19 +459,37 @@ async function capturePwMismatch(page, lang) {
         password: 'Pw@reg9999',
         confirmPassword: 'Pw@reg8888',
     })
-    return await captureStable(page)
+    //框 regConfirmPasswordError 單條紅字 (PageLogin.vue line 141-143)
+    //getByText 精準命中葉節點文字，不受 inline style 正規化影響
+    let errText = expectedSpecText['E2E-003-pw-mismatch'][lang].value
+    return await captureStableWithBox(page, page.getByText(errText, { exact: false }).first())
 }
 
 async function capturePwMultiErrors(page, lang) {
     await gotoRegisterMode(page, lang)
-    // '12345' — 5 字元 + 全數字 + 在常見密碼黑名單內，會多項違反
+    // '12345' — 5 字元 + 全數字 → 觸發 minLength / requireLetter / requireSpecial 共 3 條
     await fillRegisterForm(page, { password: '12345' })
     //等預期錯誤文字 (語意斷言目標) 浮出再截圖
     let expected = expectedSpecText['E2E-004-pw-multi-errors'][lang].value
     await page.waitForFunction((t) => (document.body.innerText || '').includes(t), expected, { timeout: 8000 })
     //鼠標移到角落 (避免 hover / cursor 殘留)
     await page.mouse.move(0, 0)
-    return await captureStable(page)
+    //框 regPasswordErrors 全部 3 條紅字 (陣列聯集取 bounding box)
+    //'12345' 觸發: minLength(8) + requireLetter + requireSpecial；requireDigit 不觸發(有數字)
+    //getByText 精準命中各葉節點文字，不受 inline style 正規化影響
+    let pwErrTexts = lang === 'eng'
+        ? [
+            'Password length must be at least 8 characters',
+            'Password must contain at least one letter',
+            'Password must contain at least one special character',
+        ]
+        : [
+            '密碼長度須大於等於8個字元',
+            '密碼須包含至少一個英文字母',
+            '密碼須包含至少一個特殊符號',
+        ]
+    let locators = pwErrTexts.map((t) => page.getByText(t, { exact: false }).first())
+    return await captureStableWithBox(page, locators)
 }
 
 async function captureSuccess(page, lang) {
@@ -482,14 +510,16 @@ async function captureSuccess(page, lang) {
     await page.waitForFunction((t) => (document.body.innerText || '').includes(t), needle, { timeout: 60000 })
     await page.waitForTimeout(1000)
     await page.mouse.move(0, 0)
-    return await captureStable(page)
+    //CheckYes modal 為 fixed overlay 蓋在 .sb 上；框 .sb 給背景登入卡脈絡，modal 顯示在上層
+    return await captureStableWithBox(page, '.sb')
 }
 
 async function captureVerifyResult(page, lang, token) {
     let url = `${backendUrl}/api/verifyEmail?token=${token}&lang=${lang}`
     await page.goto(url, { waitUntil: 'networkidle', timeout: 15000 })
     await page.waitForTimeout(2000)
-    return await captureStable(page)
+    //server-rendered 靜態結果頁：訊息在 <body><p>...</p></body> 的唯一 <p> 元素 (verifyEmailResult.html)
+    return await captureStableWithBox(page, 'p')
 }
 
 
@@ -503,7 +533,7 @@ async function captureBackToLogin(page, lang) {
     await page.locator(`text="${backText}"`).first().click()
     await page.waitForFunction(() => document.querySelectorAll('input').length <= 2, null, { timeout: 8000 })
     await page.waitForTimeout(1500)
-    return await captureStable(page)
+    return await captureStableWithBox(page, '.sb')
 }
 
 
@@ -519,13 +549,14 @@ async function captureFieldEmpty(page, lang, emptyField) {
     }
     delete fill[emptyField]
     await fillRegisterForm(page, fill)
-    return await captureStable(page)
+    return await captureStableWithBox(page, '.sb')
 }
 
 
-//E2E-020: 未驗證帳號 login → resend UI → 填錯 email → resendError inline
-//預先 seed 未驗證 user, login → 切 resend mode → 填不符 email → reject + inline error
-async function captureResendEmailMismatch(page, lang) {
+//E2E-020/021 共用: 預先 seed 未驗證 user, 走真實 UI (login → 點重寄 link) 進入 resend mode,
+//回傳該未驗證 user 的真實 email (供 E2E-021 填「相符」email 用)。
+//進入 resend mode 後游標停在 email input, 由 caller 決定填什麼 email 並點寄送。
+async function gotoResendMode(page, lang) {
     let t = kpLangText[lang]
     let resendLink = lang === 'eng' ? 'Resend verification email' : '重寄驗證信'
     let resendBtn = lang === 'eng' ? 'Send verification email' : '寄送驗證信'
@@ -562,7 +593,7 @@ async function captureResendEmailMismatch(page, lang) {
     await page.waitForTimeout(2500)
     await setLangViaUI(page, lang)
 
-    //login with unverified account
+    //login with unverified account (真實鍵盤輸入 + 點 Log in)
     let inputs = page.locator('input')
     await typeIntoInput(page, inputs.nth(0), unverifiedAccount)
     await typeIntoInput(page, inputs.nth(1), rawPw)
@@ -576,11 +607,18 @@ async function captureResendEmailMismatch(page, lang) {
     await page.waitForFunction((n) => (document.body.innerText || '').includes(n), resendBtn, { timeout: 8000 })
     await page.waitForTimeout(500)
 
+    return { unverifiedAccount, unverifiedEmail, resendBtn }
+}
+
+
+//E2E-020: resend mode 下填「不符」email → 後端在寄信前 reject userRegistrationResendInvalidEmail → inline 紅字。
+async function captureResendEmailMismatch(page, lang) {
+    let { resendBtn } = await gotoResendMode(page, lang)
+
     //填錯誤 email (不符 user 實際 email)
     let resendInputs = page.locator('input')
     let resendInputCount = await resendInputs.count()
-    //在 resend mode 下應有 1 個 email input (前面 login 模式的 inputs 已被 resend template 取代)
-    let emailInputIdx = resendInputCount - 1  //假設最後一個是 email
+    let emailInputIdx = resendInputCount - 1  //resend mode 下最後一個 input 為 email
     await typeIntoInput(page, resendInputs.nth(emailInputIdx), `wrong-${lang}@notmatch.com`)
     await page.waitForTimeout(300)
 
@@ -590,7 +628,68 @@ async function captureResendEmailMismatch(page, lang) {
     let errText = lang === 'eng' ? 'does not match' : '電子郵件與帳號不符'
     await page.waitForFunction((n) => (document.body.innerText || '').includes(n), errText, { timeout: 15000 })
     await page.waitForTimeout(500)
-    return await captureStable(page)
+    //框 resendError 單條錯誤紅字 (PageLogin.vue line 298)
+    //getByText 精準命中葉節點文字，不受 inline style 正規化影響
+    let resendErrText = lang === 'eng' ? 'The email address does not match the account' : '電子郵件與帳號不符'
+    return await captureStableWithBox(page, page.getByText(resendErrText, { exact: false }).first())
+}
+
+
+//E2E-021: resend mode 下填「相符」email → email 一致性 + 未驗證檢查皆過 → 後端走到 srEmail.send → 寄信失敗 → inline 紅字。
+//
+//【確定性 + 瞬間失敗, 不依賴 .env / 真實網路】本函式開頭以「SMTP 指向 connection-refused 位址」重啟 backend:
+//emSrcHost=127.0.0.1 / emSrcPort=1 (保證無人監聽) → srEmail.send 連線「瞬間」ECONNREFUSED (實測 ~13ms) →
+//後端 catch → reject('userRegistrationResendFailed') → 前端 inline resendError 紅字快速浮出 (實測點寄送→紅字 ~80ms)。
+//
+//注入手法為「spawn env 帶 EM_SRC_*」而非「genTempSettings 改 settings 檔的 emSrcHost」: 後者單獨無效, 因 backend
+//最終設定 = settings 檔 overlay g.getSettings(), 而 g.getSettings() 把 .env 的真實 EM_SRC_* (smtp.gmail.com + 真 app
+//pw) 覆寫進去、後蓋勝過 settings 檔 → 仍連真實 gmail 寄信「成功」(回 userRegistrationResendSuccess) → 本 case (預期
+//失敗) 永遠等不到失敗紅字而 timeout。改走 env: g.getSettings 的 loadEnv 對「process.env 已有的 key」不從 .env 載入,
+//故 spawn env 預放 EM_SRC_HOST=127.0.0.1 等即使 .env 失效、確定改連 127.0.0.1:1。(restartBackend envOverride 之機制詳該函式 doc。)
+//why 不沿用預設 (smtp.gmail.com:587): 連真實 gmail 是「慢慢 timeout」(易 TimeoutError、不確定), 且 .env 有真 pw 會寄信成功使本 case 反而錯誤。
+//
+//restart 不動 lmdb 資料 (caller 已 seed + gotoResendMode 直連 woItems insert unverified user), SMTP 設定僅影響
+//寄信、不影響 login/查 user, 故 restart 後整段 login → resend 流程照常進行。
+//finally 還原預設 backend ('./settings.json', 無 env override → 還原成讀 .env 的真實 SMTP) — 即使中途 throw 也必還原,
+//不污染後續 case/測試 (mocha 後續 case 之 beforeEach 只 startServersOnce reuse 現有 backend、不會自動 restart;
+//--baseline 路徑亦續用此 backend)。restart/還原收斂於此 helper, 故 mocha it() 與 --baseline 兩條路徑共用同一份邏輯, 不分處維護。
+//
+//此 case 為「真正觸發 resendVerifyEmail 寄信路徑」之覆蓋 (spec E2E-021); email 不符的 E2E-020 在寄信前即 reject, 不覆蓋此路徑。
+//取捨: 測試環境無真實 SMTP 可驗送達; 以「後端確實走到寄信嘗試並回 userRegistrationResendFailed」
+//(唯有 srEmail.send 失敗才會產生此 key) 作為「resend RPC 觸發且後端走到寄信」之觀察界線, 不硬塞需真實信箱之斷言。
+async function captureResendSmtpFail(page, lang) {
+    //以 EM_SRC_* env override 重啟 backend → srEmail 改連 127.0.0.1:1 → send 瞬間 ECONNREFUSED (詳函式 doc)
+    await restartBackend('./settings.json', {
+        EM_SRC_HOST: '127.0.0.1',
+        EM_SRC_PORT: '1',
+        EM_SRC_PW: 'x',
+        EM_SRC_EMAIL: 'example@gmail.com',
+    })
+    try {
+        let { unverifiedEmail, resendBtn } = await gotoResendMode(page, lang)
+
+        //填「相符」email (= user 實際 email) → 通過 email 一致性檢查 → 後端進入寄信路徑
+        let resendInputs = page.locator('input')
+        let resendInputCount = await resendInputs.count()
+        let emailInputIdx = resendInputCount - 1  //resend mode 下最後一個 input 為 email
+        await typeIntoInput(page, resendInputs.nth(emailInputIdx), unverifiedEmail)
+        await page.waitForTimeout(300)
+
+        //點寄送按鈕 → 後端走到 srEmail.send (連 127.0.0.1:1 瞬間 ECONNREFUSED) → reject userRegistrationResendFailed
+        await page.locator(`text="${resendBtn}"`).first().click()
+        //等 resendError inline text 出現 (SMTP 失敗對應訊息). 連線拒絕為瞬間失敗, 給 15s 容後端往返與渲染即足。
+        let errText = lang === 'eng' ? 'Failed to send verification email' : '驗證信寄送失敗'
+        await page.waitForFunction((n) => (document.body.innerText || '').includes(n), errText, { timeout: 15000 })
+        await page.waitForTimeout(500)
+        //框 resendError 單條錯誤紅字 (PageLogin.vue line 298)
+        //getByText 精準命中葉節點文字，不受 inline style 正規化影響
+        let resendErrText = lang === 'eng' ? 'Failed to send verification email. Please try again later.' : '驗證信寄送失敗，請稍後再試。'
+        return await captureStableWithBox(page, page.getByText(resendErrText, { exact: false }).first())
+    }
+    finally {
+        //還原預設 backend, 即使上方 throw 也必執行 (不污染後續 case/測試)
+        await restartBackend('./settings.json')
+    }
 }
 
 
@@ -609,7 +708,7 @@ async function captureRegistrationNotAllowed(page, lang) {
     await page.waitForFunction(() => document.querySelectorAll('input').length >= 2, null, { timeout: 8000 })
     await page.waitForTimeout(500)
     await page.mouse.move(0, 0)
-    return await captureStable(page)
+    return await captureStableWithBox(page, '.sb')
 }
 
 
@@ -664,7 +763,10 @@ async function captureRegBackendError(page, lang, opt, expectedKey) {
     //鼠標移到角落避免 hover / cursor 殘留, 再截穩定圖
     await page.mouse.move(0, 0)
     await page.waitForTimeout(800)
-    return await captureStable(page)
+    //框 regError 單條後端錯誤紅字 (PageLogin.vue line 211)
+    //getByText 精準命中葉節點文字，不受 inline style 正規化影響
+    let regErrText = expectedSpecText[expectedKey][lang].value
+    return await captureStableWithBox(page, page.getByText(regErrText, { exact: false }).first())
 }
 
 
@@ -749,6 +851,7 @@ async function generateBaselineForLang(lang) {
             }, 'E2E-016-email-duplicate'),
         },
         { name: 'E2E-020-resend-email-mismatch', fn: captureResendEmailMismatch },
+        { name: 'E2E-021-resend-smtp-fail', fn: captureResendSmtpFail },
     ]
 
     for (let { name, fn, prep } of cases) {
@@ -760,7 +863,7 @@ async function generateBaselineForLang(lang) {
         await insertVerifyTestUsers()
         if (prep) await prep()
 
-        let browser = await chromium.launch({ headless: true })
+        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
         let context = await browser.newContext()
         let page = await context.newPage()
         page.on('dialog', async (dialog) => {
@@ -804,7 +907,7 @@ async function generateBaseline() {
             for (let lang of langs) {
                 if (!shouldGen(lang, 'E2E-017-registration-not-allowed')) continue
                 console.log(`  E2E-017-registration-not-allowed (${lang})`)
-                let browser = await chromium.launch({ headless: true })
+                let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
                 let context = await browser.newContext()
                 let page = await context.newPage()
                 page.on('dialog', async (dialog) => { await dialog.accept() })
@@ -851,7 +954,7 @@ else {
                 await deleteAllRegisterTestUsers()
                 await insertVerifyTestUsers()
 
-                browser = await chromium.launch({ headless: true })
+                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
                 let context = await browser.newContext()
                 page = await context.newPage()
 
@@ -1048,6 +1151,22 @@ else {
                 assertBaselineMatch(buf, baselinePath, `register-${lang}-020-resend-email-mismatch`)
             })
 
+            it('E2E-021-resend-smtp-fail: 未驗證 login → resend UI → 相符 email → 後端走到寄信 SMTP 失敗 → resendError inline 紅字', async function() {
+                //act: 真實 UI — 登入未驗證帳號 → 點重寄 link → 填「相符」email → 點寄送按鈕。
+                //此路徑會讓後端 resendVerifyEmail 通過 email 一致性 + 未驗證檢查, 實際呼叫 srEmail.send。
+                //確定性 SMTP 失敗 (不依賴 .env / 真實網路) 由 captureResendSmtpFail 內部負責:
+                //它在 resend 前把 backend SMTP 指向 connection-refused 位址 (127.0.0.1:1) → srEmail.send 瞬間
+                //ECONNREFUSED → 後端 reject('userRegistrationResendFailed'), 並在 finally 還原預設 backend。
+                //此 restart/還原收斂在 helper 內 (mocha 與 --baseline 兩路徑共用同一份, 不分處維護)。
+                let buf = await captureResendSmtpFail(page, lang)
+                //語意: inline resendError 含 userRegistrationResendFailed 文字
+                //(此 key 唯有後端走到 srEmail.send 並寄信失敗才會產生 → 證明 resend 寄信路徑被觸發)
+                await assertSpecForCase(page, lang, 'E2E-021-resend-smtp-fail')
+                //視覺: 獨立 baseline (顯示訊息與 E2E-020 不同, 不共用)
+                let baselinePath = bp(lang, 'E2E-021-resend-smtp-fail')
+                assertBaselineMatch(buf, baselinePath, `register-${lang}-021-resend-smtp-fail`)
+            })
+
         })
 
     }
@@ -1091,7 +1210,7 @@ else {
 
         for (let lang of langs) {
             it(`E2E-017-registration-not-allowed [${lang}]: 不允許自助註冊 → 登入頁不顯示 Register link`, async function() {
-                browser017 = await chromium.launch({ headless: true })
+                browser017 = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
                 let context = await browser017.newContext()
                 page017 = await context.newPage()
                 page017.on('dialog', async (dialog) => { await dialog.accept() })

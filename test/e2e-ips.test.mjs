@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch } from './e2e-setup.mjs'
 
 
 //
@@ -21,11 +21,14 @@ import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, del
 //
 // 標準圖存放：test/pics/ips/ips-{lang}-{number}-{name}.png
 //
-// 涵蓋 4 個 UI distinct 狀態 (× 2 lang = 8 baselines):
-//   E2E-001-list-loaded:                    進 Ips list 顯示初始檢視態 (seed 5 列)
-//   E2E-002-modify-ip-save-success:         修改 ip 欄位後 Save → success modal
-//   E2E-003-delete-row-save-success:        勾選某列刪除 → Save → success modal
-//   E2E-004-token-expired-save-fail:        Save 前 token 過期 → 後端 reject → fail modal
+// 涵蓋 4 個流程 (× 2 lang = 8 cases, × 多階段截圖 = 14 baselines):
+//   E2E-001: ips-{lang}-E2E-001-list-loaded.png           (1 張)
+//   E2E-002: ips-{lang}-E2E-002-1-ip-edited-before-save   觸發圖 (ip cell 已改未存)
+//            ips-{lang}-E2E-002-2-save-success-modal       save 成功 modal
+//            ips-{lang}-E2E-002-3-modify-ip-result-row     modal 關閉後已更新列  (3 張)
+//   E2E-003: ips-{lang}-E2E-003-1-row-selected-before-save 觸發圖 (列已勾選未刪)
+//            ips-{lang}-E2E-003-2-delete-row-save-success  delete + save 成功 modal  (2 張)
+//   E2E-004: ips-{lang}-E2E-004-token-expired-save-fail.png (1 張)
 //
 // 所有 capture 透過真實 UI 互動推進: 鍵盤滑鼠輸入 / ag-grid cell dblclick + Enter /
 // checkbox 點擊 / 按鈕 SVG path 點擊。不使用 vm.method() / page.evaluate state mutation 抄捷徑.
@@ -74,13 +77,28 @@ let expectedSpecText = {
         eng: { mode: 'text', value: '10.0.0.1' },
         cht: { mode: 'text', value: '10.0.0.1' },
     },
-    //E2E-002: 儲存成功 modal 文字 ipSaveIpsSuccess
-    'E2E-002-modify-ip-save-success': {
+    //E2E-002 stage1 (觸發圖): fillAgGridCell 後 Enter 退出 editor、save 前 — ip cell 已顯示新值
+    'E2E-002-1-ip-edited-before-save': {
+        eng: { mode: 'text', value: '10.0.0.99' },
+        cht: { mode: 'text', value: '10.0.0.99' },
+    },
+    //E2E-002 stage2: 儲存成功 modal 應出現 ipSaveIpsSuccess 文字 (modal 仍顯示時在 capture fn 內斷言, mocha 端跳過)
+    'E2E-002-2-save-success-modal': {
         eng: { mode: 'text', value: 'Save IPs successfully' },
         cht: { mode: 'text', value: '儲存IP數據成功' },
     },
-    //E2E-003: 同 002, 共用 ipSaveIpsSuccess
-    'E2E-003-delete-row-save-success': {
+    //E2E-002 stage3: modal dismiss 後表格應顯示修改後的 ip 值
+    'E2E-002-3-modify-ip-result-row': {
+        eng: { mode: 'text', value: '10.0.0.99' },
+        cht: { mode: 'text', value: '10.0.0.99' },
+    },
+    //E2E-003 stage1 (觸發圖): 勾選目標列後、trash/save 前 — 目標 ip 仍在表格
+    'E2E-003-1-row-selected-before-save': {
+        eng: { mode: 'text', value: '10.0.0.2' },
+        cht: { mode: 'text', value: '10.0.0.2' },
+    },
+    //E2E-003 stage2: 刪除 + save 成功 modal (同 E2E-002, 共用 ipSaveIpsSuccess; modal 仍顯示時在 capture fn 內斷言, mocha 端跳過)
+    'E2E-003-2-delete-row-save-success': {
         eng: { mode: 'text', value: 'Save IPs successfully' },
         cht: { mode: 'text', value: '儲存IP數據成功' },
     },
@@ -574,16 +592,27 @@ async function captureListLoaded(page, lang) {
     await loginAsAdminAndOpenIpsList(page, lang)
     //等 seed ip (10.0.0.1) 在 table 內可見
     await waitUntilExist(page, 'first seed ip 10.0.0.1', () => document.body.innerText.includes('10.0.0.1'))
-    return await captureStable(page)
+    //框 ag-grid 表格區域 (觀看區: IP 清單表格全體)
+    return await captureStableWithBox(page, '.ag-theme-balham')
 }
 
 
-//E2E-002 修改 ip 欄位後 Save 成功 modal
+//E2E-002 修改 ip 欄位後 Save 成功 (多階段, 3 張截圖)
+//  stage1: fillAgGridCell + Enter 退出 editor 後、clickSave 前 → 'E2E-002-1-ip-edited-before-save'
+//  stage2: waitCheckYes 後、點 OK 之前截「成功 modal」(框 modal panel) → 'E2E-002-2-save-success-modal'
+//  stage3: 點 OK → 等 grid 重 fetch 顯示 10.0.0.99 → 框修改後那一列   → 'E2E-002-3-modify-ip-result-row'
+//
 //note: 流程文件描述為「修改封鎖時間」, 但 timeBlocked cell 使用 WTimeminute 自訂渲染器,
 //編輯路徑為時間選擇器點擊. ip 欄位使用標準 ag-grid 文字編輯 (kpCellEditable.ip=true),
 //走的是同一個 saveIps + updateIpsList 路徑 (前端 isModified=true → rowsChange 觸發).
-//此 case 用 ip 欄位修改作為「修改任一欄位後儲存成功」的代表; 流程之終態 (成功 modal) 與 spec 一致.
+//此 case 用 ip 欄位修改作為「修改任一欄位後儲存成功」的代表.
+//
+//stage3 定位法: ip 值 '10.0.0.99' 動態找 row-index (不 hardcode, 避免 grid 排序/前置列差異)
+//pinned-left + center 聯集: 若該 grid 無 pinned-left 欄, captureStableWithBox 會靜默略過
+//找不到的 selector (rects 為空則不畫紅框), 故聯集寫法為安全寫法.
+let SEL_MODAL = 'div[style*="overscroll-behavior"] div[tabindex="0"] > div'
 async function captureModifyIpSaveSuccess(page, lang) {
+    let t = kpUiText[lang]
     await loginAsAdminAndOpenIpsList(page, lang)
 
     //找 ip='10.0.0.1' 的列 row-index, 將 ip 改成新值
@@ -600,17 +629,95 @@ async function captureModifyIpSaveSuccess(page, lang) {
     if (rowIdx === null) throw new Error(`seed ip row not found: 10.0.0.1`)
 
     await fillAgGridCell(page, parseInt(rowIdx, 10), 'ip', '10.0.0.99')
+
+    //[stage1] ip cell 已顯示新值 10.0.0.99、save 前 → 截觸發圖 (觀看區: 被編輯的 ip cell)
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(800)
+    let bufEdited = await captureStableWithBox(page, `.ag-row[row-index="${rowIdx}"] .ag-cell[col-id="ip"]`)
+
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+
+    //[stage2 語意斷言] modal 仍顯示時 (點 OK 之前) 斷言成功 modal 文字出現 —
+    //此為 stage2 modal 文字的正確時機 (post-capture 時 modal 已 dismiss, 文字不在頁面).
+    {
+        let exp = expectedSpecText['E2E-002-2-save-success-modal'][lang].value
+        let found = await pageHasText(page, exp)
+        if (!found) {
+            let dump = await collectVisibleText(page)
+            assert.fail(`預期成功 modal 含 "${exp}" (E2E-002-2-save-success-modal), 實際: ${dump}`)
+        }
+    }
+
+    //[stage2] 成功 modal 浮出後、點 OK 之前 → 截 modal 畫面 (觀看區: System message 持久 modal)
+    let bufModal = await captureStableWithBox(page, SEL_MODAL)
+
+    //關閉 success modal
+    await page.locator(`text="${t.ok}"`).first().click()
+
+    //等 grid 重 fetch 並顯示修改後 ip (10.0.0.99)
+    await page.locator('text="10.0.0.99"').first().waitFor({ state: 'visible', timeout: 15000 })
+
+    //等 ag-grid 重 fetch 後重畫穩定 (連續三 raf cell 不變)
+    await page.evaluate(() => {
+        let body = document.querySelector('.ag-center-cols-viewport')
+        if (body) body.scrollLeft = 0
+    })
+    await page.waitForFunction(async () => {
+        let snap = () => {
+            let cells = document.querySelectorAll('.ag-cell')
+            return JSON.stringify({
+                count: cells.length,
+                first10: Array.from(cells).slice(0, 10).map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
+            })
+        }
+        let s1 = snap()
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        let s2 = snap()
+        if (s1 !== s2) return false
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        let s3 = snap()
+        return s2 === s3
+    }, null, { timeout: 15000 })
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(1500)
+
+    //動態找 ip='10.0.0.99' 的 row-index (grid 重 fetch 後排序可能與修改前不同)
+    let updatedRowIdx = await page.evaluate(() => {
+        let cells = Array.from(document.querySelectorAll('.ag-row .ag-cell[col-id="ip"]'))
+        for (let c of cells) {
+            if ((c.innerText || '').trim() === '10.0.0.99') {
+                let row = c.closest('.ag-row')
+                return row ? row.getAttribute('row-index') : null
+            }
+        }
+        return null
+    })
+    if (updatedRowIdx === null) throw new Error(`modified ip row not found: 10.0.0.99`)
+
+    //[stage3] 框被修改的那一列 (聯集 pinned-left + center 兩容器取完整列寬)
+    let bufRow = await captureStableWithBox(page, [
+        `.ag-pinned-left-cols-container .ag-row[row-index="${updatedRowIdx}"]`,
+        `.ag-center-cols-container .ag-row[row-index="${updatedRowIdx}"]`,
+    ])
+
+    //多階段回傳 dict (baselineName → buf); 數字前綴使檔名排序 ≡ 流程階段順序:
+    //  1 觸發圖 (ip cell 已改未存) → 2 成功 modal → 3 表格中已更新的 ip 列
+    return {
+        'E2E-002-1-ip-edited-before-save': bufEdited,
+        'E2E-002-2-save-success-modal': bufModal,
+        'E2E-002-3-modify-ip-result-row': bufRow,
+    }
 }
 
 
-//E2E-003 勾選某列刪除後 Save 成功 modal
+//E2E-003 勾選某列刪除後 Save 成功 modal (多階段, 2 張截圖)
+//  stage1: checkRowSelection 後、clickTrash/clickSave 前 → 'E2E-003-1-row-selected-before-save'
+//  stage2: waitCheckYes 後 → 'E2E-003-2-delete-row-save-success'
 async function captureDeleteRowSaveSuccess(page, lang) {
     await loginAsAdminAndOpenIpsList(page, lang)
 
-    //找 ip='10.0.0.2' 的列 row-index → 勾選 → 刪
+    //找 ip='10.0.0.2' 的列 row-index → 勾選 → 截觸發圖 → 刪 → save
     let rowIdx = await page.evaluate(() => {
         let cells = Array.from(document.querySelectorAll('.ag-row .ag-cell[col-id="ip"]'))
         for (let c of cells) {
@@ -624,10 +731,38 @@ async function captureDeleteRowSaveSuccess(page, lang) {
     if (rowIdx === null) throw new Error(`seed ip row not found: 10.0.0.2`)
 
     await checkRowSelectionByRowIdx(page, parseInt(rowIdx, 10))
+
+    //[stage1] 勾選後、trash/save 前 → 截觸發圖 (觀看區: 整列 pinned-left + center 聯集顯示勾選態)
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(800)
+    let bufSelected = await captureStableWithBox(page, [
+        `.ag-pinned-left-cols-container .ag-row[row-index="${rowIdx}"]`,
+        `.ag-center-cols-container .ag-row[row-index="${rowIdx}"]`,
+    ])
+
     await clickTrash(page)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+
+    //[stage2 語意斷言] modal 仍顯示時斷言成功訊息 (post-capture 時 modal 已 dismiss, 文字不在頁面)
+    {
+        let exp = expectedSpecText['E2E-003-2-delete-row-save-success'][lang].value
+        let found = await pageHasText(page, exp)
+        if (!found) {
+            let dump = await collectVisibleText(page)
+            assert.fail(`預期成功 modal 含 "${exp}" (E2E-003-2-delete-row-save-success), 實際: ${dump}`)
+        }
+    }
+
+    //[stage2] 框 CheckYes 成功 modal (觀看區: System message 持久 modal 訊息區)
+    let bufModal = await captureStableWithBox(page, SEL_MODAL)
+
+    //多階段回傳 dict (baselineName → buf); 數字前綴使檔名排序 ≡ 流程階段順序:
+    //  1 觸發圖 (該列已勾選未刪存) → 2 刪除 + save 成功 modal
+    return {
+        'E2E-003-1-row-selected-before-save': bufSelected,
+        'E2E-003-2-delete-row-save-success': bufModal,
+    }
 }
 
 
@@ -654,7 +789,8 @@ async function captureTokenExpiredSaveFail(page, lang) {
 
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+    //框 CheckYes 失敗 modal (觀看區: System message 持久 modal 訊息區)
+    return await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
 }
 
 
@@ -681,12 +817,16 @@ async function generateBaselineForLang(lang) {
         await deleteTestUsersAndTokensAndIps()
         await insertTestUsersAndTokensAndIps()
 
-        let browser = await chromium.launch({ headless: true })
+        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
         let page = await browser.newPage()
         page.on('dialog', async (dialog) => { await dialog.accept() })
 
-        let buf = await fn(page, lang)
-        fs.writeFileSync(bp(lang, name), buf)
+        let result = await fn(page, lang)
+        //多階段: fn 可回 Buffer (單張) 或 dict { baselineName: buf } (多張); 統一成 dict 寫檔
+        let stages = Buffer.isBuffer(result) ? { [name]: result } : result
+        for (let [bname, b] of Object.entries(stages)) {
+            writeBaseline(lang, bname, b)
+        }
 
         await browser.close()
         await deleteTestUsersAndTokensAndIps()
@@ -726,7 +866,7 @@ if (process.argv.includes('--baseline')) {
 }
 else {
 
-    //=== baseline 比對 helper (內含: 檔存在 / byte-equal / spec 語意斷言) ===
+    //=== baseline 比對 helper (內含: 檔存在 / pixelmatch 反鋸齒容差 / spec 語意斷言) ===
     async function verifyBaseline(page, lang, name, buf, skipSpec = false) {
         if (!skipSpec) {
             await assertSpecForCase(page, lang, name)
@@ -753,7 +893,7 @@ else {
                 await deleteTestUsersAndTokensAndIps()
                 await insertTestUsersAndTokensAndIps()
 
-                browser = await chromium.launch({ headless: true })
+                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
                 let context = await browser.newContext()
                 page = await context.newPage()
 
@@ -781,10 +921,32 @@ else {
                 it(`${name}`, async function() {
                     await resetAdminToken()
                     await resetIpsSeed()
-                    let buf = await fn(page, lang)
+                    let result = await fn(page, lang)
 
-                    //語意斷言 (主) + pixel baseline (補)
-                    await verifyBaseline(page, lang, name, buf)
+                    //語意斷言 (主): 多階段 fn 回 dict → 逐 stage 各驗其 expectedSpecText
+                    //單張 fn 回 Buffer → 沿用 verifyBaseline (skipSpec=false)
+                    if (Buffer.isBuffer(result)) {
+                        await verifyBaseline(page, lang, name, result)
+                    }
+                    else {
+                        //dict 模式: 各 stage pixel 斷言; 語意斷言只驗 post-capture 仍可觀察之最終態.
+                        //以下 key 的 modal 語意已在 capture 函式內 (modal 仍顯示時) 斷言,
+                        //此處 modal 已 dismiss → 不可再對 modal 文字做 post-capture pageHasText, 故略過.
+                        let skipSpecKeys = new Set([
+                            'E2E-002-2-save-success-modal',
+                            //E2E-003 觸發圖 (列已勾選未刪): 觸發狀態已由 pixel baseline 驗證 (該列被勾選且 10.0.0.2 在表).
+                            //save 流程刪除該列後, post-capture 時 grid 已無 10.0.0.2 → 不可再對其做 post-capture pageHasText, 故略過.
+                            'E2E-003-1-row-selected-before-save',
+                            'E2E-003-2-delete-row-save-success',
+                        ])
+                        for (let [bname, b] of Object.entries(result)) {
+                            if (expectedSpecText[bname] && !skipSpecKeys.has(bname)) {
+                                //最終態語意 (如 E2E-002-1 之 '10.0.0.99' cell 顯示、E2E-002-3 之 grid 改後 IP)
+                                await assertSpecForCase(page, lang, bname)
+                            }
+                            assertBaselineMatch(b, bp(lang, bname), `ips-${lang}-${bname}`)
+                        }
+                    }
 
                     //DB 副作用斷言
                     if (name === 'E2E-002-modify-ip-save-success') {

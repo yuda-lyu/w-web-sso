@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch } from './e2e-setup.mjs'
 
 
 //
@@ -21,11 +21,14 @@ import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, del
 //
 // 標準圖存放：test/pics/tokens/tokens-{lang}-{number}-{name}.png
 //
-// 涵蓋 4 個 UI distinct 狀態 (× 2 lang = 8 baselines):
-//   E2E-001-list-loaded:                       進 Tokens list 顯示初始檢視態 (seed 5 列)
-//   E2E-002-toggle-isapp-save-success:         toggle isApp checkbox → Save → success modal
-//   E2E-003-delete-row-save-success:           勾選某列刪除 → Save → success modal
-//   E2E-004-token-expired-save-fail:           Save 前 admin token 過期 → 後端 reject → fail modal
+// 涵蓋 4 個 UI distinct 狀態 (× 2 lang = 14 baselines; E2E-002 多階段 3 張、E2E-003 多階段 2 張):
+//   E2E-001-list-loaded:                        進 Tokens list 顯示初始檢視態 (seed 5 列)
+//   E2E-002-1-isapp-toggled-before-save:        toggle isApp 後、Save 前的 isApp cell 觸發態 (stage1)
+//   E2E-002-2-save-success-modal:               toggle isApp → Save → 成功 modal (stage2)
+//   E2E-002-3-toggle-isapp-result-row:          modal 關閉後 isApp 已切換的結果列 (stage3)
+//   E2E-003-1-row-selected-before-save:         勾選目標列後、刪除/Save 前之已選取列觸發態 (stage1)
+//   E2E-003-2-delete-row-save-success:          勾選某列刪除 → Save → 成功 modal (stage2)
+//   E2E-004-token-expired-save-fail:            Save 前 admin token 過期 → 後端 reject → fail modal
 //
 // 所有 capture 透過真實 UI 互動推進: 鍵盤滑鼠輸入 / ag-grid cell checkbox 點擊 /
 // row selection checkbox 點擊 / 按鈕 SVG path 點擊。不使用 vm.method() / page.evaluate state mutation 抄捷徑.
@@ -34,6 +37,10 @@ import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, del
 let salt = '{salt}'
 let baselineDir = './test/pics/tokens'
 let langs = ['eng', 'cht']
+
+// captureStableWithBox target selectors
+let SEL_GRID = '.ag-root-wrapper'                                    // ag-grid 主體（金鑰清單表格區）
+let SEL_MODAL = 'div[style*="overscroll-behavior"] div[tabindex="0"] > div'  // WDialog 內層 panel（modal 框體, 非全螢幕 shield）
 
 
 let baselineNamesFilter = null
@@ -53,8 +60,18 @@ function writeBaseline(lang, name, buf) {
 
 
 //是否需要產生此 case 的標準圖. --names 指定時只有指定 case 回 true → 連「截圖」都跳過 (非僅跳寫檔).
+//多階段 dict case (E2E-002/003): --names 可指定 stage key (如 eng-E2E-002-1-isapp-toggled-before-save).
+//outer shouldGen 負責「是否執行此 case」: 若 filter 內有任一 ${lang}-${name}-* 前綴的 stage key, 仍回 true,
+//讓 case 執行並由 writeBaseline inner filter 過濾只寫指定 stage.
 function shouldGen(lang, name) {
-    return !baselineNamesFilter || baselineNamesFilter.has(`${lang}-${name}`)
+    if (!baselineNamesFilter) return true
+    let directKey = `${lang}-${name}`
+    if (baselineNamesFilter.has(directKey)) return true
+    let prefix = `${lang}-${name}-`
+    for (let k of baselineNamesFilter) {
+        if (k.startsWith(prefix)) return true
+    }
+    return false
 }
 
 
@@ -150,7 +167,7 @@ async function insertTestUsersAndTokensAndTestTokens() {
     await woItems.users.insert([v])
 
     //admin token (此 token 由 admin 登入後台用, 與 testTokens seed 不同, id 用 id-tokens-admin-token 區隔)
-    //token 值固定為決定性字串 (本檔 Tokens list 會顯示 token 值, funNew 自動產 UUID 每跑都變 → pixel mismatch; 此處鎖定可 byte-equal)
+    //token 值固定為決定性字串 (本檔 Tokens list 會顯示 token 值, funNew 自動產 UUID 每跑都變 → pixel mismatch; 此處鎖定使 pixel 穩定)
     //timeEnd 用未來固定字串 (與 testTokens 同, 凍結 baseline; 原 ot().add(60, 'minute') 為動態 wall-clock,
     //跑測試時與 baseline 凍結時間不同 → 第 1 列 timeEnd 字串浮動 → pixel mismatch — Round-3 audit pre-existing fix)
     let t = ds.tokens.funNew({ userId: testUsers.admin.id })
@@ -184,7 +201,7 @@ async function insertTestUsersAndTokensAndTestTokens() {
 }
 
 
-//tokens 的 timeCreate / timeUpdate 固定字串, 確保 Tokens list 之「Created time」/「Last update time」欄顯示穩定可 byte-equal
+//tokens 的 timeCreate / timeUpdate 固定字串, 確保 Tokens list 之「Created time」/「Last update time」欄顯示穩定 (pixel 穩定)
 let FIX_TIME = '2025-01-01T00:00:00.000+08:00'
 
 //base seed tokens (token-for-*) 由 resetToBaseSeed 插入, 其 timeCreate 為彼時 now, 須 post-insert normalize.
@@ -444,7 +461,7 @@ async function clickIsAppCheckboxByRowIdx(page, rowIdx) {
 //LS 預填 admin token + autoLogin → 進 Tokens list → 確認 Edit mode 開
 //用 LS 預填取代 UI 登入: UI 登入會 createToken 建一個 session UUID token (每跑都變), 而 Tokens list
 //會顯示此 token → 必然 pixel mismatch. 改用 LS 預填讓 autoLogin 直接用 seed 內固定值的 admin token,
-//不會在 DB 多建 token → Tokens list 顯示穩定可 byte-equal. (Ips canonical 也走 UI 登入但 ips 表不顯
+//不會在 DB 多建 token → Tokens list 顯示穩定 (pixel 穩定). (Ips canonical 也走 UI 登入但 ips 表不顯
 //示 token 所以無感)
 async function loginAsAdminAndOpenTokensList(page, lang) {
     let t = kpUiText[lang]
@@ -649,15 +666,22 @@ async function captureListLoaded(page, lang) {
     await loginAsAdminAndOpenTokensList(page, lang)
     //等 seed token (test-token-1) 在 table 內可見
     await waitUntilExist(page, 'first seed token test-token-1', () => document.body.innerText.includes('test-token-1'))
-    return await captureStable(page)
+    //框 ag-grid 表格區標注金鑰清單初始檢視態
+    return await captureStableWithBox(page, SEL_GRID)
 }
 
 
-//E2E-002 toggle isApp checkbox 後 Save 成功 modal
+//E2E-002 toggle isApp checkbox 後 Save 成功 → 多階段截圖（3 張）:
+//  stage1 (E2E-002-1-isapp-toggled-before-save): toggle 後、Save 前截「isApp cell 已切換」觸發態 (框 isApp cell)
+//  stage2 (E2E-002-2-save-success-modal): waitCheckYes 後、點 OK 前截成功 modal (框 WDialog 內層 panel)
+//  stage3 (E2E-002-3-toggle-isapp-result-row): 點 OK 關閉 modal → 等 grid idle → 框被切換 isApp 的那一列
 //note: 流程文件描述為「修改任一欄位」, 此 case 用 isApp checkbox toggle 作為「修改」代表
 //(同 ips 改用 ip 文字欄修改的工程取捨). 走的是同一個 saveTokens + updateTokensList 路徑
-//(toggleItemIsAppById → isModified=true → Save 按鈕顯示). 流程之終態 (成功 modal) 與 spec 一致.
+//(toggleItemIsAppById → isModified=true → Save 按鈕顯示).
+//note: saveTokens 成功後前端直接以 vo.tokens=cloneDeep(rows) 更新, 不 refetch getTokensList,
+//      故 modal 關閉後 grid 即已呈現 toggle 後狀態, 無需等 newValue 出現.
 async function captureToggleIsappSaveSuccess(page, lang) {
+    let t = kpUiText[lang]
     await loginAsAdminAndOpenTokensList(page, lang)
 
     //找 test-token-1 的列 row-index (seed 為 isApp='n', toggle 後變 'y')
@@ -665,25 +689,121 @@ async function captureToggleIsappSaveSuccess(page, lang) {
     if (rowIdx === null) throw new Error(`seed token row not found: test-token-1`)
 
     await clickIsAppCheckboxByRowIdx(page, parseInt(rowIdx, 10))
+
+    //[多階段 stage1] toggle 後、Save 前截「isApp cell 已切換」觸發態 — 框 isApp cell
+    //ensureColumnVisible 已在 clickIsAppCheckboxByRowIdx 內呼叫, 此處 isApp 欄必在視口
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(500)
+    let bufToggled = await captureStableWithBox(page, `.ag-row[row-index="${rowIdx}"] .ag-cell[col-id="isApp"]`)
+
     await clickSave(page)
-    await waitCheckYes(page, lang)
-    return await captureStable(page)
+    await waitCheckYes(page, lang) //success modal 出現
+
+    //[多階段 stage2 語意斷言] modal 仍顯示時 (點 OK 之前) 斷言成功 modal 文字出現 —
+    //此為成功 modal 文字的正確時機 (post-capture 時 modal 已 dismiss, 文字不在頁面).
+    {
+        let exp = expectedSpecText['E2E-002-toggle-isapp-save-success'][lang].value
+        let found = await pageHasText(page, exp)
+        if (!found) {
+            let dump = await collectVisibleText(page)
+            assert.fail(`預期成功 modal 含 "${exp}" (E2E-002-2-save-success-modal), 實際: ${dump}`)
+        }
+    }
+
+    //[多階段 stage2] waitCheckYes 後、點 OK 前截「儲存成功 modal」— 框 WDialog 內層 panel
+    let bufModal = await captureStableWithBox(page, SEL_MODAL)
+
+    //關閉 modal (點 OK)
+    await page.locator(`text="${t.ok}"`).first().click()
+
+    //等 modal 消失 (OK button 不再可見)
+    await page.locator(`text="${t.ok}"`).first().waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {})
+
+    //等 ag-grid idle: 連續三 raf 之間 cell 數量與首列 cell 內容全等 (與 waitCheckYes 內部同款偵測)
+    await page.evaluate(() => {
+        window.scrollTo(0, 0)
+        let body = document.querySelector('.ag-center-cols-viewport')
+        if (body) body.scrollLeft = 0
+    })
+    await page.waitForFunction(async () => {
+        let body = document.querySelector('.ag-center-cols-viewport')
+        if (!body) return true
+        if (body.scrollLeft !== 0) return false
+        if (!document.querySelector('.ag-header-cell[col-id="token"]')) return false
+        let snap = () => {
+            let cells = document.querySelectorAll('.ag-cell')
+            let row0Cells = Array.from(document.querySelectorAll('.ag-row[row-index="0"] .ag-cell'))
+            return JSON.stringify({
+                count: cells.length,
+                row0: row0Cells.map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
+            })
+        }
+        let s1 = snap()
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        let s2 = snap()
+        if (s1 !== s2) return false
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        let s3 = snap()
+        return s2 === s3
+    }, null, { timeout: 15000 })
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(1500)
+
+    //重新找 test-token-1 的 row-index (儲存後排序可能變動)
+    let finalRowIdx = await findRowIdxByTokenValue(page, 'test-token-1')
+    if (finalRowIdx === null) throw new Error(`test-token-1 not found in grid after save`)
+
+    //[多階段 stage3] 框被切換 isApp 的那一列 (pinned-left + center 兩容器聯集, 同 adduser canonical 截圖)
+    //聚焦驗證標的: test-token-1 的 isApp 欄已切換並顯示於清單
+    let bufRow = await captureStableWithBox(page, [
+        `.ag-pinned-left-cols-container .ag-row[row-index="${finalRowIdx}"]`,
+        `.ag-center-cols-container .ag-row[row-index="${finalRowIdx}"]`,
+    ])
+
+    //多階段回傳 dict (baselineName → buf); 數字前綴使檔名排序 ≡ 流程階段順序:
+    //  1 toggle 後 save 前之 isApp cell 觸發態 → 2 儲存成功 modal (綠勾) → 3 grid 中被切換 isApp 的 test-token-1 列
+    return {
+        'E2E-002-1-isapp-toggled-before-save': bufToggled,
+        'E2E-002-2-save-success-modal': bufModal,
+        'E2E-002-3-toggle-isapp-result-row': bufRow,
+    }
 }
 
 
-//E2E-003 勾選某列刪除後 Save 成功 modal
+//E2E-003 勾選某列刪除後 Save 成功 → 多階段截圖（2 張）:
+//  stage1 (E2E-003-1-row-selected-before-save): 勾選後、clickTrash/clickSave 前截「該列已被勾選」觸發態
+//                                               (框 pinned-left + center 兩容器聯集的該列)
+//  stage2 (E2E-003-2-delete-row-save-success): 勾選 → 刪 → Save → waitCheckYes 後截成功 modal (框 WDialog)
 async function captureDeleteRowSaveSuccess(page, lang) {
     await loginAsAdminAndOpenTokensList(page, lang)
 
-    //找 test-token-2 的列 row-index → 勾選 → 刪
+    //找 test-token-2 的列 row-index → 勾選
     let rowIdx = await findRowIdxByTokenValue(page, 'test-token-2')
     if (rowIdx === null) throw new Error(`seed token row not found: test-token-2`)
 
     await checkRowSelectionByRowIdx(page, parseInt(rowIdx, 10))
+
+    //[多階段 stage1] 勾選後、clickTrash 前截「該列已被勾選」觸發態 — 框 pinned-left + center 聯集
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(500)
+    let bufSelected = await captureStableWithBox(page, [
+        `.ag-pinned-left-cols-container .ag-row[row-index="${rowIdx}"]`,
+        `.ag-center-cols-container .ag-row[row-index="${rowIdx}"]`,
+    ])
+
     await clickTrash(page)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+
+    //[多階段 stage2] 框成功 modal（WDialog 內層 panel）標注刪除後儲存成功訊息
+    let bufModal = await captureStableWithBox(page, SEL_MODAL)
+
+    //多階段回傳 dict (baselineName → buf); 數字前綴使檔名排序 ≡ 流程階段順序:
+    //  1 勾選後 save 前之已選取列觸發態 → 2 刪除後儲存成功 modal
+    return {
+        'E2E-003-1-row-selected-before-save': bufSelected,
+        'E2E-003-2-delete-row-save-success': bufModal,
+    }
 }
 
 
@@ -701,7 +821,8 @@ async function captureTokenExpiredSaveFail(page, lang) {
 
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+    //框失敗 modal（WDialog fixed shield）標注 token 過期 → 後端 reject 失敗訊息
+    return await captureStableWithBox(page, SEL_MODAL)
 }
 
 
@@ -728,12 +849,16 @@ async function generateBaselineForLang(lang) {
         await deleteTestUsersAndTokens()
         await insertTestUsersAndTokensAndTestTokens()
 
-        let browser = await chromium.launch({ headless: true })
+        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
         let page = await browser.newPage()
         page.on('dialog', async (dialog) => { await dialog.accept() })
 
-        let buf = await fn(page, lang)
-        fs.writeFileSync(bp(lang, name), buf)
+        let result = await fn(page, lang)
+        //多階段: fn 可回 Buffer (單張) 或 dict { baselineName: buf } (多張); 統一成 dict 寫檔
+        let stages = Buffer.isBuffer(result) ? { [name]: result } : result
+        for (let [bname, b] of Object.entries(stages)) {
+            writeBaseline(lang, bname, b)
+        }
 
         await browser.close()
         await deleteTestUsersAndTokens()
@@ -773,7 +898,7 @@ if (process.argv.includes('--baseline')) {
 }
 else {
 
-    //=== baseline 比對 helper (內含: 檔存在 / byte-equal / spec 語意斷言) ===
+    //=== baseline 比對 helper (內含: 檔存在 / pixelmatch 反鋸齒容差 / spec 語意斷言) ===
     async function verifyBaseline(page, lang, name, buf, skipSpec = false) {
         if (!skipSpec) {
             await assertSpecForCase(page, lang, name)
@@ -800,7 +925,7 @@ else {
                 await deleteTestUsersAndTokens()
                 await insertTestUsersAndTokensAndTestTokens()
 
-                browser = await chromium.launch({ headless: true })
+                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
                 let context = await browser.newContext()
                 page = await context.newPage()
 
@@ -828,10 +953,21 @@ else {
                 it(`${name}`, async function() {
                     await resetAdminToken()
                     await resetTestTokensSeed()
-                    let buf = await fn(page, lang)
+                    let result = await fn(page, lang)
 
-                    //語意斷言 (主) + pixel baseline (補)
-                    await verifyBaseline(page, lang, name, buf)
+                    //語意斷言 (主): 以 case name 查 expectedSpecText, 每個 case 執行一次.
+                    //E2E-002 (toggle isApp) 例外: 其成功 modal 文字已在 capture 函式內 (modal 仍顯示時) 斷言,
+                    //post-capture 時 modal 已 dismiss + toggle 結果無唯一可觀察文字 → 改以下方 DB 狀態斷言驗最終態,
+                    //不在此處對已消失的 modal 文字做 pageHasText.
+                    if (name !== 'E2E-002-toggle-isapp-save-success') {
+                        await assertSpecForCase(page, lang, name)
+                    }
+
+                    //pixel baseline (補強): 多階段 fn 可回 Buffer (單張) 或 dict { baselineName: buf } (多張); 統一成 dict 逐張比對
+                    let stages = Buffer.isBuffer(result) ? { [name]: result } : result
+                    for (let [bname, b] of Object.entries(stages)) {
+                        assertBaselineMatch(b, bp(lang, bname), `tokens-${lang}-${bname}`)
+                    }
 
                     //DB 副作用斷言
                     if (name === 'E2E-002-toggle-isapp-save-success') {

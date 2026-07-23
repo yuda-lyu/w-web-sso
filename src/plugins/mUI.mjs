@@ -228,6 +228,23 @@ function getKpText(key) {
 }
 
 
+//getKpTextErr: 錯誤訊息專用翻譯 — 先 getKpText(key) 取得模板, 再插值密碼政策值 (minLength / maxLength /
+//consecutiveCharsMinMatch 來自 webInfor.passwordPolicyInfo, 即時反映 settings). 供「錯誤 reject key」顯示用:
+//多數錯誤 key 無模板變數 (replace 為 no-op); 僅密碼政策 key (userPassword_keyLim*) 含 {minLength} 等需插值.
+//設計: 後端一律 reject key 字串 (msg-key 契約), 前端統一以 $tErr(key) 翻譯+插值顯示.
+function getKpTextErr(key) {
+    let t = getKpText(key)
+    if (!isestr(t)) {
+        return t
+    }
+    let p = get(vo, '$store.state.webInfor.passwordPolicyInfo', {})
+    t = t.replace('{minLength}', get(p, 'minLength', ''))
+    t = t.replace('{maxLength}', get(p, 'maxLength', ''))
+    t = t.replace('{consecutiveCharsMinMatch}', get(p, 'consecutiveCharsMinMatch', ''))
+    return t
+}
+
+
 function syncHeight() {
 
     //heightToolbar
@@ -756,22 +773,6 @@ function gv(o, k, cv = null) {
 }
 
 
-function getTimemsTZ(v) {
-    if (istimemsTZ(v)) {
-        return ot(v).format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-    }
-    return ''
-}
-
-
-function getTimeMin(v, def) {
-    if (istimemsTZ(v)) {
-        return ot(v).format('YYYY-MM-DD HH:mm')
-    }
-    return def
-}
-
-
 let mUI = {
 
     setVo,
@@ -785,6 +786,7 @@ let mUI = {
 
     setLang,
     getKpText,
+    getKpTextErr,
 
     syncHeight,
 
@@ -801,8 +803,6 @@ let mUI = {
     getIcon,
 
     gv,
-    getTimemsTZ,
-    getTimeMin,
     cstr,
 
 }

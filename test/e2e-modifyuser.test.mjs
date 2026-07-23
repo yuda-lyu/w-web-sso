@@ -4,9 +4,9 @@ import path from 'path'
 import { chromium } from 'playwright'
 import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
-import hashPassword from '../server/hashPassword.mjs'
+import hashPassword, { verifyPassword } from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch } from './e2e-setup.mjs'
 
 
 //
@@ -112,6 +112,17 @@ let expectedModalText = {
 }
 
 
+//儲存成功時 CheckYes modal 顯示之文字 (procLang.mjs userSaveUsersSuccess, type:'success').
+//對應 spec/流程_後台變更使用者資訊.md §三「047 hideLoading + await showCheckYes(<userSaveUsersSuccess>)」
+//與 i18n 粒度規則 line 349「儲存成功 → userSaveUsersSuccess → CheckYes modal」.
+//成功 case (E2E-001/012/013/014) 共用此文字; 由 dismissModalAndCaptureTargetRow 於成功 modal
+//顯示中 (截 stage1 後、按確認鈕關閉前) 斷言, 否則點 OK 後 modal dismiss 即無法再驗.
+let expectedSuccessModalText = {
+    eng: 'Save users successfully',
+    cht: '儲存使用者數據成功',
+}
+
+
 // ===================================================================
 // 測試使用者 / Token
 // ===================================================================
@@ -140,15 +151,20 @@ let testUsers = {
 let userTokens = {}
 
 
-//target.timeBlocked 預設為未來時間 (將 target 視為封鎖中). 兩個理由:
-//  1. WTimeminute popup 在 value='' 時點 day cell 後 @input 不會穩定寫回 (邊界行為),
-//     case 014 用 '改現有 timeBlocked → 改另一個 day' 比 '從空改為某時間' 穩定.
-//  2. procCore.mjs:1825 cleanUsers timer 每 2s 自動清空「已過期但有值」的 timeBlocked
-//     (規則: !getIsBlocked + isestr(timeBlocked) 即清). 給過去時間會被秒清.
-//     給未來時間 → getIsBlocked=true → 不會被 timer 清.
+//target.timeBlocked 預設為未來時間 (將 target 視為封鎖中). 理由:
+//  WTimeminute popup 在 value='' 時點 day cell 後 @input 不會穩定寫回 (邊界行為),
+//  case 014 用 '改現有 timeBlocked → 改另一個 day' 比 '從空改為某時間' 穩定.
+//  (先前另有「cleanUsers timer 會秒清過期值」之考量; 該 timer 已於 2026-07-06 依 ADR-013 隱性解除移除, 不再是限制)
 //  case 014 仍符合 spec「修改 timeBlocked」契約 — 從一個 timemsTZ 改為另一個 day 的 timemsTZ.
 //  target 被視為封鎖不影響 admin 登入流程 (admin 自身 timeBlocked='').
 let targetInitialTimeBlocked = '2030-06-01T00:00:00.000+08:00'
+
+
+//凍結 timeCreate / timeUpdate 為固定字串, 讓 Users list 之「Created time」/「Updated time」欄顯示穩定.
+//(users.funNew 預設把 timeCreate/timeUpdate 設為 nowms2str() wall-clock → 捲到最右欄之 case (E2E-009 框 isActive)
+// 全頁截圖會帶入該兩欄之 wall-clock 時間戳 → 每跑不同 → pixel flake. 比照 timeVerified / timeExpired 等
+// 其他時間欄之凍結做法, 也對齊 e2e-tokens 之 FIX_TIME 慣例.)
+let FIX_TIME = '2025-01-01T00:00:00.000+08:00'
 
 
 async function insertTestUsersAndTokens() {
@@ -179,6 +195,9 @@ async function insertTestUsersAndTokens() {
         v.timeVerified = '2025-01-01T00:00:00.000+08:00'
         v.timeExpired = '2030-01-01T00:00:00.000+08:00'
         v.timeBlocked = u.id === testUsers.target.id ? targetInitialTimeBlocked : ''
+        //凍結 audit 時間欄 (funNew 預設填 wall-clock now), 避免 Created/Updated time 欄 pixel flake
+        v.timeCreate = FIX_TIME
+        v.timeUpdate = FIX_TIME
         return v
     })
     await woItems.users.insert(rs)
@@ -188,7 +207,24 @@ async function insertTestUsersAndTokens() {
     userTokens[testUsers.admin.id] = t.token
     await woItems.tokens.insert([t])
 
+    //統一所有 users (含 resetToBaseSeed 插入之 base seed user) 之 timeCreate / timeUpdate 為固定值.
+    //base seed user 由 buildBaseUsers() 經 funNew 產生, 其 timeCreate/timeUpdate 為彼時 wall-clock now,
+    //會出現在「Created time」/「Updated time」欄 → 全頁截圖 (E2E-009 框 isActive 捲到最右) 每跑不同 → flake.
+    //(本檔 testUsers 已在 insert 前直接設 FIX_TIME, 此 normalize 對它們等同 noop, 保留以兼顧 base seed.)
+    await normalizeUserTimes()
+
     console.log(`inserted ${rs.length} modifyuser test users + 1 token`)
+}
+
+
+//把所有 users 之 timeCreate / timeUpdate 一次性 normalize 為 FIX_TIME (對齊 e2e-tokens 之 normalizeTokenTimes)
+async function normalizeUserTimes() {
+    let us = await woItems.users.select().catch(() => [])
+    for (let u of us) {
+        if (u.timeCreate !== FIX_TIME || u.timeUpdate !== FIX_TIME) {
+            await woItems.users.save({ id: u.id, timeCreate: FIX_TIME, timeUpdate: FIX_TIME }).catch(() => {})
+        }
+    }
 }
 
 
@@ -377,14 +413,6 @@ async function clickRowCheckbox(page, rowIdx, colId) {
 }
 
 
-//找到 admin 自己列, 對某欄 checkbox 進行 toggle
-async function toggleSelfRowCheckbox(page, colId) {
-    let rowIdx = await findRowIndexByAccount(page, testUsers.admin.account)
-    if (rowIdx === null) throw new Error(`admin row not found for account=${testUsers.admin.account}`)
-    await clickRowCheckbox(page, parseInt(rowIdx), colId)
-}
-
-
 //點儲存按鈕
 async function clickSave(page) {
     let p = await locateMdiButton(page, mdiCloudUploadOutline)
@@ -514,8 +542,70 @@ async function loginAsAdminAndOpenUsersList(page, lang) {
 // capture helpers (13 cases)
 // ===================================================================
 
-//001 修改成功: dblclick target name → 改值 → save → success modal → DB audit fields 驗證
-//baseline 截在 success modal 出現後 (modal 含 userSaveUsersSuccess 訊息)
+//成功類 case 共用 (多階段): 先框「儲存成功 modal (綠勾)」(stage1) → 點 OK 關閉 → 等 grid 穩定 →
+//  框 target 那一列 (stage2, 跨 pinned-left + center container 取聯集).
+//此函式由 001 / 012 / 013 / 014 在 waitCheckYes 後呼叫.
+//  stage1 = 儲存成功 modal 畫面 (按 OK 之前截), stage2 = 改動後的 target 使用者列.
+//回傳 dict { 'E2E-NNN-1-save-success-modal': modalBuf, [stage2Name]: rowBuf };
+//  數字前綴使檔名排序 ≡ 階段順序 (1 成功 modal → 2 結果列). stage2Name 由各 case 傳入.
+//只截 target 那一列而非整表, 聚焦驗證「改動結果已反映在正確列」.
+async function dismissModalAndCaptureTargetRow(page, lang, e2eNo, stage2Name) {
+    let t = kpUiText[lang]
+
+    //[多階段 stage1] 點 OK 前先框「儲存成功 modal (綠勾)」— WDialog 內層 panel
+    let modalBuf = await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
+
+    //語意斷言 (成功 modal 文字): 對應 spec §三 047「showCheckYes(<userSaveUsersSuccess>)」
+    //與 i18n 粒度規則 line 349「儲存成功 → CheckYes modal」. 須在點 OK 關閉前驗 (dismiss 後 DOM 即無此字).
+    //此斷言於 mocha 與 --baseline 兩條路徑皆執行 (成功 modal 本就應含該字, 不符即中止, 不凍結 bug).
+    let successNeedle = expectedSuccessModalText[lang]
+    let hasSuccess = await page.evaluate((s) => (document.body.innerText || '').includes(s), successNeedle)
+    assert.strict.equal(hasSuccess, true, `儲存成功 modal 應含成功訊息文字「${successNeedle}」 (case E2E-${e2eNo})`)
+
+    await page.locator(`text="${t.ok}"`).first().click() //關閉 success modal
+    //等表格刷新 (重 fetch getUsersList) 並穩定: 連續三次 raf cell 數量 + row[0] cell 文字不變
+    await page.evaluate(() => {
+        let body = document.querySelector('.ag-center-cols-viewport')
+        if (body) body.scrollLeft = 0
+    })
+    await page.waitForFunction(async () => {
+        let snap = () => {
+            let cells = document.querySelectorAll('.ag-cell')
+            return JSON.stringify({
+                count: cells.length,
+                first10: Array.from(cells).slice(0, 10).map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
+            })
+        }
+        let s1 = snap()
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        let s2 = snap()
+        if (s1 !== s2) return false
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        let s3 = snap()
+        return s2 === s3
+    }, null, { timeout: 15000 })
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(1500)
+
+    //找 target 列的 row-index (save 後重 fetch 清單, target 仍可由 account 定位)
+    let tgtRowIdx = await findRowIndexByAccount(page, testUsers.target.account)
+    if (tgtRowIdx === null) throw new Error(`target row not found after save (account=${testUsers.target.account})`)
+
+    //[多階段 stage2] 框 target 那一列: 跨 pinned-left + center container 取聯集 = 整列寬
+    let rowBuf = await captureStableWithBox(page, [
+        `.ag-pinned-left-cols-container .ag-row[row-index="${tgtRowIdx}"]`,
+        `.ag-center-cols-container .ag-row[row-index="${tgtRowIdx}"]`,
+    ])
+
+    return {
+        [`E2E-${e2eNo}-1-save-success-modal`]: modalBuf,
+        [stage2Name]: rowBuf,
+    }
+}
+
+
+//001 修改成功 (多階段): dblclick target name → 改值 → save → 框成功 modal (stage1) → 關閉 → 框 target 那一列 (stage2, 改名後的結果).
+//stage1 截圖標的為儲存成功 modal, stage2 為改動後的 target 使用者列, 驗證「修改結果已反映在清單中」.
 async function captureModifyNameSuccess(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
 
@@ -528,93 +618,162 @@ async function captureModifyNameSuccess(page, lang) {
     await clickSave(page)
     await waitCheckYes(page, lang) //success modal
 
-    return await captureStable(page)
+    return await dismissModalAndCaptureTargetRow(page, lang, '001', 'E2E-001-2-after-save-modify-name')
 }
 
 
 //002 account 改空: clear target account cell → save → 前端 isError 攔下 (cell warn + modal)
+//多階段: stage1 = save 前框 target 列 account 空格 (含警示 icon, 讓讀者看到正是此格改空才觸發),
+//        stage2 = save 後 CheckYes modal (帳號無效錯誤訊息)
 async function captureAccountEmpty(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
-    let tgtRowIdx = await findRowIndexByAccount(page, testUsers.target.account)
-    await fillAgGridCell(page, parseInt(tgtRowIdx), 'account', '')
+    let tgtRowIdx = parseInt(await findRowIndexByAccount(page, testUsers.target.account))
+    await fillAgGridCell(page, tgtRowIdx, 'account', '')
+    //[多階段 stage1] save 前框 target 列 account 空格 (account 已清空, row-index 不變)
+    await ensureColumnVisible(page, 'account')
+    let bufTrigger = await captureStableWithBox(page, `.ag-row[row-index="${tgtRowIdx}"] .ag-cell[col-id="account"]`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+    let bufModal = await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
+    return {
+        'E2E-002-1-account-empty-cell': bufTrigger,
+        'E2E-002-2-account-empty': bufModal,
+    }
 }
 
 
 //003 account 改為同表內重複: target.account = admin.account
+//多階段: stage1 = save 前框 target 列 account 格 (已改成與 admin 相同, 觸發重複),
+//        stage2 = CheckYes modal (帳號重複錯誤訊息)
 async function captureAccountDuplicate(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
-    let tgtRowIdx = await findRowIndexByAccount(page, testUsers.target.account)
-    await fillAgGridCell(page, parseInt(tgtRowIdx), 'account', testUsers.admin.account)
+    let tgtRowIdx = parseInt(await findRowIndexByAccount(page, testUsers.target.account))
+    await fillAgGridCell(page, tgtRowIdx, 'account', testUsers.admin.account)
+    //[多階段 stage1] save 前框 target 列 account 格 (此時值已是 admin.account → 同表重複)
+    await ensureColumnVisible(page, 'account')
+    let bufTrigger = await captureStableWithBox(page, `.ag-row[row-index="${tgtRowIdx}"] .ag-cell[col-id="account"]`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+    let bufModal = await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
+    return {
+        'E2E-003-1-account-duplicate-cell': bufTrigger,
+        'E2E-003-2-account-duplicate': bufModal,
+    }
 }
 
 
 //004 email 改空
+//多階段: stage1 = save 前框 target 列 email 空格, stage2 = CheckYes modal (email 空錯誤訊息)
 async function captureEmailEmpty(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
-    let tgtRowIdx = await findRowIndexByAccount(page, testUsers.target.account)
-    await fillAgGridCell(page, parseInt(tgtRowIdx), 'email', '')
+    let tgtRowIdx = parseInt(await findRowIndexByAccount(page, testUsers.target.account))
+    await fillAgGridCell(page, tgtRowIdx, 'email', '')
+    //[多階段 stage1] save 前框 target 列 email 空格
+    await ensureColumnVisible(page, 'email')
+    let bufTrigger = await captureStableWithBox(page, `.ag-row[row-index="${tgtRowIdx}"] .ag-cell[col-id="email"]`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+    let bufModal = await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
+    return {
+        'E2E-004-1-email-empty-cell': bufTrigger,
+        'E2E-004-2-email-empty': bufModal,
+    }
 }
 
 
 //005 email 改為格式錯
+//多階段: stage1 = save 前框 target 列 email 格 (已改成格式錯誤值), stage2 = CheckYes modal
 async function captureEmailFormat(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
-    let tgtRowIdx = await findRowIndexByAccount(page, testUsers.target.account)
-    await fillAgGridCell(page, parseInt(tgtRowIdx), 'email', 'not-an-email-format')
+    let tgtRowIdx = parseInt(await findRowIndexByAccount(page, testUsers.target.account))
+    await fillAgGridCell(page, tgtRowIdx, 'email', 'not-an-email-format')
+    //[多階段 stage1] save 前框 target 列 email 格 (值為非法格式)
+    await ensureColumnVisible(page, 'email')
+    let bufTrigger = await captureStableWithBox(page, `.ag-row[row-index="${tgtRowIdx}"] .ag-cell[col-id="email"]`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+    let bufModal = await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
+    return {
+        'E2E-005-1-email-format-cell': bufTrigger,
+        'E2E-005-2-email-format': bufModal,
+    }
 }
 
 
 //006 email 改為同表內重複: target.email = admin.email
+//多階段: stage1 = save 前框 target 列 email 格 (已改成與 admin 相同), stage2 = CheckYes modal
 async function captureEmailDuplicate(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
-    let tgtRowIdx = await findRowIndexByAccount(page, testUsers.target.account)
-    await fillAgGridCell(page, parseInt(tgtRowIdx), 'email', testUsers.admin.email)
+    let tgtRowIdx = parseInt(await findRowIndexByAccount(page, testUsers.target.account))
+    await fillAgGridCell(page, tgtRowIdx, 'email', testUsers.admin.email)
+    //[多階段 stage1] save 前框 target 列 email 格 (值為 admin.email → 同表重複)
+    await ensureColumnVisible(page, 'email')
+    let bufTrigger = await captureStableWithBox(page, `.ag-row[row-index="${tgtRowIdx}"] .ag-cell[col-id="email"]`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+    let bufModal = await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
+    return {
+        'E2E-006-1-email-duplicate-cell': bufTrigger,
+        'E2E-006-2-email-duplicate': bufModal,
+    }
 }
 
 
 //007 redir 改空
+//多階段: stage1 = save 前框 target 列 redir 空格 (需水平 scroll 使欄進入 viewport),
+//        stage2 = CheckYes modal (轉址無效錯誤訊息)
 async function captureRedirEmpty(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
-    let tgtRowIdx = await findRowIndexByAccount(page, testUsers.target.account)
-    await fillAgGridCell(page, parseInt(tgtRowIdx), 'redir', '')
+    let tgtRowIdx = parseInt(await findRowIndexByAccount(page, testUsers.target.account))
+    await fillAgGridCell(page, tgtRowIdx, 'redir', '')
+    //[多階段 stage1] save 前框 target 列 redir 空格
+    await ensureColumnVisible(page, 'redir')
+    let bufTrigger = await captureStableWithBox(page, `.ag-row[row-index="${tgtRowIdx}"] .ag-cell[col-id="redir"]`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+    let bufModal = await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
+    return {
+        'E2E-007-1-redir-empty-cell': bufTrigger,
+        'E2E-007-2-redir-empty': bufModal,
+    }
 }
 
 
 //008 admin 解除自己 isAdmin (前端自我鎖死保護)
+//多階段: stage1 = save 前框 admin 自己列的 isAdmin checkbox 格 (已取消勾選), stage2 = CheckYes modal
 async function captureCannotDemoteSelf(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
-    await toggleSelfRowCheckbox(page, 'isAdmin')
+    let adminRowIdx = parseInt(await findRowIndexByAccount(page, testUsers.admin.account))
+    await clickRowCheckbox(page, adminRowIdx, 'isAdmin')
+    //[多階段 stage1] save 前框 admin 自己列 isAdmin checkbox 格 (已取消勾選)
+    await ensureColumnVisible(page, 'isAdmin')
+    let bufTrigger = await captureStableWithBox(page, `.ag-row[row-index="${adminRowIdx}"] .ag-cell[col-id="isAdmin"]`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+    let bufModal = await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
+    return {
+        'E2E-008-1-isadmin-uncheck-cell': bufTrigger,
+        'E2E-008-2-cannot-demote-self': bufModal,
+    }
 }
 
 
 //009 admin 停用自己 isActive
+//多階段: stage1 = save 前框 admin 自己列的 isActive checkbox 格 (已取消勾選), stage2 = CheckYes modal
 async function captureCannotDisableSelf(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
-    await toggleSelfRowCheckbox(page, 'isActive')
+    let adminRowIdx = parseInt(await findRowIndexByAccount(page, testUsers.admin.account))
+    await clickRowCheckbox(page, adminRowIdx, 'isActive')
+    //[多階段 stage1] save 前框 admin 自己列 isActive checkbox 格 (已取消勾選)
+    await ensureColumnVisible(page, 'isActive')
+    let bufTrigger = await captureStableWithBox(page, `.ag-row[row-index="${adminRowIdx}"] .ag-cell[col-id="isActive"]`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+    let bufModal = await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
+    return {
+        'E2E-009-1-isactive-uncheck-cell': bufTrigger,
+        'E2E-009-2-cannot-disable-self': bufModal,
+    }
 }
 
 
@@ -624,7 +783,9 @@ async function captureCannotDisableSelf(page, lang) {
 //   屬 spec 與 code 描述不對齊 (race condition 場景無法純 UI 模擬). 故 010 視覺等同於 006,
 //   以同訊息驗證設計上「前後端訊息一致」契約.
 async function captureEmailConflictBackend(page, lang) {
-    return await captureEmailDuplicate(page, lang)
+    //010 維持單張 Buffer 契約 (與 006 共用 UI 終態 modal); 從 006 多階段 dict 取 modal stage 回傳.
+    let stages = await captureEmailDuplicate(page, lang)
+    return stages['E2E-006-2-email-duplicate']
 }
 
 
@@ -644,7 +805,7 @@ async function captureTokenExpiredBackend(page, lang) {
 
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+    return await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
 }
 
 
@@ -716,40 +877,40 @@ async function clickTimeCellAndPickDay(page, rowIdx, colId, rowId) {
 }
 
 
-//012 timeVerified 修改: 透過 WTimeminute popup 互動 + save success
+//012 timeVerified 修改 (多階段): WTimeminute popup 互動 + save success → 框成功 modal (stage1) → 關閉 → 框 target 那一列 (stage2, 顯示改後的時間欄).
 async function captureTimeModifyVerified(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
     let tgtRowIdx = await findRowIndexByAccount(page, testUsers.target.account)
     await clickTimeCellAndPickDay(page, parseInt(tgtRowIdx), 'timeVerified', testUsers.target.id)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+    return await dismissModalAndCaptureTargetRow(page, lang, '012', 'E2E-012-2-time-modify-verified')
 }
 
 
-//013 timeExpired 修改: 同上, 改 timeExpired 欄位
+//013 timeExpired 修改 (多階段): 同上, 改 timeExpired 欄位
 async function captureTimeModifyExpired(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
     let tgtRowIdx = await findRowIndexByAccount(page, testUsers.target.account)
     await clickTimeCellAndPickDay(page, parseInt(tgtRowIdx), 'timeExpired', testUsers.target.id)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+    return await dismissModalAndCaptureTargetRow(page, lang, '013', 'E2E-013-2-time-modify-expired')
 }
 
 
-//014 timeBlocked 修改: 同上, 改 timeBlocked 欄位
+//014 timeBlocked 修改 (多階段): 同上, 改 timeBlocked 欄位
 async function captureTimeModifyBlocked(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
     let tgtRowIdx = await findRowIndexByAccount(page, testUsers.target.account)
     await clickTimeCellAndPickDay(page, parseInt(tgtRowIdx), 'timeBlocked', testUsers.target.id)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+    return await dismissModalAndCaptureTargetRow(page, lang, '014', 'E2E-014-2-time-modify-blocked')
 }
 
 
-//013 拖拉順序: 拖 target row 到 admin row 之前 (改變 order)
+//015 拖拉順序: 拖 target row 到 admin row 之前 (改變 order)
 //   ag-grid rowDrag (account 欄啟用 kpRowDrag.account=true) 透過 .ag-row-drag DOM 元素
 //   作為 drag handle. 在 account cell 內部最左側. 需精準命中該 handle.
 //   ag-grid 使用 HTML5 native drag events (dragstart/dragover/drop), Playwright 的
@@ -799,7 +960,52 @@ async function captureDragReorder(page, lang) {
 
     await clickSave(page)
     await waitCheckYes(page, lang)
-    return await captureStable(page)
+
+    //語意斷言 (成功 modal 文字): 對應 spec §三 047「showCheckYes(<userSaveUsersSuccess>)」+ i18n 粒度規則 line 349.
+    //E2E-015 拖拉成功亦走 saveUsers 成功路徑, 須在點 OK 關閉前驗 (dismiss 後 DOM 即無此字); 僅加語意, 不動 baseline.
+    let successNeedle = expectedSuccessModalText[lang]
+    let hasSuccess = await page.evaluate((s) => (document.body.innerText || '').includes(s), successNeedle)
+    assert.strict.equal(hasSuccess, true, `儲存成功 modal 應含成功訊息文字「${successNeedle}」 (case E2E-015 drag-reorder)`)
+
+    //關閉 success modal → 等 grid 刷新穩定
+    let t = kpUiText[lang]
+    await page.locator(`text="${t.ok}"`).first().click()
+    await page.evaluate(() => {
+        let body = document.querySelector('.ag-center-cols-viewport')
+        if (body) body.scrollLeft = 0
+    })
+    await page.waitForFunction(async () => {
+        let snap = () => {
+            let cells = document.querySelectorAll('.ag-cell')
+            return JSON.stringify({
+                count: cells.length,
+                first10: Array.from(cells).slice(0, 10).map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
+            })
+        }
+        let s1 = snap()
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        let s2 = snap()
+        if (s1 !== s2) return false
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+        let s3 = snap()
+        return s2 === s3
+    }, null, { timeout: 15000 })
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(1500)
+
+    //拖拉驗證標的是「兩列的相對順序」, 故框被拖動的 target 列與其緊鄰的 admin 列的聯集.
+    //這樣可一眼確認 target 排在 admin 前方, 比只框一列更能驗證「順序改變了」這個核心語意.
+    let finalTargetIdx = await findRowIndexByAccount(page, testUsers.target.account)
+    let finalAdminIdx = await findRowIndexByAccount(page, testUsers.admin.account)
+    if (finalTargetIdx === null || finalAdminIdx === null) throw new Error('cannot find rows after drag save')
+
+    //聯集兩列（pinned-left + center 各取 target 與 admin 列，共 4 個 selector）
+    return await captureStableWithBox(page, [
+        `.ag-pinned-left-cols-container .ag-row[row-index="${finalTargetIdx}"]`,
+        `.ag-center-cols-container .ag-row[row-index="${finalTargetIdx}"]`,
+        `.ag-pinned-left-cols-container .ag-row[row-index="${finalAdminIdx}"]`,
+        `.ag-center-cols-container .ag-row[row-index="${finalAdminIdx}"]`,
+    ])
 }
 
 
@@ -836,13 +1042,17 @@ async function generateBaselineForLang(lang) {
         await deleteTestUsersAndTokens()
         await insertTestUsersAndTokens()
 
-        let browser = await chromium.launch({ headless: true })
+        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
         let context = await browser.newContext()
         let page = await context.newPage()
         page.on('dialog', (d) => d.accept())
 
-        let buf = await fn(page, lang)
-        writeBaseline(lang, name, buf)
+        let result = await fn(page, lang)
+        //多階段: fn 可回 Buffer (單張) 或 dict { baselineName: buf } (多張); 統一成 dict 寫檔
+        let stages = Buffer.isBuffer(result) ? { [name]: result } : result
+        for (let [bname, b] of Object.entries(stages)) {
+            writeBaseline(lang, bname, b)
+        }
 
         await browser.close()
         await deleteTestUsersAndTokens()
@@ -896,7 +1106,7 @@ else {
                 await insertTestUsersAndTokens()
                 await resetAdminToken()
 
-                browser = await chromium.launch({ headless: true })
+                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
                 let context = await browser.newContext()
                 page = await context.newPage()
                 page.on('dialog', (d) => d.accept())
@@ -919,6 +1129,15 @@ else {
             }
 
 
+            //多階段斷言: capture fn 回 Buffer (單張) 或 dict { baselineName: buf } (多張) → 逐張比對 baseline
+            async function assertBaselineStages(result, singleName) {
+                let stages = Buffer.isBuffer(result) ? { [singleName]: result } : result
+                for (let [bname, b] of Object.entries(stages)) {
+                    assertBaselineMatch(b, bp(lang, bname), `modifyuser-${lang}-${bname}`)
+                }
+            }
+
+
             async function assertModalText(caseName) {
                 let exp = expectedModalText[caseName]
                 if (!exp) return
@@ -929,8 +1148,9 @@ else {
 
 
             it(`E2E-001-after-save-modify-name: dblclick name 改值 → save → success modal → DB audit fields`, async function() {
-                let buf = await captureModifyNameSuccess(page, lang)
-                await assertBaseline(buf, 'E2E-001-after-save-modify-name')
+                let result = await captureModifyNameSuccess(page, lang)
+                //多階段: stage1 成功 modal + stage2 結果列, 逐張比對
+                await assertBaselineStages(result, 'E2E-001-after-save-modify-name')
 
                 //DB 斷言: name 變更; userIdUpdate=admin.id; timeUpdate 不為空; password hash 保留; userId/timeCreate 保留
                 let updated = await woItems.users.select({ id: testUsers.target.id })
@@ -938,13 +1158,14 @@ else {
                 assert.strict.equal(updated[0].name, 'Modified Target', `name 應已變更`)
                 assert.strict.equal(updated[0].userIdUpdate, testUsers.admin.id, `userIdUpdate 應為 admin.id`)
                 assert.strict.notEqual(updated[0].timeUpdate, '', `timeUpdate 應被填入`)
-                assert.strict.equal(updated[0].password, hashPassword(testUsers.target.rawPassword, salt), `password hash 應保留`)
+                assert.strict.equal(verifyPassword(testUsers.target.rawPassword, updated[0].password, salt), true, `password hash 應保留 (仍可由原 rawPassword 驗證通過)`)
             })
 
 
             it(`E2E-002-account-empty: account → 空 → save → 前端 isError 攔下`, async function() {
-                let buf = await captureAccountEmpty(page, lang)
-                await assertBaseline(buf, 'E2E-002-account-empty')
+                let result = await captureAccountEmpty(page, lang)
+                //多階段: stage1 觸發 cell + stage2 錯誤 modal, 逐張比對
+                await assertBaselineStages(result, 'E2E-002-account-empty')
                 await assertModalText('E2E-002-account-empty')
                 //DB: account 仍為原值
                 let row = await woItems.users.select({ id: testUsers.target.id })
@@ -953,8 +1174,8 @@ else {
 
 
             it(`E2E-003-account-duplicate: account → 同表內重複 → save → 前端 isError 攔下`, async function() {
-                let buf = await captureAccountDuplicate(page, lang)
-                await assertBaseline(buf, 'E2E-003-account-duplicate')
+                let result = await captureAccountDuplicate(page, lang)
+                await assertBaselineStages(result, 'E2E-003-account-duplicate')
                 await assertModalText('E2E-003-account-duplicate')
                 let row = await woItems.users.select({ id: testUsers.target.id })
                 assert.strict.equal(row[0].account, testUsers.target.account, `account 不應被儲存`)
@@ -962,8 +1183,8 @@ else {
 
 
             it(`E2E-004-email-empty: email → 空 → save → 前端 isError 攔下`, async function() {
-                let buf = await captureEmailEmpty(page, lang)
-                await assertBaseline(buf, 'E2E-004-email-empty')
+                let result = await captureEmailEmpty(page, lang)
+                await assertBaselineStages(result, 'E2E-004-email-empty')
                 await assertModalText('E2E-004-email-empty')
                 let row = await woItems.users.select({ id: testUsers.target.id })
                 assert.strict.equal(row[0].email, testUsers.target.email, `email 不應被儲存`)
@@ -971,8 +1192,8 @@ else {
 
 
             it(`E2E-005-email-format: email → 格式錯 → save → 前端 isError 攔下`, async function() {
-                let buf = await captureEmailFormat(page, lang)
-                await assertBaseline(buf, 'E2E-005-email-format')
+                let result = await captureEmailFormat(page, lang)
+                await assertBaselineStages(result, 'E2E-005-email-format')
                 await assertModalText('E2E-005-email-format')
                 let row = await woItems.users.select({ id: testUsers.target.id })
                 assert.strict.equal(row[0].email, testUsers.target.email, `email 不應被儲存`)
@@ -980,8 +1201,8 @@ else {
 
 
             it(`E2E-006-email-duplicate: email → 同表內重複 → save → 前端 isError 攔下`, async function() {
-                let buf = await captureEmailDuplicate(page, lang)
-                await assertBaseline(buf, 'E2E-006-email-duplicate')
+                let result = await captureEmailDuplicate(page, lang)
+                await assertBaselineStages(result, 'E2E-006-email-duplicate')
                 await assertModalText('E2E-006-email-duplicate')
                 let row = await woItems.users.select({ id: testUsers.target.id })
                 assert.strict.equal(row[0].email, testUsers.target.email, `email 不應被儲存`)
@@ -989,8 +1210,8 @@ else {
 
 
             it(`E2E-007-redir-empty: redir → 空 → save → 前端 isError 攔下`, async function() {
-                let buf = await captureRedirEmpty(page, lang)
-                await assertBaseline(buf, 'E2E-007-redir-empty')
+                let result = await captureRedirEmpty(page, lang)
+                await assertBaselineStages(result, 'E2E-007-redir-empty')
                 await assertModalText('E2E-007-redir-empty')
                 let row = await woItems.users.select({ id: testUsers.target.id })
                 assert.strict.equal(row[0].redir, testUsers.target.redir, `redir 不應被儲存`)
@@ -998,8 +1219,8 @@ else {
 
 
             it(`E2E-008-cannot-demote-self: 取消自己 isAdmin → save → cannotDemoteSelf modal → DB 不變`, async function() {
-                let buf = await captureCannotDemoteSelf(page, lang)
-                await assertBaseline(buf, 'E2E-008-cannot-demote-self')
+                let result = await captureCannotDemoteSelf(page, lang)
+                await assertBaselineStages(result, 'E2E-008-cannot-demote-self')
                 await assertModalText('E2E-008-cannot-demote-self')
                 let adminInDb = await woItems.users.select({ id: testUsers.admin.id })
                 assert.strict.equal(adminInDb[0].isAdmin, 'y', `admin isAdmin 應仍為 'y'`)
@@ -1007,8 +1228,8 @@ else {
 
 
             it(`E2E-009-cannot-disable-self: 取消自己 isActive → save → cannotDisableSelf modal → DB 不變`, async function() {
-                let buf = await captureCannotDisableSelf(page, lang)
-                await assertBaseline(buf, 'E2E-009-cannot-disable-self')
+                let result = await captureCannotDisableSelf(page, lang)
+                await assertBaselineStages(result, 'E2E-009-cannot-disable-self')
                 await assertModalText('E2E-009-cannot-disable-self')
                 let adminInDb = await woItems.users.select({ id: testUsers.admin.id })
                 assert.strict.equal(adminInDb[0].isActive, 'y', `admin isActive 應仍為 'y'`)
@@ -1039,8 +1260,9 @@ else {
 
 
             it(`E2E-012-time-modify-verified: WTimeminute 修改 timeVerified → save → DB timemsTZ 寫入`, async function() {
-                let buf = await captureTimeModifyVerified(page, lang)
-                await assertBaseline(buf, 'E2E-012-time-modify-verified')
+                let result = await captureTimeModifyVerified(page, lang)
+                //多階段: stage1 成功 modal + stage2 結果列, 逐張比對
+                await assertBaselineStages(result, 'E2E-012-time-modify-verified')
                 let row = await woItems.users.select({ id: testUsers.target.id })
                 assert.strict.notEqual(row[0].timeVerified, '2025-01-01T00:00:00.000+08:00', `timeVerified 應已變更, 實際: ${row[0].timeVerified}`)
                 assert.strict.notEqual(row[0].timeVerified, '', `timeVerified 不應為空`)
@@ -1052,8 +1274,9 @@ else {
 
 
             it(`E2E-013-time-modify-expired: WTimeminute 修改 timeExpired → save → DB timemsTZ 寫入`, async function() {
-                let buf = await captureTimeModifyExpired(page, lang)
-                await assertBaseline(buf, 'E2E-013-time-modify-expired')
+                let result = await captureTimeModifyExpired(page, lang)
+                //多階段: stage1 成功 modal + stage2 結果列, 逐張比對
+                await assertBaselineStages(result, 'E2E-013-time-modify-expired')
                 let row = await woItems.users.select({ id: testUsers.target.id })
                 assert.strict.notEqual(row[0].timeExpired, '2030-01-01T00:00:00.000+08:00', `timeExpired 應已變更, 實際: ${row[0].timeExpired}`)
                 assert.strict.notEqual(row[0].timeExpired, '', `timeExpired 不應為空`)
@@ -1064,8 +1287,9 @@ else {
 
 
             it(`E2E-014-time-modify-blocked: WTimeminute 修改 timeBlocked → save → DB timemsTZ 寫入`, async function() {
-                let buf = await captureTimeModifyBlocked(page, lang)
-                await assertBaseline(buf, 'E2E-014-time-modify-blocked')
+                let result = await captureTimeModifyBlocked(page, lang)
+                //多階段: stage1 成功 modal + stage2 結果列, 逐張比對
+                await assertBaselineStages(result, 'E2E-014-time-modify-blocked')
                 let row = await woItems.users.select({ id: testUsers.target.id })
                 assert.strict.notEqual(row[0].timeBlocked, targetInitialTimeBlocked, `timeBlocked 應已變更 (從預設 ${targetInitialTimeBlocked} 改為另一日)`)
                 assert.strict.equal(isTimemsTZ(row[0].timeBlocked), true, `timeBlocked 應為 timemsTZ 格式, 實際: ${row[0].timeBlocked}`)

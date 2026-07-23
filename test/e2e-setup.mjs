@@ -7,8 +7,14 @@ import fs from 'fs'
 import path from 'path'
 import JSON5 from 'json5'
 import sharp from 'sharp'
+import pixelmatch from 'pixelmatch'
+import { PNG } from 'pngjs'
 import { woItems } from '../g.mOrm.mjs'
 import { buildBaseUsers, buildBaseTokens } from '../g.initialData.mjs'
+
+//D21: 測試環境放行佔位符 pepper (測試密碼非機密; spawn 的 backend 繼承此 env → WWebSso 啟動檢查放行).
+//生產環境不設此旗標 + 未注入 SALT → 後端拒啟. 種子(此檔 buildBaseUsers)與後端 verify 在測試下同用 '{salt}', 一致.
+process.env.ALLOW_PLACEHOLDER_SALT = process.env.ALLOW_PLACEHOLDER_SALT || '1'
 
 //
 // e2e 共用 base URL
@@ -143,7 +149,15 @@ function genTempSettings(overrides = {}) {
 //若 port 11007 已被佔用但 backendProc=null (代表「startServersOnce 階段偵測到外部已啟動的 backend 直接 reuse」場景),
 //原本實作 killProc(null) noop → spawn 新 backend 撞 port silent fail → 舊 backend 仍跑舊 settings → E2E-017 之類「settings overide」測試失敗.
 //修法: backendProc=null 時用 OS-level 查 port 11007 之 PID + taskkill, 殺乾淨後才 spawn 新.
-async function restartBackend(pathSettings = './settings.json') {
+//
+//envOverride: 可選, 注入額外環境變數給新 backend 進程 (與 process.env 淺合併後傳 spawn).
+//why 需要它而非僅靠 genTempSettings 改 settings 檔: backend 最終設定 = settings 檔 overlay g.getSettings()
+//(srv.mjs 把 g.getSettings() 當 optExt 傳入, WWebSso 內 { ...settings檔, ...optExt } → optExt 後蓋勝),
+//而 g.getSettings() 會把 .env 的 EM_SRC_* 等覆寫進 optExt → 真實 SMTP 憑證凌駕 settings 檔之上, 連
+//genTempSettings({emSrcHost:...}) 都被蓋掉. 但 g.getSettings 的 loadEnv 是「process.env 已有該 key 就不從
+//.env 載入」(g.getSettings.mjs:23) → 故在 spawn env 預先放 EM_SRC_HOST 等, 即可使 .env 失效、改用注入值.
+//典型用途: E2E-021 以 EM_SRC_HOST=127.0.0.1 / EM_SRC_PORT=1 (connection-refused) 讓 srEmail.send 瞬間失敗.
+async function restartBackend(pathSettings = './settings.json', envOverride = null) {
     if (backendProc) {
         killProc(backendProc)
     }
@@ -192,7 +206,9 @@ async function restartBackend(pathSettings = './settings.json') {
         }
     }
     backendProc = null
-    backendProc = spawn('node', ['srv.mjs', pathSettings], { stdio: 'ignore' })
+    //env: 預設繼承 process.env; 有 envOverride 時淺合併 (override 後蓋), 使注入之 EM_SRC_* 等先於 .env 生效 (詳函式 doc)
+    let spawnEnv = envOverride ? { ...process.env, ...envOverride } : process.env
+    backendProc = spawn('node', ['srv.mjs', pathSettings], { stdio: 'ignore', env: spawnEnv })
     await waitForPort(11007, 30000)
 }
 
@@ -267,28 +283,27 @@ if (typeof globalThis.after === 'function') {
 //  PageUser (user view) 以 $t('mmUserInfor') 置中當頁標題 (x≈viewport 中央); backstage content
 //  頁標題 x>=260; sidebar 導航項目 x: 展開 ~24-45 / flake 滑左外 ~-185, 皆 < 250。
 //- 失敗 (timeout) 不阻塞: .catch 吞掉, 交由呼叫端後續 retry-until-stable 兜底。
+//等 WDrawer 抽屜到達「穩定態」(opened/hidden) 才放行 — 讀 WDrawer 元件 export 的 state 屬性
+//(w-component-vue WDrawer.vue 根節點 :state, 由 drawer 平移 transitionend 決定性標記:
+// hidden / opening / opened / hiding). state='opened' = translateX 動畫真的跑完、定位到最終位置.
+//
+//why 改用 state 而非舊作法 (poll nav x 是否穩定): poll x 在高負載下 (全套長跑尾段 CPU 忙 /
+//setTimeout 階段被 throttle) 會被「減速尾段 / 階段間中間 hold」騙 — 連續兩次讀到相同 x 卻其實
+//還沒到終點 → 誤判停止而截到 mid-slide (殷鑑: rp-002/004 等 backstage 截圖之 ~6000px / 8px drawer
+//位移 flake, 獨立跑負載低恰好 settle 而矇對, 全套尾段才暴露). transitionend 為事件驅動 (compositor
+//完成 transition 才觸發), 不受主執行緒負載影響, 故 state='opened' 是可靠的「真正到位」訊號.
+//
+//非 backstage 頁 (login / register / user view) 無 WDrawer → 無 drawer state 元素 → 立即放行.
 async function waitDrawerReady(page) {
     await page.waitForFunction(() => {
-        let NAV = [
-            'Statistics information', 'User information', 'Users list', 'Tokens list', 'Ips list',
-            '統計資訊', '使用者資訊', '使用者清單', '金鑰清單', 'IP清單',
-        ]
-        let SIDEBAR_X_MAX = 250
-        let items = Array.from(document.querySelectorAll('*')).filter((e) => {
-            if (e.children.length !== 0 || !NAV.includes((e.innerText || '').trim())) {
-                return false
-            }
-            //只取 viewport 左側 sidebar 帶之導航項目 (排除 content/user view 置中標題)
-            return e.getBoundingClientRect().x < SIDEBAR_X_MAX
-        })
-        if (items.length === 0) {
-            return true //無 sidebar 帶導航項目 (login/register/user view 等非 backstage 頁), 放行
+        let drawerStates = Array.from(document.querySelectorAll('[state]'))
+            .map((e) => e.getAttribute('state'))
+            .filter((s) => ['hidden', 'opening', 'opened', 'hiding'].includes(s))
+        if (drawerStates.length === 0) {
+            return true //無 WDrawer (非 backstage 頁), 放行
         }
-        //所有 sidebar 導航項目須展開到位 (width>0 且 x>=0, 排除 drawer 滑左外之 x<0 flake 態)
-        return items.every((el) => {
-            let b = el.getBoundingClientRect()
-            return b.width > 0 && b.x >= 0
-        })
+        //所有 drawer 須為穩定態 (opened 或 hidden), 不可停在 opening / hiding 過渡中
+        return drawerStates.every((s) => s === 'opened' || s === 'hidden')
     }, null, { timeout: 10000, polling: 100 }).catch(() => {})
 }
 
@@ -322,7 +337,7 @@ async function captureStable(page, opts = {}) {
         let deadline = Date.now() + 5000
         while (Date.now() < deadline) {
             let bars = Array.from(document.querySelectorAll('[style*="cursor:col-resize"], [style*="cursor: col-resize"]'))
-            if (bars.length === 0) return  //無 WDrawer, 直接過
+            if (bars.length === 0) return //無 WDrawer, 直接過
             let allReady = bars.every(b => parseFloat(getComputedStyle(b).opacity) === 1)
             if (allReady) return
             await new Promise(r => setTimeout(r, 50))
@@ -334,6 +349,15 @@ async function captureStable(page, opts = {}) {
     //captureStable 內建涵蓋所有經 captureStable 之 backstage 截圖; 另有 stainfor captureCardsOnly
     //(裸 clip screenshot 繞過 captureStable) 亦各自呼叫 waitDrawerReady 補上 (見該處).
     await waitDrawerReady(page)
+
+    //hover tooltip 穩定化策略 (w-component-vue WButtonCircle/WButtonChip 之 :tooltip, 如 saveChanges
+    //雲端儲存 / userAdd / userCopy / delete / showTabCols 等): WTooltip 為 hover 驅動 (mouseenter 顯示
+    /// mouseleave 隱藏), teleport 到 body 為 <div class="WPopperFix">. 點擊按鈕時 mouse 停在按鈕上 →
+    //tooltip 顯示. 上方 mouse.move(0,0) 提供「滑鼠移出」事件讓 tooltip 消失 (淡出 transitionTime 200ms,
+    //由 initialWaitMs 涵蓋), 此即穩定化關鍵.
+    //【可接受例外】若按鈕點擊後「立即彈出 dialog」(WDialog 全屏背景遮蔽層), 遮蔽層會擋住按鈕收到滑鼠
+    //移動訊息 → 該 tooltip 不會因 mouse.move(0,0) 消失, 截圖會含 tooltip. 此為「一致地存在」(baseline
+    //與測試端皆然 → 穩定), 視為可接受狀況, 不另強制移除 (強制等它消失反而會空等到逾時且徒勞).
 
     //凍結 inline <svg> 的 SMIL animation: pauseAnimations() + setCurrentTime(0) 凍在 t=0
     //(Playwright animations:'disabled' 只凍 CSS, 不影響 SVG SMIL <animate> 標籤)
@@ -398,8 +422,104 @@ async function captureStable(page, opts = {}) {
         }
         prev = curr
     }
-    //未 settle 也回傳最後一張, 後續 byte-equal 比對失敗會揭露真實 flake (而非偽裝穩定)
+    //未 settle 也回傳最後一張, 後續 baseline 之 pixelmatch 容差比對失敗會揭露真實 flake (而非偽裝穩定)
     return prev
+}
+
+
+//整張全頁截圖 + 在「此 e2e 要比對的區塊」外圍畫紅框 (#f26、5px) 標注, 讓報表/審查委員一眼看出本
+//case 驗的是哪一區. 截圖仍為完整畫面、保留 UI 脈絡, 不裁切成小片. (對齊技能[role-code-for-test-e2e]
+//「標注要求」: 顏色 #f26、線寬 5px; 移植自 w-web-api 之 captureStableWithBox.)
+//
+//target: CSS selector 字串 / 字串陣列 / Playwright Locator / 以上混合陣列 (多個取聯集框成一個框).
+//  ——欄位列須依 label 文字定位時用 Locator (如 page.locator('.ag-row').filter({hasText:'帳號'})).
+//fold 以下的目標會先把第一個 scrollIntoView 捲進視窗再框 (同組目標應在同一捲動位置).
+//opts.mask: 要遮黑的非決定性區域陣列 (selector 字串, 或 { sel, fixedWidth } 錨右緣固定寬度往左延伸).
+//
+//紅框由 DOM 注入 (<div id="__e2e_box__">), 故 baseline 產製端與比對端只要傳相同 target 即得相同框,
+//截完移除不殘留. 內部仍走 captureStable (沿用 WDrawer 展開等待 / SVG 凍結 / 字型就緒等所有穩定化處理).
+async function captureStableWithBox(page, target, opts = {}) {
+    let { mask = [] } = opts
+    let items = Array.isArray(target) ? target : [target]
+    let isLoc = (x) => x && typeof x === 'object' && typeof x.boundingBox === 'function'
+    //先把第一個目標捲進視窗 (同組目標應在同一捲動位置)
+    let firstLoc = isLoc(items[0]) ? items[0].first() : page.locator(items[0]).first()
+    await firstLoc.scrollIntoViewIfNeeded({ timeout: 8000 }).catch(() => {})
+    await page.waitForTimeout(300)
+    await page.mouse.move(0, 0)
+    //取每個目標的 viewport rect (Locator → boundingBox; CSS 字串 → querySelector)
+    let rects = []
+    for (let it of items) {
+        if (isLoc(it)) {
+            let bb = await it.first().boundingBox()
+            if (bb) {
+                rects.push(bb)
+            }
+        }
+        else {
+            let r = await page.evaluate((s) => {
+                let e = document.querySelector(s)
+                if (!e) {
+                    return null
+                }
+                let rc = e.getBoundingClientRect()
+                return { x: rc.left, y: rc.top, width: rc.width, height: rc.height }
+            }, it)
+            if (r) {
+                rects.push(r)
+            }
+        }
+    }
+    //畫紅框 (多個取聯集; 四邊夾在視窗內避免貼邊元素框線跑出畫面而少邊) + 遮黑非決定性區域
+    await page.evaluate((arg) => {
+        let rs = arg.rs
+        let ms = arg.ms
+        let M = 3
+        let vw = window.innerWidth
+        let vh = window.innerHeight
+        if (rs.length > 0) {
+            let left = Math.min(...rs.map((r) => r.x))
+            let top = Math.min(...rs.map((r) => r.y))
+            let right = Math.max(...rs.map((r) => r.x + r.width))
+            let bottom = Math.max(...rs.map((r) => r.y + r.height))
+            let bl = Math.max(M, left - 6)
+            let bt = Math.max(M, top - 6)
+            let br = Math.min(vw - M, right + 6)
+            let bb = Math.min(vh - M, bottom + 6)
+            let box = document.createElement('div')
+            box.id = '__e2e_box__'
+            box.style.cssText = `position:fixed; left:${bl}px; top:${bt}px; width:${br - bl}px; height:${bb - bt}px; border:5px solid #f26; box-sizing:border-box; z-index:2147483647; pointer-events:none; border-radius:4px;`
+            document.body.appendChild(box)
+        }
+        ms.forEach((s) => {
+            let sel = (typeof s === 'string') ? s : s.sel
+            let e = document.querySelector(sel)
+            if (!e) {
+                return
+            }
+            let r = e.getBoundingClientRect()
+            let left = r.left
+            let width = r.width
+            if (typeof s === 'object' && s.fixedWidth) {
+                width = s.fixedWidth
+                left = (r.left + r.width) - width
+            }
+            let m = document.createElement('div')
+            m.className = '__e2e_mask__'
+            m.style.cssText = `position:fixed; left:${left}px; top:${r.top}px; width:${width}px; height:${r.height}px; background:#000; z-index:2147483646; pointer-events:none;`
+            document.body.appendChild(m)
+        })
+    }, { rs: rects, ms: mask })
+    await page.waitForTimeout(150)
+    let buf = await captureStable(page)
+    await page.evaluate(() => {
+        let b = document.getElementById('__e2e_box__')
+        if (b) {
+            b.remove()
+        }
+        document.querySelectorAll('.__e2e_mask__').forEach((m) => m.remove())
+    })
+    return buf
 }
 
 
@@ -436,6 +556,31 @@ async function maskRegions(buf, rects, color = { r: 0, g: 0, b: 0 }) {
             left: c.left,
             top: c.top,
         }))
+    if (composite.length === 0) return buf
+    return await sharp(buf).composite(composite).png().toBuffer()
+}
+
+
+//把截圖 buffer 的指定矩形區域, 用「參考圖 refBuf 同座標的內容」覆蓋上去 (取代 maskRegions 填黑).
+//用途: 動態圖表 (echarts canvas) 之 GPU warm/cold 跨進程渲染無法 pixel 穩定, 但又不想用突兀黑塊 →
+//改貼一張「預存的真實圖表快照」; baseline 與 runtime 兩端都貼同一張 refBuf → 該區永遠一致 (e2e 穩定),
+//視覺上呈現真實圖表而非黑塊. refBuf 須與 buf 同尺寸 (相同版面/截圖方式), 才能同座標 extract+composite 對齊.
+async function overlayRegions(buf, rects, refBuf) {
+    let meta = await sharp(buf).metadata()
+    let imgW = meta.width
+    let imgH = meta.height
+    let refMeta = await sharp(refBuf).metadata()
+    let composite = []
+    for (let r of rects.filter((r) => r.w > 0 && r.h > 0)) {
+        let left = Math.max(0, Math.round(r.x))
+        let top = Math.max(0, Math.round(r.y))
+        //clamp 至 buf 與 ref 兩者邊界內
+        let width = Math.min(Math.round(r.w), imgW - left, refMeta.width - left)
+        let height = Math.min(Math.round(r.h), imgH - top, refMeta.height - top)
+        if (width <= 0 || height <= 0) continue
+        let crop = await sharp(refBuf).extract({ left, top, width, height }).png().toBuffer()
+        composite.push({ input: crop, left, top })
+    }
     if (composite.length === 0) return buf
     return await sharp(buf).composite(composite).png().toBuffer()
 }
@@ -529,41 +674,68 @@ async function typeIntoInput(page, locator, value) {
 
 
 //baseline 比對 + fail 時保留證據到 ./testPending (不覆蓋), 供事後 pixel diff 定位 flake/破壞.
-//pass: 靜默通過. fail: 將「當次 capture」與「baseline」雙雙存檔 (帶 timestamp 不覆蓋) 後 throw.
-//統一取代各 e2e 散落的 `assert.strict.equal(buf.equals(baselineBuf), true, msg)` + tmp dump:
-//  - tmp dump 每跑覆蓋, 偶發 flake 當次證據常被後續跑蓋掉 → 無法 diff (殷鑑: adduser E2E-003
-//    drawer 第一批 fail, dump 已被覆蓋, 後續 7 情境無法重現 → 無證據可指根因).
-//  - ./testPending 帶 timestamp 保留, 任何 fail 當次 capture+baseline 都留存, 下次必有 diff 證據.
+//
+//比對採 pixelmatch (反鋸齒感知) + maxDiffPixels 容差, 取代舊的 buf.equals (byte-exact):
+//- pixelmatch includeAA:false (預設) 會自動偵測並「忽略反鋸齒邊緣像素」(YIQ 感知色差 + AA slope 偵測),
+//  專治 SVG icon / 字型邊緣之次像素 raster 差異 (跨 browser session 不決定性), 不再因此 flake.
+//- maxDiffPixels: 允許之最大「真不同」像素數 (預設 100). 反鋸齒殘留遠低於此 (個位數~數十); 真 regression
+//  (icon 換 / 版面位移 / 顏色變) 動輒數百~數千 px 遠超此 → 仍被抓到. 業界標準, 同 Playwright toHaveScreenshot.
+//- 尺寸不同 = 必為真差異 (版面/裁切變) → 直接 fail.
+//- pixel baseline 為補強層, 每 case 仍須語意斷言為主 (全域規範 §6.2): 容差只放輔助層, 主驗證仍嚴.
+//
+//pass: 靜默通過. fail: 將「當次 capture」「baseline」「diff 標紅圖」存檔 (帶 timestamp 不覆蓋) 後 throw.
+//  (./testPending 帶 timestamp 保留, 任何 fail 當次證據都留存可 diff; 已 gitignore, 不進 repo.)
 //label: 給檔名用之可讀標籤 (如 'adduser-cht-E2E-003-account-duplicate'); 省略則用 baseline 檔名.
-//./testPending 為 debug 暫存產物, 已 gitignore, 不進 repo.
-function assertBaselineMatch(buf, baselinePath, label) {
+//opts.maxDiffPixels / opts.threshold: 可由呼叫端覆寫 (預設 100 / 0.1), 供個別 case 需更嚴/更鬆時用.
+function assertBaselineMatch(buf, baselinePath, label, opts = {}) {
+    let { maxDiffPixels = 100, threshold = 0.1 } = opts
+
     if (!fs.existsSync(baselinePath)) {
         throw new Error(`標準圖不存在: ${baselinePath} (請先執行對應 e2e --baseline 產製)`)
     }
     let baselineBuf = fs.readFileSync(baselinePath)
-    if (buf.equals(baselineBuf)) {
-        return
+
+    //解碼 PNG → RGBA (pngjs 同步; 保持本函式同步, 不需動所有 caller 加 await)
+    let capPng = PNG.sync.read(buf)
+    let basePng = PNG.sync.read(baselineBuf)
+
+    //fail: 保留 capture + baseline (+ diff 標紅圖) 到 ./testPending (不覆蓋, 帶 timestamp) 後 throw
+    let dump = (reason, diffPng) => {
+        let dir = './testPending'
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true })
+        }
+        let safe = (label || path.basename(baselinePath, '.png')).replace(/[^\w.-]/g, '_')
+        //ms 精度 timestamp; 同 label 同毫秒撞檔機率近 0, 仍加 -N 後綴保證絕不覆蓋
+        let ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 23)
+        let stem = `${dir}/${safe}__${ts}`
+        let n = 0
+        while (fs.existsSync(`${stem}__capture.png`) || fs.existsSync(`${stem}__baseline.png`)) {
+            n += 1
+            stem = `${dir}/${safe}__${ts}-${n}`
+        }
+        fs.writeFileSync(`${stem}__capture.png`, buf)
+        fs.writeFileSync(`${stem}__baseline.png`, baselineBuf)
+        if (diffPng) {
+            fs.writeFileSync(`${stem}__diff.png`, PNG.sync.write(diffPng))
+        }
+        throw new Error(`截圖與標準圖不一致 (${reason}): ${safe} — capture/baseline${diffPng ? '/diff' : ''} 已存 ${stem}__*.png 供 diff`)
     }
-    //fail: 保留 capture + baseline 到 ./testPending (不覆蓋, 帶 timestamp)
-    let dir = './testPending'
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true })
+
+    //尺寸不同 = 必為真差異 (版面/裁切變); pixelmatch 要求同尺寸, 故直接 fail
+    if (capPng.width !== basePng.width || capPng.height !== basePng.height) {
+        dump(`尺寸不同 cap=${capPng.width}x${capPng.height} base=${basePng.width}x${basePng.height}`)
     }
-    let safe = (label || path.basename(baselinePath, '.png')).replace(/[^\w.-]/g, '_')
-    //ms 精度 timestamp (2026-06-13_14-30-45-123); 同 label 同毫秒撞檔機率近 0, 仍加 -N 後綴保證絕不覆蓋
-    let ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 23)
-    let stem = `${dir}/${safe}__${ts}`
-    let n = 0
-    while (fs.existsSync(`${stem}__capture.png`) || fs.existsSync(`${stem}__baseline.png`)) {
-        n += 1
-        stem = `${dir}/${safe}__${ts}-${n}`
+
+    //pixelmatch: 反鋸齒感知比對, 回傳「真不同」像素數 (反鋸齒邊緣已被忽略)
+    let { width, height } = basePng
+    let diffPng = new PNG({ width, height })
+    let numDiff = pixelmatch(capPng.data, basePng.data, diffPng.data, width, height, { threshold, includeAA: false })
+    if (numDiff <= maxDiffPixels) {
+        return //通過: 反鋸齒次像素已忽略, 殘留真差異在容差內
     }
-    let capPath = `${stem}__capture.png`
-    let basePath = `${stem}__baseline.png`
-    fs.writeFileSync(capPath, buf)
-    fs.writeFileSync(basePath, baselineBuf)
-    throw new Error(`截圖與標準圖不一致: ${safe} — capture + baseline 已存 ${capPath} / ${basePath} 供 diff`)
+    dump(`diff=${numDiff}px > maxDiffPixels=${maxDiffPixels}`, diffPng)
 }
 
 
-export { startServersOnce, cleanup, captureStable, waitDrawerReady, assertBaselineMatch, baseUrl, apiUrl, maskRegions, maskBelowY, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput }
+export { startServersOnce, cleanup, captureStable, captureStableWithBox, waitDrawerReady, assertBaselineMatch, baseUrl, apiUrl, maskRegions, overlayRegions, maskBelowY, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput }

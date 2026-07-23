@@ -172,8 +172,10 @@ function proc(woItems, p, opt = {}) {
         // console.log(account, 'blocked', blocked)
 
         //check
+        //被封鎖一律回 generic key 'failedLoginForCatch' (anti-enum, D24): 與「密碼錯誤」「帳號不存在」
+        //三者對外回應一致, 不洩漏帳號是否存在或是否被封鎖.
         if (blocked) {
-            return Promise.reject(`loginAccountBlocked`)
+            return Promise.reject(`failedLoginForCatch`)
         }
 
         //loginByAccountAndPassword
@@ -192,7 +194,7 @@ function proc(woItems, p, opt = {}) {
                 kpAccountLoginFailed[account] = []
 
             })
-            .catch((err) => {
+            .catch(async (err) => {
                 // console.log('p.loginByAccountAndPassword catch', err)
 
                 //default
@@ -203,6 +205,30 @@ function proc(woItems, p, opt = {}) {
                 //儲存帳號的登入失敗紀錄
                 kpAccountLoginFailed[account].push(ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ'))
                 // console.log(account, `kpAccountLoginFailed[account]`, kpAccountLoginFailed[account])
+
+                //即時封鎖判定 (D24-即時): 於失敗當下直接判斷, 不再依賴 2s timer.
+                //window 計算沿用原 timer 邏輯: timeStart = 現在 - minForAccountLoginFailed 分鐘, 僅保留窗內紀錄.
+                let timeStart = ot().add(-minForAccountLoginFailed, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+                let recs = kpAccountLoginFailed[account].filter((timeRec) => {
+                    return timeRec >= timeStart
+                })
+
+                //更新, 僅保留窗內紀錄 (順便剪枝, 避免記憶體累積)
+                kpAccountLoginFailed[account] = recs
+
+                //nrecs
+                let nrecs = size(recs)
+                // console.log(account, 'nrecs', nrecs)
+
+                //check (D07: 門檻由 >= 改為 >, 即「次數 > 上限」才封鎖)
+                //blockAccount 為冪等 (重複寫 timeBlocked 由 getBlockedByUser 擋), 並發多次失敗各自觸發亦安全, 不需鎖.
+                if (nrecs > numForAccountLoginFailed) {
+                    //blockAccount, 封鎖使用者, 亦會直接刪除使用userId之token
+                    await blockAccount(account)
+                        .catch((err) => {
+                            console.log(err)
+                        })
+                }
 
                 //r
                 r = {
@@ -220,51 +246,38 @@ function proc(woItems, p, opt = {}) {
     }
 
 
-    //timer, 限制帳號最大登入失敗(密碼錯誤)次數
-    let lockingForAccountLoginFailed = false
-    setInterval(async() => {
+    //NB: 原「限制帳號最大登入失敗(密碼錯誤)次數」之封鎖判定 2s timer 已移除 (D24-即時),
+    //封鎖判定改於登入失敗當下同步處理 (見上 loginByAccountAndPassword catch).
+    //但只失敗過一次、之後未再嘗試登入的帳號, 其 kpAccountLoginFailed[account] 不會被上述 catch
+    //再次觸發剪枝, 窗外過期紀錄與 key 本身會永久殘留 (記憶體緩慢累積, D24 回歸, 詳 z審計報告v3.md F-1).
+    //保留一個純剪枝用途之輕量 timer(不含封鎖判定, 避免與即時路徑重複觸發 blockAccount): 定期把窗外
+    //已無有效紀錄之帳號 key 整個 delete(而非僅設為 []), 真正歸零記憶體佔用, 防撒網式帳號列舉放大累積.
+    let lockingForAccountLoginFailedPrune = false
+    setInterval(async () => {
 
         //check
-        if (lockingForAccountLoginFailed) {
+        if (lockingForAccountLoginFailedPrune) {
             return
         }
-        lockingForAccountLoginFailed = true
+        lockingForAccountLoginFailedPrune = true
 
         //timeStart
         let timeStart = ot().add(-minForAccountLoginFailed, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-        // console.log('timeStart', timeStart)
 
-        //偵測登入失敗紀錄
+        //逐帳號剪枝, 窗內仍有紀錄則保留壓縮後陣列, 窗內全無則整個 delete key
         await pmSeries(kpAccountLoginFailed, async (times, account) => {
-
-            //recs, 提取指定時間範圍內的紀錄
             let recs = times.filter((timeRec) => {
-                return timeRec >= timeStart //ot(t).isAfter(timeStart)
+                return timeRec >= timeStart
             })
-            // console.log(account, 'recs', recs)
-
-            //更新, 僅保留指定時間範圍內的紀錄
-            kpAccountLoginFailed[account] = recs
-
-            //nrecs
-            let nrecs = size(recs)
-            // console.log(account, 'nrecs', nrecs)
-
-            //check
-            if (nrecs >= numForAccountLoginFailed) {
-                // console.log(`account[${account}]: nrecs[${nrecs}] > numForAccountLoginFailed[${numForAccountLoginFailed}]`)
-
-                //blockAccount, 封鎖使用者, 亦會直接刪除使用userId之token
-                await blockAccount(account)
-                    .catch((err) => {
-                        console.log(err)
-                    })
-
+            if (size(recs) === 0) {
+                delete kpAccountLoginFailed[account]
             }
-
+            else {
+                kpAccountLoginFailed[account] = recs
+            }
         })
             .finally(() => {
-                lockingForAccountLoginFailed = false
+                lockingForAccountLoginFailedPrune = false
             })
 
     }, 2000)
@@ -289,8 +302,8 @@ function proc(woItems, p, opt = {}) {
 
         //check
         if (!isestr(userId)) {
-            console.log('token', token)
-            console.log('t', t)
+            // console.log('token', token)
+            // console.log('t', t)
             return Promise.reject(`invalid userId`)
         }
 
@@ -387,8 +400,8 @@ function proc(woItems, p, opt = {}) {
             let nrecs = size(recs)
             // console.log(token, 'nrecs', nrecs)
 
-            //check
-            if (nrecs >= numForTokenCallApi) {
+            //check (D07: 門檻由 >= 改為 >, 即「次數 > 上限」才封鎖)
+            if (nrecs > numForTokenCallApi) {
                 // console.log(`token[${token}]: nrecs[${nrecs}] > numForTokenCallApi[${numForTokenCallApi}]`)
 
                 //blockAccountByToken, 沒封鎖token, 是通過封鎖使用者且直接刪除使用userId之token
@@ -771,8 +784,8 @@ function proc(woItems, p, opt = {}) {
             let nrecs = size(recs)
             // console.log(ip, 'nrecs', nrecs)
 
-            //check
-            if (nrecs >= numForIpCallApi) {
+            //check (D07: 門檻由 >= 改為 >, 即「次數 > 上限」才封鎖)
+            if (nrecs > numForIpCallApi) {
                 // console.log(`ip[${ip}]: nrecs[${nrecs}] > numForIpCallApi[${numForIpCallApi}]`)
 
                 //blockIpByIp

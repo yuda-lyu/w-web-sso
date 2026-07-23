@@ -1,12 +1,16 @@
 node_modules
+.agents
+AGENTS.md
 .opencode
 .claude
 CLAUDE.md
+CLAUDE_settings.md
 .env
-tmp
+
+logs
+db
+uploadTemp
 testPending
 user_data
 
-_logs
-db
-uploadTemp
+tmp

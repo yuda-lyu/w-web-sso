@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, assertBaselineMatch } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, assertBaselineMatch } from './e2e-setup.mjs'
 
 
 //
@@ -21,38 +21,43 @@ import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, del
 // 標準圖存放：test/pics/resetpassword/resetpassword-{lang}-{number}-{name}.png
 //
 // 編號錨點: 對應 spec bullet 順序 (流程_後台重設使用者密碼.md). NNN 不重複, 新增 case 插末尾.
-// 涵蓋情境:
+// 涵蓋情境 (本檔為需 Playwright + baseline 之 UI cases; API 契約 cases 已遷至 test/api-resetpassword.test.mjs):
 //
-// 一、管理員觸發 (admin UI + API)
-//   - 001-admin-ui-modal-opened: 點 Reset password → CheckYesNo modal 開啟態 (baseline)
-//   - 002-admin-ui-cancel-clean: 接 001 點 No → modal 關 + DB 不變 + 無 unhandled rejection (baseline)
-//   - 003-admin-ui-success-alert: 點 Reset password → 點 Yes → success alert (baseline)
-//   - 004-api-happy-path-side-effect: API 直呼成功, 驗 DB password 變 + isForceChangePw='y' + 回應無明文
-//   - 006-admin-ui-self-reject-alert: admin 對自己列點 Reset password → 點 Yes → self-reject alert (baseline)
-//   - 007-api-cannot-reset-self: API 直呼 admin 對自己 → reject
-//   - 008-api-forbidden-non-admin: API 直呼非 admin → reject
-//   - 009-api-user-not-found: API 直呼不存在 userId → reject
-//   - 010-api-invalid-userId-empty: API 直呼空 userId → reject
+// 一、管理員觸發 — admin UI:
+//   - E2E-001-admin-ui-modal-opened: 點 Reset password → CheckYesNo modal 開啟態
+//   - E2E-002-admin-ui-cancel-clean: 點 No → modal 關 + DB 不變 + 無 unhandled rejection
+//   - E2E-003-admin-ui-success-alert: 點 Yes → success alert + DB password 變 + isForceChangePw='y'
+//   - E2E-004-admin-ui-self-reject-alert: admin 對自己列 → 點 Yes → self-reject alert + admin DB 不變
 //
-// 二、使用者收信並登入
-//   - 012-checkyes-prompt: 使用者用隨機密碼登入後彈 CheckYes (baseline) [原 001]
-//   - 013-force-form-expanded: 按 OK 進 user view, 表單自動展開, cancel 按鈕隱藏 (baseline) [原 002]
+// 二、使用者收信並登入:
+//   - E2E-005-checkyes-prompt: 隨機密碼登入後彈 CheckYes 強制變更提示
+//   - E2E-006-force-form-expanded: 按 OK 進 user view, 表單自動展開, cancel 隱藏
 //
-// 三、使用者完成強制變更
-//   - 015-after-success: 強制變更密碼成功後 isForceChangePw='n', 表單收回 (baseline) [原 003]
+// 三、使用者完成強制變更:
+//   - E2E-007: 強制變更成功 → 兩階段截圖：007-1 三欄填妥送出前（force form SEL_USER_CARD） + 007-2 成功 modal（SEL_MODAL）
+//   - E2E-008~011: force 模式 inline 錯誤 (空舊密 / 新密≠確認 / 不符策略 / 舊密錯)
+//   - E2E-012-logout-relogin-still-force: 強制變更頁 logout → 重登仍見 CheckYes
 //
-// 額外
-//   - 022-force-redirect-to-user: isForceChangePw='y' 訪問 ?view=backstage 仍被拉回 user view (baseline)
+// 額外:
+//   - E2E-013-force-redirect-to-user: isForceChangePw='y' 訪 ?view=backstage 仍被拉回 user view
 //
-// 未涵蓋 (留 gap, 後續階段補):
-//   - 005 SMTP 失敗仍 success (一.2) / 011 email 內容驗證 (二.1) / 014 多裝置 token 不清 (二.5)
-//   - 016 通知信寄出 (三.1) / 017-020 inline 錯誤 (三.2) / 021 logout-relogin (三.4)
-//   - 023 genRandomPassword 規格 (四)
+// API 契約 (已遷至 test/api-resetpassword.test.mjs):
+//   API-001 happy-path side-effect / API-002 SMTP 失敗仍 success / API-003 cannot-reset-self /
+//   API-004 forbidden-non-admin / API-005 user-not-found / API-006 invalid-userId-empty /
+//   API-007 email 內容模板 / API-008 多裝置 token 不清 / API-009 通知信模板
+//
+// 未涵蓋 (留 gap):
+//   - genRandomPassword 規格驗證 (spec 四) — spec 明標留 gap, 建議走 unit test
 //
 
 let salt = '{salt}'
 let baselineDir = './test/pics/resetpassword'
 let langs = ['eng', 'cht']
+
+// captureStableWithBox target selectors
+let SEL_MODAL = 'div[style*="overscroll-behavior"] div[tabindex="0"] > div'  // WDialog 內層 panel（modal 框體, 非全螢幕 shield）
+let SEL_GRID = '.ag-root-wrapper'                          // ag-grid 主體（Users list 後台清單）
+let SEL_USER_CARD = '.sb'                                  // PageUser 表單卡捲動容器（含變更密碼表單 / inline 錯誤）
 
 let webKey = 'ksso'
 let lsKey = `${webKey}:userToken`
@@ -124,8 +129,13 @@ let expectedSpecText = {
     },
 
     //=== 三、使用者完成強制變更 ===
-    'E2E-007-after-success': {
-        //表單收起, 應 *不見* 舊密碼欄 label
+    'E2E-007-1-force-form-filled': {
+        //三欄填妥、送出前 — 舊密碼欄 label 應在（表單展開且已填寫）
+        eng: { mode: 'text', value: 'Old password' },
+        cht: { mode: 'text', value: '舊密碼' },
+    },
+    'E2E-007-2-after-success': {
+        //成功 modal — 表單收起, 應 *不見* 舊密碼欄 label
         eng: { mode: 'absentText', value: 'Old password' },
         cht: { mode: 'absentText', value: '舊密碼' },
     },
@@ -440,7 +450,7 @@ async function captureCheckYesPrompt(page, lang, target) {
     //showCheckYes 是 Vue dialog, 等 OK 按鈕出現後即可截圖
     await page.locator(`text="${t.ok}"`).first().waitFor({ state: 'visible', timeout: 15000 })
     await page.waitForTimeout(800)
-    return await captureStable(page)
+    return await captureStableWithBox(page, SEL_MODAL)
 }
 
 async function captureForceFormExpanded(page, lang, target) {
@@ -456,7 +466,7 @@ async function captureForceFormExpanded(page, lang, target) {
     //等表單展開（input[type=password] x3）
     await page.waitForFunction(() => document.querySelectorAll('input[type="password"]').length >= 3, null, { timeout: 15000 })
     await page.waitForTimeout(1500)
-    return await captureStable(page)
+    return await captureStableWithBox(page, SEL_USER_CARD)
 }
 
 async function captureAfterSuccess(page, lang, target) {
@@ -477,7 +487,12 @@ async function captureAfterSuccess(page, lang, target) {
     await typeIntoInput(page, pwInputs.nth(0), target.rawPassword)
     await typeIntoInput(page, pwInputs.nth(1), chosenNewPassword)
     await typeIntoInput(page, pwInputs.nth(2), chosenNewPassword)
-    await page.waitForTimeout(300)
+    await page.waitForTimeout(500)
+
+    //stage1: 三欄填妥、送出前 — 截表單卡片區（SEL_USER_CARD）
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(1000)
+    let bufFormFilled = await captureStableWithBox(page, SEL_USER_CARD)
 
     //送出
     await page.locator(`text="${t.send}"`).first().click().catch(() => {})
@@ -485,7 +500,14 @@ async function captureAfterSuccess(page, lang, target) {
     let needle = lang === 'eng' ? 'Password change successful' : '密碼變更成功'
     await page.waitForFunction((t) => (document.body.innerText || '').includes(t), needle, { timeout: 60000 })
     await page.waitForTimeout(1000)
-    return await captureStable(page)
+
+    //stage2: 成功 modal
+    let bufAfterSuccess = await captureStableWithBox(page, SEL_MODAL)
+
+    return {
+        'E2E-007-1-force-form-filled': bufFormFilled,
+        'E2E-007-2-after-success': bufAfterSuccess,
+    }
 }
 
 
@@ -522,7 +544,7 @@ async function captureForceFormInlineError(page, lang, target, oldPw, newPw, con
     //等 inline 錯誤訊息出現
     await page.waitForFunction((needle) => document.body.innerText.includes(needle), expectedErrorText, { timeout: 15000 })
     await page.waitForTimeout(1000)
-    return await captureStable(page)
+    return await captureStableWithBox(page, SEL_USER_CARD)
 }
 
 
@@ -558,7 +580,7 @@ async function captureLogoutReloginStillForce(page, lang, target) {
     //仍見 CheckYes 提示 (spec 三.4: 直到變更為止)
     await page.locator(`text="${t.ok}"`).first().waitFor({ state: 'visible', timeout: 15000 })
     await page.waitForTimeout(800)
-    return await captureStable(page)
+    return await captureStableWithBox(page, SEL_MODAL)
 }
 
 
@@ -597,18 +619,19 @@ async function captureForceRedirectToUser(page, lang, target) {
     await page.locator(`text="${t.ok}"`).first().click()
     await page.waitForFunction(() => document.querySelectorAll('input[type="password"]').length >= 3, null, { timeout: 15000 })
     await page.waitForTimeout(1500)
-    return await captureStable(page)
+    return await captureStableWithBox(page, SEL_USER_CARD)
 }
 
 
 //=== admin-ui 共用 helper (multi-lang aware) ===
 
 //admin-UI 截圖前 park mouse 到 (0,0) 並等 1.5s, 讓左側 WDrawer drag-bar 收斂到一致 (no-hover) 態
-//(§6.3 殷鑑: 抽屜 bistability 的 canonical 修法), 再 captureStable.
-async function captureAdminUiStable(page) {
+//(§6.3 殷鑑: 抽屜 bistability 的 canonical 修法), 再 captureStableWithBox 標注 target 區域.
+//target: CSS selector 字串 (e.g. SEL_MODAL / SEL_GRID), 傳給 captureStableWithBox 繪製紅框.
+async function captureAdminUiStable(page, target) {
     await page.mouse.move(0, 0)
     await page.waitForTimeout(1500)
-    return await captureStable(page)
+    return await captureStableWithBox(page, target)
 }
 
 let mdiPlus = 'M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z'
@@ -675,164 +698,186 @@ async function clickResetPasswordOnRow(page, account, lang) {
 }
 
 
-// --- 產生標準圖模式 ---
+// --- 產生標準圖模式 (per-case cold browser, 對齊 mocha test mode) ---
 
-//baseline gen 對齊 mocha 順序: fresh browser per describe block (admin-ui / user-flow 各一)
-//(per CLAUDE.md §6.3 captureStable 規範: 「baseline 產製順序必須與 mocha 全跑順序一致」)
-
-async function generateAdminUiBaselinesForLang(page, lang) {
-    let target = lang === 'eng' ? testUsers.targetEng : testUsers.targetCht
-
-    //=== 一、admin UI 流程 (001/002/003/006) ===
-    //本函式 4 個 case 共用「同一個 admin 登入 session + Users list」連續鏈條:
-    //  - adminLoginAndOpenUsersList 只跑一次 (此處), 之後 003/006 沿用同一 session
-    //  - 001 開 modal → 002 點 No 關 modal (001/002 為一條連續開→關鏈, 不可拆開)
-    //  - 003 再開 modal → 點 Yes; 006 對 admin 自己列再開 modal → 點 Yes
-    //因此 navigate / login / modal 開關等「狀態推進」動作須無條件執行以維持序列;
-    //僅 captureStable + writeBaseline 用 shouldGen 包起來 (--names 時跳過產圖但不破壞鏈條).
-    console.log('  001-admin-ui-modal-opened + 002-admin-ui-cancel-clean')
-    //確保 target 列存在且狀態固定
-    await simulateAdminReset(target)
-    await adminLoginAndOpenUsersList(page, lang)
-    //在 target 列觸發 modal → screenshot (001) → 點 No → screenshot (002)
-    await clickResetPasswordOnRow(page, target.account, lang)
-    if (shouldGen(lang, 'E2E-001-admin-ui-modal-opened')) {
-        let buf001 = await captureAdminUiStable(page)
-        writeBaseline(lang, 'E2E-001-admin-ui-modal-opened', buf001)
-    }
-    await page.locator(`text="${kpLangText[lang].no}"`).first().click()
-    await page.waitForTimeout(1500)
-    if (shouldGen(lang, 'E2E-002-admin-ui-cancel-clean')) {
-        let buf002 = await captureAdminUiStable(page)
-        writeBaseline(lang, 'E2E-002-admin-ui-cancel-clean', buf002)
-    }
-
-    console.log('  003-admin-ui-success-alert')
-    //再次 reset (上一步 cancel 沒改, 此處仍須確保 target 為已知狀態)
-    await simulateAdminReset(target)
-    //仍在 Users list (admin 未登出), 直接觸發 modal → 點 Yes → 等 success alert
-    await clickResetPasswordOnRow(page, target.account, lang)
-    await page.locator(`text="${kpLangText[lang].yes}"`).first().click()
-    //等 success modal (vo.$dg.showCheckYes -> CheckYes 對話框) 浮出: 偵測 resetSuccess 文字
-    await page.waitForFunction((needle) => document.body.innerText.includes(needle), kpLangText[lang].resetSuccess, { timeout: 30000 })
-    await page.waitForTimeout(1000)
-    if (shouldGen(lang, 'E2E-003-admin-ui-success-alert')) {
-        let buf003 = await captureAdminUiStable(page)
-        writeBaseline(lang, 'E2E-003-admin-ui-success-alert', buf003)
-    }
-    //dismiss alert
-    await page.locator(`text="${kpLangText[lang].ok}"`).first().click().catch(() => {})
-    await page.waitForTimeout(800)
-
-    console.log('  006-admin-ui-self-reject-alert')
-    //對 admin 自己列觸發 → 點 Yes → reject alert
-    await clickResetPasswordOnRow(page, testUsers.admin.account, lang)
-    await page.locator(`text="${kpLangText[lang].yes}"`).first().click()
-    await page.waitForFunction((needle) => document.body.innerText.includes(needle), kpLangText[lang].resetCannotSelf, { timeout: 30000 })
-    await page.waitForTimeout(1000)
-    if (shouldGen(lang, 'E2E-004-admin-ui-self-reject-alert')) {
-        let buf006 = await captureAdminUiStable(page)
-        writeBaseline(lang, 'E2E-004-admin-ui-self-reject-alert', buf006)
-    }
-    //dismiss alert
-    await page.locator(`text="${kpLangText[lang].ok}"`).first().click().catch(() => {})
-    await page.waitForTimeout(800)
-
-}
-
-
-async function generateUserFlowBaselinesForLang(page, lang) {
-    let target = lang === 'eng' ? testUsers.targetEng : testUsers.targetCht
-
-    //=== 二、使用者收信並登入 (012/013) + 三、強制變更 (015) ===
-    //每個 block 自含 setup: 先 simulateAdminReset(target) 重置 (admin-ui-success 已把 password 改為
-    //隨機; 為使 user 能以已知 rawPassword 登入須重置), 再走 captureXxx (內含 freshGoto 全新登入).
-    //各 block 互不依賴, 可獨立 guard.
-
-    if (shouldGen(lang, 'E2E-005-checkyes-prompt')) {
-        await simulateAdminReset(target)
-        console.log('  012-checkyes-prompt')
-        let buf012 = await captureCheckYesPrompt(page, lang, target)
-        writeBaseline(lang, 'E2E-005-checkyes-prompt', buf012)
-    }
-
-    if (shouldGen(lang, 'E2E-006-force-form-expanded')) {
-        await simulateAdminReset(target)
-        console.log('  013-force-form-expanded')
-        let buf013 = await captureForceFormExpanded(page, lang, target)
-        writeBaseline(lang, 'E2E-006-force-form-expanded', buf013)
-    }
-
-    if (shouldGen(lang, 'E2E-007-after-success')) {
-        await simulateAdminReset(target)
-        console.log('  015-after-success')
-        let buf015 = await captureAfterSuccess(page, lang, target)
-        writeBaseline(lang, 'E2E-007-after-success', buf015)
-        await page.locator(`text="${kpLangText[lang].ok}"`).first().click().catch(() => {})
-        await page.waitForTimeout(500)
-    }
-
-    //=== 三、強制變更 inline 錯誤 (017/018/019/020) ===
-    if (shouldGen(lang, 'E2E-008-inline-error-old-password-empty')) {
-        await simulateAdminReset(target)
-        console.log('  017-inline-error-old-password-empty')
-        let buf017 = await captureForceFormInlineError(page, lang, target, '', chosenNewPassword, chosenNewPassword, kpInlineError[lang].oldEmpty)
-        writeBaseline(lang, 'E2E-008-inline-error-old-password-empty', buf017)
-    }
-
-    if (shouldGen(lang, 'E2E-009-inline-error-new-not-match-confirm')) {
-        await simulateAdminReset(target)
-        console.log('  018-inline-error-new-not-match-confirm')
-        let buf018 = await captureForceFormInlineError(page, lang, target, target.rawPassword, chosenNewPassword, `${chosenNewPassword}XX`, kpInlineError[lang].notSame)
-        writeBaseline(lang, 'E2E-009-inline-error-new-not-match-confirm', buf018)
-    }
-
-    if (shouldGen(lang, 'E2E-010-inline-error-new-not-meet-policy')) {
-        await simulateAdminReset(target)
-        console.log('  019-inline-error-new-not-meet-policy')
-        let buf019 = await captureForceFormInlineError(page, lang, target, target.rawPassword, 'abc', 'abc', kpInlineError[lang].notMeetPolicy)
-        writeBaseline(lang, 'E2E-010-inline-error-new-not-meet-policy', buf019)
-    }
-
-    if (shouldGen(lang, 'E2E-011-inline-error-old-password-wrong')) {
-        await simulateAdminReset(target)
-        console.log('  020-inline-error-old-password-wrong')
-        let buf020 = await captureForceFormInlineError(page, lang, target, 'Pw@WrongOld88', chosenNewPassword, chosenNewPassword, kpInlineError[lang].oldWrong)
-        writeBaseline(lang, 'E2E-011-inline-error-old-password-wrong', buf020)
-    }
-
-    //=== 三、logout-relogin (021) ===
-    if (shouldGen(lang, 'E2E-012-logout-relogin-still-force')) {
-        await simulateAdminReset(target)
-        console.log('  021-logout-relogin-still-force')
-        let buf021 = await captureLogoutReloginStillForce(page, lang, target)
-        writeBaseline(lang, 'E2E-012-logout-relogin-still-force', buf021)
-    }
-
-    //=== 022 force-redirect-to-user ===
-    if (shouldGen(lang, 'E2E-013-force-redirect-to-user')) {
-        await simulateAdminReset(target)
-        console.log('  022-force-redirect-to-user')
-        let buf022 = await captureForceRedirectToUser(page, lang, target)
-        writeBaseline(lang, 'E2E-013-force-redirect-to-user', buf022)
-    }
-}
-
-
-//產製單一 phase 的 baselines (在自己的 fresh browser 內), 對齊 mocha 各 describe block 的 browser 邊界
-async function runPhaseInFreshBrowser(lang, phaseLabel, phaseFn) {
-    console.log(`=== 產生標準圖（${lang}）— ${phaseLabel} (fresh browser) ===`)
-    let browser = await chromium.launch({ headless: true })
-    let context = await browser.newContext()
-    let page = await context.newPage()
-    page.on('dialog', async (dialog) => {
-        await dialog.accept()
-    })
+//per-case cold browser 工廠 (與 login 同 pattern): 每個 case 各自 launch 全新 browser, regen 與
+//mocha test 兩路徑共用「per-case 冷啟」結構 → 同 glyph 條件, 不會 cold/warm pixel drift.
+async function withFreshPage(fn) {
+    let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
     try {
-        await phaseFn(page, lang)
+        let context = await browser.newContext()
+        let page = await context.newPage()
+        page.on('dialog', async (dialog) => {
+            await dialog.accept()
+        })
+        return await fn(page)
     }
     finally {
         await browser.close()
+    }
+}
+
+//每 case 前重置 DB 為乾淨 base seed + 本檔 testUsers/tokens (與 mocha beforeEach 一致)
+async function seedRp() {
+    await deleteTestUsersAndTokens()
+    await insertTestUsersAndTokens()
+}
+
+
+async function generateAdminUiBaselinesForLang(lang) {
+    let target = lang === 'eng' ? testUsers.targetEng : testUsers.targetCht
+
+    //=== 一、admin UI 流程 (001/002/003/004) ===
+    //per-case: 每個 case 各自 seed DB + 各自 cold browser + 各自 admin 登入 (獨立情境, 不共用 session).
+
+    // 001-admin-ui-modal-opened: admin 點 Reset password → CheckYesNo modal 開啟態
+    if (shouldGen(lang, 'E2E-001-admin-ui-modal-opened')) {
+        console.log('  001-admin-ui-modal-opened')
+        await seedRp()
+        await simulateAdminReset(target) //固定 target 列狀態
+        let buf = await withFreshPage(async (page) => {
+            await adminLoginAndOpenUsersList(page, lang)
+            await clickResetPasswordOnRow(page, target.account, lang)
+            return await captureAdminUiStable(page, SEL_MODAL)
+        })
+        writeBaseline(lang, 'E2E-001-admin-ui-modal-opened', buf)
+    }
+
+    // 002-admin-ui-cancel-clean: 開 modal → 點 No → modal 關
+    if (shouldGen(lang, 'E2E-002-admin-ui-cancel-clean')) {
+        console.log('  002-admin-ui-cancel-clean')
+        await seedRp()
+        await simulateAdminReset(target)
+        let buf = await withFreshPage(async (page) => {
+            await adminLoginAndOpenUsersList(page, lang)
+            await clickResetPasswordOnRow(page, target.account, lang)
+            await page.locator(`text="${kpLangText[lang].no}"`).first().click()
+            await page.waitForTimeout(1500)
+            return await captureAdminUiStable(page, SEL_GRID)
+        })
+        writeBaseline(lang, 'E2E-002-admin-ui-cancel-clean', buf)
+    }
+
+    // 003-admin-ui-success-alert: 開 modal → 點 Yes → success alert
+    if (shouldGen(lang, 'E2E-003-admin-ui-success-alert')) {
+        console.log('  003-admin-ui-success-alert')
+        await seedRp()
+        //起點: target isForceChangePw='n' (尚未被重設)
+        await woItems.users.save({ id: target.id, password: hashPassword(target.rawPassword, salt), isForceChangePw: 'n' })
+        let buf = await withFreshPage(async (page) => {
+            await adminLoginAndOpenUsersList(page, lang)
+            await clickResetPasswordOnRow(page, target.account, lang)
+            await page.locator(`text="${kpLangText[lang].yes}"`).first().click()
+            await page.waitForFunction((needle) => document.body.innerText.includes(needle), kpLangText[lang].resetSuccess, { timeout: 30000 })
+            await page.waitForTimeout(1000)
+            return await captureAdminUiStable(page, SEL_MODAL)
+        })
+        writeBaseline(lang, 'E2E-003-admin-ui-success-alert', buf)
+    }
+
+    // 004-admin-ui-self-reject-alert: admin 對自己列 → 點 Yes → reject alert
+    if (shouldGen(lang, 'E2E-004-admin-ui-self-reject-alert')) {
+        console.log('  004-admin-ui-self-reject-alert')
+        await seedRp()
+        let buf = await withFreshPage(async (page) => {
+            await adminLoginAndOpenUsersList(page, lang)
+            await clickResetPasswordOnRow(page, testUsers.admin.account, lang)
+            await page.locator(`text="${kpLangText[lang].yes}"`).first().click()
+            await page.waitForFunction((needle) => document.body.innerText.includes(needle), kpLangText[lang].resetCannotSelf, { timeout: 30000 })
+            await page.waitForTimeout(1000)
+            return await captureAdminUiStable(page, SEL_MODAL)
+        })
+        writeBaseline(lang, 'E2E-004-admin-ui-self-reject-alert', buf)
+    }
+}
+
+
+async function generateUserFlowBaselinesForLang(lang) {
+    let target = lang === 'eng' ? testUsers.targetEng : testUsers.targetCht
+
+    //=== 二、使用者收信並登入 (005/006) + 三、強制變更 (007) + inline 錯誤 (008-011) + logout-relogin (012) + 額外 (013) ===
+    //per-case: 每個 case 各自 seedRp + simulateAdminReset(target) (把 target 設成 force-change 狀態,
+    //此 trigger 之真 UI 已由 003-admin-ui-success 涵蓋) + 各自 cold browser (captureXxx 內含 freshGoto 全新登入).
+
+    if (shouldGen(lang, 'E2E-005-checkyes-prompt')) {
+        console.log('  005-checkyes-prompt')
+        await seedRp()
+        await simulateAdminReset(target)
+        let buf = await withFreshPage((page) => captureCheckYesPrompt(page, lang, target))
+        writeBaseline(lang, 'E2E-005-checkyes-prompt', buf)
+    }
+
+    if (shouldGen(lang, 'E2E-006-force-form-expanded')) {
+        console.log('  006-force-form-expanded')
+        await seedRp()
+        await simulateAdminReset(target)
+        let buf = await withFreshPage((page) => captureForceFormExpanded(page, lang, target))
+        writeBaseline(lang, 'E2E-006-force-form-expanded', buf)
+    }
+
+    //007-1 和 007-2 共用同一次 captureAfterSuccess（同一 browser 內兩個截圖點）
+    if (shouldGen(lang, 'E2E-007-1-force-form-filled') || shouldGen(lang, 'E2E-007-2-after-success')) {
+        console.log('  007-force-form-filled + 007-after-success')
+        await seedRp()
+        await simulateAdminReset(target)
+        let result = await withFreshPage((page) => captureAfterSuccess(page, lang, target))
+        if (shouldGen(lang, 'E2E-007-1-force-form-filled')) {
+            writeBaseline(lang, 'E2E-007-1-force-form-filled', result['E2E-007-1-force-form-filled'])
+        }
+        if (shouldGen(lang, 'E2E-007-2-after-success')) {
+            writeBaseline(lang, 'E2E-007-2-after-success', result['E2E-007-2-after-success'])
+        }
+    }
+
+    //=== 三、強制變更 inline 錯誤 (008/009/010/011) ===
+    if (shouldGen(lang, 'E2E-008-inline-error-old-password-empty')) {
+        console.log('  008-inline-error-old-password-empty')
+        await seedRp()
+        await simulateAdminReset(target)
+        let buf = await withFreshPage((page) => captureForceFormInlineError(page, lang, target, '', chosenNewPassword, chosenNewPassword, kpInlineError[lang].oldEmpty))
+        writeBaseline(lang, 'E2E-008-inline-error-old-password-empty', buf)
+    }
+
+    if (shouldGen(lang, 'E2E-009-inline-error-new-not-match-confirm')) {
+        console.log('  009-inline-error-new-not-match-confirm')
+        await seedRp()
+        await simulateAdminReset(target)
+        let buf = await withFreshPage((page) => captureForceFormInlineError(page, lang, target, target.rawPassword, chosenNewPassword, `${chosenNewPassword}XX`, kpInlineError[lang].notSame))
+        writeBaseline(lang, 'E2E-009-inline-error-new-not-match-confirm', buf)
+    }
+
+    if (shouldGen(lang, 'E2E-010-inline-error-new-not-meet-policy')) {
+        console.log('  010-inline-error-new-not-meet-policy')
+        await seedRp()
+        await simulateAdminReset(target)
+        let buf = await withFreshPage((page) => captureForceFormInlineError(page, lang, target, target.rawPassword, 'abc', 'abc', kpInlineError[lang].notMeetPolicy))
+        writeBaseline(lang, 'E2E-010-inline-error-new-not-meet-policy', buf)
+    }
+
+    if (shouldGen(lang, 'E2E-011-inline-error-old-password-wrong')) {
+        console.log('  011-inline-error-old-password-wrong')
+        await seedRp()
+        await simulateAdminReset(target)
+        let buf = await withFreshPage((page) => captureForceFormInlineError(page, lang, target, 'Pw@WrongOld88', chosenNewPassword, chosenNewPassword, kpInlineError[lang].oldWrong))
+        writeBaseline(lang, 'E2E-011-inline-error-old-password-wrong', buf)
+    }
+
+    //=== 三、logout-relogin (012) ===
+    if (shouldGen(lang, 'E2E-012-logout-relogin-still-force')) {
+        console.log('  012-logout-relogin-still-force')
+        await seedRp()
+        await simulateAdminReset(target)
+        let buf = await withFreshPage((page) => captureLogoutReloginStillForce(page, lang, target))
+        writeBaseline(lang, 'E2E-012-logout-relogin-still-force', buf)
+    }
+
+    //=== 額外 013 force-redirect-to-user ===
+    if (shouldGen(lang, 'E2E-013-force-redirect-to-user')) {
+        console.log('  013-force-redirect-to-user')
+        await seedRp()
+        await simulateAdminReset(target)
+        let buf = await withFreshPage((page) => captureForceRedirectToUser(page, lang, target))
+        writeBaseline(lang, 'E2E-013-force-redirect-to-user', buf)
     }
 }
 
@@ -844,14 +889,13 @@ async function generateBaseline() {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    await deleteTestUsersAndTokens()
-    await insertTestUsersAndTokens()
-
-    //對齊 mocha 順序: [eng] Admin UI → [eng] User flow → [cht] Admin UI → [cht] User flow
-    //每個 phase 都 fresh browser (對齊 mocha describe-level browser 隔離)
+    //per-case cold browser: 每個 case 各自在 generateXxxForLang 內 withFreshPage 起新 browser + seedRp,
+    //與 mocha test mode 之 per-case 結構完全一致 → 同冷啟 glyph 條件, 不會 cold/warm pixel drift.
     for (let lang of langs) {
-        await runPhaseInFreshBrowser(lang, 'Admin UI (001/002/003/006)', generateAdminUiBaselinesForLang)
-        await runPhaseInFreshBrowser(lang, 'User flow (012-022)', generateUserFlowBaselinesForLang)
+        console.log(`=== 產生標準圖（${lang}）— Admin UI (001-004) ===`)
+        await generateAdminUiBaselinesForLang(lang)
+        console.log(`=== 產生標準圖（${lang}）— User flow (005-013) ===`)
+        await generateUserFlowBaselinesForLang(lang)
     }
 
     await deleteTestUsersAndTokens()
@@ -873,7 +917,7 @@ if (process.argv.includes('--baseline')) {
 }
 else {
 
-    //=== baseline 比對 helper (內含: 檔存在 / byte-equal / spec 語意斷言) ===
+    //=== baseline 比對 helper (內含: 檔存在 / pixelmatch 反鋸齒容差 / spec 語意斷言) ===
     async function verifyBaseline(page, lang, name, buf, skipSpec = false) {
         if (!skipSpec) {
             await assertSpecForCase(page, lang, name)
@@ -885,50 +929,54 @@ else {
 
     for (let lang of langs) {
 
-        let browser
-        let page
         let target = lang === 'eng' ? testUsers.targetEng : testUsers.targetCht
 
-        //=== Admin UI 觸發鏈條 (001/002/003/006): admin 真實點擊 Reset password 按鈕 + CheckYesNo ===
-        describe(`ResetPassword E2E [${lang}] — Admin UI 觸發 (001/002/003/006)`, function() {
+        //=== Admin UI 觸發 (001/002/003/004): admin 真實點擊 Reset password 按鈕 + CheckYesNo ===
+        //per-case: 每個 case 各自 launch browser + seed DB + 各自 admin 登入 (獨立情境, 不共用 session).
+        describe(`ResetPassword E2E [${lang}] — Admin UI 觸發 (001/002/003/004)`, function() {
             this.timeout(180000)
+
+            let browser
+            let page
 
             before(async function() {
                 this.timeout(180000)
                 await startServersOnce()
+            })
 
+            beforeEach(async function() {
+                this.timeout(180000)
                 await deleteTestUsersAndTokens()
                 await insertTestUsersAndTokens()
-
-                browser = await chromium.launch({ headless: true })
+                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
                 let context = await browser.newContext()
                 page = await context.newPage()
-
                 page.on('dialog', async (dialog) => {
                     await dialog.accept()
                 })
             })
 
-            after(async function() {
+            afterEach(async function() {
+                this.timeout(30000)
                 if (browser) {
                     await browser.close()
+                    browser = null
                 }
                 await deleteTestUsersAndTokens()
             })
 
             it('001-admin-ui-modal-opened: 點 Reset password → CheckYesNo modal 開啟態', async function() {
-                await simulateAdminReset(target)
+                await simulateAdminReset(target) //固定 target 列狀態
                 await adminLoginAndOpenUsersList(page, lang)
                 await clickResetPasswordOnRow(page, target.account, lang)
-                let buf = await captureAdminUiStable(page)
+                let buf = await captureAdminUiStable(page, SEL_MODAL)
                 await verifyBaseline(page, lang, 'E2E-001-admin-ui-modal-opened', buf)
-                //dismiss modal 留給下一個 case 乾淨起點
-                await page.locator(`text="${kpLangText[lang].no}"`).first().click()
-                await page.waitForTimeout(1500)
             })
 
-            it('002-admin-ui-cancel-clean: 接 001 點 No → modal 關 + DB 不變 + 無 unhandled rejection', async function() {
-                //arm unhandled rejection capture
+            it('002-admin-ui-cancel-clean: 開 modal → 點 No → modal 關 + DB 不變 + 無 unhandled rejection', async function() {
+                await simulateAdminReset(target)
+                await adminLoginAndOpenUsersList(page, lang)
+                //arm unhandled rejection capture (nav 完成後才掛, 否則 goto 會清掉 listener)
                 await page.evaluate(() => {
                     window.__capturedErrors = []
                     window.addEventListener('unhandledrejection', e => window.__capturedErrors.push(String(e.reason)))
@@ -938,12 +986,12 @@ else {
                 let beforePw = beforeUs[0].password
                 let beforeForce = beforeUs[0].isForceChangePw
 
-                //再次開 modal → 點 No (本 case 自含開→關完整鏈)
+                //開 modal → 點 No (本 case 自含開→關完整鏈)
                 await clickResetPasswordOnRow(page, target.account, lang)
                 await page.locator(`text="${kpLangText[lang].no}"`).first().click()
                 await page.waitForTimeout(1500)
 
-                let buf = await captureAdminUiStable(page)
+                let buf = await captureAdminUiStable(page, SEL_GRID)
                 await verifyBaseline(page, lang, 'E2E-002-admin-ui-cancel-clean', buf)
 
                 //無 unhandled rejection
@@ -966,6 +1014,7 @@ else {
                 let beforeUs = await woItems.users.select({ id: target.id })
                 let beforePw = beforeUs[0].password
 
+                await adminLoginAndOpenUsersList(page, lang)
                 await clickResetPasswordOnRow(page, target.account, lang)
                 await page.locator(`text="${kpLangText[lang].yes}"`).first().click()
                 //等 success modal (vo.$dg.showCheckYes -> CheckYes 對話框)
@@ -973,12 +1022,8 @@ else {
                 await page.waitForTimeout(1000)
                 await assertSpecForCase(page, lang, 'E2E-003-admin-ui-success-alert')
 
-                let buf = await captureAdminUiStable(page)
+                let buf = await captureAdminUiStable(page, SEL_MODAL)
                 await verifyBaseline(page, lang, 'E2E-003-admin-ui-success-alert', buf, true)
-
-                //dismiss alert 留給下一個 case 乾淨起點
-                await page.locator(`text="${kpLangText[lang].ok}"`).first().click().catch(() => {})
-                await page.waitForTimeout(800)
 
                 //DB password 變 + isForceChangePw=y
                 let afterUs = await woItems.users.select({ id: target.id })
@@ -987,22 +1032,19 @@ else {
                 assert.strict.notEqual(afterUs[0].password, '', `reset 後 password 不應為空`)
             })
 
-            it('006-admin-ui-self-reject-alert: admin 對自己列 → 點 Yes → self-reject alert + admin DB 不變', async function() {
+            it('004-admin-ui-self-reject-alert: admin 對自己列 → 點 Yes → self-reject alert + admin DB 不變', async function() {
                 let beforeUs = await woItems.users.select({ id: testUsers.admin.id })
                 let beforePw = beforeUs[0].password
 
+                await adminLoginAndOpenUsersList(page, lang)
                 await clickResetPasswordOnRow(page, testUsers.admin.account, lang)
                 await page.locator(`text="${kpLangText[lang].yes}"`).first().click()
                 await page.waitForFunction((needle) => document.body.innerText.includes(needle), kpLangText[lang].resetCannotSelf, { timeout: 30000 })
                 await page.waitForTimeout(1000)
                 await assertSpecForCase(page, lang, 'E2E-004-admin-ui-self-reject-alert')
 
-                let buf = await captureAdminUiStable(page)
+                let buf = await captureAdminUiStable(page, SEL_MODAL)
                 await verifyBaseline(page, lang, 'E2E-004-admin-ui-self-reject-alert', buf, true)
-
-                //dismiss alert
-                await page.locator(`text="${kpLangText[lang].ok}"`).first().click().catch(() => {})
-                await page.waitForTimeout(800)
 
                 //admin 自己 password 不變 (self reject)
                 let afterUs = await woItems.users.select({ id: testUsers.admin.id })
@@ -1013,44 +1055,51 @@ else {
         })
 
 
-        //=== User flow (012/013/015) + 022 force-redirect ===
-        describe(`ResetPassword E2E [${lang}] — User 收信並登入 / 強制變更 (012/013/015/022)`, function() {
-            this.timeout(120000)
+        //=== User flow (005/006/007) + inline 錯誤 (008-011) + logout-relogin (012) + 額外 (013) ===
+        //per-case: 每個 case 各自 launch browser + seed DB + simulateAdminReset (此 reset trigger 之真 UI 由 003 涵蓋).
+        describe(`ResetPassword E2E [${lang}] — User 收信並登入 / 強制變更 (005-013)`, function() {
+            this.timeout(180000)
+
+            let browser
+            let page
 
             before(async function() {
                 this.timeout(180000)
                 await startServersOnce()
+            })
 
+            beforeEach(async function() {
+                this.timeout(180000)
                 await deleteTestUsersAndTokens()
                 await insertTestUsersAndTokens()
-
-                browser = await chromium.launch({ headless: true })
+                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
                 let context = await browser.newContext()
                 page = await context.newPage()
-
                 page.on('dialog', async (dialog) => {
                     await dialog.accept()
                 })
             })
 
-            after(async function() {
+            afterEach(async function() {
+                this.timeout(30000)
                 if (browser) {
                     await browser.close()
+                    browser = null
                 }
                 await deleteTestUsersAndTokens()
             })
 
-            it('012-checkyes-prompt: 使用者用隨機密碼登入 → 顯示 CheckYes 強制變更提示', async function() {
+            it('005-checkyes-prompt: 使用者用隨機密碼登入 → 顯示 CheckYes 強制變更提示', async function() {
                 await simulateAdminReset(target)
                 let buf = await captureCheckYesPrompt(page, lang, target)
                 await verifyBaseline(page, lang, 'E2E-005-checkyes-prompt', buf)
             })
 
-            it('013-force-form-expanded: 按 OK 進 user view → 表單自動展開, cancel 隱藏', async function() {
+            it('006-force-form-expanded: 按 OK 進 user view → 表單自動展開, cancel 隱藏', async function() {
                 await simulateAdminReset(target)
                 let buf = await captureForceFormExpanded(page, lang, target)
                 await verifyBaseline(page, lang, 'E2E-006-force-form-expanded', buf)
-                await assertSbOverflows(page, `resetpassword-${lang}-013-force-form-expanded`)
+                await assertSbOverflows(page, `resetpassword-${lang}-006-force-form-expanded`)
 
                 //驗證 cancel 按鈕真的不存在 (force mode hide)
                 let t = kpLangText[lang]
@@ -1058,10 +1107,19 @@ else {
                 assert.strict.equal(cancelCount, 0, `force mode 下 cancel 按鈕應隱藏，實際看見 ${cancelCount} 個`)
             })
 
-            it('015-after-success: 強制變更密碼成功 → 表單收回 + isForceChangePw=n', async function() {
+            it('007-after-success: 強制變更密碼成功 → 表單收回 + isForceChangePw=n', async function() {
                 await simulateAdminReset(target)
-                let buf = await captureAfterSuccess(page, lang, target)
-                await verifyBaseline(page, lang, 'E2E-007-after-success', buf)
+                //captureAfterSuccess 回 dict: stage1(填妥表單) + stage2(成功 modal)
+                let result = await captureAfterSuccess(page, lang, target)
+
+                //stage1: 三欄填妥、送出前 — 框 SEL_USER_CARD
+                //觸發狀態 (force 表單展開且三欄填妥) 已由 pixel baseline 驗證. 送出後表單收起 →
+                //post-capture 時舊密碼欄 label 已消失, 不可再對其做 post-capture pageHasText, 故 skipSpec=true.
+                //stage2 (E2E-007-2-after-success) 仍走 verifyBaseline 之 absentText 語意斷言.
+                await verifyBaseline(page, lang, 'E2E-007-1-force-form-filled', result['E2E-007-1-force-form-filled'], true)
+
+                //stage2: 成功 modal — 框 SEL_MODAL (語意: Old password label 不再出現)
+                await verifyBaseline(page, lang, 'E2E-007-2-after-success', result['E2E-007-2-after-success'])
 
                 //驗證後端 DB 內 isForceChangePw 已清為 'n'
                 let us = await woItems.users.select({ id: target.id })
@@ -1074,39 +1132,39 @@ else {
                 await page.waitForTimeout(500)
             })
 
-            it('017-inline-error-old-password-empty: 強制變更頁 → 空舊密 → inline 紅字「請輸入舊密碼」', async function() {
+            it('008-inline-error-old-password-empty: 強制變更頁 → 空舊密 → inline 紅字「請輸入舊密碼」', async function() {
                 await simulateAdminReset(target)
                 let buf = await captureForceFormInlineError(page, lang, target, '', chosenNewPassword, chosenNewPassword, kpInlineError[lang].oldEmpty)
                 await verifyBaseline(page, lang, 'E2E-008-inline-error-old-password-empty', buf)
             })
 
-            it('018-inline-error-new-not-match-confirm: 強制變更頁 → 新密 ≠ 確認 → inline 紅字「不一致」', async function() {
+            it('009-inline-error-new-not-match-confirm: 強制變更頁 → 新密 ≠ 確認 → inline 紅字「不一致」', async function() {
                 await simulateAdminReset(target)
                 let buf = await captureForceFormInlineError(page, lang, target, target.rawPassword, chosenNewPassword, `${chosenNewPassword}XX`, kpInlineError[lang].notSame)
                 await verifyBaseline(page, lang, 'E2E-009-inline-error-new-not-match-confirm', buf)
             })
 
-            it('019-inline-error-new-not-meet-policy: 強制變更頁 → 弱新密(過短) → inline 紅字「長度不足」', async function() {
+            it('010-inline-error-new-not-meet-policy: 強制變更頁 → 弱新密(過短) → inline 紅字「長度不足」', async function() {
                 await simulateAdminReset(target)
                 //"abc" 過短, 觸發 isUserPw numLenMin
                 let buf = await captureForceFormInlineError(page, lang, target, target.rawPassword, 'abc', 'abc', kpInlineError[lang].notMeetPolicy)
                 await verifyBaseline(page, lang, 'E2E-010-inline-error-new-not-meet-policy', buf)
             })
 
-            it('020-inline-error-old-password-wrong: 強制變更頁 → 舊密錯 → inline 紅字「變更失敗」', async function() {
+            it('011-inline-error-old-password-wrong: 強制變更頁 → 舊密錯 → inline 紅字「變更失敗」', async function() {
                 await simulateAdminReset(target)
                 //舊密填錯, 後端 changeUserPassword reject → 前端 chPwOldError='密碼變更失敗'
                 let buf = await captureForceFormInlineError(page, lang, target, 'Pw@WrongOld88', chosenNewPassword, chosenNewPassword, kpInlineError[lang].oldWrong)
                 await verifyBaseline(page, lang, 'E2E-011-inline-error-old-password-wrong', buf)
             })
 
-            it('021-logout-relogin-still-force: 強制變更頁 → logout → 再以 raw 密碼登入 → 仍見 CheckYes', async function() {
+            it('012-logout-relogin-still-force: 強制變更頁 → logout → 再以 raw 密碼登入 → 仍見 CheckYes', async function() {
                 await simulateAdminReset(target)
                 let buf = await captureLogoutReloginStillForce(page, lang, target)
                 await verifyBaseline(page, lang, 'E2E-012-logout-relogin-still-force', buf)
             })
 
-            it('022-force-redirect-to-user: isForceChangePw=y 訪問 ?view=backstage 仍被拉回 user view', async function() {
+            it('013-force-redirect-to-user: isForceChangePw=y 訪問 ?view=backstage 仍被拉回 user view', async function() {
                 await simulateAdminReset(target)
                 let buf = await captureForceRedirectToUser(page, lang, target)
                 await verifyBaseline(page, lang, 'E2E-013-force-redirect-to-user', buf)

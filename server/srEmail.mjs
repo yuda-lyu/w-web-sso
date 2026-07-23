@@ -13,7 +13,7 @@ let init = (st) => {
     }
 
     let srcPW = get(st, 'emSrcPW', '')
-    if (!isestr(srcEmail)) {
+    if (!isestr(srcPW)) {
         throw new Error(`invalid srcPW[${srcPW}]`)
     }
 

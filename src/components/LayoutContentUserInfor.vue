@@ -245,7 +245,7 @@
 </template>
 
 <script>
-import { mdiAccountCircleOutline, mdiLock, mdiLockOpenVariant, mdiCalendarLock, mdiCalendarCheck, mdiCheckDecagram, mdiAlertDecagramOutline, mdiToggleSwitch, mdiToggleSwitchOffOutline, mdiAccountCircle, mdiCommentTextOutline, mdiEmailOutline, mdiSourceBranch, mdiIdCard, mdiLinkVariant } from '@mdi/js/mdi.js'
+import { mdiLock, mdiLockOpenVariant, mdiCalendarLock, mdiCalendarCheck, mdiCheckDecagram, mdiAlertDecagramOutline, mdiToggleSwitch, mdiToggleSwitchOffOutline, mdiAccountCircle, mdiCommentTextOutline, mdiEmailOutline, mdiSourceBranch, mdiIdCard, mdiLinkVariant } from '@mdi/js/mdi.js'
 import WIcon from 'w-component-vue/src/components/WIcon.vue'
 import ot from 'dayjs'
 import get from 'lodash-es/get.js'
@@ -260,7 +260,6 @@ export default {
     },
     data: function() {
         return {
-            mdiAccountCircleOutline,
             mdiLock,
             mdiLockOpenVariant,
             mdiCalendarLock,
@@ -286,7 +285,6 @@ export default {
 
             firstLoading: true,
             errMsg: '',
-            isOperatable: true,
             // isModified: false,
 
             user: null,

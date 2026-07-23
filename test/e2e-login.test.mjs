@@ -7,7 +7,8 @@ import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
+import { mdiEye, mdiEyeOff } from '@mdi/js/mdi.js'
 
 //AgentMail key / inbox: 由 env var 提供, 不寫死 in repo (避免 public open-source repo 內含 live secret).
 //使用前 export AGENTMAIL_API_KEY=<key> AGENTMAIL_INBOX_ID=<inbox> (對 notverify-flow 之 email 驗證 case 必要).
@@ -102,8 +103,10 @@ let expectedSpecText = {
         cht: { mode: 'text', value: '您的帳號已過期' },
     },
     'E2E-010-blocked': {
-        eng: { mode: 'text', value: 'Your account has been temporarily locked' },
-        cht: { mode: 'text', value: '您的帳號因多次登入失敗已被暫時鎖定' },
+        //D24 anti-enum: 被封鎖帳號登入不再回 distinct 'loginAccountBlocked', 改回 generic
+        //'failedLoginForCatch'(與 002-wrong-pw / 008-inactive 一致, 不洩漏帳號是否被封鎖/存在)
+        eng: { mode: 'text', value: 'User account or password is incorrect' },
+        cht: { mode: 'text', value: '使用者帳密錯誤無法登入' },
     },
     'E2E-011-view-backstage': {
         eng: { mode: 'absentLoginButton' },
@@ -531,14 +534,16 @@ async function notVerifiedFullFlow(page, lang) {
     page.locator(`text="${t.login}"`).first().click().catch(() => {})
     await page.waitForTimeout(5000)
     await recordSpec('E2E-003-notverify-login-failed')
-    bufs['E2E-003-notverify-login-failed'] = await captureStable(page)
+    //框 loginError 紅字本身（未驗證錯誤訊息）: 驗證標的是這條紅字訊息，非整個登入卡
+    bufs['E2E-003-notverify-login-failed'] = await captureStableWithBox(page, page.getByText(expectedSpecText['E2E-003-notverify-login-failed'][lang].value, { exact: false }).first())
 
     // Step 2: 點「重寄驗證信」
     console.log('  [2] click resend link')
     await page.locator(`text="${t.resendLink}"`).first().click()
     await page.waitForTimeout(1500)
     await recordSpec('E2E-004-notverify-resend-page')
-    bufs['E2E-004-notverify-resend-page'] = await captureStable(page)
+    //框登入卡 .sb：resend viewMode 展開後重寄表單仍在 .sb 內
+    bufs['E2E-004-notverify-resend-page'] = await captureStableWithBox(page, '.sb')
 
     // Step 3: 填 email 點寄送
     // 註：登入頁的 input 順序為 [account(text), password(password), email(text)]，取非 password 的最後一個
@@ -550,7 +555,8 @@ async function notVerifiedFullFlow(page, lang) {
     // 等寄信 + CheckYes 彈窗
     await page.waitForTimeout(10000)
     await recordSpec('E2E-005-notverify-resend-sent')
-    bufs['E2E-005-notverify-resend-sent'] = await captureStable(page)
+    //框登入卡 .sb：CheckYes 彈窗為 overlay 在上層，但 .sb 作為此步驟的觀看錨點
+    bufs['E2E-005-notverify-resend-sent'] = await captureStableWithBox(page, '.sb')
 
     // 關閉 CheckYes 彈窗（點 OK / 確認 按鈕）
     await page.locator(`button:has-text("${t.ok}")`).first().click().catch(async () => {
@@ -572,7 +578,8 @@ async function notVerifiedFullFlow(page, lang) {
     await page.goto(verifyUrl, { waitUntil: 'networkidle', timeout: 15000 })
     await page.waitForTimeout(2000)
     await recordSpec('E2E-006-notverify-verified')
-    bufs['E2E-006-notverify-verified'] = await captureStable(page)
+    //框 <p>：後端靜態結果頁，驗證訊息在 <body><p>...</p></body> 結構的唯一 <p> 元素
+    bufs['E2E-006-notverify-verified'] = await captureStableWithBox(page, 'p')
 
     // Step 6: 驗證後登入
     console.log('  [6] login after verified')
@@ -589,15 +596,21 @@ async function notVerifiedFullFlow(page, lang) {
     page.locator(`text="${t.login}"`).first().click().catch(() => {})
     await page.waitForTimeout(8000)
     await recordSpec('E2E-007-notverify-logged-in')
-    bufs['E2E-007-notverify-logged-in'] = await captureStable(page)
+    //框 .sb：驗證後成功登入轉至 user view，PageUser.vue 同樣使用 .sb class
+    bufs['E2E-007-notverify-logged-in'] = await captureStableWithBox(page, '.sb')
 
     return { bufs, specHits }
 }
 
 
 // --- Playwright 登入並截圖 ---
-
-async function loginAndScreenshot(page, lang, account, password, viewParam = null) {
+//
+// boxTarget: captureStableWithBox 的 target（CSS selector 字串 / Playwright Locator），預設為 '.sb'（登入卡 / user view 卡）.
+// 成功轉址 case (001/007/011/012) → '.sb' 或 'body'（backstage 全螢幕無 .sb）.
+// 錯誤訊息 case (002/008/009/010/015/016) → 傳 Locator 精確框 loginError 紅字本身.
+//   慣用：page.locator('div[style*="color:#c62828"]').filter({ hasText: <預期文字> }).first()
+//
+async function loginAndScreenshot(page, lang, account, password, viewParam = null, boxTarget = '.sb') {
     let t = kpLangText[lang]
     let url = viewParam ? `${baseUrl}/?view=${viewParam}` : baseUrl
 
@@ -618,7 +631,7 @@ async function loginAndScreenshot(page, lang, account, password, viewParam = nul
     page.locator(`text="${t.login}"`).first().click().catch(() => {})
     await page.waitForTimeout(8000)
 
-    return await captureStable(page)
+    return await captureStableWithBox(page, boxTarget)
 }
 
 
@@ -630,7 +643,11 @@ async function loginAndScreenshot(page, lang, account, password, viewParam = nul
 // 4. 點送出 → 等 resendError 顯示
 // 5. 截圖
 //
-async function resendErrorFlow(page, lang, account, password, resendEmail, preSendHook = null) {
+// boxTarget: captureStableWithBox 的 target，預設 '.sb'.
+//   錯誤訊息 case (013/014) → 傳 Locator 精確框 resendError 紅字本身.
+//   慣用：page.locator('div[style*="color:#c62828"]').filter({ hasText: <預期文字> }).first()
+//
+async function resendErrorFlow(page, lang, account, password, resendEmail, preSendHook = null, boxTarget = '.sb') {
     let t = kpLangText[lang]
     await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
     await page.evaluate(() => localStorage.clear())
@@ -659,27 +676,89 @@ async function resendErrorFlow(page, lang, account, password, resendEmail, preSe
     page.locator(`text="${t.resendSubmit}"`).first().click().catch(() => {})
     await page.waitForTimeout(5000)
 
-    return await captureStable(page)
+    return await captureStableWithBox(page, boxTarget)
+}
+
+
+// --- per-case cold browser 工廠 ---
+//
+// per-case 標準 (全域技能 role-code-for-test-e2e): 每個 case (E2E-NNN × 語系) 各自 launch
+// 全新 browser/context/page, 不跨 case 帶狀態. regen 與 mocha test 兩路徑共用此工廠, 確保
+// 「產 baseline」與「跑比對」皆為 per-case cold browser → 同一 glyph 冷啟條件, 不會 cold/warm 飄移.
+//
+async function withFreshPage(fn) {
+    let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+    try {
+        let context = await browser.newContext()
+        let page = await context.newPage()
+        page.on('dialog', async (dialog) => {
+            await dialog.accept()
+        })
+        return await fn(page)
+    }
+    finally {
+        await browser.close()
+    }
+}
+
+
+// --- eye toggle 共用前置 (開乾淨登入頁 + 輸入 sample 密碼) ---
+//
+// E2E-017 / E2E-018 為各自獨立 case (純 UI, 各自能從零 seed), 共用此前置:
+// 開 eng 登入頁 → 等 2 input + eye icon → 於密碼欄輸入 sample 字串 (讓遮罩/明文視覺可辨).
+// regen 與 mocha test 共用, 避免兩處前置 drift.
+//
+async function setupEyePage(page) {
+    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
+    await page.evaluate(() => localStorage.clear())
+    await page.goto(`${baseUrl}/?lang=eng`, { waitUntil: 'networkidle', timeout: 15000 })
+    await page.waitForFunction(() => {
+        let inps = document.querySelectorAll('input')
+        let eye = document.querySelector('[shellellipse="rightIcon"] svg path')
+        return inps.length >= 2 && inps[1].type === 'password' && eye
+    }, null, { timeout: 15000 })
+    await page.waitForTimeout(500)
+
+    let pwInput = page.locator('input').nth(1)
+    await pwInput.click()
+    await page.keyboard.type(sampleEyeTogglePw, { delay: 0 })
+    await page.waitForTimeout(300)
 }
 
 
 // --- 產生標準圖模式 ---
 
-async function generateBaselineForLang(page, lang) {
+async function generateBaselineForLang(lang) {
     console.log(`=== 產生標準圖（${lang}）===`)
 
-    await deleteTestUsers()
-    await insertTestUsers()
+    //每 case: 先重置 DB 為乾淨 base seed + testUsers, 再以 withFreshPage 起一個 cold browser 截圖.
+    //對齊 mocha test mode 之 per-case 結構 (DB per-case 重置 + browser per-case 冷啟).
+    let seed = async () => {
+        await deleteTestUsers()
+        await insertTestUsers()
+    }
 
+    // 簡單獨立 cases: 001/002/008/009/010
+    // 001-ok (absentLoginButton): 框 .sb（成功轉址後的 user view 卡）
+    // 002/008/009/010 (text mode): 框 loginError 紅字本身（驗證標的是錯誤訊息，非整個登入卡）
+    // 008-inactive 不另產 baseline，直接共用 002-wrong-pw（spec 防帳號列舉視覺等同）
     for (let u of testUsers) {
         if (u.fullFlow || u.customTest) continue
         if (!shouldGen(lang, u.screenshotName)) continue
         console.log(`  ${u.account} (expect: ${u.expect})`)
-        let buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword)
+        await seed()
+        let eSpec = expectedSpecText[u.screenshotName][lang]
+        let buf = await withFreshPage((page) => {
+            let boxTarget = eSpec.mode === 'text'
+                ? page.getByText(eSpec.value, { exact: false }).first()
+                : '.sb'
+            return loginAndScreenshot(page, lang, u.account, u.rawPassword, null, boxTarget)
+        })
         writeBaseline(lang, u.screenshotName, buf)
     }
 
-    // 未驗證使用者完整流程（產生 003 ~ 007）— 整段為單一昂貴流程, 只要其中任一 case 需產才跑
+    // notverify 承接式 journey = 一個 case, 內含 5 階段截圖 (003 ~ 007) — 整段為單一昂貴流程,
+    // 只要其中任一階段需產才跑; 一個 cold browser 走完整段, 期間收集 5 張 buffer.
     let nvNames = [
         'E2E-003-notverify-login-failed',
         'E2E-004-notverify-resend-page',
@@ -689,97 +768,95 @@ async function generateBaselineForLang(page, lang) {
     ]
     if (nvNames.some((n) => shouldGen(lang, n))) {
         console.log(`=== 未驗證使用者完整流程（${lang}）===`)
-        let { bufs } = await notVerifiedFullFlow(page, lang)
+        await seed()
+        let { bufs } = await withFreshPage((page) => notVerifiedFullFlow(page, lang))
         for (let name of Object.keys(bufs)) {
             writeBaseline(lang, name, bufs[name])
         }
     }
 
-    // A1: view=backstage
+    // A1: view=backstage (011)
     if (shouldGen(lang, 'E2E-011-view-backstage')) {
         console.log(`=== view=backstage（${lang}）===`)
-        let loginOk = testUsers.find((u) => u.account === 'login-ok')
-        let bufA1 = await loginAndScreenshot(page, lang, loginOk.account, loginOk.rawPassword, 'backstage')
-        writeBaseline(lang, 'E2E-011-view-backstage', bufA1)
+        await seed()
+        let u = testUsers.find((u) => u.account === 'login-ok')
+        //backstage 為全螢幕 WDrawer 佈局，無 .sb；框整個 body 標注後台整體視圖
+        let buf = await withFreshPage((page) => loginAndScreenshot(page, lang, u.account, u.rawPassword, 'backstage', 'body'))
+        writeBaseline(lang, 'E2E-011-view-backstage', buf)
     }
 
-    // A2: view=user
+    // A2: view=user (012)
     if (shouldGen(lang, 'E2E-012-view-user')) {
         console.log(`=== view=user（${lang}）===`)
-        let loginOk = testUsers.find((u) => u.account === 'login-ok')
-        let bufA2 = await loginAndScreenshot(page, lang, loginOk.account, loginOk.rawPassword, 'user')
-        writeBaseline(lang, 'E2E-012-view-user', bufA2)
+        await seed()
+        let u = testUsers.find((u) => u.account === 'login-ok')
+        let buf = await withFreshPage((page) => loginAndScreenshot(page, lang, u.account, u.rawPassword, 'user'))
+        writeBaseline(lang, 'E2E-012-view-user', buf)
     }
 
-    // C1: resend invalid account/email
+    // C1: resend invalid account/email (013) — 框 resendError 紅字本身
     if (shouldGen(lang, 'E2E-013-resend-invalid-account')) {
         console.log(`=== resend invalid account（${lang}）===`)
-        let c1User = testUsers.find((u) => u.customTest === 'c1')
-        let bufC1 = await resendErrorFlow(page, lang, c1User.account, c1User.rawPassword, 'wrong-email@nowhere.com', null)
-        writeBaseline(lang, 'E2E-013-resend-invalid-account', bufC1)
+        await seed()
+        let u = testUsers.find((u) => u.customTest === 'c1')
+        let eSpec013 = expectedSpecText['E2E-013-resend-invalid-account'][lang]
+        let buf = await withFreshPage((page) => resendErrorFlow(page, lang, u.account, u.rawPassword, 'wrong-email@nowhere.com', null,
+            page.getByText(eSpec013.value, { exact: false }).first()))
+        writeBaseline(lang, 'E2E-013-resend-invalid-account', buf)
     }
 
-    // C2: resend already verified（送出前動態標記為已驗證）
+    // C2: resend already verified（送出前動態標記為已驗證）(014) — 框 resendError 紅字本身
     if (shouldGen(lang, 'E2E-014-resend-already-verified')) {
         console.log(`=== resend already verified（${lang}）===`)
-        let c2User = testUsers.find((u) => u.customTest === 'c2')
-        let bufC2 = await resendErrorFlow(page, lang, c2User.account, c2User.rawPassword, c2User.email, async () => {
-            await woItems.users.save({ id: c2User.id, timeVerified: '2025-06-01T00:00:00.000+08:00' })
-        })
-        writeBaseline(lang, 'E2E-014-resend-already-verified', bufC2)
+        await seed()
+        let u = testUsers.find((u) => u.customTest === 'c2')
+        let eSpec014 = expectedSpecText['E2E-014-resend-already-verified'][lang]
+        let buf = await withFreshPage((page) => resendErrorFlow(page, lang, u.account, u.rawPassword, u.email, async () => {
+            await woItems.users.save({ id: u.id, timeVerified: '2025-06-01T00:00:00.000+08:00' })
+        }, page.getByText(eSpec014.value, { exact: false }).first()))
+        writeBaseline(lang, 'E2E-014-resend-already-verified', buf)
     }
 
-    // D2: login success but no redir
+    // D2: login success but no redir (016) — 框 loginError 紅字本身（登入成功但無 redir 的錯誤訊息）
     if (shouldGen(lang, 'E2E-016-login-no-redir')) {
         console.log(`=== login no redir（${lang}）===`)
-        let noRedirUser = testUsers.find((u) => u.customTest === 'd2')
-        let bufD2 = await loginAndScreenshot(page, lang, noRedirUser.account, noRedirUser.rawPassword)
-        writeBaseline(lang, 'E2E-016-login-no-redir', bufD2)
+        await seed()
+        let u = testUsers.find((u) => u.customTest === 'd2')
+        let eSpec016 = expectedSpecText['E2E-016-login-no-redir'][lang]
+        let buf = await withFreshPage((page) => loginAndScreenshot(page, lang, u.account, u.rawPassword, null,
+            page.getByText(eSpec016.value, { exact: false }).first()))
+        writeBaseline(lang, 'E2E-016-login-no-redir', buf)
     }
 
-    // D1 不需產生新 baseline，直接共用 002-wrong-pw
+    // 008 不需產生新 baseline，直接共用 002-wrong-pw（spec 防帳號列舉視覺等同）
+    // 015 不需產生新 baseline，直接共用 002-wrong-pw
 
     await deleteTestUsers()
 }
 
 
-async function generateEyeToggleBaselines(page) {
-    console.log(`=== eye toggle baselines (eng) ===`)
-    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
-    await page.evaluate(() => localStorage.clear())
-    await page.goto(`${baseUrl}/?lang=eng`, { waitUntil: 'networkidle', timeout: 15000 })
-    await page.waitForFunction(() => {
-        let inps = document.querySelectorAll('input')
-        let eye = document.querySelector('[class*="mdi-eye"]')
-        return inps.length >= 2 && inps[1].type === 'password' && eye
-    }, null, { timeout: 15000 })
-    await page.waitForTimeout(500)
-
-    //輸入 sample 密碼, 讓 baseline 視覺上能區分
-    let pwInput = page.locator('input').nth(1)
-    await pwInput.click()
-    await page.keyboard.type(sampleEyeTogglePw, { delay: 0 })
-    await page.waitForTimeout(300)
-
-    //E2E-017: 預設遮罩態
-    let buf017 = await (async () => {
+//E2E-017: 預設遮罩態 (純 UI 獨立 case, 各自 cold browser)
+async function generateEyeBaseline017() {
+    return await withFreshPage(async (page) => {
+        await setupEyePage(page)
         await page.mouse.move(0, 0)
         await page.waitForTimeout(1500)
-        return await captureStable(page)
-    })()
-    writeBaseline('eng', 'E2E-017-password-hidden', buf017)
+        //框登入卡 .sb：eye icon 及密碼欄位均在 .sb 內
+        return await captureStableWithBox(page, '.sb')
+    })
+}
 
-    //點 eye 切換明文
-    await page.locator('[class*="mdi-eye"]').first().click()
-    await page.waitForTimeout(300)
-
-    //E2E-018: 明文態
-    let buf018 = await (async () => {
+//E2E-018: 點 eye 切換明文態 (純 UI 獨立 case, 各自 cold browser)
+async function generateEyeBaseline018() {
+    return await withFreshPage(async (page) => {
+        await setupEyePage(page)
+        await page.locator('[shellellipse="rightIcon"]').first().click()
+        await page.waitForTimeout(300)
         await page.mouse.move(0, 0)
         await page.waitForTimeout(1500)
-        return await captureStable(page)
-    })()
-    writeBaseline('eng', 'E2E-018-password-shown', buf018)
+        //框登入卡 .sb：eye icon 及密碼欄位均在 .sb 內
+        return await captureStableWithBox(page, '.sb')
+    })
 }
 
 
@@ -790,30 +867,20 @@ async function generateBaseline() {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    //每個 lang 啟動 fresh browser, 與 mocha test mode 一致 (每個 describe 各自 launch browser).
-    //避免「warm 跑 regen / cold 跑 test」導致 cht 場景 captureStable 收斂到不同穩定態 (cold vs warm
-    //glyph atlas 各自內部一致, 但跨 browser 進程不同) → pixel drift.
+    //per-case cold browser: generateBaselineForLang 內每個 case 各自 withFreshPage 起新 browser,
+    //與 mocha test mode 之 per-case 結構完全一致 → 同為冷啟 glyph 條件, 不會 cold/warm pixel drift.
     for (let lang of langs) {
-        let browser = await chromium.launch({ headless: true })
-        let page = await browser.newPage()
-        page.on('dialog', async (dialog) => {
-            await dialog.accept()
-        })
-
-        await generateBaselineForLang(page, lang)
-
-        await browser.close()
+        await generateBaselineForLang(lang)
     }
 
-    //eye toggle (lang-agnostic, eng-only): 對齊 mocha test 也是 fresh browser per describe
-    if (shouldGen('eng', 'E2E-017-password-hidden') || shouldGen('eng', 'E2E-018-password-shown')) {
-        let browser = await chromium.launch({ headless: true })
-        let page = await browser.newPage()
-        page.on('dialog', async (dialog) => {
-            await dialog.accept()
-        })
-        await generateEyeToggleBaselines(page)
-        await browser.close()
+    //eye toggle (eng only): 017 / 018 各自獨立 case, 各自 cold browser
+    if (shouldGen('eng', 'E2E-017-password-hidden')) {
+        console.log(`=== eye toggle 017 (eng) ===`)
+        writeBaseline('eng', 'E2E-017-password-hidden', await generateEyeBaseline017())
+    }
+    if (shouldGen('eng', 'E2E-018-password-shown')) {
+        console.log(`=== eye toggle 018 (eng) ===`)
+        writeBaseline('eng', 'E2E-018-password-shown', await generateEyeBaseline018())
     }
 
     console.log('=== 標準圖產生完成 ===')
@@ -835,67 +902,68 @@ else {
 
     for (let lang of langs) {
 
-        let browser
-        let page
-
         describe(`Login E2E [${lang}] — 各種登入狀態`, function() {
-            this.timeout(120000)
+            this.timeout(180000)
+
+            let browser
+            let page
 
             before(async function() {
                 this.timeout(180000) // 第一次須等前端首次編譯（~15-30s），給寬鬆 timeout
                 await startServersOnce()
+            })
 
-                browser = await chromium.launch({ headless: true })
+            //per-case 標準 (全域技能 role-code-for-test-e2e): 每個 it() 重置 DB (乾淨 base seed + testUsers)
+            //+ launch 全新 browser/context/page, 不跨 case 帶 cookie/localStorage/狀態.
+            beforeEach(async function() {
+                this.timeout(180000)
+                await deleteTestUsers()
+                await insertTestUsers()
+
+                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
                 let context = await browser.newContext()
                 page = await context.newPage()
-
                 page.on('dialog', async (dialog) => {
                     await dialog.accept()
                 })
             })
 
-            //每 case 前重設 DB testUsers, 避免 015 nested describe 刪 wrongpw 之類副作用污染後續 case
-            //(瀏覽器共享, 但 loginAndScreenshot 內已 clear LS 確保乾淨 login 頁; baseline timing 不變)
-            beforeEach(async function() {
-                this.timeout(60000)
-                await deleteTestUsers()
-                await insertTestUsers()
-            })
-
-            after(async function() {
+            afterEach(async function() {
+                this.timeout(30000)
                 if (browser) {
                     await browser.close()
+                    browser = null
                 }
                 await deleteTestUsers()
             })
 
+            // 獨立 cases: 001/002/008/009/010 (各自一組前置, 各自 per-case browser)
+            // 001-ok (absentLoginButton): 框 .sb（成功轉址後的 user view 卡）
+            // 002/008/009/010 (text mode): 框 loginError 紅字本身（驗證標的是錯誤訊息，非整個登入卡）
+            // 008-inactive 與 002-wrong-pw 共用 baseline（spec 防帳號列舉視覺等同）
             for (let u of testUsers) {
                 if (u.fullFlow || u.customTest) continue
                 it(`${u.screenshotName}: ${u.account} (expect: ${u.expect})`, async function() {
-                    let baselinePath = bp(lang, u.screenshotName)
-
-                    let buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword)
-
+                    let eSpec = expectedSpecText[u.screenshotName][lang]
+                    let boxTarget = eSpec.mode === 'text'
+                        ? page.getByText(eSpec.value, { exact: false }).first()
+                        : '.sb'
+                    let buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword, null, boxTarget)
                     //語意斷言 (主) — 從 spec 衍生
                     await assertSpecForCase(page, lang, u.screenshotName)
-
-                    //像素斷言 (補強)
-                    assertBaselineMatch(buf, baselinePath, `login-${lang}-${u.screenshotName}`)
+                    //像素斷言 (補強). E2E-008-inactive 有自己的 baseline (帳號欄顯示 login-inactive,
+                    //與 E2E-002 之 login-wrongpw 不同 → 無法 pixel 共用); 防帳號列舉由上方語意斷言保證
+                    //(相同錯誤訊息 'User account or password is incorrect'). 對比 E2E-015 是用「同帳號技巧」
+                    //(打 login-wrongpw 再刪該帳號) 才能與 002 pixel 共用.
+                    assertBaselineMatch(buf, bp(lang, u.screenshotName), `login-${lang}-${u.screenshotName}`)
                 })
             }
 
-            describe(`[${lang}] notverify: 未驗證使用者完整流程`, function() {
-                this.timeout(180000)
-
-                let bufs
-                let specHits
-
-                before(async function() {
-                    let r = await notVerifiedFullFlow(page, lang)
-                    bufs = r.bufs
-                    specHits = r.specHits
-                })
-
+            // notverify 承接式 journey = 一個 case (E2E-003 ~ 007), 一個 browser 走完整段, 內含 5 階段截圖.
+            // 後段 state 承接前段真實副作用 (登入失敗→重寄→寄出信→AgentMail 收信開驗證連結→驗證後登入),
+            // 無法乾淨 seed 中間點, 故不硬拆獨立 case (詳全域技能「承接式 journey = 一個 case 多截圖」).
+            it(`E2E-003~007-notverify-full-flow: 未驗證完整流程 (一個 case, 5 階段截圖)`, async function() {
+                let { bufs, specHits } = await notVerifiedFullFlow(page, lang)
                 let names = [
                     'E2E-003-notverify-login-failed',
                     'E2E-004-notverify-resend-page',
@@ -904,99 +972,73 @@ else {
                     'E2E-007-notverify-logged-in',
                 ]
                 for (let name of names) {
-                    it(name, function() {
-                        //語意斷言: notVerifiedFullFlow 內每 step 完成後即時抓 spec 文字, 結果存 specHits[name]
-                        let hit = specHits[name]
-                        assert.strict.notEqual(hit, undefined, `specHits 缺 "${name}", recordSpec 邏輯異常`)
-                        assert.strict.equal(hit.ok, true, `語意斷言失敗 (${name}): ${hit.err}`)
-
-                        //像素斷言 (補強)
-                        let baselinePath = bp(lang, name)
-                        assertBaselineMatch(bufs[name], baselinePath, `login-${lang}-${name}`)
-                    })
+                    //語意斷言: notVerifiedFullFlow 內每階段完成後即時抓 spec 文字, 結果存 specHits[name]
+                    let hit = specHits[name]
+                    assert.strict.notEqual(hit, undefined, `specHits 缺 "${name}", recordSpec 邏輯異常`)
+                    assert.strict.equal(hit.ok, true, `語意斷言失敗 (${name}): ${hit.err}`)
+                    //像素斷言 (補強)
+                    assertBaselineMatch(bufs[name], bp(lang, name), `login-${lang}-${name}`)
                 }
             })
 
-            describe(`[${lang}] view=backstage`, function() {
-                let buf
-                before(async function() {
-                    let u = testUsers.find((u) => u.account === 'login-ok')
-                    buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword, 'backstage')
-                })
-                it('E2E-011-view-backstage', async function() {
-                    await assertSpecForCase(page, lang, 'E2E-011-view-backstage')
-                    let baselinePath = bp(lang, 'E2E-011-view-backstage')
-                    assertBaselineMatch(buf, baselinePath, `login-${lang}-011-view-backstage`)
-                })
+            // 011: view=backstage
+            it('E2E-011-view-backstage', async function() {
+                let u = testUsers.find((u) => u.account === 'login-ok')
+                //backstage 為全螢幕 WDrawer 佈局，無 .sb；傳 'body' 框整個後台視圖
+                let buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword, 'backstage', 'body')
+                await assertSpecForCase(page, lang, 'E2E-011-view-backstage')
+                assertBaselineMatch(buf, bp(lang, 'E2E-011-view-backstage'), `login-${lang}-011-view-backstage`)
             })
 
-            describe(`[${lang}] view=user`, function() {
-                let buf
-                before(async function() {
-                    let u = testUsers.find((u) => u.account === 'login-ok')
-                    buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword, 'user')
-                })
-                it('E2E-012-view-user', async function() {
-                    await assertSpecForCase(page, lang, 'E2E-012-view-user')
-                    let baselinePath = bp(lang, 'E2E-012-view-user')
-                    assertBaselineMatch(buf, baselinePath, `login-${lang}-012-view-user`)
-                })
+            // 012: view=user
+            it('E2E-012-view-user', async function() {
+                let u = testUsers.find((u) => u.account === 'login-ok')
+                let buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword, 'user')
+                await assertSpecForCase(page, lang, 'E2E-012-view-user')
+                assertBaselineMatch(buf, bp(lang, 'E2E-012-view-user'), `login-${lang}-012-view-user`)
             })
 
-            describe(`[${lang}] resend: invalid account/email`, function() {
-                let buf
-                before(async function() {
-                    let u = testUsers.find((u) => u.customTest === 'c1')
-                    buf = await resendErrorFlow(page, lang, u.account, u.rawPassword, 'wrong-email@nowhere.com', null)
-                })
-                it('E2E-013-resend-invalid-account', async function() {
-                    await assertSpecForCase(page, lang, 'E2E-013-resend-invalid-account')
-                    let baselinePath = bp(lang, 'E2E-013-resend-invalid-account')
-                    assertBaselineMatch(buf, baselinePath, `login-${lang}-013-resend-invalid-account`)
-                })
+            // 013: resend invalid account/email — 框 resendError 紅字本身
+            it('E2E-013-resend-invalid-account', async function() {
+                let u = testUsers.find((u) => u.customTest === 'c1')
+                let eSpec013 = expectedSpecText['E2E-013-resend-invalid-account'][lang]
+                let buf = await resendErrorFlow(page, lang, u.account, u.rawPassword, 'wrong-email@nowhere.com', null,
+                    page.getByText(eSpec013.value, { exact: false }).first())
+                await assertSpecForCase(page, lang, 'E2E-013-resend-invalid-account')
+                assertBaselineMatch(buf, bp(lang, 'E2E-013-resend-invalid-account'), `login-${lang}-013-resend-invalid-account`)
             })
 
-            describe(`[${lang}] resend: already verified`, function() {
-                let buf
-                before(async function() {
-                    let u = testUsers.find((u) => u.customTest === 'c2')
-                    buf = await resendErrorFlow(page, lang, u.account, u.rawPassword, u.email, async () => {
-                        await woItems.users.save({ id: u.id, timeVerified: '2025-06-01T00:00:00.000+08:00' })
-                    })
-                })
-                it('E2E-014-resend-already-verified', async function() {
-                    await assertSpecForCase(page, lang, 'E2E-014-resend-already-verified')
-                    let baselinePath = bp(lang, 'E2E-014-resend-already-verified')
-                    assertBaselineMatch(buf, baselinePath, `login-${lang}-014-resend-already-verified`)
-                })
+            // 014: resend already verified (送出前動態標記為已驗證) — 框 resendError 紅字本身
+            it('E2E-014-resend-already-verified', async function() {
+                let u = testUsers.find((u) => u.customTest === 'c2')
+                let eSpec014 = expectedSpecText['E2E-014-resend-already-verified'][lang]
+                let buf = await resendErrorFlow(page, lang, u.account, u.rawPassword, u.email, async () => {
+                    await woItems.users.save({ id: u.id, timeVerified: '2025-06-01T00:00:00.000+08:00' })
+                }, page.getByText(eSpec014.value, { exact: false }).first())
+                await assertSpecForCase(page, lang, 'E2E-014-resend-already-verified')
+                assertBaselineMatch(buf, bp(lang, 'E2E-014-resend-already-verified'), `login-${lang}-014-resend-already-verified`)
             })
 
-            describe(`[${lang}] account not exist (security: no account enumeration)`, function() {
-                let buf
-                before(async function() {
-                    // 刪掉 login-wrongpw 使此帳號不存在，使用相同輸入驗證截圖與 002 完全一致
-                    let u = testUsers.find((u) => u.account === 'login-wrongpw')
-                    await woItems.users.del({ id: u.id }).catch(() => {})
-                    buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword)
-                })
-                it(`015-account-not-exist (共用 login-${lang}-002-wrong-pw baseline)`, async function() {
-                    await assertSpecForCase(page, lang, 'E2E-015-account-not-exist')
-                    let baselinePath = bp(lang, 'E2E-002-wrong-pw')
-                    assertBaselineMatch(buf, baselinePath, `login-${lang}-015-account-not-exist-shared-002`)
-                })
+            // 015: account not exist (security: 防帳號列舉, 與 002 共用 baseline) — 框 loginError 紅字本身（與 002 相同訊息）
+            it(`E2E-015-account-not-exist (共用 login-${lang}-002-wrong-pw baseline)`, async function() {
+                //刪掉 login-wrongpw 使此帳號不存在, 使用相同輸入驗證截圖與 002 完全一致
+                let u = testUsers.find((u) => u.account === 'login-wrongpw')
+                await woItems.users.del({ id: u.id }).catch(() => {})
+                let eSpec015 = expectedSpecText['E2E-015-account-not-exist'][lang]
+                let buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword, null,
+                    page.getByText(eSpec015.value, { exact: false }).first())
+                await assertSpecForCase(page, lang, 'E2E-015-account-not-exist')
+                assertBaselineMatch(buf, bp(lang, 'E2E-002-wrong-pw'), `login-${lang}-015-account-not-exist-shared-002`)
             })
 
-            describe(`[${lang}] login no redir`, function() {
-                let buf
-                before(async function() {
-                    let u = testUsers.find((u) => u.customTest === 'd2')
-                    buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword)
-                })
-                it('E2E-016-login-no-redir', async function() {
-                    await assertSpecForCase(page, lang, 'E2E-016-login-no-redir')
-                    let baselinePath = bp(lang, 'E2E-016-login-no-redir')
-                    assertBaselineMatch(buf, baselinePath, `login-${lang}-016-login-no-redir`)
-                })
+            // 016: login no redir — 框 loginError 紅字本身
+            it('E2E-016-login-no-redir', async function() {
+                let u = testUsers.find((u) => u.customTest === 'd2')
+                let eSpec016 = expectedSpecText['E2E-016-login-no-redir'][lang]
+                let buf = await loginAndScreenshot(page, lang, u.account, u.rawPassword, null,
+                    page.getByText(eSpec016.value, { exact: false }).first())
+                await assertSpecForCase(page, lang, 'E2E-016-login-no-redir')
+                assertBaselineMatch(buf, bp(lang, 'E2E-016-login-no-redir'), `login-${lang}-016-login-no-redir`)
             })
         })
 
@@ -1012,9 +1054,10 @@ else {
     //
     async function captureEyeStable(page) {
         //park mouse + 等動畫 settle (對齊全域 CLAUDE.md captureStable 標準)
+        //框登入卡 .sb：eye icon 及密碼欄位均在 .sb 內，為此 case 的觀看區
         await page.mouse.move(0, 0)
         await page.waitForTimeout(1500)
-        return await captureStable(page)
+        return await captureStableWithBox(page, '.sb')
     }
 
     describe('Login E2E — PageLogin 密碼欄 eye toggle (E2E-017 / E2E-018)', function() {
@@ -1028,28 +1071,13 @@ else {
             this.timeout(180000)
             await startServersOnce()
 
-            browser = await chromium.launch({ headless: true })
+            browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
             let context = await browser.newContext()
             page = await context.newPage()
             page.on('dialog', (d) => d.accept())
 
-            //goto login 頁, 清空 LS 避免 autoLogin
-            await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
-            await page.evaluate(() => localStorage.clear())
-            await page.goto(`${baseUrl}/?lang=eng`, { waitUntil: 'networkidle', timeout: 15000 })
-            //等 login 表單渲染完成 (2 個 input + eye icon)
-            await page.waitForFunction(() => {
-                let inps = document.querySelectorAll('input')
-                let eye = document.querySelector('[class*="mdi-eye"]')
-                return inps.length >= 2 && inps[1].type === 'password' && eye
-            }, null, { timeout: 15000 })
-            await page.waitForTimeout(500)
-
-            //輸入 sample 密碼, 讓 baseline 視覺上能區分「遮罩 = dots」vs「明文 = 純文字」
-            let pwInput = page.locator('input').nth(1)
-            await pwInput.click()
-            await page.keyboard.type(sampleEyeTogglePw, { delay: 0 })
-            await page.waitForTimeout(300)
+            //開乾淨 eng 登入頁 + 等表單渲染 + 輸入 sample 密碼 (與 regen 共用 setupEyePage, 避免前置 drift)
+            await setupEyePage(page)
         })
 
         afterEach(async function() {
@@ -1062,10 +1090,10 @@ else {
         async function readToggleState() {
             return await page.evaluate(() => {
                 let inps = document.querySelectorAll('input')
+                let pathEl = document.querySelector('[shellellipse="rightIcon"] svg path')
                 return {
                     type: inps[1].type,
-                    hasEyeOff: !!document.querySelector('.mdi-eye-off'),
-                    hasEye: !!document.querySelector('.mdi-eye:not(.mdi-eye-off)'),
+                    iconPath: pathEl ? pathEl.getAttribute('d') : null,
                 }
             })
         }
@@ -1074,8 +1102,7 @@ else {
             //DOM 驗證
             let state = await readToggleState()
             assert.strict.equal(state.type, 'password', `密碼欄預設應為 password type, 實際 ${state.type}`)
-            assert.strict.equal(state.hasEyeOff, true, `預設應顯示 mdi-eye-off icon`)
-            assert.strict.equal(state.hasEye, false, `預設不應顯示 mdi-eye icon`)
+            assert.strict.equal(state.iconPath, mdiEyeOff, `預設應顯示 eye-off (閉眼) 圖示, SVG path 應為 mdiEyeOff`)
             //baseline pixel 比對 (eng 一份)
             let buf = await captureEyeStable(page)
             let baselinePath = bp('eng', 'E2E-017-password-hidden')
@@ -1083,13 +1110,12 @@ else {
         })
 
         it('E2E-018-password-shown: 點 eye icon → 切換明文 (input type=text, eye icon = mdi-eye)', async function() {
-            await page.locator('[class*="mdi-eye"]').first().click()
+            await page.locator('[shellellipse="rightIcon"]').first().click()
             await page.waitForTimeout(300)
             //DOM 驗證
             let state = await readToggleState()
             assert.strict.equal(state.type, 'text', `點 eye 後密碼欄應為 text type, 實際 ${state.type}`)
-            assert.strict.equal(state.hasEye, true, `點 eye 後應顯示 mdi-eye icon`)
-            assert.strict.equal(state.hasEyeOff, false, `點 eye 後不應顯示 mdi-eye-off icon`)
+            assert.strict.equal(state.iconPath, mdiEye, `點 eye 後應顯示 eye (開眼) 圖示, SVG path 應為 mdiEye`)
             //baseline pixel 比對
             let buf = await captureEyeStable(page)
             let baselinePath = bp('eng', 'E2E-018-password-shown')
@@ -1097,14 +1123,13 @@ else {
         })
 
         it('toggle-back-to-hidden: 點兩次 eye 回隱藏態 (DOM only, 與 E2E-017 視覺等同, 不重複 baseline)', async function() {
-            await page.locator('[class*="mdi-eye"]').first().click()
+            await page.locator('[shellellipse="rightIcon"]').first().click()
             await page.waitForTimeout(300)
-            await page.locator('[class*="mdi-eye"]').first().click()
+            await page.locator('[shellellipse="rightIcon"]').first().click()
             await page.waitForTimeout(300)
             let state = await readToggleState()
             assert.strict.equal(state.type, 'password', `二次點擊後應回 password type, 實際 ${state.type}`)
-            assert.strict.equal(state.hasEyeOff, true, `二次點擊後應回 mdi-eye-off icon`)
-            assert.strict.equal(state.hasEye, false, `二次點擊後不應再顯示 mdi-eye icon`)
+            assert.strict.equal(state.iconPath, mdiEyeOff, `二次點擊後應回 eye-off (閉眼) 圖示, SVG path 應為 mdiEyeOff`)
         })
     })
 

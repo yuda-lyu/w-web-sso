@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
 
 
 //
@@ -22,8 +22,8 @@ import { startServersOnce, cleanup, captureStable, assertBaselineMatch, baseUrl,
 //
 // 注意：
 // - 變更密碼錯誤訊息已改為 inline 紅字（顯示於對應輸入框下方），可 pixel 比對
-// - 變更成功通知仍是 alert（被 Playwright dialog handler 自動 dismiss），故 008 截圖
-//   呈現「表單收起回 user info」狀態（cancelChangePassword 在 .then 內被呼叫）
+// - 變更成功通知使用 showCheckYes 持久 modal（WDialog），畫面卡在 modal 顯示狀態
+//   直到使用者點確認；008 截圖框取 WDialog 內層 panel，modal 文字含「請使用新密碼重新登入」
 //
 
 let salt = '{salt}'
@@ -108,8 +108,11 @@ let expectedSpecText = {
     },
     'E2E-008-success': {
         //成功後 showCheckYes modal 顯示變更成功訊息 (modal 持久, assert 安全)
-        eng: { mode: 'text', value: 'Password change successful' },
-        cht: { mode: 'text', value: '密碼變更成功' },
+        //完整文字來自 procLang.mjs userChangePasswordSuccess:
+        //  eng: 'Password change successful, please log in again.'
+        //  cht: '密碼變更成功，請使用新密碼重新登入。'
+        eng: { mode: 'text', value: 'Password change successful, please log in again.' },
+        cht: { mode: 'text', value: '密碼變更成功，請使用新密碼重新登入。' },
     },
     'E2E-009-network-error': {
         //userChangePasswordForNetError
@@ -340,14 +343,16 @@ async function clickSend(page, lang) {
 
 async function captureFormInitial(page, lang) {
     await gotoUserViewAndOpenChangePw(page, lang)
-    return await captureStable(page)
+    return await captureStableWithBox(page, '.sb')
 }
 
 async function captureOldEmpty(page, lang) {
     await gotoUserViewAndOpenChangePw(page, lang)
     await clickSend(page, lang)
     await page.waitForTimeout(800)
-    return await captureStable(page)
+    // E2E-002: 驗 chPwOldError inline 紅字 → 框錯誤紅字本身
+    let errText = expectedSpecText['E2E-002-old-empty'][lang].value
+    return await captureStableWithBox(page, page.getByText(errText, { exact: false }).first())
 }
 
 async function captureNewEmpty(page, lang) {
@@ -355,7 +360,9 @@ async function captureNewEmpty(page, lang) {
     await fillChangePwForm(page, { oldPassword: originalPassword })
     await clickSend(page, lang)
     await page.waitForTimeout(800)
-    return await captureStable(page)
+    // E2E-003: 驗 chPwNewError inline 紅字 → 框錯誤紅字本身
+    let errText = expectedSpecText['E2E-003-new-empty'][lang].value
+    return await captureStableWithBox(page, page.getByText(errText, { exact: false }).first())
 }
 
 async function captureConfirmEmpty(page, lang) {
@@ -366,7 +373,9 @@ async function captureConfirmEmpty(page, lang) {
     })
     await clickSend(page, lang)
     await page.waitForTimeout(800)
-    return await captureStable(page)
+    // E2E-004: 驗 chPwConfirmError inline 紅字 → 框錯誤紅字本身
+    let errText = expectedSpecText['E2E-004-confirm-empty'][lang].value
+    return await captureStableWithBox(page, page.getByText(errText, { exact: false }).first())
 }
 
 async function capturePwMismatch(page, lang) {
@@ -378,7 +387,9 @@ async function capturePwMismatch(page, lang) {
     })
     await clickSend(page, lang)
     await page.waitForTimeout(800)
-    return await captureStable(page)
+    // E2E-005: 驗 chPwConfirmError inline 紅字 → 框錯誤紅字本身
+    let errText = expectedSpecText['E2E-005-pw-mismatch'][lang].value
+    return await captureStableWithBox(page, page.getByText(errText, { exact: false }).first())
 }
 
 async function capturePwPolicyFail(page, lang) {
@@ -391,7 +402,9 @@ async function capturePwPolicyFail(page, lang) {
     })
     await clickSend(page, lang)
     await page.waitForTimeout(2500) // 後端 checkUserPassword API call
-    return await captureStable(page)
+    // E2E-006: 驗 chPwNewError inline 紅字 → 框錯誤紅字本身
+    let errText = expectedSpecText['E2E-006-pw-policy-fail'][lang].value
+    return await captureStableWithBox(page, page.getByText(errText, { exact: false }).first())
 }
 
 async function captureOldWrong(page, lang) {
@@ -403,7 +416,9 @@ async function captureOldWrong(page, lang) {
     })
     await clickSend(page, lang)
     await page.waitForTimeout(3500) // 後端 checkUserPassword + changeUserPassword
-    return await captureStable(page)
+    // E2E-007: 驗 chPwOldError inline 紅字 → 框錯誤紅字本身
+    let errText = expectedSpecText['E2E-007-old-wrong'][lang].value
+    return await captureStableWithBox(page, page.getByText(errText, { exact: false }).first())
 }
 
 async function captureSuccess(page, lang) {
@@ -415,10 +430,11 @@ async function captureSuccess(page, lang) {
     })
     await clickSend(page, lang)
     // 成功 → 持久 showCheckYes modal (System message) 顯示 userChangePasswordSuccess; 等其文字出現
-    let needle = lang === 'eng' ? 'Password change successful' : '密碼變更成功'
+    let needle = lang === 'eng' ? 'Password change successful, please log in again.' : '密碼變更成功，請使用新密碼重新登入。'
     await page.waitForFunction((t) => (document.body.innerText || '').includes(t), needle, { timeout: 60000 })
     await page.waitForTimeout(1000)
-    return await captureStable(page)
+    // E2E-008: 驗成功 modal → 框 WDialog 內層 panel (modal 框體, 非全螢幕 shield)
+    return await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
 }
 
 
@@ -439,7 +455,9 @@ async function captureNetworkError(page, lang) {
     let needle = lang === 'eng' ? 'Password validation failed' : '密碼檢測失敗'
     await page.waitForFunction((t) => (document.body.innerText || '').includes(t), needle, { timeout: 15000 })
     await page.waitForTimeout(500)
-    let buf = await captureStable(page)
+    // E2E-009: 驗 chPwNewError inline 紅字 → 框錯誤紅字本身
+    let errText9 = expectedSpecText['E2E-009-network-error'][lang].value
+    let buf = await captureStableWithBox(page, page.getByText(errText9, { exact: false }).first())
     await page.unroute('**/api/main')
     return buf
 }
@@ -465,7 +483,9 @@ async function captureTokenInvalidated(page, lang) {
     let needle = lang === 'eng' ? 'Password change failed' : '密碼變更失敗'
     await page.waitForFunction((t) => (document.body.innerText || '').includes(t), needle, { timeout: 15000 })
     await page.waitForTimeout(500)
-    return await captureStable(page)
+    // E2E-010: 驗 chPwOldError inline 紅字（與 E2E-007 同文字）→ 框錯誤紅字本身
+    let errText10 = expectedSpecText['E2E-010-token-invalid'][lang].value
+    return await captureStableWithBox(page, page.getByText(errText10, { exact: false }).first())
 }
 
 
@@ -552,7 +572,7 @@ async function generateBaseline() {
 
     //每個 lang 啟動 fresh browser, 與 mocha test mode 一致 (每個 describe 各自 launch browser).
     for (let lang of langs) {
-        let browser = await chromium.launch({ headless: true })
+        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
         let page = await browser.newPage()
         page.on('dialog', async (dialog) => {
             await dialog.accept()
@@ -597,7 +617,7 @@ else {
 
                 await insertTestUserAndToken(lang)
 
-                browser = await chromium.launch({ headless: true })
+                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
                 let context = await browser.newContext()
                 page = await context.newPage()
 
@@ -685,7 +705,7 @@ else {
                 assertBaselineMatch(buf, baselinePath, `changepassword-${lang}-010-token-invalid`)
             })
 
-            it('E2E-008-success: 三欄填妥+正確 → 表單收起回 user info', async function() {
+            it('E2E-008-success: 三欄填妥+正確 → showCheckYes modal 顯示完整成功訊息', async function() {
                 let buf = await captureSuccess(page, lang)
                 await assertSpecForCase(page, lang, 'E2E-008-success')
                 let baselinePath = bp(lang, 'E2E-008-success')

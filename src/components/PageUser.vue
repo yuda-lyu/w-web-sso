@@ -453,7 +453,8 @@ export default {
                             okCkPw = true
                         }
                         else if (res.state === 'error') {
-                            vo.chPwNewError = res.msg
+                            //checkUserPassword 回 { state:'error', key }; 以 $tErr 翻譯+插值政策值顯示
+                            vo.chPwNewError = vo.$tErr(res.key)
                         }
                         else {
                             console.log('error[res]', res)
@@ -495,7 +496,7 @@ export default {
                 //close before showCheckYes (ADR-002 modal 等待期避免 loading 疊著);
                 //finally 仍會再呼叫一次當作兜底, updateLoading 對重複關閉是 idempotent
                 vo.$ui.updateLoading(false)
-                await vo.$dg.showCheckYes(vo.$t('userChangePasswordSuccess'))
+                await vo.$dg.showCheckYes(vo.$t('userChangePasswordSuccess'), { type: 'success' })
 
                 return 'ok'
             }

@@ -10,6 +10,7 @@ import isestr from 'wsemi/src/isestr.mjs'
 // import randomIntRange from 'wsemi/src/randomIntRange.mjs'
 import fsTreeFolder from 'wsemi/src/fsTreeFolder.mjs'
 import fsBuildReadStreamText from 'wsemi/src/fsBuildReadStreamText.mjs'
+import filterVpfsByWindow from './filterVpfsByWindow.mjs'
 
 
 async function staIp(timeLength = 7, timeInterval = 'hr', opt = {}) {
@@ -17,7 +18,7 @@ async function staIp(timeLength = 7, timeInterval = 'hr', opt = {}) {
     //fdLog
     let fdLog = get(opt, 'fdLog')
     if (!isestr(fdLog)) {
-        fdLog = './_logs'
+        fdLog = './logs'
     }
 
     //fmt
@@ -39,6 +40,7 @@ async function staIp(timeLength = 7, timeInterval = 'hr', opt = {}) {
 
     //vpfs
     let vpfs = fsTreeFolder(fdLog)
+    vpfs = filterVpfsByWindow(vpfs, tStart, fmt) //開檔前剔除窗外檔, 見該模組註解
 
     //logs
     let logs = []

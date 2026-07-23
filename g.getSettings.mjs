@@ -56,6 +56,9 @@ function getSettings() {
     if (process.env.EM_SRC_PORT) {
         st.emSrcPort = parseInt(process.env.EM_SRC_PORT, 10)
     }
+    if (process.env.SALT) {
+        st.salt = process.env.SALT //D21: 生產經 SALT env 注入真實 pepper (取代 settings 佔位符)
+    }
 
     return st
 }

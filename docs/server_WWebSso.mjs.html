@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <title>server/WWebSso.mjs - Documentation</title>
+    
+    
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+    <script src="scripts/nav.js" defer></script>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav >
+    
+    
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="normalizeAllowUserRegistration.html">normalizeAllowUserRegistration</a></li></ul>
+    
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">server/WWebSso.mjs</h1>
+    
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import path from 'path'
+import fs from 'fs'
+import get from 'lodash-es/get.js'
+import size from 'lodash-es/size.js'
+import every from 'lodash-es/every.js'
+import iseobj from 'wsemi/src/iseobj.mjs'
+import isestr from 'wsemi/src/isestr.mjs'
+import isstr from 'wsemi/src/isstr.mjs'
+import ispint from 'wsemi/src/ispint.mjs'
+import isearr from 'wsemi/src/isearr.mjs'
+import isarr from 'wsemi/src/isarr.mjs'
+import isbol from 'wsemi/src/isbol.mjs'
+import ispnum from 'wsemi/src/ispnum.mjs'
+import isErr from 'wsemi/src/isErr.mjs'
+import isfun from 'wsemi/src/isfun.mjs'
+import cint from 'wsemi/src/cint.mjs'
+import strleft from 'wsemi/src/strleft.mjs'
+import strright from 'wsemi/src/strright.mjs'
+import strdelright from 'wsemi/src/strdelright.mjs'
+import pm2resolve from 'wsemi/src/pm2resolve.mjs'
+import fsIsFolder from 'wsemi/src/fsIsFolder.mjs'
+import fsIsFile from 'wsemi/src/fsIsFile.mjs'
+import replace from 'wsemi/src/replace.mjs'
+import WServHapiServer from 'w-serv-hapi/src/WServHapiServer.mjs'
+import WServOrm from 'w-serv-orm/src/WServOrm.mjs'
+import ds from '../src/schema/index.mjs'
+import * as s from '../src/plugins/mShare.mjs'
+import srLogInit, { maskToken } from './srLog.mjs'
+import srEmailInit from './srEmail.mjs'
+import procCore from './procCore.mjs'
+import procLang from './procLang.mjs'
+import procProtect from './procProtect.mjs'
+import procStaInfor from './procStaInfor.mjs'
+import procSettings from './procSettings.mjs'
+
+
+/**
+ * 權限伺服器
+ *
+ * @class
+ * @param {Function} WOrm 輸入資料庫ORM函數
+ * @param {String} url 輸入資料庫連線字串，例如w-orm-lmdb為'./db'，或w-orm-mongodb為'mongodb://username:password@$127.0.0.1:27017'
+ * @param {String} db 輸入資料庫名稱字串
+ * @param {String} [pathSettings='./settings'] 輸入設定檔案路徑字串，預設'./settings'
+ * @returns {Object} 回傳物件，其內server為hapi伺服器實體，wsrv為w-converhp的伺服器事件物件，wsds為w-serv-webdata的伺服器事件物件，可監聽error事件
+ * @example
+ *
+ *
+ *
+ */
+//normalizeAllowUserRegistration: 正規化 allowUserRegistration 設定(非布林一律回預設 true)
+//具名匯出供 unit test 直測真實正規化路徑(取代測試檔自行複製本邏輯之現狀指紋)
+function normalizeAllowUserRegistration(opt) {
+    let allowUserRegistration = get(opt, 'allowUserRegistration', true)
+    if (allowUserRegistration !== true &amp;&amp; allowUserRegistration !== false) {
+        allowUserRegistration = true
+    }
+    return allowUserRegistration
+}
+
+function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
+    let instWServHapiServer = null
+
+
+    //check WOrm
+    if (!isfun(WOrm)) {
+        console.log('invalid WOrm', WOrm)
+        throw new Error('invalid WOrm')
+    }
+
+
+    //check url
+    if (!isestr(url)) {
+        console.log('invalid url', url)
+        throw new Error('invalid url')
+    }
+
+
+    //check db
+    if (!isestr(db)) {
+        console.log('invalid db', db)
+        throw new Error('invalid db')
+    }
+
+
+    //check pathSettings
+    if (!fsIsFile(pathSettings)) {
+        pathSettings = './settings.json'
+    }
+
+
+    //setFilepath
+    procSettings.setFilepath(pathSettings)
+
+
+    //getSettings
+    let opt = procSettings.getSettings()
+    if (iseobj(optExt)) { //外部可傳入額外參數
+        opt = {
+            ...opt,
+            ...optExt,
+        }
+    }
+    // * @param {Object|String} [opt={}] 輸入設定物件或設定檔檔案路徑字串，若給予檔案路徑則會預設檔案為json格式且讀入成為opt物件，預設{}
+    // * @param {Integer} [opt.serverPort=11007] 輸入伺服器通訊port整數，預設11007
+    // * @param {Boolean} [opt.useCheckUser=false] 輸入是否檢查使用者資訊布林值，預設false
+    // * @param {Function} [opt.getUserById=null] 輸入當useCheckUser=true時依照使用者ID取得使用者資訊物件函數，預設null
+    // * @param {Boolean} [opt.useExcludeWhenNotAdmin=false] 輸入使用ORM的select方法時是否自動刪除數據內isActive欄位之布林值，預設false
+    // * @param {Object} [opt.webName={}] 輸入站台名稱物件，至少包含語系eng與cht鍵的名稱，預設{}
+    // * @param {Object} [opt.webDescription={}] 輸入站台描述物件，至少包含語系eng與cht鍵的名稱，預設{}
+    // * @param {String} [opt.webLogo=''] 輸入站台logo字串，採base64格式，預設''
+    // * @param {Array} [opt.webBackgoundGradientColors=['#FFE0B2', '#FFCC80', '#FFF59D', '#F2D6A2', '#F0CC88']] 輸入使用者登入頁顏色陣列，前3色為背景線性linear-gradient，第4色為登入區塊背景色，第5色為站台logo背景色，若不給則預設白色。預設['#FFE0B2', '#FFCC80', '#FFF59D', '#F2D6A2', '#F0CC88']
+    // * @param {String} [opt.webKey=''] 輸入站台識別字串，預設''
+    // * @param {String} [opt.salt=''] 輸入密碼加鹽字串，預設''
+    // * @param {Integer} [opt.minExpired=30] 輸入創建或更新金鑰有效時間整數，單位分鐘(min)，預設30
+    // * @param {Integer} [opt.minForAccountLoginFailed=10] 輸入限制帳號最大登入失敗(密碼錯誤)次數之判準時間整數，單位分鐘(min)，預設10
+    // * @param {Integer} [opt.numForAccountLoginFailed=3] 輸入限制帳號最大登入失敗(密碼錯誤)之次數整數，預設3
+    // * @param {Integer} [opt.minBlockForAccountLoginFailed=30] 輸入限制帳號最大登入失敗(密碼錯誤)次數之觸發後封鎖時間整數，單位分鐘(min)，預設30
+    // * @param {Integer} [opt.minForTokenCallApi=10] 輸入限制token最大調用API次數之判準時間整數，單位分鐘(min)，預設10
+    // * @param {Integer} [opt.numForTokenCallApi=1000] 輸入限制token最大調用API之次數整數，預設1000
+    // * @param {Integer} [opt.minBlockForTokenCallApi=30] 輸入限制token最大調用API次數之觸發後封鎖時間整數，單位分鐘(min)，預設30
+    // * @param {Integer} [opt.minForIpCallApi=10] 輸入限制IP最大調用API次數之判準時間整數，單位分鐘(min)，預設10
+    // * @param {Integer} [opt.numForIpCallApi=10000] 輸入限制IP最大調用API之次數整數，預設10000
+    // * @param {Integer} [opt.minBlockForIpCallApi=30] 輸入限制IP最大調用API次數之觸發後封鎖時間整數，單位分鐘(min)，預設30
+    // * @param {String} [opt.userLogo=''] 輸入使用者logo字串，採base64格式，預設''
+    // * @param {String} [opt.subfolder=''] 輸入站台所在子目錄字串，提供站台位於內網採反向代理進行服務時，故需支援位於子目錄情形，預設''
+    // * @param {String} [opt.mappingBy='email'] 輸入外部系統識別使用者token後所提供之資料物件，與權限系統之使用者資料物件，兩者間查找之對應欄位，可選'id'、'email'、'name'，預設'email'
+    // * @param {Object} [opt.kpLangExt={}] 輸入擴充前端語系物件，預設{}
+    // * @param {String} [opt.logFd='./logs'] 輸入log紀錄儲存位置字串，預設'./logs'
+    // * @param {String} [opt.logInterval='hr'] 輸入log紀錄檔案拆檔時長字串，預設'hr'
+    // * @param {String} [opt.emSrcEmail=null] 輸入email寄信用email字串，預設null
+    // * @param {String} [opt.emSrcPW=null] 輸入email寄信用密碼字串，預設null
+    // * @param {String} [opt.emSrcHost=null] 輸入email寄信用host字串，預設null
+    // * @param {String} [opt.emSrcPort=null] 輸入email寄信用port整數，預設null
+
+
+    //serverPort
+    let serverPort = get(opt, 'serverPort')
+    if (!ispint(serverPort)) {
+        serverPort = 11007
+    }
+    serverPort = cint(serverPort)
+
+
+    //useCheckUser
+    let useCheckUser = get(opt, 'useCheckUser', false)
+
+
+    //getUserById
+    let getUserById = get(opt, 'getUserById', null)
+
+
+    //useExcludeWhenNotAdmin
+    let useExcludeWhenNotAdmin = get(opt, 'useExcludeWhenNotAdmin', false)
+
+
+    //webName
+    let webName = get(opt, 'webName', {})
+
+
+    //webDescription
+    let webDescription = get(opt, 'webDescription', {})
+
+
+    //webLogo
+    let webLogo = get(opt, 'webLogo', '')
+
+
+    //webBackgoundGradientColors
+    let webBackgoundGradientColors = get(opt, 'webBackgoundGradientColors', [])
+    if (!isearr(webBackgoundGradientColors)) {
+        webBackgoundGradientColors = ['#FFE0B2', '#FFCC80', '#FFF59D', '#F2D6A2', '#F0CC88']
+    }
+
+
+    //webKey
+    let webKey = get(opt, 'webKey', '')
+
+
+    //salt (作為 per-user scrypt 之伺服器端 pepper; per-user 隨機 salt 已在 hashPassword 內處理)
+    //D21: 強制要求引用方部署時注入真實 pepper (經 SALT 環境變數); 啟動時若為空/佔位符則拒啟.
+    let salt = get(opt, 'salt', '')
+    if (isestr(process.env.SALT)) {
+        salt = process.env.SALT //生產環境經 SALT env 注入真實 pepper (優先於 settings 佔位符)
+    }
+    if (!isestr(salt) || salt === '{salt}') {
+        //測試/開發可設 ALLOW_PLACEHOLDER_SALT=1 沿用佔位符 (測試密碼非機密); 生產一律須注入真實 SALT.
+        if (!isestr(process.env.ALLOW_PLACEHOLDER_SALT)) {
+            throw new Error(`SALT pepper 未設定: 請以環境變數 SALT 注入真實高熵 pepper 後再啟動 (測試/開發可設 ALLOW_PLACEHOLDER_SALT=1 沿用佔位符)`)
+        }
+        console.log(`[WARN] SALT pepper 為佔位符/空值, 因 ALLOW_PLACEHOLDER_SALT 啟用而放行 — 切勿用於生產環境`)
+    }
+
+
+    //minExpired, 使用者成功登入後產生token之有效時間(分鐘)
+    let minExpired = get(opt, 'minExpired', '')
+    if (!ispnum(minExpired)) {
+        minExpired = 30
+    }
+
+
+    //minForAccountLoginFailed, 限制帳號最大登入失敗(密碼錯誤)次數之判準時間(分鐘)
+    let minForAccountLoginFailed = get(opt, 'minForAccountLoginFailed', '')
+    if (!ispnum(minForAccountLoginFailed)) {
+        minForAccountLoginFailed = 10
+    }
+
+
+    //numForAccountLoginFailed, 限制帳號最大登入失敗(密碼錯誤)之次數
+    let numForAccountLoginFailed = get(opt, 'numForAccountLoginFailed', '')
+    if (!ispnum(numForAccountLoginFailed)) {
+        numForAccountLoginFailed = 3
+    }
+
+
+    //minBlockForAccountLoginFailed, 限制帳號最大登入失敗(密碼錯誤)次數之觸發後封鎖時間(分鐘)
+    let minBlockForAccountLoginFailed = get(opt, 'minBlockForAccountLoginFailed', '')
+    if (!ispnum(minBlockForAccountLoginFailed)) {
+        minBlockForAccountLoginFailed = 30
+    }
+
+
+    //minForTokenCallApi, 限制token最大調用API次數之判準時間(分鐘)
+    let minForTokenCallApi = get(opt, 'minForTokenCallApi', '')
+    if (!ispnum(minForTokenCallApi)) {
+        minForTokenCallApi = 10
+    }
+
+
+    //numForTokenCallApi, 限制token最大調用API之次數
+    let numForTokenCallApi = get(opt, 'numForTokenCallApi', '')
+    if (!ispnum(numForTokenCallApi)) {
+        numForTokenCallApi = 1000
+    }
+
+
+    //minBlockForTokenCallApi, 限制token最大調用API次數之觸發後封鎖時間(分鐘)
+    let minBlockForTokenCallApi = get(opt, 'minBlockForTokenCallApi', '')
+    if (!ispnum(minBlockForTokenCallApi)) {
+        minBlockForTokenCallApi = 30
+    }
+
+
+    //minForIpCallApi, 限制IP最大調用API次數之判準時間(分鐘)
+    let minForIpCallApi = get(opt, 'minForIpCallApi', '')
+    if (!ispnum(minForIpCallApi)) {
+        minForIpCallApi = 10
+    }
+
+
+    //numForIpCallApi, 限制IP最大調用API之次數
+    let numForIpCallApi = get(opt, 'numForIpCallApi', '')
+    if (!ispnum(numForIpCallApi)) {
+        numForIpCallApi = 10000
+    }
+
+
+    //minBlockForIpCallApi, 限制IP最大調用API次數之觸發後封鎖時間(分鐘)
+    let minBlockForIpCallApi = get(opt, 'minBlockForIpCallApi', '')
+    if (!ispnum(minBlockForIpCallApi)) {
+        minBlockForIpCallApi = 30
+    }
+
+
+    //cleanKpIpCallApiForIps, 允許呼叫 /api/cleanKpIpCallApi 的連線 IP 白名單
+    let cleanKpIpCallApiForIps = get(opt, 'cleanKpIpCallApiForIps', [])
+    if (!isearr(cleanKpIpCallApiForIps)) {
+        cleanKpIpCallApiForIps = ['127.0.0.1', '::1', '::ffff:127.0.0.1']
+    }
+
+
+    //cleanKpIpCallApiForToken, 呼叫 /api/cleanKpIpCallApi 須附帶之識別 token
+    let cleanKpIpCallApiForToken = get(opt, 'cleanKpIpCallApiForToken', '')
+
+
+    //cleanKpAccountLoginFailedForIps, 允許呼叫 /api/cleanKpAccountLoginFailed 的連線 IP 白名單
+    let cleanKpAccountLoginFailedForIps = get(opt, 'cleanKpAccountLoginFailedForIps', [])
+    if (!isearr(cleanKpAccountLoginFailedForIps)) {
+        cleanKpAccountLoginFailedForIps = ['127.0.0.1', '::1', '::ffff:127.0.0.1']
+    }
+
+
+    //cleanKpAccountLoginFailedForToken, 呼叫 /api/cleanKpAccountLoginFailed 須附帶之識別 token
+    let cleanKpAccountLoginFailedForToken = get(opt, 'cleanKpAccountLoginFailedForToken', '')
+
+
+    //allowUserRegistration
+    let allowUserRegistration = normalizeAllowUserRegistration(opt)
+
+
+    //以下設定僅在 allowUserRegistration=true 時才需檢查
+    let siteUrl = ''
+    if (allowUserRegistration) {
+
+        //siteUrl
+        siteUrl = get(opt, 'siteUrl', '')
+        if (!isestr(siteUrl)) {
+            throw new Error('invalid siteUrl: must be a non-empty string when allowUserRegistration is enabled')
+        }
+
+        //email title 已搬到 procLang.mjs（regVerifyEmTitle 鍵），可由 kpLangExt 覆寫
+        //email body 已搬到 server/template/regVerifyEmail-{lang}.html
+
+    }
+
+
+    //passwordPolicy
+    let passwordPolicy = get(opt, 'passwordPolicy')
+    if (!iseobj(passwordPolicy)) {
+        throw new Error('invalid passwordPolicy: missing or not an object')
+    }
+    let ppMinLength = get(passwordPolicy, 'minLength')
+    if (!ispint(ppMinLength) || cint(ppMinLength) &lt; 1) {
+        throw new Error('invalid passwordPolicy.minLength: must be a positive integer >= 1')
+    }
+    let ppMaxLength = get(passwordPolicy, 'maxLength')
+    if (!ispint(ppMaxLength) || cint(ppMaxLength) &lt; cint(ppMinLength)) {
+        throw new Error('invalid passwordPolicy.maxLength: must be a positive integer >= minLength')
+    }
+    let ppRequireLetter = get(passwordPolicy, 'requireLetter')
+    if (!isbol(ppRequireLetter)) {
+        throw new Error('invalid passwordPolicy.requireLetter: must be a boolean')
+    }
+    let ppRequireUppercase = get(passwordPolicy, 'requireUppercase')
+    if (!isbol(ppRequireUppercase)) {
+        throw new Error('invalid passwordPolicy.requireUppercase: must be a boolean')
+    }
+    let ppRequireLowercase = get(passwordPolicy, 'requireLowercase')
+    if (!isbol(ppRequireLowercase)) {
+        throw new Error('invalid passwordPolicy.requireLowercase: must be a boolean')
+    }
+    let ppRequireDigit = get(passwordPolicy, 'requireDigit')
+    if (!isbol(ppRequireDigit)) {
+        throw new Error('invalid passwordPolicy.requireDigit: must be a boolean')
+    }
+    let ppRequireSpecial = get(passwordPolicy, 'requireSpecial')
+    if (!isbol(ppRequireSpecial)) {
+        throw new Error('invalid passwordPolicy.requireSpecial: must be a boolean')
+    }
+    let ppNoSpace = get(passwordPolicy, 'noSpace')
+    if (!isbol(ppNoSpace)) {
+        throw new Error('invalid passwordPolicy.noSpace: must be a boolean')
+    }
+    let ppOnlyAscii = get(passwordPolicy, 'onlyAscii')
+    if (!isbol(ppOnlyAscii)) {
+        throw new Error('invalid passwordPolicy.onlyAscii: must be a boolean')
+    }
+    let ppForbiddenChars = get(passwordPolicy, 'forbiddenChars')
+    if (!isarr(ppForbiddenChars)) {
+        throw new Error('invalid passwordPolicy.forbiddenChars: must be an array')
+    }
+    for (let i = 0; i &lt; size(ppForbiddenChars); i++) {
+        if (!isstr(ppForbiddenChars[i]) || size(ppForbiddenChars[i]) !== 1) {
+            throw new Error(`invalid passwordPolicy.forbiddenChars[${i}]: each element must be a single character string`)
+        }
+    }
+    let ppNoConsecutiveCharsFromAccount = get(passwordPolicy, 'noConsecutiveCharsFromAccount')
+    if (!isbol(ppNoConsecutiveCharsFromAccount)) {
+        throw new Error('invalid passwordPolicy.noConsecutiveCharsFromAccount: must be a boolean')
+    }
+    if (ppNoConsecutiveCharsFromAccount) {
+        let ppConsecutiveCharsMinMatch = get(passwordPolicy, 'consecutiveCharsMinMatch')
+        if (!ispint(ppConsecutiveCharsMinMatch) || cint(ppConsecutiveCharsMinMatch) &lt; 2) {
+            throw new Error('invalid passwordPolicy.consecutiveCharsMinMatch: must be a positive integer >= 2')
+        }
+    }
+    let ppCommonPasswordBlacklist = get(passwordPolicy, 'commonPasswordBlacklist')
+    if (!isarr(ppCommonPasswordBlacklist)) {
+        throw new Error('invalid passwordPolicy.commonPasswordBlacklist: must be an array')
+    }
+    if (!every(ppCommonPasswordBlacklist, (v) => isstr(v))) {
+        throw new Error('invalid passwordPolicy.commonPasswordBlacklist: each element must be a string')
+    }
+
+
+    //userLogo
+    let userLogo = get(opt, 'userLogo', '')
+
+
+    //subfolder
+    let subfolder = get(opt, 'subfolder', '')
+    if (isestr(subfolder)) {
+        if (strright(subfolder, 1) === '/') { //右邊不需要給「/」
+            subfolder = strdelright(subfolder, 1)
+        }
+        if (strleft(subfolder, 1) !== '/') { //左邊需要給「/」
+            subfolder = `/${subfolder}`
+        }
+    }
+
+    //params
+    let showLanguage = get(opt, 'showLanguage', 'n')
+    let language = get(opt, 'language', 'eng')
+    let showModeEditUsers = get(opt, 'showModeEditUsers', 'n')
+    let modeEditUsers = get(opt, 'modeEditUsers', 'n')
+    let showModeEditTokens = get(opt, 'showModeEditTokens', 'n')
+    let modeEditTokens = get(opt, 'modeEditTokens', 'n')
+    let showModeEditIps = get(opt, 'showModeEditIps', 'n')
+    let modeEditIps = get(opt, 'modeEditIps', 'n')
+
+    //是否可於登入頁提供申請註冊使用者按鈕
+    //是否使用圖形驗證碼模組
+
+    //email模板
+    // 註冊驗證信模板
+    // 變更使用者密碼驗證信模板
+    // 註冊請求通知(給SSO系統管理員)信模板
+    // 註冊核可成功通知信模板
+    // 變更使用者資訊通知信模板
+
+
+    //mappingBy
+    let mappingBy = get(opt, 'mappingBy', '')
+    if (mappingBy !== 'id' &amp;&amp; mappingBy !== 'email' &amp;&amp; mappingBy !== 'name') {
+        mappingBy = 'email'
+    }
+    // console.log('mappingBy', mappingBy)
+
+
+    //kpLangExt
+    let kpLangExt = get(opt, 'kpLangExt', {})
+
+
+    //email title 已搬到 procLang.mjs（chpwEmTitle 鍵），可由 kpLangExt 覆寫
+    //email body 已搬到 server/template/changePasswordEmail-{lang}.html
+
+
+    //srLog
+    let srLog = srLogInit(opt)
+
+
+    //srEmail
+    let srEmail = srEmailInit(opt)
+
+
+    //kpLang
+    let kpLang = procLang({ kpLangExt, webName, webDescription })
+
+
+    //WServOrm
+    let optWServOrm = {
+        useCheckUser,
+        getUserById,
+        useExcludeWhenNotAdmin,
+    }
+    let wp = {}
+    try {
+        wp = WServOrm(ds, WOrm, url, db, optWServOrm)
+    }
+    catch (err) {
+        console.log('WServOrm init failed', err)
+        throw err
+    }
+    let { woItems, procOrm } = wp
+
+
+    //getWebInfor
+    let getWebInfor = () => {
+        return {
+
+            // webName, //已併入kpLang
+            // webDescription, //已併入kpLang
+            webLogo,
+            webBackgoundGradientColors,
+            webKey,
+            userLogo,
+
+            showLanguage,
+            language,
+            kpLang,
+
+            showModeEditUsers,
+            modeEditUsers,
+            showModeEditTokens,
+            modeEditTokens,
+            showModeEditIps,
+            modeEditIps,
+
+            allowUserRegistration,
+            passwordPolicyInfo: {
+                minLength: passwordPolicy.minLength,
+                maxLength: passwordPolicy.maxLength,
+                requireLetter: passwordPolicy.requireLetter,
+                requireUppercase: passwordPolicy.requireUppercase,
+                requireLowercase: passwordPolicy.requireLowercase,
+                requireDigit: passwordPolicy.requireDigit,
+                requireSpecial: passwordPolicy.requireSpecial,
+                consecutiveCharsMinMatch: passwordPolicy.consecutiveCharsMinMatch,
+            },
+
+        }
+    }
+
+
+    //procCore, procProtect, procStaInfor, procLang
+    //verifyBaseUrl, 後端 API base URL，用於驗證信內連結
+    let verifyBaseUrl = `http://localhost:${serverPort}`
+
+    //pathTemplate 模板資料夾路徑（dev / npm 兩種來源）
+    //供 procCore 渲染 email body 與本檔 /api/verifyEmail handler 渲染結果頁
+    let pathTemplate = './server/template'
+    let npmPathTemplate = './node_modules/w-web-sso/server/template'
+    if (fsIsFolder(npmPathTemplate)) {
+        pathTemplate = npmPathTemplate
+    }
+
+    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pathTemplate, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl })
+    let pp = procProtect(woItems, p, {
+        minForAccountLoginFailed,
+        numForAccountLoginFailed,
+        minBlockForAccountLoginFailed,
+        minForTokenCallApi,
+        numForTokenCallApi,
+        minBlockForTokenCallApi,
+        minForIpCallApi,
+        numForIpCallApi,
+        minBlockForIpCallApi,
+    })
+    //D43: 統計子系統(staLogs worker)之 log 掃描目錄須承接設定值, 不可硬讀預設 './logs'(與 srLog 實際寫入位置不一致)
+    let logFd = get(opt, 'logFd', '')
+    let pf = procStaInfor(woItems, p, { srLog, logFd })
+
+
+    //kpfun 入口統一 user-input string guard, 防 NoSQL operator injection
+    //(w-orm-lmdb 之 select 內部用 mingo.Query, 接受 {$ne: null} 等 operator object
+    //→ 全表 scan + log 噪音; 雖被 _getGenUserByKV duplicate check + verifyPassword
+    //+ hashPassword 三層防住無 auth bypass, 但 DoS 風險仍存. 詳 ADR-003 Consequences.)
+    //錯訊統一映射至 ADR-006 'token expired' (token 系) / ADR-003 'incorrect user account or password'
+    //(login 系) / 'invalid rows' (admin batch update 系), 不洩 type check 失敗 vs business 失敗.
+    let _strictStr = (...vals) => vals.every((v) => isestr(v))
+
+
+    //錯誤契約 (key-only): kpfun 邊界層一律 reject 後端 key 字串 (= procLang 字典 key 名), 前端以 $t(key)
+    //顯示 (字典查無則回 key 本身) + 以字串值判斷錯誤種類 (如 err === 'userRegistrationNotVerified').
+    //內層 (procCore/procProtect) 本就 reject key 字串, 邊界層不再包成 { key, msg } / 不在後端翻譯.
+
+
+    //funCheckAdmin
+    let funCheckAdmin = (tk, u) => {
+        // console.log('tk', tk, 'u', u)
+        let b = s.checkUserAdmin(u)
+        // console.log('checkUserAdmin', b)
+        return b
+    }
+
+
+    //pathStaticFiles
+    let pathStaticFiles = 'dist'
+    let npmPathStaticFiles = './node_modules/w-web-sso/dist'
+    if (fsIsFolder(npmPathStaticFiles)) {
+        pathStaticFiles = npmPathStaticFiles
+    }
+    // console.log('pathStaticFiles', pathStaticFiles)
+
+
+    //subfolder
+    let fnEntryIn = 'index.tmp'
+    let fnEntryOut = 'index.html'
+    try {
+        let fpEntryIn = path.resolve(pathStaticFiles, fnEntryIn)
+        if (!fsIsFile(fpEntryIn)) {
+            fpEntryIn = path.resolve(pathStaticFiles, fnEntryOut) //本機開發另使用html替代tmp
+        }
+        if (!fsIsFile(fpEntryIn)) {
+            console.log('fpEntryIn', fpEntryIn)
+            throw new Error(`invalid fpEntryIn`)
+        }
+        let fpEntryOut = path.resolve(pathStaticFiles, fnEntryOut)
+        let c = fs.readFileSync(fpEntryIn, 'utf8')
+        c = replace(c, '/msso/', '{sfd}/') //方法同genEntry
+        c = replace(c, '{sfd}', subfolder)
+        c = replace(c, '{language}', language)
+        fs.writeFileSync(fpEntryOut, c, 'utf8')
+    }
+    catch (err) {
+        console.log(err)
+        console.log(`can not generate ${fnEntryOut}`)
+    }
+
+
+    //apis
+    let apis = [
+
+        //sso不使用w-ui-loginout
+        // {
+        //     method: 'GET',
+        //     path: '/api/getUserByToken', //未登入主頁時需先檢測token, getUserByToken為w-ui-loginout預設值, 若要更改兩邊須同時修改
+        // },
+
+        {
+            method: 'GET',
+            path: '/api/cleanKpIpCallApi',
+            handler: async function (req, res) {
+                // console.log('cleanKpIpCallApi', req)
+
+                async function core() {
+
+                    //token
+                    let token = get(req, 'query.token', '')
+                    // console.log('token', token)
+
+                    //比對 token 是否為 settings 的 cleanKpIpCallApiForToken, 未設定或不符一律拒絕
+                    if (!isestr(cleanKpIpCallApiForToken)) {
+                        return Promise.reject(`invalid cleanKpIpCallApiForToken`)
+                    }
+
+                    //比對 token 是否為 settings 的 cleanKpIpCallApiForToken, 未設定或不符一律拒絕
+                    if (token !== cleanKpIpCallApiForToken) {
+                        return Promise.reject(`cleanKpIpCallApi invalid token`)
+                    }
+
+                    //檢測ip須為 127.0.0.1 或 localhost
+                    //realIp, 取 socket 真實連線位址 (不讀 x-forwarded-for, 該 header 可偽造會繞過本機限制)
+                    let realIp = get(req, 'info.remoteAddress', '')
+                    if (!isestr(realIp)) {
+                        realIp = get(req, 'socket.remoteAddress', '')
+                    }
+                    if (!isestr(realIp)) {
+                        realIp = get(req, 'connection.remoteAddress', '')
+                    }
+
+                    //僅放行 settings 的 cleanKpIpCallApiForIps 白名單內之連入 IP (供 e2e 防禦性清理 in-memory IP 計數器使用), 其餘一律拒絕
+                    if (!cleanKpIpCallApiForIps.includes(realIp)) {
+                        return Promise.reject(`cleanKpIpCallApi only allowed from cleanKpIpCallApiForIps, got realIp[${realIp}]`)
+                    }
+
+                    //info
+                    srLog.info({ event: 'api/cleanKpIpCallApi', realIp })
+
+                    //cleanKpIpCallApi, 清空 server in-memory 的 kpIpCallApi (所有 IP 的調用 API 計數)
+                    await pp.cleanKpIpCallApi()
+
+                    return true
+                }
+
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                if (isErr(r.msg)) {
+                    r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
+                }
+                // console.log('cleanKpIpCallApi', r)
+
+                return r
+            },
+        },
+
+        {
+            method: 'GET',
+            path: '/api/cleanKpAccountLoginFailed',
+            handler: async function (req, res) {
+                // console.log('cleanKpAccountLoginFailed', req)
+
+                async function core() {
+
+                    //token
+                    let token = get(req, 'query.token', '')
+                    // console.log('token', token)
+
+                    //比對 token 是否為 settings 的 cleanKpAccountLoginFailedForToken, 未設定或不符一律拒絕
+                    if (!isestr(cleanKpAccountLoginFailedForToken)) {
+                        return Promise.reject(`invalid cleanKpAccountLoginFailedForToken`)
+                    }
+
+                    //比對 token 是否為 settings 的 cleanKpAccountLoginFailedForToken, 未設定或不符一律拒絕
+                    if (token !== cleanKpAccountLoginFailedForToken) {
+                        return Promise.reject(`cleanKpAccountLoginFailed invalid token`)
+                    }
+
+                    //檢測ip須為 127.0.0.1 或 localhost
+                    //realIp, 取 socket 真實連線位址 (不讀 x-forwarded-for, 該 header 可偽造會繞過本機限制)
+                    let realIp = get(req, 'info.remoteAddress', '')
+                    if (!isestr(realIp)) {
+                        realIp = get(req, 'socket.remoteAddress', '')
+                    }
+                    if (!isestr(realIp)) {
+                        realIp = get(req, 'connection.remoteAddress', '')
+                    }
+
+                    //僅放行 settings 的 cleanKpAccountLoginFailedForIps 白名單內之連入 IP (供 e2e 防禦性清理 in-memory 失敗計數器使用), 其餘一律拒絕
+                    if (!cleanKpAccountLoginFailedForIps.includes(realIp)) {
+                        return Promise.reject(`cleanKpAccountLoginFailed only allowed from cleanKpAccountLoginFailedForIps, got realIp[${realIp}]`)
+                    }
+
+                    //info
+                    srLog.info({ event: 'api/cleanKpAccountLoginFailed', realIp })
+
+                    //cleanKpAccountLoginFailed, 清空 server in-memory 的 kpAccountLoginFailed (所有帳號的登入失敗計數)
+                    await pp.cleanKpAccountLoginFailed()
+
+                    return true
+                }
+
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                if (isErr(r.msg)) {
+                    r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
+                }
+                // console.log('cleanKpAccountLoginFailed', r)
+
+                return r
+            },
+        },
+
+        {
+            method: 'GET',
+            path: '/api/logoutSsoUser',
+            handler: async function (req, res) {
+                // console.log('logoutSsoUser', req)
+
+                async function core() {
+
+                    //token
+                    let token = get(req, 'query.token', '')
+                    // console.log('token', token)
+
+                    //info
+                    srLog.info({ event: 'api/logoutSsoUser', token: maskToken(token) })
+
+                    //logoutByToken
+                    let b = await p.logoutByToken(token)
+                    // console.log('b', b)
+
+                    return b
+                }
+
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                if (isErr(r.msg)) {
+                    r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
+                }
+                // console.log('logoutSsoUser', r)
+
+                return r
+            },
+        },
+
+        {
+            method: 'GET',
+            path: '/api/checkToken',
+            handler: async function (req, res) {
+                // console.log('checkToken', req)
+
+                async function core() {
+
+                    //token
+                    let token = get(req, 'query.token', '')
+                    // console.log('token', token)
+
+                    //info
+                    srLog.info({ event: 'api/checkToken', token: maskToken(token) })
+
+                    //callApiByToken
+                    pp.callApiByToken(token)
+
+                    //checkToken
+                    let b = await p.checkToken(token)
+                    // console.log('b', b)
+
+                    return b
+                }
+
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                if (isErr(r.msg)) {
+                    r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
+                }
+                // console.log('checkToken', r)
+
+                return r
+            },
+        },
+
+        {
+            method: 'GET',
+            path: '/api/refreshToken',
+            handler: async function (req, res) {
+                // console.log('refreshToken', req)
+
+                async function core() {
+
+                    //token
+                    let token = get(req, 'query.token', '')
+                    // console.log('token', token)
+
+                    //info
+                    srLog.info({ event: 'api/refreshToken', token: maskToken(token) })
+
+                    //callApiByToken
+                    pp.callApiByToken(token)
+
+                    //refreshToken
+                    let b = await p.refreshToken(token)
+                    // console.log('b', b)
+
+                    return b
+                }
+
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                if (isErr(r.msg)) {
+                    r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
+                }
+                // console.log('refreshToken', r)
+
+                return r
+            },
+        },
+
+        {
+            method: 'GET',
+            path: '/api/logoutByToken',
+            handler: async function (req, res) {
+                // console.log('logoutByToken', req)
+
+                async function core() {
+
+                    //token
+                    let token = get(req, 'query.token', '')
+                    // console.log('token', token)
+
+                    //info
+                    srLog.info({ event: 'api/logoutByToken', token: maskToken(token) })
+
+                    //callApiByToken
+                    pp.callApiByToken(token)
+
+                    //logoutByToken
+                    let b = await p.logoutByToken(token)
+                    // console.log('b', b)
+
+                    return b
+                }
+
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                if (isErr(r.msg)) {
+                    r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
+                }
+                // console.log('logoutByToken', r)
+
+                return r
+            },
+        },
+
+        {
+            method: 'GET',
+            path: '/api/getSsoUsersList',
+            handler: async function (req, res) {
+                // console.log('getSsoUsersList', req)
+
+                async function core() {
+
+                    //token
+                    let token = get(req, 'query.token', '')
+                    // console.log('token', token)
+
+                    //info
+                    srLog.info({ event: 'api/getSsoUsersList', token: maskToken(token) })
+
+                    //callApiByToken
+                    pp.callApiByToken(token)
+
+                    //getSsoUsersList: 收緊為 admin-only (對齊 ADR-004 同款 IDOR 收緊 + 下方 kpfun 版本帶 funCheckAdmin).
+                    //app token (isApp='y') 由 _checkTokenByObj 之 ADR-005 語意自動 bypass fun, 系統介接不影響.
+                    let us = await p.checkTokenAndGetUsersList(token, { fun: funCheckAdmin })
+                    // console.log('us', us)
+
+                    return us
+                }
+
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                if (isErr(r.msg)) {
+                    r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
+                }
+                // console.log('getSsoUsersList', r)
+
+                return r
+            },
+        },
+
+        {
+            method: 'GET',
+            path: '/api/getSsoUserInfor',
+            handler: async function (req, res) {
+                // console.log('getSsoUserInfor', req)
+
+                async function core() {
+
+                    //token
+                    let token = get(req, 'query.token', '')
+                    // console.log('token', token)
+
+                    //key
+                    let key = get(req, 'query.key', '')
+                    // console.log('key', key)
+
+                    //value
+                    let value = get(req, 'query.value', '')
+                    // console.log('value', value)
+
+                    //check(入口一致性, 對齊 kpfun getUserInfor 之 guard)
+                    if (!_strictStr(token, key, value)) return Promise.reject('tokenExpired')
+
+                    //valueLog: key==='token' 時 value 即明文目標 token, 記 log 前需遮罩
+                    let valueLog = (key === 'token') ? maskToken(value) : value
+
+                    //info
+                    srLog.info({ event: 'api/getSsoUserInfor', token: maskToken(token), key, value: valueLog })
+
+                    //callApiByToken
+                    pp.callApiByToken(token)
+
+                    //userTarget
+                    let userTarget = null
+                    if (key === 'token') {
+                        userTarget = await p.checkTokenAndGetUserByToken(token, value, { fun: funCheckAdmin })
+                        // console.log('checkTokenAndGetUserByToken userTarget', userTarget)
+                    }
+                    else {
+                        userTarget = await p.checkTokenAndGetUserInfor(token, key, value, { fun: funCheckAdmin })
+                        // console.log('checkTokenAndGetUserInfor userTarget', userTarget)
+                    }
+
+                    //check
+                    if (!iseobj(userTarget)) {
+                        // console.log('token', token)
+                        // console.log('key', key, 'value', value)
+                        console.log(`token does not have permission`)
+                        return Promise.reject('tokenNoPermission') //原則5: 外部 API 錯誤回乾淨 key
+                    }
+
+                    return userTarget
+                }
+
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                if (isErr(r.msg)) {
+                    r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
+                }
+                // console.log('getSsoUserInfor', r)
+
+                return r
+            },
+        },
+
+        {
+            method: 'GET',
+            path: '/api/verifyEmail',
+            handler: async function (req, res) {
+
+                async function core() {
+
+                    //token
+                    let token = get(req, 'query.token', '')
+
+                    //info
+                    srLog.info({ event: 'api/verifyEmail', token: maskToken(token) })
+
+                    //verifyEmail
+                    let r = await p.verifyEmail(token)
+
+                    return r
+                }
+
+                //pm2resolve core
+                let r = await pm2resolve(core)()
+                if (isErr(r.msg)) {
+                    r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
+                }
+
+                //lang from query (依語系直接渲染結果頁，避免轉址回 SPA 後 lang 重置)
+                let lang = get(req, 'query.lang', '')
+                if (lang !== 'eng' &amp;&amp; lang !== 'cht') {
+                    lang = 'eng'
+                }
+
+                //pick message key
+                let msgKey
+                if (r.state === 'success') {
+                    msgKey = 'userRegistrationVerifySuccess'
+                }
+                else {
+                    msgKey = (r.msg &amp;&amp; typeof r.msg === 'string') ? r.msg : 'verifyEmailInvalidToken'
+                }
+
+                //render template (pathTemplate 為上層共用變數)
+                let title = get(kpLang, `${lang}.webName`, '')
+                let message = get(kpLang, `${lang}.${msgKey}`, msgKey)
+
+                let fpTpl = path.resolve(pathTemplate, 'verifyEmailResult.html')
+                let html = fs.readFileSync(fpTpl, 'utf8')
+                html = replace(html, '{title}', title)
+                html = replace(html, '{message}', message)
+
+                return res.response(html).type('text/html; charset=utf-8')
+            },
+        },
+
+    ]
+
+
+    //WServHapiServer
+    let optHapi = {
+        port: opt.serverPort,
+        pathStaticFiles,
+        apiName: 'api',
+        apis,
+        tokenType: 'Bearer',
+        verifyConn: async ({ apiType, authorization, query, headers, req }) => {
+            // console.log('headers', headers)
+
+            //getIpByHeaders
+            let ip = pp.getIpByHeaders(req)
+            // console.log('ip', ip)
+
+            //origin
+            let origin = get(headers, 'origin', '')
+
+            //referer
+            let referer = get(headers, 'referer', '')
+
+            //info
+            srLog.info({ event: 'verifyConn', ip, origin, referer })
+
+            //callApiByIp
+            pp.callApiByIp(ip)
+
+            //getBlockedByIp
+            let b = true
+            await pp.getBlockedByIp(ip)
+                .then((res) => {
+                    // console.log('pp.getBlockedByIp(ip) then', res)
+                    b = res
+                })
+                .catch(() => {
+                    // console.log('pp.getBlockedByIp(ip) catch', err)
+                    b = true
+                })
+            // console.log('pp.getBlockedByIp(ip)', b)
+
+            //b改為代表通行(未封鎖)狀態
+            b = !b
+
+            // //getInforsByIpCallApi
+            // let rs = await pp.getInforsByIpCallApi(ip)
+            // console.log('getInforsByIpCallApi', [
+            //     rs[0],
+            //     rs[rs.length - 1],
+            // ], rs.length)
+
+            //logshow
+            if (!b) {
+                console.log(`block ip[${ip}]`) //[tag:測試:顯示被封鎖ip]
+            }
+
+            return b
+        },
+        getUserIdByToken: async (token) => { //可使用async或sync函數
+            return '' //不檢核, 查找與變更數據皆由kpFunExt內各函數各自檢核
+        },
+        corsOrigins: ['*'],
+        useDbOrm: false,
+        // kpOrm: woItems,
+        // operOrm: procOrm, //procOrm的輸入為: userId, tableName, methodName, input
+        tableNamesExec: [],
+        methodsExec: [], //['select', 'insert', 'save', 'del', 'delAll'],
+        tableNamesSync: [],
+        kpFunExt: { //接收參數第1個為userId, 之後才是前端給予參數
+
+            getWebInfor: async (_t) => {
+                return getWebInfor()
+            },
+
+            checkToken: async (_t, token) => { //sso前端通過$fapi.checkToken調用
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-checkToken', token: maskToken(token) })
+                let r = await p.checkToken(token)
+                return r
+            },
+
+            refreshToken: async (_t, token) => { //sso前端通過$fapi.refreshToken調用
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-refreshToken', token: maskToken(token) })
+                let r = await p.refreshToken(token)
+                return r
+            },
+
+            loginByAccountAndPassword: async (_t, lang, account, password) => {
+                if (!_strictStr(account, password)) return Promise.reject('failedLoginForCatch')
+
+                //info, 使用者登入前
+                srLog.info({ event: 'kpfun-loginByAccountAndPassword-before', account })
+
+                let u = null
+                let msg = ''
+                await pp.loginByAccountAndPassword(account, password) //記得不能使用p.loginByAccountAndPassword, 此未提供保護機制
+                    .then((res) => {
+                        u = res
+                    })
+                    .catch((err) => {
+                        msg = err
+                    })
+
+                //info, 使用者登入成功或失敗
+                if (iseobj(u)) {
+                    srLog.info({ event: 'kpfun-loginByAccountAndPassword-success', account })
+                }
+                else {
+                    srLog.info({ event: 'kpfun-loginByAccountAndPassword-error', account, msg })
+                }
+
+                if (iseobj(u)) {
+                    return u
+                }
+                //msg 為 procCore/procProtect reject 之 key (failedLoginForCatch / userRegistrationNotVerified
+                /// loginAccountExpired / loginAccountBlocked), 直接以 key 字串 reject 回前端 (前端 $t 顯示)
+                return Promise.reject(msg)
+            },
+
+            logoutByToken: async (_t, token) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-logoutByToken', token: maskToken(token) })
+                let r = await p.logoutByToken(token)
+                return r
+            },
+
+            createUser: async (_t, lang, account, password, confirmPassword, name, email) => {
+                srLog.info({ event: 'kpfun-createUser', lang, account })
+                let data = { lang, account, password, confirmPassword, name, email }
+                let r = await p.createUser(lang, data)
+                return r
+            },
+
+            verifyEmail: async (_t, token) => {
+                srLog.info({ event: 'kpfun-verifyEmail', token: maskToken(token) })
+                let r = await p.verifyEmail(token)
+                return r
+            },
+
+            resendVerifyEmail: async (_t, lang, account, email) => {
+                srLog.info({ event: 'kpfun-resendVerifyEmail', lang, account })
+                let r = await p.resendVerifyEmail(lang, account, email)
+                return r
+            },
+
+            getUserByToken: async (_t, token) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getUserByToken', token: maskToken(token) })
+                //console.log('call getUserByToken...')
+                let r = await p.checkTokenAndGetUserByToken(token, token)
+                //console.log('call getUserByToken end')
+                return r
+            },
+
+            getUserInfor: async (_t, token, key, value) => {
+                if (!_strictStr(token, key, value)) return Promise.reject('tokenExpired')
+                //valueLog: key==='token' 時 value 即明文目標 token, 記 log 前需遮罩
+                let valueLog = (key === 'token') ? maskToken(value) : value
+                srLog.info({ event: 'kpfun-getUserInfor', token: maskToken(token), key, value: valueLog })
+                //console.log('call getUserInfor...')
+                let r = await p.checkTokenAndGetUserInfor(token, key, value, { fun: funCheckAdmin })
+                //console.log('call getUserInfor end')
+                return r
+            },
+
+            checkUserPassword: async (_t, lang, pw) => {
+                //僅記 event / lang, 不記任何密碼明文 (對齊 ADR-014 + adminResetUserPassword 之記法).
+                srLog.info({ event: 'kpfun-checkUserPassword', lang })
+                //console.log('call checkUserPassword...')
+                let r = await p.checkUserPassword(lang, pw)
+                //console.log('call checkUserPassword end')
+                return r
+            },
+
+            changeUserPassword: async (_t, token, lang, pwOld, pwNew) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                //僅記 event / token / lang, 不記任何密碼明文 (對齊 ADR-014 + adminResetUserPassword 之記法).
+                srLog.info({ event: 'kpfun-changeUserPassword', token: maskToken(token), lang })
+                //console.log('call checkTokenAndChangePassword...')
+                let r = await p.checkTokenAndChangePassword(token, lang, pwOld, pwNew)
+                //console.log('call checkTokenAndChangePassword end')
+                return r
+            },
+
+            adminResetUserPassword: async (_t, token, lang, targetUserId) => {
+                if (!_strictStr(token, targetUserId)) return Promise.reject('tokenExpired')
+                //僅記 event / token / targetUserId, 不記任何密碼明文
+                srLog.info({ event: 'kpfun-adminResetUserPassword', token: maskToken(token), lang, targetUserId })
+                let r = await p.adminResetUserPassword(token, lang, targetUserId)
+                return r
+            },
+
+            getUsersList: async (_t, token) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getUsersList', token: maskToken(token) })
+                //console.log('call getUsersList...')
+                let rs = await p.checkTokenAndGetUsersList(token, { fun: funCheckAdmin })
+                //console.log('call getUsersList end')
+                return rs
+            },
+
+            updateUsersList: async (_t, token, lang, rows) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject('invalidRows')
+                srLog.info({ event: 'kpfun-updateUsersList', token: maskToken(token), lang })
+                //console.log('call updateUsersList...')
+                //內層 reject key 字串 (含 checkToken 之 tokenExpired) 直接透出回前端 (前端 $t 顯示)
+                let rs = await p.checkTokenAndUpdateUsersList(token, lang, rows, { fun: funCheckAdmin })
+                //console.log('call updateUsersList end')
+                return rs
+            },
+
+            getTokensList: async (_t, token) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getTokensList', token: maskToken(token) })
+                //console.log('call getTokensList...')
+                let rs = await p.checkTokenAndGetTokensList(token, { fun: funCheckAdmin })
+                //console.log('call getTokensList end')
+                return rs
+            },
+
+            updateTokensList: async (_t, token, lang, rows) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject('invalidRows')
+                srLog.info({ event: 'kpfun-updateTokensList', token: maskToken(token), lang })
+                //console.log('call updateTokensList...')
+                let rs = await p.checkTokenAndUpdateTokensList(token, rows, { fun: funCheckAdmin })
+                //console.log('call updateTokensList end')
+                return rs
+            },
+
+            getIpsList: async (_t, token) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getIpsList', token: maskToken(token) })
+                //console.log('call getIpsList...')
+                let rs = await p.checkTokenAndGetIpsList(token, { fun: funCheckAdmin })
+                //console.log('call getIpsList end')
+                return rs
+            },
+
+            updateIpsList: async (_t, token, lang, rows) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject('invalidRows')
+                srLog.info({ event: 'kpfun-updateIpsList', token: maskToken(token), lang })
+                //console.log('call updateIpsList...')
+                let rs = await p.checkTokenAndUpdateIpsList(token, rows, { fun: funCheckAdmin })
+                //console.log('call updateIpsList end')
+                return rs
+            },
+
+            getStaUserSummary: async (_t, token) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getStaUserSummary', token: maskToken(token) })
+                //console.log('call getStaUserSummary...')
+                let r = await pf.checkTokenAndGetStaUserSummary(token, { fun: funCheckAdmin })
+                //console.log('call getStaUserSummary end')
+                return r
+            },
+
+            getStaTokenSummary: async (_t, token) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getStaTokenSummary', token: maskToken(token) })
+                //console.log('call getStaTokenSummary...')
+                let r = await pf.checkTokenAndGetStaTokenSummary(token, { fun: funCheckAdmin })
+                //console.log('call getStaTokenSummary end')
+                return r
+            },
+
+            getStaIpSummary: async (_t, token) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getStaIpSummary', token: maskToken(token) })
+                //console.log('call getStaIpSummary...')
+                let r = await pf.checkTokenAndGetStaIpSummary(token, { fun: funCheckAdmin })
+                //console.log('call getStaIpSummary end')
+                return r
+            },
+
+            getStaUserAccountLogin: async (_t, token) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getStaUserAccountLogin', token: maskToken(token) })
+                //console.log('call getStaUserAccountLogin...')
+                let r = await pf.checkTokenAndGetStaUserAccountLogin(token, { fun: funCheckAdmin })
+                //console.log('call getStaUserAccountLogin end')
+                return r
+            },
+
+            getStaToken: async (_t, token) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getStaToken', token: maskToken(token) })
+                //console.log('call getStaToken...')
+                let r = await pf.checkTokenAndGetStaToken(token, { fun: funCheckAdmin })
+                //console.log('call getStaToken end')
+                return r
+            },
+
+            getStaIp: async (_t, token) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getStaIp', token: maskToken(token) })
+                //console.log('call getStaIp...')
+                let r = await pf.checkTokenAndGetStaIp(token, { fun: funCheckAdmin })
+                //console.log('call getStaIp end')
+                return r
+            },
+
+        },
+        fnTableTags: 'tableTags-web-sso.json',
+    }
+
+    //原則3: 後端錯誤統一 log error key. 集中包一層 kpFunExt — 任一 kpfun reject 時記 { fun, key } 再原樣
+    //re-throw (不改既有行為/回傳契約). key 為字串時直接記; 非字串 (Error/物件, 內部 invariant) 取 message.
+    optHapi.kpFunExt = Object.fromEntries(Object.entries(optHapi.kpFunExt).map(([fnName, fn]) => [
+        fnName,
+        async (...args) => {
+            try {
+                return await fn(...args)
+            }
+            catch (err) {
+                srLog.error({ event: 'kpfun-error', fun: fnName, key: isestr(err) ? err : (isErr(err) ? err.message : String(err)) })
+                throw err
+            }
+        },
+    ]))
+
+    instWServHapiServer = new WServHapiServer(optHapi)
+
+
+    return instWServHapiServer
+}
+
+
+export { normalizeAllowUserRegistration }
+export default WWebSso
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+    
+    
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Thu Jul 23 2026 11:18:56 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/polyfill.js"></script>
+<script src="scripts/linenumber.js"></script>
+
+
+
+</body>
+</html>

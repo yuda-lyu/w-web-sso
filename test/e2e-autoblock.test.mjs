@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch } from './e2e-setup.mjs'
 
 
 //
@@ -69,17 +69,20 @@ function bp(lang, name) {
 }
 
 
+//D24 anti-enum: 帳號被封鎖後登入不再回 distinct 'loginAccountBlocked', 改回 generic
+//'failedLoginForCatch' (procLang.mjs:314-317), 與「密碼錯誤」「帳號不存在」三者文案一致 →
+//封鎖畫面顯示文字 == 密碼錯誤畫面 == eng 'User account or password is incorrect' / cht
+//'使用者帳密錯誤無法登入'. 故封鎖斷言與密碼錯誤斷言共用同一 needle 'loginIncorrect'
+//(子字串 'incorrect' / '錯誤' 命中該統一訊息). 不再有 'temporarily locked' / '暫時鎖定' 之 distinct 封鎖文字.
 let kpUiText = {
     eng: {
         login: 'Log in',
         connecting: 'Connecting',
-        accountBlocked: 'temporarily locked',
         loginIncorrect: 'incorrect',
     },
     cht: {
         login: '登入',
         connecting: '連線中',
-        accountBlocked: '暫時鎖定',
         loginIncorrect: '錯誤',
     },
 }
@@ -339,50 +342,58 @@ async function loginAndGetToken(page, lang, account, password) {
 // 9 個 case 都回傳 buf 給 baseline (含 token-block-trigger reload 後落回登入頁的終態).
 // ===================================================================
 
-//case 1: 真打 N 次失敗 → A timer 觸發 → 再登入顯示 accountBlocked
-//終態 UI: 登入頁 + 顯示「temporarily locked / 暫時鎖定」訊息
+//case 1 (對應 spec E2E-001): 真打「上限 + 1」次失敗 → 即時封鎖 (D24-即時, 失敗當下同步寫 timeBlocked,
+//非 2s timer) → 再以正確帳密登入仍失敗顯示統一訊息.
+//終態 UI: 登入頁 + 顯示統一封鎖/失敗訊息 (eng 'User account or password is incorrect' / cht '使用者帳密錯誤無法登入')
 async function execAccountBlockTrigger(page, lang, u) {
     let t = kpUiText[lang]
     await insertUser(u)
 
-    for (let i = 0; i < numForAccountLoginFailed; i++) {
+    //對應 spec E2E-001 操作「連續以正確帳號 + 錯誤密碼嘗試登入『上限 + 1』次」: D07 門檻由 >= 改為 >,
+    //須打 numForAccountLoginFailed + 1 次失敗才觸發封鎖 (procProtect.mjs:225 `nrecs > numForAccountLoginFailed`).
+    for (let i = 0; i < numForAccountLoginFailed + 1; i++) {
         await gotoCleanLogin(page, lang)
         await attemptLogin(page, lang, u.account, 'WrongPw@99')
         await page.waitForFunction(
-            ({ a, b }) => (document.body.innerText || '').includes(a) || (document.body.innerText || '').includes(b),
-            { a: t.loginIncorrect, b: t.accountBlocked },
+            (needle) => (document.body.innerText || '').includes(needle),
+            t.loginIncorrect,
             { timeout: 10000 }
         )
     }
 
-    //等 5s 讓 A timer 觸發 blockAccount
-    await page.waitForTimeout(5000)
+    //D24-即時: 封鎖於最後一次失敗當下同步完成 (2s timer 已移除), 不需再等 timer 結算.
 
-    //再進登入頁 + 輸入正確帳密 → 應顯示 accountBlocked
+    //對應 spec E2E-001 操作「再以正確帳號 + 正確密碼嘗試登入一次」+ 驗證「UI 出現對應 i18n 之封鎖訊息」:
+    //anti-enum (D24) 下封鎖訊息 == 密碼錯誤訊息, 故用正確密碼仍失敗即證明封鎖生效 (非密碼問題).
     await gotoCleanLogin(page, lang)
     await attemptLogin(page, lang, u.account, u.rawPassword)
     await page.waitForFunction(
         (needle) => (document.body.innerText || '').includes(needle),
-        t.accountBlocked,
+        t.loginIncorrect,
         { timeout: 10000 }
     )
     await page.waitForTimeout(1500)
 
-    return await captureStable(page)
+    //框封鎖訊息紅字本身，標注統一登入失敗訊息區（loginError inline div）
+    let errorLoc001 = page.getByText(t.loginIncorrect, { exact: false }).first()
+    return await captureStableWithBox(page, errorLoc001)
 }
 
 
-//case 2: N-1 次失敗 + 1 次成功 → 失敗歸零, 跳 user view
+//case 2 (對應 spec E2E-002): 「上限」次失敗 (D07 門檻 >, 上限次未達 > 不封鎖, 為「最多可失敗而不封鎖」邊界)
+//+ 1 次成功 → 失敗紀錄歸零, 跳 user view.
 async function execAccountFailureReset(page, lang, u) {
     let t = kpUiText[lang]
     await insertUser(u)
 
-    for (let i = 0; i < numForAccountLoginFailed - 1; i++) {
+    //對應 spec E2E-002 操作「連續以正確帳號 + 錯誤密碼嘗試登入『上限』次」: 門檻為 > (procProtect.mjs:225),
+    //失敗 numForAccountLoginFailed 次 (== 上限, 未 > 上限) 不觸發封鎖, 即「失敗到邊界但尚未封鎖」.
+    for (let i = 0; i < numForAccountLoginFailed; i++) {
         await gotoCleanLogin(page, lang)
         await attemptLogin(page, lang, u.account, 'WrongPw@99')
         await page.waitForFunction(
-            ({ a, b }) => (document.body.innerText || '').includes(a) || (document.body.innerText || '').includes(b),
-            { a: t.loginIncorrect, b: t.accountBlocked },
+            (needle) => (document.body.innerText || '').includes(needle),
+            t.loginIncorrect,
             { timeout: 10000 }
         )
     }
@@ -399,23 +410,28 @@ async function execAccountFailureReset(page, lang, u) {
         { timeout: 15000 }
     )
 
-    return await captureStable(page)
+    //框 user view 卡 (.sb) 標注登入成功後的使用者資訊頁
+    return await captureStableWithBox(page, '.sb')
 }
 
 
-//case 3: timeBlocked=未來 + 正確密碼 → 顯示 accountBlocked
+//case 3 (對應 spec E2E-003): timeBlocked=未來 + 正確密碼 → 保護層以 timeBlocked 判封鎖中 reject,
+//回統一訊息 (D24 anti-enum: 與密碼錯誤同文案, 不洩漏封鎖狀態).
 async function execBlockedLoginRejected(page, lang, u) {
     let t = kpUiText[lang]
     await insertUserWithBlock(u, ot().add(30, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ'))
     await gotoCleanLogin(page, lang)
     await attemptLogin(page, lang, u.account, u.rawPassword)
+    //對應 spec E2E-003 驗證「UI 出現對應 i18n 之封鎖訊息」: 封鎖訊息已統一為 failedLoginForCatch 文案.
     await page.waitForFunction(
         (needle) => (document.body.innerText || '').includes(needle),
-        t.accountBlocked,
+        t.loginIncorrect,
         { timeout: 10000 }
     )
     await page.waitForTimeout(1500)
-    return await captureStable(page)
+    //框封鎖訊息紅字本身，標注封鎖中嘗試登入後的統一登入失敗訊息區（loginError inline div）
+    let errorLoc003 = page.getByText(t.loginIncorrect, { exact: false }).first()
+    return await captureStableWithBox(page, errorLoc003)
 }
 
 
@@ -424,7 +440,7 @@ async function execBlockExpiryImplicitUnlock(page, lang, u) {
     let timeBlocked = ot().add(30, 'second').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
     await insertUserWithBlock(u, timeBlocked)
 
-    //等 33s 過期 (30s + 3s buffer 給 cleanUsers timer)
+    //等 33s 過期 (30s + 3s buffer; 隱性解除 (ADR-013): 由登入時 getBlockedByUser 比對當前時間判定, 無清理 timer)
     await page.waitForTimeout(33000)
 
     await gotoCleanLogin(page, lang)
@@ -437,7 +453,8 @@ async function execBlockExpiryImplicitUnlock(page, lang, u) {
         { timeout: 15000 }
     )
 
-    return await captureStable(page)
+    //框 user view 卡 (.sb) 標注封鎖到期隱性解除後登入成功的使用者資訊頁
+    return await captureStableWithBox(page, '.sb')
 }
 
 
@@ -475,7 +492,8 @@ async function execTokenBlockTrigger(page, lang, u) {
     await page.waitForTimeout(3000)
 
     let pageText = await page.evaluate(() => document.body.innerText || '')
-    let buf = await captureStable(page)
+    //框登入卡 (.sb) 標注 token 失效後 reload 落回登入頁的表單區
+    let buf = await captureStableWithBox(page, '.sb')
 
     return { result, token, userId: u.id, buf, pageText, hasLogin: pageText.includes(t.login) }
 }
@@ -490,7 +508,7 @@ async function execIpBlockTrigger(browserRef, lang, u, virtIp) {
 
     //新 browser context 帶 X-Forwarded-For
     await browserRef.current.close()
-    browserRef.current = await chromium.launch({ headless: true })
+    browserRef.current = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
     let ctx = await makeXForwardedForContext(browserRef.current, virtIp)
     let page = await ctx.newPage()
 
@@ -545,7 +563,9 @@ async function execIpBlockTrigger(browserRef, lang, u, virtIp) {
 
     //驗 connecting 在 page2 內仍可見, 確認被卡住
     let pageText = await page2.evaluate(() => document.body.innerText || '')
-    let buf = await captureStable(page2)
+    //框 Connecting 動畫圖示 + 旁邊文字聯集，標注 IP 封鎖後卡 Connecting 的顯示區
+    //img_connection 含 SVG <animate>，captureStable 內部 animatedRects 機制自動後製填黑，不需額外 mask
+    let buf = await captureStableWithBox(page2, ['img[src^="data:image/svg+xml"]', 'div[style*="margin-left:10px"]'])
 
     await page2.close()
     await deleteIpRecord(virtIp)
@@ -561,7 +581,7 @@ async function execIpBlockedRejected(browserRef, lang, virtIp) {
     await insertIpWithBlockState(virtIp, timeBlocked)
 
     await browserRef.current.close()
-    browserRef.current = await chromium.launch({ headless: true })
+    browserRef.current = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
     let ctx = await makeXForwardedForContext(browserRef.current, virtIp)
     let page = await ctx.newPage()
 
@@ -569,7 +589,8 @@ async function execIpBlockedRejected(browserRef, lang, virtIp) {
     await page.waitForTimeout(10000)
 
     let pageText = await page.evaluate(() => document.body.innerText || '')
-    let buf = await captureStable(page)
+    //框 Connecting 動畫圖示 + 旁邊文字聯集，標注 IP 封鎖中進登入頁卡 Connecting 的顯示區
+    let buf = await captureStableWithBox(page, ['img[src^="data:image/svg+xml"]', 'div[style*="margin-left:10px"]'])
 
     await deleteIpRecord(virtIp)
     return { buf, pageText, hasConnecting: pageText.includes(t.connecting), hasLogin: pageText.includes(t.login) }
@@ -583,7 +604,7 @@ async function execIpExpiryImplicitUnlock(browserRef, lang, virtIp) {
     await insertIpWithBlockState(virtIp, timeBlocked)
 
     await browserRef.current.close()
-    browserRef.current = await chromium.launch({ headless: true })
+    browserRef.current = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
     let ctx = await makeXForwardedForContext(browserRef.current, virtIp)
     let page = await ctx.newPage()
 
@@ -598,7 +619,8 @@ async function execIpExpiryImplicitUnlock(browserRef, lang, virtIp) {
     await page.waitForTimeout(500)
 
     let pageText = await page.evaluate(() => document.body.innerText || '')
-    let buf = await captureStable(page)
+    //框登入卡 (.sb) 標注 IP 封鎖到期隱性解除後可正常進入登入頁的表單區
+    let buf = await captureStableWithBox(page, '.sb')
 
     await deleteIpRecord(virtIp)
     return { buf, pageText, hasLogin: pageText.includes(t.login) }
@@ -611,7 +633,7 @@ async function execNewIpRegistration(browserRef, lang, u, virtIp) {
     await insertUser(u)
 
     await browserRef.current.close()
-    browserRef.current = await chromium.launch({ headless: true })
+    browserRef.current = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
     let ctx = await makeXForwardedForContext(browserRef.current, virtIp)
     let page = await ctx.newPage()
     page.on('dialog', (d) => d.accept())
@@ -631,7 +653,8 @@ async function execNewIpRegistration(browserRef, lang, u, virtIp) {
     await page.waitForTimeout(3000)
     let ips = await woItems.ips.select({ ip: virtIp })
 
-    let buf = await captureStable(page)
+    //框 user view 卡 (.sb) 標注新 IP 成功登入後的使用者資訊頁（D timer 已補登記至 ips 表）
+    let buf = await captureStableWithBox(page, '.sb')
 
     await deleteIpRecord(virtIp)
     return { buf, url, ips }
@@ -721,7 +744,7 @@ async function generateBaselineForLang(lang) {
         await cleanKpIpCallApi()
         await cleanKpAccountLoginFailed()
 
-        let browser = await chromium.launch({ headless: true })
+        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
         let context = await browser.newContext()
         let page = await context.newPage()
         page.on('dialog', (d) => d.accept())
@@ -804,8 +827,9 @@ else {
                     await deleteIpRecord(ip)
                 }
                 await cleanKpIpCallApi()
+                await cleanKpAccountLoginFailed()
 
-                browser = await chromium.launch({ headless: true })
+                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
                 let context = await browser.newContext()
                 page = await context.newPage()
                 page.on('dialog', (d) => d.accept())
@@ -819,7 +843,7 @@ else {
                 //deleteNonBaseSeed 已清掉所有非 base seed 的 users + tokens 並 wipe ips 表,
                 //取代原本的 deleteAllTestUsers (DB rows). server in-memory rate-limit 計數
                 //(kpIpCallApi / kpAccountLoginFailed) 不屬 DB rows, deleteNonBaseSeed 不涵蓋,
-                //由 beforeEach 的 cleanKpIpCallApi() 重置 (此處不需重複).
+                //由 beforeEach 的 cleanKpIpCallApi() + cleanKpAccountLoginFailed() 重置 (此處不需重複).
                 await deleteNonBaseSeed()
             })
 
@@ -831,47 +855,60 @@ else {
             }
 
 
-            it(`account-block-trigger: 真打 ${numForAccountLoginFailed} 次失敗 → A timer 觸發 → DB timeBlocked 寫入 + 再登入 UI 顯示封鎖訊息`, async function() {
+            it(`account-block-trigger: 真打 ${numForAccountLoginFailed + 1} 次失敗 → 即時封鎖 (D24) → DB timeBlocked 寫入 + 再登入 UI 顯示統一失敗訊息`, async function() {
                 let u = testUsers.block1
                 let buf = await execAccountBlockTrigger(page, lang, u)
                 await assertBaseline(buf, 'E2E-001-account-block-trigger')
 
-                //DB: user.timeBlocked 為未來時間
+                //DB: user.timeBlocked 為未來時間 (對應 spec E2E-001 驗證「DB users.timeBlocked 為未來時間」)
                 let users = await woItems.users.select({ id: u.id })
                 assert.strict.equal(users.length, 1)
                 let blockTime = new Date(users[0].timeBlocked).getTime()
                 assert.strict.equal(blockTime > Date.now(), true, `timeBlocked 應為未來時間, 實際 ${users[0].timeBlocked}`)
 
-                //UI 語意斷言: 不應 redirect 至 user view; 應顯示 accountBlocked
+                //UI 語意 (對應 spec E2E-001 驗證「UI 出現對應 i18n 之封鎖訊息」): 顯示統一失敗訊息
+                //(D24 anti-enum, == 密碼錯誤文案; 子字串 loginIncorrect 命中 failedLoginForCatch 翻譯)
+                let pageText = await page.evaluate(() => document.body.innerText || '')
+                assert.strict.equal(pageText.includes(kpUiText[lang].loginIncorrect), true, `應顯示統一登入失敗訊息, 實際前 200 字: ${pageText.slice(0, 200)}`)
+
+                //UI 語意斷言 (對應 spec E2E-001 驗證「當前 URL 不含 view=user (仍停留登入頁)」): 不應 redirect 至 user view
                 let urlNow = page.url()
                 assert.strict.equal(urlNow.includes('view=user'), false)
             })
 
 
-            it(`account-failure-reset: ${numForAccountLoginFailed - 1} 次失敗 + 1 次成功 → 失敗歸零, 轉跳使用者資訊頁`, async function() {
+            it(`account-failure-reset: ${numForAccountLoginFailed} 次失敗 (達門檻邊界未封鎖) + 1 次成功 → 失敗歸零, 轉跳使用者資訊頁`, async function() {
                 let u = testUsers.reset2
                 let buf = await execAccountFailureReset(page, lang, u)
                 await assertBaseline(buf, 'E2E-002-account-failure-reset')
 
-                //URL 跳 view=user
+                //URL 跳 view=user (對應 spec E2E-002 驗證「當前 URL 含 view=user」)
                 let url = page.url()
                 assert.strict.match(url, /view=user/, `應跳至 user view, 實際 URL: ${url}`)
 
-                //user.timeBlocked 應仍空 (失敗歸零, 不封鎖)
+                //user.timeBlocked 應仍空 (對應 spec E2E-002 驗證「DB users.timeBlocked 仍為空字串, 失敗紀錄已歸零、未觸發封鎖」)
+                //D07 門檻 >: numForAccountLoginFailed 次失敗 (== 上限, 未 > 上限) 本就不封鎖; 即時化下成功登入亦同步清空 in-memory 失敗紀錄.
                 await page.waitForTimeout(3000)
                 let users = await woItems.users.select({ id: u.id })
                 assert.strict.equal(users[0].timeBlocked, '', `失敗歸零後不應封鎖, 實際 "${users[0].timeBlocked}"`)
             })
 
 
-            it('blocked-login-rejected: timeBlocked=未來 + 正確密碼 → 顯示封鎖訊息', async function() {
+            it('blocked-login-rejected: timeBlocked=未來 + 正確密碼 → 顯示統一登入失敗訊息', async function() {
                 let u = testUsers.targetBlocked
                 let buf = await execBlockedLoginRejected(page, lang, u)
                 await assertBaseline(buf, 'E2E-003-blocked-login-rejected')
 
+                //UI 語意 (對應 spec E2E-003 驗證「UI 出現對應 i18n 之封鎖訊息」): 顯示統一失敗訊息
+                //(D24 anti-enum, == 密碼錯誤文案; 子字串 loginIncorrect 命中 failedLoginForCatch 翻譯)
+                let pageText = await page.evaluate(() => document.body.innerText || '')
+                assert.strict.equal(pageText.includes(kpUiText[lang].loginIncorrect), true, `應顯示統一登入失敗訊息, 實際前 200 字: ${pageText.slice(0, 200)}`)
+
+                //對應 spec E2E-003 驗證「當前 URL 不含 view=user (仍停留登入頁)」
                 let urlNow = page.url()
                 assert.strict.equal(urlNow.includes('view=user'), false)
 
+                //對應 spec E2E-003 驗證「DB users.timeBlocked 仍為未來時間」
                 let users = await woItems.users.select({ id: u.id })
                 let blockTime = new Date(users[0].timeBlocked).getTime()
                 assert.strict.equal(blockTime > Date.now(), true)

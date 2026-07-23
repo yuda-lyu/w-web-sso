@@ -39,8 +39,24 @@ import now2str from 'wsemi/src/now2str.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
-import hashPassword from './hashPassword.mjs'
+import hashPassword, { verifyPassword } from './hashPassword.mjs'
 import genRandomPassword from './genRandomPassword.mjs'
+import { maskToken } from './srLog.mjs'
+
+
+//htmlEscape: email body 內所有 placeholder 值套用, 防使用者可控欄位 (name / account 等)
+//把 < > & " ' 注入驗證信 HTML. URL 類值 (verifyUrl) escape 後 & → &amp; 於 href 屬性內仍為合法寫法.
+function htmlEscape(s) {
+    if (typeof s !== 'string') {
+        s = (s === undefined || s === null) ? '' : String(s)
+    }
+    return s
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;')
+}
 
 
 //timing-safe hash compare: 防 password / token hash 比對之 timing side-channel attack.
@@ -82,10 +98,11 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
     //email body 從 server/template/{templateName}-{lang}.html 讀檔並做 placeholder 替換
     let renderEmailBody = (templateName, lang, kvMap = {}) => {
+        if (lang !== 'eng' && lang !== 'cht') { lang = 'eng' }
         let fpTpl = path.resolve(pathTemplate, `${templateName}-${lang}.html`)
         let content = fs.readFileSync(fpTpl, 'utf8')
         for (let k in kvMap) {
-            content = content.replaceAll(`{${k}}`, kvMap[k])
+            content = content.replaceAll(`{${k}}`, htmlEscape(kvMap[k]))
         }
         return content
     }
@@ -132,7 +149,6 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         if (nus === 0) {
             console.log('keyUser', keyUser)
             console.log('valueUser', valueUser)
-            console.log(`can not find the user by ${keyUser}`)
             return Promise.reject(`can not find the user by ${keyUser}`)
         }
 
@@ -206,8 +222,6 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //check
         if (errTemp) {
             console.log(errTemp)
-            console.log('keyToken', keyToken)
-            console.log('valueToken', valueToken)
             console.log(`failed to find token`)
             return Promise.reject(`failed to find token`)
         }
@@ -225,8 +239,6 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //check
         if (nts >= 2) {
-            console.log('keyToken', keyToken)
-            console.log('valueToken', valueToken)
             console.log(`duplicate token by keyToken[${keyToken}]`)
             return Promise.reject(`duplicate token by keyToken[${keyToken}]`)
         }
@@ -295,11 +307,6 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             return Promise.reject(`failedLoginForCatch`)
         }
 
-        //hashPassword
-        let passwordTest = hashPassword(password, salt)
-        // console.log('password', password, 'salt', salt)
-        // console.log('passwordTest', passwordTest)
-
         //getGenUserByAccount, 不限 isActive 查詢，以便逐一檢查各狀態
         //(NB: 主路徑 inactive user 在 procProtect.getBlockedByAccount 階段已被 _getGenUserByKV 過濾 isActive='y' 後 reject
         //'can not find the user by account', 不會走到此處, 故此處不再額外檢查 isActive — 對齊 ADR-003 Round-3 audit dead branch 清理.)
@@ -313,8 +320,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         let passwordTrue = get(u, 'password', '')
         // console.log('passwordTrue', passwordTrue)
 
-        //check
-        if (!timingSafePasswordEqual(passwordTest, passwordTrue)) {
+        //check (verifyPassword: 以明文密碼 + DB 自描述雜湊字串 + pepper(salt) 驗證)
+        if (!verifyPassword(password, passwordTrue, salt)) {
             return Promise.reject(`failedLoginForCatch`)
         }
 
@@ -393,7 +400,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //check
         if (errTemp) {
             console.log(errTemp)
-            console.log(`token`, token)
+            // console.log(`token`, token)
             console.log(`can not create a token from userId`)
             return Promise.reject(`can not create a token from userId`)
         }
@@ -410,7 +417,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //check
         if (!istimemsTZ(timeEnd)) {
-            console.log(`tk`, tk)
+            // console.log(`tk`, tk)
             console.log(`timeEnd`, timeEnd)
             console.log(`invalid timeEnd`)
             return Promise.reject(`invalid timeEnd`)
@@ -477,14 +484,14 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //check
         if (ntks === 0) {
-            console.log(`token`, token)
+            // console.log(`token`, token)
             console.log(`invalid token`)
             return Promise.reject(`invalid token`)
         }
 
         //check
         if (ntks >= 2) {
-            console.log(`token`, token)
+            // console.log(`token`, token)
             console.log(`duplicate tokens`)
             return Promise.reject(`duplicate tokens`)
         }
@@ -500,11 +507,11 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         let b = await _checkTokenByObj(tk, opt)
 
         //info
-        srLog.info({ event: 'fun-checkToken', token, userId, res: b })
+        srLog.info({ event: 'fun-checkToken', token: maskToken(token), userId, res: b })
 
         //logshow
         if (!b) {
-            console.log(`block token[${token}]`) //[tag:測試:顯示被封鎖token]
+            // console.log(`block token[${token}]`) //[tag:測試:顯示被封鎖token]
         }
 
         return b
@@ -592,14 +599,14 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //check
         if (ntks === 0) {
-            console.log(`token`, token)
+            // console.log(`token`, token)
             console.log(`invalid token`)
             return Promise.reject(`invalid token`)
         }
 
         //check
         if (ntks >= 2) {
-            console.log(`token`, token)
+            // console.log(`token`, token)
             console.log(`duplicate tokens`)
             return Promise.reject(`duplicate tokens`)
         }
@@ -613,7 +620,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //check
         if (!istimemsTZ(timeEnd)) {
-            console.log(`token`, token)
+            // console.log(`token`, token)
             console.log(`timeEnd`, timeEnd)
             console.log(`invalid timeEnd`)
             return Promise.reject(`invalid timeEnd`)
@@ -624,7 +631,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //check
         if (tn >= timeEnd) { //現在時間>=到期時間, 代表已到期, 禁止更新token
-            console.log(`token`, token)
+            // console.log(`token`, token)
             console.log(`tn`, tn)
             console.log(`timeEnd`, timeEnd)
             console.log(`token expired`)
@@ -651,7 +658,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //check
         if (errTemp) {
             console.log(errTemp)
-            console.log(`token`, token)
+            // console.log(`token`, token)
             console.log(`can not update timeEnd for token`)
             return Promise.reject(`can not update timeEnd for token`)
         }
@@ -679,14 +686,14 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //check
         if (ntks === 0) {
-            console.log(`token`, token)
+            // console.log(`token`, token)
             console.log(`invalid token`)
             return Promise.reject(`invalid token`)
         }
 
         //check
         if (ntks >= 2) {
-            console.log(`token`, token)
+            // console.log(`token`, token)
             console.log(`duplicate tokens`)
             return Promise.reject(`duplicate tokens`)
         }
@@ -709,7 +716,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //check
         if (errTemp) {
             console.log(errTemp)
-            console.log(`token`, token)
+            // console.log(`token`, token)
             console.log(`failed to delete token`)
             return Promise.reject(`failed to delete token`)
         }
@@ -717,13 +724,13 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //check
         r = get(r, '0.nDeleted', 0)
         if (r !== 1) {
-            console.log(`token`, token)
+            // console.log(`token`, token)
             console.log(`can not delete the token`)
             return Promise.reject(`can not delete the token`)
         }
 
         //info
-        srLog.info({ event: 'fun-logout', token, userId })
+        srLog.info({ event: 'fun-logout', token: maskToken(token), userId })
 
         return true
     }
@@ -752,8 +759,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //check allowUserRegistration
         if (!allowUserRegistration) {
-            let msg = get(kpLang, `${lang}.userRegistrationNotAllowed`, 'user registration is not allowed')
-            return Promise.reject(msg)
+            return Promise.reject('userRegistrationNotAllowed')
         }
 
         //account
@@ -774,14 +780,13 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //confirmPassword
         let confirmPassword = get(data, 'confirmPassword', '')
         if (password !== confirmPassword) {
-            let msg = get(kpLang, `${lang}.userChangePasswordNotSame`, 'passwords do not match')
-            return Promise.reject(msg)
+            return Promise.reject('userChangePasswordNotSame')
         }
 
         //check password
         let r = checkUserPassword(lang, password, { account })
         if (r.state === 'error') {
-            return Promise.reject(r.msg)
+            return Promise.reject(r.key)
         }
 
         //name
@@ -798,7 +803,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //範圍: select unique check → procOrm insert. 後續寄信放鎖外, SMTP 慢不阻塞後續同 key 排隊.
         //
         //setWithFree 之 'key in use' reject 訊息對使用者語意不友善, 須 remap 回原本之 i18n
-        //「帳號已存在 / email 已存在」訊息 (對齊 e2e-doubleclick DC-02 之 assertion + 業務契約).
+        //「帳號已存在 / email 已存在」訊息 (對齊 api-doubleclick DC-02 之 assertion + 業務契約).
         let keyAccount = `createUser:account:${account}`
         let keyEmail = `createUser:email:${email}`
         let tokenVerify
@@ -808,15 +813,13 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             let allUsers = await woItems.users.select()
             let existAccount = allUsers.some((u) => get(u, 'account', '') === account)
             if (existAccount) {
-                let msg = get(kpLang, `${lang}.userRegistrationAccountExists`, 'account already exists')
-                return Promise.reject(msg)
+                return Promise.reject('userRegistrationAccountExists')
             }
 
             //check email unique (全域唯一，不限 isActive)
             let existEmail = allUsers.some((u) => get(u, 'email', '') === email)
             if (existEmail) {
-                let msg = get(kpLang, `${lang}.userRegistrationEmailExists`, 'email already exists')
-                return Promise.reject(msg)
+                return Promise.reject('userRegistrationEmailExists')
             }
 
             //hashPassword
@@ -847,12 +850,10 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
                 //原樣 bubble.
                 let errMsg = (err && typeof err === 'string') ? err : (err && err.message) || String(err)
                 if (errMsg.includes(keyAccount)) {
-                    let msg = get(kpLang, `${lang}.userRegistrationAccountExists`, 'account already exists')
-                    return Promise.reject(msg)
+                    return Promise.reject('userRegistrationAccountExists')
                 }
                 if (errMsg.includes(keyEmail)) {
-                    let msg = get(kpLang, `${lang}.userRegistrationEmailExists`, 'email already exists')
-                    return Promise.reject(msg)
+                    return Promise.reject('userRegistrationEmailExists')
                 }
                 return Promise.reject(err)
             })
@@ -1035,14 +1036,12 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             }
         }
         else {
-            let msg = get(kpLang, `${lang}.userPassword_${keyErr}`, '')
-            //只有三個語系鍵有模板變數, 日後未來語系鍵加了新的模板變數就要連動修改
-            msg = msg.replace('{minLength}', passwordPolicy.minLength)
-            msg = msg.replace('{maxLength}', passwordPolicy.maxLength)
-            msg = msg.replace('{consecutiveCharsMinMatch}', passwordPolicy.consecutiveCharsMinMatch)
+            //key-only (msg-key 契約): 回完整 i18n key (userPassword_<keyErr>), 由前端 $tErr 翻譯 + 插值政策值
+            //(minLength / maxLength / consecutiveCharsMinMatch 來自 webInfor.passwordPolicyInfo, 即時反映 settings).
+            //後端不再翻譯/插值, 與其他錯誤 reject key 字串一致.
             r = {
                 state: 'error',
-                msg,
+                key: `userPassword_${keyErr}`,
             }
             return r
         }
@@ -1085,25 +1084,22 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             //check newPassword
             let r = checkUserPassword(lang, newPassword, { account })
             if (r.state === 'error') {
-                return Promise.reject(r.msg)
+                return Promise.reject(r.key)
             }
 
             //passwordTrue
             let passwordTrue = get(u, 'password', '')
 
-            //hashPassword
-            let passwordTest = hashPassword(oldPassword, salt)
-
-            //check
-            if (!timingSafePasswordEqual(passwordTest, passwordTrue)) {
+            //check (verifyPassword: 以明文舊密碼 + DB 自描述雜湊字串 + pepper(salt) 驗證)
+            if (!verifyPassword(oldPassword, passwordTrue, salt)) {
                 return Promise.reject('userChangePasswordIncorrectOld')
             }
 
             //email
             let email = get(u, 'email', '')
             if (!isestr(email)) {
-                console.log('token', token)
-                console.log('u', u)
+                // console.log('token', token)
+                // console.log('u', u)
                 return Promise.reject('anUnexpectedErrorOccurred')
             }
             // console.log('email', email)
@@ -1155,7 +1151,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
                 console.log(err)
 
                 //error (不記任何密碼明文; ADR-014 連 hash 都不該外洩)
-                srLog.error({ event: 'fun-changePassword-sendEmail', token, lang, err: getErrorMessage(err) })
+                srLog.error({ event: 'fun-changePassword-sendEmail', token: maskToken(token), lang, err: getErrorMessage(err) })
 
             }
 
@@ -1252,7 +1248,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
                 if (!isestr(targetEmail)) {
                     //email 缺失就不寄, 但密碼已重設; admin 須由其他管道告知
-                    srLog.error({ event: 'fun-adminResetUserPassword-noEmail', token, targetUserId })
+                    srLog.error({ event: 'fun-adminResetUserPassword-noEmail', token: maskToken(token), targetUserId })
                 }
                 else {
 
@@ -1283,7 +1279,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             catch (err) {
                 console.log(err)
                 //僅記 log, 不記明文密碼
-                srLog.error({ event: 'fun-adminResetUserPassword-sendEmail', token, targetUserId, err: getErrorMessage(err) })
+                srLog.error({ event: 'fun-adminResetUserPassword-sendEmail', token: maskToken(token), targetUserId, err: getErrorMessage(err) })
             }
 
             return { state: 'success' }
@@ -1372,6 +1368,45 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         let ltdtOld = await woItems[woName].select()
         //console.log(`...woName[${woName}].select`)
 
+        //users 路徑: account 唯一性 + 非空驗證 (補 id/email 之外的 account; 防直打 API 寫入空/重複帳號).
+        //(a) 空值 → reject 'accountRequired'; (b) 本批內重複 或 與既有其他 user 之 account 衝突 → reject 'accountDuplicate'.
+        //帳號全域唯一, 與既有比對時排除「本批同 id 之自身既有列」(更新自己時 account 可維持不變).
+        if (woName === 'users') {
+            //既有 account → id 對照 (排除自身用)
+            let accountToIdOld = {}
+            each(ltdtOld, (r) => {
+                let a = get(r, 'account', '')
+                if (isestr(a)) {
+                    accountToIdOld[a] = get(r, 'id', '')
+                }
+            })
+            let kpAccount = {}
+            let errAccount = null
+            each(rows, (row) => {
+                let account = get(row, 'account', '')
+                let id = get(row, 'id', '')
+                //空值
+                if (!isestr(account)) {
+                    errAccount = 'accountRequired'
+                    return false //跳出
+                }
+                //本批內重複
+                if (haskey(kpAccount, account)) {
+                    errAccount = 'accountDuplicate'
+                    return false //跳出
+                }
+                //與既有其他 user (非自身) 衝突
+                if (haskey(accountToIdOld, account) && accountToIdOld[account] !== id) {
+                    errAccount = 'accountDuplicate'
+                    return false //跳出
+                }
+                kpAccount[account] = true
+            })
+            if (errAccount !== null) {
+                return Promise.reject(errAccount)
+            }
+        }
+
         //users 路徑: 既有 row 的 password 保留 DB hash, 避免前端送來的 '' (getUsersList 已 strip)
         //在儲存階段把 DB 既有 password 覆蓋成空字串, 等同把所有既有使用者密碼洗掉
         if (woName === 'users') {
@@ -1394,6 +1429,26 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //del
         if (size(r.del) > 0) {
             await procOrm(operatorId, woName, 'del', r.del) //operatorId 用於 audit (userIdUpdate)
+
+            //users 路徑: 刪除使用者須一併撤銷其名下所有 token, 避免 orphan token 仍可 checkToken/refreshToken 續命
+            //(對稱於下方 isActive='n' 撤 token 迴圈與 procProtect.blockAccount). 逐筆撤銷失敗僅 srLog.error 不阻斷主流程.
+            if (woName === 'users') {
+                for (let row of r.del) {
+                    let userId = get(row, 'id', '')
+                    if (!isestr(userId)) {
+                        continue
+                    }
+                    try {
+                        let ts = await woItems.tokens.select({ userId })
+                        for (let t of ts) {
+                            await woItems.tokens.del({ id: t.id })
+                        }
+                    }
+                    catch (err) {
+                        srLog.error({ event: 'fun-updateTabItems-revokeTokenOnDelete', userId, err: getErrorMessage(err) })
+                    }
+                }
+            }
         }
 
         //add
@@ -1405,7 +1460,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
                     let account = get(row, 'account', '')
                     let chk = checkUserPassword(lang, pw, { account })
                     if (chk.state === 'error') {
-                        return Promise.reject(chk.msg)
+                        return Promise.reject(chk.key)
                     }
                     row.password = hashPassword(pw, salt)
                 }
@@ -1450,14 +1505,14 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
         //check
         if (ntks === 0) {
-            console.log(`token`, token)
+            // console.log(`token`, token)
             console.log(`invalid token`)
             return Promise.reject(`invalid token`)
         }
 
         //check
         if (ntks >= 2) {
-            console.log(`token`, token)
+            // console.log(`token`, token)
             console.log(`duplicate tokens`)
             return Promise.reject(`duplicate tokens`)
         }
@@ -1492,7 +1547,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
 
             //check
             if (!isestr(userId)) {
-                console.log(`tk`, tk)
+                // console.log(`tk`, tk)
                 console.log(`invalid userId from token`)
                 return Promise.reject(`invalid userId from token`)
             }
@@ -1555,7 +1610,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         await checkToken(tokenSelf, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
         //getUserByToken
-        let u = await getUserByToken(tokenTarget)
+        let u = await getUserByToken(tokenTarget).catch(() => null)
 
         return u
     }
@@ -1565,7 +1620,13 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
     let getUserInfor = async (key, value, opt = {}) => {
 
         //u
+        //對外 getUserInfor 邊界: 查無 target 時 _getGenUserByKV 會 reject 原始字串
+        //('can not find the user by xxx' / 'duplicate xxx'), 此處統一 catch 轉為 null,
+        //交由 WWebSso handler (iseobj 檢核失敗 → 'tokenNoPermission') 統一以「無權限」回應
+        //(anti-enumeration: 不洩漏 target 是否存在). 內層 _getGenUserByKV 之原始 reject
+        //維持不變, 供 procProtect 等內部 caller 既有判斷 (登入防列舉) 沿用.
         let u = await getGenUserByKV(key, value, opt)
+            .catch(() => null)
 
         //check
         if (!iseobj(u)) {
@@ -1708,19 +1769,42 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         })
         //自我刪除保護: rows 內找不到操作者 row, 代表 admin 嘗試把自己刪除, reject 防止直接打 API 繞過前端
         if (isestr(operatorId) && !iseobj(selfRow)) {
-            return Promise.reject(get(kpLang, `${lang}.cannotDeleteSelf`, 'admin cannot delete yourself'))
+            return Promise.reject('cannotDeleteSelf')
         }
         if (iseobj(selfRow)) {
             if (get(selfRow, 'isAdmin', '') !== 'y') {
-                return Promise.reject(get(kpLang, `${lang}.cannotDemoteSelf`, 'cannot demote yourself'))
+                return Promise.reject('cannotDemoteSelf')
             }
             if (get(selfRow, 'isActive', '') !== 'y') {
-                return Promise.reject(get(kpLang, `${lang}.cannotDisableSelf`, 'cannot disable yourself'))
+                return Promise.reject('cannotDisableSelf')
             }
         }
 
         //updateUsersList (帶 lang/operatorId 給下層用於 add 群組密碼策略檢查與 audit)
         rows = await updateUsersList(rows, { lang, operatorId })
+
+        //停用使用者即時撤銷其全部 token: 本批中 isActive==='n' 之 user, 於儲存成功後刪除其名下所有 token
+        //(使用者設計上不持有 isApp='y' token, 故一併撤). 作法比照 procProtect.blockAccount:
+        //woItems.tokens.select({ userId }) 取陣列後逐筆 del. 冪等 (該 user 已無 token 時刪 0 筆無害).
+        //撤 token 為附帶副作用, 失敗僅記 srLog.error 不阻斷主流程.
+        for (let row of rows) {
+            if (get(row, 'isActive', '') !== 'n') {
+                continue
+            }
+            let userId = get(row, 'id', '')
+            if (!isestr(userId)) {
+                continue
+            }
+            try {
+                let ts = await woItems.tokens.select({ userId })
+                for (let t of ts) {
+                    await woItems.tokens.del({ id: t.id })
+                }
+            }
+            catch (err) {
+                srLog.error({ event: 'fun-updateUsersList-revokeToken', userId, err: getErrorMessage(err) })
+            }
+        }
 
         //寫入後立即 invalidate 30s cache, 避免 admin 改完之 dashboard 顯示舊資料 (audit F-050)
         ocGetUsersList.clear('fun')
@@ -1869,102 +1953,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
     // }, 2000)
 
 
-    //cleanUsers
-    let cleanUsers = async () => {
-
-        //getUsersList
-        let us = await getUsersList({})
-
-        //clean
-        await pmSeries(us, async (u) => {
-
-            //b
-            let b1 = !s.getIsBlocked(u) //未封鎖
-            let b2 = isestr(u.timeBlocked) //有值
-            let b = b1 && b2
-
-            //check
-            if (!b) {
-                return
-            }
-
-            //清除timeBlocked
-            await woItems.users.save({
-                id: u.id,
-                timeBlocked: '',
-            })
-
-        })
-
-    }
-
-
-    //timer, 清理user的timeBlocked
-    let lockingForCleanUsers = false
-    setInterval(async () => {
-
-        //check
-        if (lockingForCleanUsers) {
-            return
-        }
-        lockingForCleanUsers = true
-
-        //cleanUsers
-        await cleanUsers()
-            .finally(() => {
-                lockingForCleanUsers = false
-            })
-
-    }, 2000)
-
-
-    //cleanIps
-    let cleanIps = async () => {
-
-        //getIpsList
-        let oips = await getIpsList({})
-
-        //clean
-        await pmSeries(oips, async (oip) => {
-
-            //b
-            let b1 = !s.getIsBlocked(oip) //未封鎖
-            let b2 = isestr(oip.timeBlocked) //有值
-            let b = b1 && b2
-
-            //check
-            if (!b) {
-                return
-            }
-
-            //清除timeBlocked
-            await woItems.ips.save({
-                id: oip.id,
-                timeBlocked: '',
-            })
-
-        })
-
-    }
-
-
-    //timer, 清理ip的timeBlocked
-    let lockingForCleanIps = false
-    setInterval(async () => {
-
-        //check
-        if (lockingForCleanIps) {
-            return
-        }
-        lockingForCleanIps = true
-
-        //cleanIps
-        await cleanIps()
-            .finally(() => {
-                lockingForCleanIps = false
-            })
-
-    }, 2000)
+    //timeBlocked 到期解除採「隱性解除」(ADR-013): 不設 timer 主動清空, 一律由 getBlockedByUser / getBlockedByOip
+    //以「當前時間 vs timeBlocked」比對判定; timeBlocked 保留歷史值兼任 audit 紀錄.
+    //(2026-07-06 移除早於 ADR-013 之 cleanUsers/cleanIps 每 2 秒全表掃描 timer, 程式碼對齊 ADR-013)
 
 
     //p

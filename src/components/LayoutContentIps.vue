@@ -725,7 +725,7 @@ export default {
                 if (errTemp !== null) {
                     vo.$ui.updateLoading(false)
                     //後端 reject { key, msg }: msg 已依 lang 翻譯, 直接顯示
-                    let msg = (errTemp && errTemp.msg) ? errTemp.msg : vo.$t('anUnexpectedErrorOccurred')
+                    let msg = isestr(errTemp) ? vo.$tErr(errTemp) : vo.$t('anUnexpectedErrorOccurred')
                     await vo.$dg.showCheckYes(`${vo.$t('ipSaveIpsFail')}: ${msg}`)
                     return
                 }
@@ -735,7 +735,7 @@ export default {
 
                 //alert
                 vo.$ui.updateLoading(false)
-                await vo.$dg.showCheckYes(vo.$t('ipSaveIpsSuccess'))
+                await vo.$dg.showCheckYes(vo.$t('ipSaveIpsSuccess'), { type: 'success' })
 
             }
 

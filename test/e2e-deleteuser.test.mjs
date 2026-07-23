@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g.mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, assertBaselineMatch } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, assertBaselineMatch } from './e2e-setup.mjs'
 
 
 //
@@ -26,6 +26,10 @@ import { startServersOnce, cleanup, captureStable, baseUrl, resetToBaseSeed, del
 let salt = '{salt}'
 let baselineDir = './test/pics/deleteuser'
 let langs = ['eng', 'cht']
+
+// captureStableWithBox target selectors
+let SEL_GRID = '.ag-root-wrapper'         // ag-grid 主體（使用者清單區）
+let SEL_MODAL = 'div[style*="overscroll-behavior"] div[tabindex="0"] > div'  // WDialog 內層 panel（modal 框體, 非全螢幕 shield）
 
 let kpLangText = {
     eng: {
@@ -82,6 +86,11 @@ let expectedSpecText = {
         eng: { mode: 'present', includes: ['du-admin', 'du-target'] },
         cht: { mode: 'present', includes: ['du-admin', 'du-target'] },
     },
+    'E2E-002-1-target-selected': {
+        // 勾選 target 列後、trash 前: target 列還在表中且 checkbox 已勾選, 可見 target 帳號文字
+        eng: { mode: 'present', includes: ['du-target'] },
+        cht: { mode: 'present', includes: ['du-target'] },
+    },
     'E2E-002-after-trash-pending-save': {
         // trash 後 UI 過濾 target (DB 仍存)
         eng: { mode: 'absent', value: 'du-target' },
@@ -96,6 +105,49 @@ let expectedSpecText = {
         eng: { mode: 'absent', value: 'du-target' },
         cht: { mode: 'absent', value: 'du-target' },
     },
+    'E2E-005-1-all-rows-selected': {
+        // 全選後、trash 前: 所有列仍在表中且 checkbox 已勾選, 可見 admin 帳號文字
+        eng: { mode: 'present', includes: ['du-admin'] },
+        cht: { mode: 'present', includes: ['du-admin'] },
+    },
+    'E2E-005-2-empty-grid': {
+        // 全選 trash 後 save 前: 表格為空 (無任何 ag-row)
+        eng: { mode: 'absent', value: 'du-admin' },
+        cht: { mode: 'absent', value: 'du-admin' },
+    },
+    'E2E-005-3-modal-userAddEmpty': {
+        eng: { mode: 'text', value: 'No user' },
+        cht: { mode: 'text', value: '尚未新增使用者資料' },
+    },
+    'E2E-006-1-self-row-selected': {
+        // 勾 admin 自己列後、trash 前: 自己列還在表中且 checkbox 已勾選, 可見 admin 帳號文字
+        eng: { mode: 'present', includes: ['du-admin'] },
+        cht: { mode: 'present', includes: ['du-admin'] },
+    },
+    'E2E-006-2-grid-after-self-trash': {
+        // 勾 admin 自己 trash 後 save 前: admin 列已從表移除
+        eng: { mode: 'absent', value: 'du-admin' },
+        cht: { mode: 'absent', value: 'du-admin' },
+    },
+    'E2E-006-3-modal-cannot-delete-self': {
+        eng: { mode: 'text', value: 'Admin cannot delete yourself' },
+        cht: { mode: 'text', value: '管理員不得刪除自己' },
+    },
+    'E2E-007-1-target-row-selected': {
+        // 勾 target 列後、trash 前: target 列還在表中且 checkbox 已勾選, 可見 target 帳號文字
+        eng: { mode: 'present', includes: ['du-target'] },
+        cht: { mode: 'present', includes: ['du-target'] },
+    },
+    'E2E-007-2-grid-after-target-trash': {
+        // 勾 target trash 後 save 前: target 列已從表移除
+        eng: { mode: 'absent', value: 'du-target' },
+        cht: { mode: 'absent', value: 'du-target' },
+    },
+    'E2E-007-3-modal-save-fail-token-deleted': {
+        eng: { mode: 'text', value: 'Failed to save users' },
+        cht: { mode: 'text', value: '儲存使用者數據失敗' },
+    },
+    //舊鍵保留供孤兒 baseline 檔命名對應（中央清除前勿刪）
     'E2E-005-modal-userAddEmpty': {
         eng: { mode: 'text', value: 'No user' },
         cht: { mode: 'text', value: '尚未新增使用者資料' },
@@ -107,6 +159,19 @@ let expectedSpecText = {
     'E2E-007-modal-save-fail-token-deleted': {
         eng: { mode: 'text', value: 'Failed to save users' },
         cht: { mode: 'text', value: '儲存使用者數據失敗' },
+    },
+    //插入「勾選」階段後, 既有 stage1 grid 鍵編號順延 (-1- → -2-), 舊鍵成孤兒保留供中央清除前對應
+    'E2E-005-1-empty-grid': {
+        eng: { mode: 'absent', value: 'du-admin' },
+        cht: { mode: 'absent', value: 'du-admin' },
+    },
+    'E2E-006-1-grid-after-self-trash': {
+        eng: { mode: 'absent', value: 'du-admin' },
+        cht: { mode: 'absent', value: 'du-admin' },
+    },
+    'E2E-007-1-grid-after-target-trash': {
+        eng: { mode: 'absent', value: 'du-target' },
+        cht: { mode: 'absent', value: 'du-target' },
     },
 }
 
@@ -282,6 +347,16 @@ async function findRowIndexByAccount(page, account) {
 }
 
 
+//框某列之 selector (pinned-left + center 兩容器聯集): checkbox 勾選狀態 (pinned-left) + 列內容 (center) 都框進.
+//對齊 e2e-tokens / e2e-ips E2E-003 canonical 截圖.
+function rowBoxSel(rowIdx) {
+    return [
+        `.ag-pinned-left-cols-container .ag-row[row-index="${rowIdx}"]`,
+        `.ag-center-cols-container .ag-row[row-index="${rowIdx}"]`,
+    ]
+}
+
+
 async function checkRowSelectionByRowIdx(page, rowIdx) {
     let sel = `.ag-row[row-index="${rowIdx}"] input[type="checkbox"]`
     let cb = page.locator(sel).first()
@@ -337,7 +412,7 @@ async function loginAsAdminAndOpenUsersList(page, lang) {
 
 async function captureInitialState(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
-    return await captureStable(page)
+    return await captureStableWithBox(page, SEL_GRID)
 }
 
 
@@ -345,10 +420,22 @@ async function captureAfterTrashPending(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
     let tgtRowIdx = await findRowIndexByAccount(page, testUsers.target.account)
     await checkRowSelectionByRowIdx(page, tgtRowIdx)
+
+    //[多階段 stage1] 勾選後、trash 前截「target 列已被勾選」觸發態 — 框該列 (pinned-left checkbox + center 內容聯集)
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(500)
+    let bufSelected = await captureStableWithBox(page, rowBoxSel(tgtRowIdx))
+
     let trashBtn = await locateMdiButton(page, mdiTrashCanOutline)
     await page.mouse.click(trashBtn.x, trashBtn.y)
     await page.waitForTimeout(800)
-    return await captureStable(page)
+
+    //[多階段 stage2] trash 後該列自表移除 (pending, DB 未刪)
+    let bufGrid = await captureStableWithBox(page, SEL_GRID)
+    return {
+        'E2E-002-1-target-selected': bufSelected,
+        'E2E-002-after-trash-pending-save': bufGrid,
+    }
 }
 
 
@@ -368,7 +455,7 @@ async function captureDeleteSuccessModal(page, lang) {
         { timeout: 30000 }
     )
     await page.waitForTimeout(500)
-    return await captureStable(page)
+    return await captureStableWithBox(page, SEL_MODAL)
 }
 
 
@@ -391,7 +478,7 @@ async function captureAfterRefetchTargetDeleted(page, lang) {
     await page.waitForTimeout(500)
     await page.locator(`text="${t.ok}"`).first().click()
     await page.waitForTimeout(3000)
-    return await captureStable(page)
+    return await captureStableWithBox(page, SEL_GRID)
 }
 
 
@@ -403,19 +490,36 @@ async function captureUserAddEmptyModal(page, lang) {
     for (let idx of allRowIdxs) {
         await checkRowSelectionByRowIdx(page, idx)
     }
+
+    //[多階段 stage1] 全選後、trash 前截「全部列已被勾選」觸發態 — 框整個 ag-grid (所有 checkbox 勾選 + header 全選勾選)
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(500)
+    let bufSelected = await captureStableWithBox(page, SEL_GRID)
+
     let trashBtn = await locateMdiButton(page, mdiTrashCanOutline)
     await page.mouse.click(trashBtn.x, trashBtn.y)
     await page.waitForTimeout(1000)
+
+    //[多階段 stage2] trash 後 save 前的空 grid —— 全選刪除後表格已空, 框整個 ag-grid 呈現空表狀態
+    let bufGrid = await captureStableWithBox(page, SEL_GRID)
+
     let saveBtnSel = `div[tabindex]:has(svg path[d="${mdiCloudUploadOutline}"])`
     await page.locator(saveBtnSel).first().click()
-    let txt = expectedSpecText['E2E-005-modal-userAddEmpty'][lang].value
+    let txt = expectedSpecText['E2E-005-3-modal-userAddEmpty'][lang].value
     await page.waitForFunction(
         (t) => (document.body.innerText || '').includes(t),
         txt,
         { timeout: 15000 }
     )
     await page.waitForTimeout(500)
-    return await captureStable(page)
+
+    //[多階段 stage3] userAddEmpty modal
+    let bufModal = await captureStableWithBox(page, SEL_MODAL)
+    return {
+        'E2E-005-1-all-rows-selected': bufSelected,
+        'E2E-005-2-empty-grid': bufGrid,
+        'E2E-005-3-modal-userAddEmpty': bufModal,
+    }
 }
 
 
@@ -423,19 +527,36 @@ async function captureCannotDeleteSelfModal(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
     let selfRowIdx = await findRowIndexByAccount(page, testUsers.admin.account)
     await checkRowSelectionByRowIdx(page, selfRowIdx)
+
+    //[多階段 stage1] 勾選後、trash 前截「admin 自己列已被勾選」觸發態 — 框該列 (pinned-left checkbox + center 內容聯集)
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(500)
+    let bufSelected = await captureStableWithBox(page, rowBoxSel(selfRowIdx))
+
     let trashBtn = await locateMdiButton(page, mdiTrashCanOutline)
     await page.mouse.click(trashBtn.x, trashBtn.y)
     await page.waitForTimeout(800)
+
+    //[多階段 stage2] trash 後 save 前的 grid —— admin 自己列已從表移除 (pending, DB 未刪)
+    let bufGrid = await captureStableWithBox(page, SEL_GRID)
+
     let saveBtnSel = `div[tabindex]:has(svg path[d="${mdiCloudUploadOutline}"])`
     await page.locator(saveBtnSel).first().click()
-    let txt = expectedSpecText['E2E-006-modal-cannot-delete-self'][lang].value
+    let txt = expectedSpecText['E2E-006-3-modal-cannot-delete-self'][lang].value
     await page.waitForFunction(
         (t) => (document.body.innerText || '').includes(t),
         txt,
         { timeout: 30000 }
     )
     await page.waitForTimeout(500)
-    return await captureStable(page)
+
+    //[多階段 stage3] cannotDeleteSelf modal
+    let bufModal = await captureStableWithBox(page, SEL_MODAL)
+    return {
+        'E2E-006-1-self-row-selected': bufSelected,
+        'E2E-006-2-grid-after-self-trash': bufGrid,
+        'E2E-006-3-modal-cannot-delete-self': bufModal,
+    }
 }
 
 
@@ -443,21 +564,39 @@ async function captureSaveFailModal(page, lang) {
     await loginAsAdminAndOpenUsersList(page, lang)
     let tgtRowIdx = await findRowIndexByAccount(page, testUsers.target.account)
     await checkRowSelectionByRowIdx(page, tgtRowIdx)
+
+    //[多階段 stage1] 勾選後、trash 前截「target 列已被勾選」觸發態 — 框該列 (pinned-left checkbox + center 內容聯集; token 此時仍有效)
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(500)
+    let bufSelected = await captureStableWithBox(page, rowBoxSel(tgtRowIdx))
+
     let trashBtn = await locateMdiButton(page, mdiTrashCanOutline)
     await page.mouse.click(trashBtn.x, trashBtn.y)
     await page.waitForTimeout(800)
-    //中途刪 admin token (模擬 token 被刪)
+
+    //[多階段 stage2] trash 後 save 前的 grid —— target 列已從表移除 (pending, DB 未刪; token 尚有效)
+    let bufGrid = await captureStableWithBox(page, SEL_GRID)
+
+    //中途刪 admin token (模擬 token 被刪, 不影響已截 stage1/stage2)
     await _delTokensByUserId(testUsers.admin.id)
+
     let saveBtnSel = `div[tabindex]:has(svg path[d="${mdiCloudUploadOutline}"])`
     await page.locator(saveBtnSel).first().click()
-    let txt = expectedSpecText['E2E-007-modal-save-fail-token-deleted'][lang].value
+    let txt = expectedSpecText['E2E-007-3-modal-save-fail-token-deleted'][lang].value
     await page.waitForFunction(
         (t) => (document.body.innerText || '').includes(t),
         txt,
         { timeout: 30000 }
     )
     await page.waitForTimeout(500)
-    return await captureStable(page)
+
+    //[多階段 stage3] save fail modal (token 被刪後端 reject)
+    let bufModal = await captureStableWithBox(page, SEL_MODAL)
+    return {
+        'E2E-007-1-target-row-selected': bufSelected,
+        'E2E-007-2-grid-after-target-trash': bufGrid,
+        'E2E-007-3-modal-save-fail-token-deleted': bufModal,
+    }
 }
 
 
@@ -466,14 +605,18 @@ async function captureSaveFailModal(page, lang) {
 // ===================================================================
 
 async function generateBaselineForLang(lang) {
+    //cases 陣列 key = 代表名稱(供 shouldGen 過濾用); fn 可回 Buffer(單張) 或 dict { baselineName→buf }
     let cases = [
         { name: 'E2E-001-initial-users-list', fn: captureInitialState },
-        { name: 'E2E-002-after-trash-pending-save', fn: captureAfterTrashPending },
+        //E2E-002 含「勾選」+「trash 後」兩 stage, fn 回 dict; case name 設為第一 stage key 供 shouldGen 判斷
+        { name: 'E2E-002-1-target-selected', fn: captureAfterTrashPending },
         { name: 'E2E-003-modal-delete-success', fn: captureDeleteSuccessModal },
         { name: 'E2E-004-after-refetch-target-deleted', fn: captureAfterRefetchTargetDeleted },
-        { name: 'E2E-005-modal-userAddEmpty', fn: captureUserAddEmptyModal },
-        { name: 'E2E-006-modal-cannot-delete-self', fn: captureCannotDeleteSelfModal },
-        { name: 'E2E-007-modal-save-fail-token-deleted', fn: captureSaveFailModal },
+        //E2E-005/006/007 各有三個 stage (勾選 → trash 後 grid → modal), fn 回 dict; case name 設為第一 stage key 供 shouldGen 判斷
+        //shouldGen 以 cases 的 name 判斷; --names 個別控制 stage 請直接指定該 bname, 或不加 --names 全跑.
+        { name: 'E2E-005-1-all-rows-selected', fn: captureUserAddEmptyModal },
+        { name: 'E2E-006-1-self-row-selected', fn: captureCannotDeleteSelfModal },
+        { name: 'E2E-007-1-target-row-selected', fn: captureSaveFailModal },
     ]
 
     for (let { name, fn } of cases) {
@@ -483,16 +626,20 @@ async function generateBaselineForLang(lang) {
 
         //per-case fresh browser — 與 mocha beforeEach 一致, 避免 cold/warm GPU/glyph atlas 差異
         //導致跨模式 pixel drift (§6.3 截圖穩定性「已知限制: baseline 順序與 mocha 跑模式必須同序」)
-        let browser = await chromium.launch({ headless: true })
+        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
         let context = await browser.newContext()
         let page = await context.newPage()
         page.on('dialog', async (dialog) => {
             await dialog.accept()
         })
 
-        let buf = await fn(page, lang)
-        writeBaseline(lang, name, buf)
-        console.log(`  ✔ ${lang}/${name} (${buf.length} bytes)`)
+        let result = await fn(page, lang)
+        //多階段: fn 可回 Buffer(單張) 或 dict { baselineName→buf }; 統一成 dict 寫檔
+        let stages = Buffer.isBuffer(result) ? { [name]: result } : result
+        for (let [bname, b] of Object.entries(stages)) {
+            writeBaseline(lang, bname, b)
+            console.log(`  ✔ ${lang}/${bname} (${b.length} bytes)`)
+        }
 
         await browser.close()
     }
@@ -549,7 +696,7 @@ else {
                 await deleteTestUsersAndTokens()
                 await insertTestUsersAndTokens()
 
-                browser = await chromium.launch({ headless: true })
+                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
                 let context = await browser.newContext()
                 page = await context.newPage()
                 page.on('dialog', (d) => d.accept())
@@ -572,15 +719,29 @@ else {
             }
 
 
-            it('delete-success: trash → save → success modal → 表格刷新 target 永刪', async function() {
+            //刪除 journey (承接式, 一個 case 多階段截圖): trash-pending(E2E-002) → save→success modal(E2E-003) → OK→refetch 永刪(E2E-004)
+            it('delete-success: trash(E2E-002) → save → success modal(E2E-003) → 表格刷新 target 永刪(E2E-004)', async function() {
                 await loginAsAdminAndOpenUsersList(page, lang)
                 let tgtRowIdx = await findRowIndexByAccount(page, testUsers.target.account)
                 assert.strict.notEqual(tgtRowIdx, null, 'target row 應存在於 ag-grid')
                 await checkRowSelectionByRowIdx(page, tgtRowIdx)
+
+                //baseline 002-1 — 勾選後、trash 前截「target 列已被勾選」觸發態 (框該列, 顯示 checkbox 勾選)
+                await page.mouse.move(0, 0)
+                await page.waitForTimeout(500)
+                let buf002Sel = await captureStableWithBox(page, rowBoxSel(tgtRowIdx))
+                await assertSpecForCase(page, lang, 'E2E-002-1-target-selected')
+                assertBaseline(buf002Sel, 'E2E-002-1-target-selected')
+
                 let trashBtn = await locateMdiButton(page, mdiTrashCanOutline)
                 assert.strict.notEqual(trashBtn, null, '勾選後 trash 按鈕應出現')
                 await page.mouse.click(trashBtn.x, trashBtn.y)
                 await page.waitForTimeout(800)
+
+                //baseline 002 — trash 後該列自表中移除 (pending, save 前, DB 未刪) 之中間截圖點
+                let buf002 = await captureStableWithBox(page, SEL_GRID)
+                await assertSpecForCase(page, lang, 'E2E-002-after-trash-pending-save')
+                assertBaseline(buf002, 'E2E-002-after-trash-pending-save')
 
                 let saveBtnSel = `div[tabindex]:has(svg path[d="${mdiCloudUploadOutline}"])`
                 await page.locator(saveBtnSel).first().click()
@@ -595,7 +756,7 @@ else {
                 await page.waitForTimeout(500)
 
                 //baseline 003 — success modal
-                let buf003 = await captureStable(page)
+                let buf003 = await captureStableWithBox(page, SEL_MODAL)
                 await assertSpecForCase(page, lang, 'E2E-003-modal-delete-success')
                 assertBaseline(buf003, 'E2E-003-modal-delete-success')
 
@@ -604,7 +765,7 @@ else {
                 await page.waitForTimeout(3000)
 
                 //baseline 004 — 重拉後 target 永刪
-                let buf004 = await captureStable(page)
+                let buf004 = await captureStableWithBox(page, SEL_GRID)
                 await assertSpecForCase(page, lang, 'E2E-004-after-refetch-target-deleted')
                 assertBaseline(buf004, 'E2E-004-after-refetch-target-deleted')
 
@@ -619,7 +780,7 @@ else {
                 await loginAsAdminAndOpenUsersList(page, lang)
 
                 //baseline 001 — 初始 Users list
-                let buf = await captureStable(page)
+                let buf = await captureStableWithBox(page, SEL_GRID)
                 await assertSpecForCase(page, lang, 'E2E-001-initial-users-list')
                 assertBaseline(buf, 'E2E-001-initial-users-list')
 
@@ -644,14 +805,26 @@ else {
                     await checkRowSelectionByRowIdx(page, idx)
                 }
 
+                //[E2E-005 stage1] 全選後、trash 前截「全部列已被勾選」觸發態 (框整表, 所有 checkbox + header 全選勾選)
+                await page.mouse.move(0, 0)
+                await page.waitForTimeout(500)
+                let buf005Sel = await captureStableWithBox(page, SEL_GRID)
+                await assertSpecForCase(page, lang, 'E2E-005-1-all-rows-selected')
+                assertBaseline(buf005Sel, 'E2E-005-1-all-rows-selected')
+
                 let trashBtn = await locateMdiButton(page, mdiTrashCanOutline)
                 await page.mouse.click(trashBtn.x, trashBtn.y)
                 await page.waitForTimeout(1000)
 
+                //[E2E-005 stage2] trash 後 save 前的空 grid — 全選刪除後所有列已從前端移除
+                let buf005Grid = await captureStableWithBox(page, SEL_GRID)
+                await assertSpecForCase(page, lang, 'E2E-005-2-empty-grid')
+                assertBaseline(buf005Grid, 'E2E-005-2-empty-grid')
+
                 let saveBtnSel = `div[tabindex]:has(svg path[d="${mdiCloudUploadOutline}"])`
                 await page.locator(saveBtnSel).first().click()
 
-                let txt = expectedSpecText['E2E-005-modal-userAddEmpty'][lang].value
+                let txt = expectedSpecText['E2E-005-3-modal-userAddEmpty'][lang].value
                 await page.waitForFunction(
                     (t) => (document.body.innerText || '').includes(t),
                     txt,
@@ -659,14 +832,14 @@ else {
                 )
                 await page.waitForTimeout(500)
 
-                //baseline 005 + spec
-                let buf = await captureStable(page)
-                await assertSpecForCase(page, lang, 'E2E-005-modal-userAddEmpty')
-                assertBaseline(buf, 'E2E-005-modal-userAddEmpty')
+                //[E2E-005 stage3] userAddEmpty modal
+                let buf005Modal = await captureStableWithBox(page, SEL_MODAL)
+                await assertSpecForCase(page, lang, 'E2E-005-3-modal-userAddEmpty')
+                assertBaseline(buf005Modal, 'E2E-005-3-modal-userAddEmpty')
 
                 //確認順序對 (rows.length===0 在 cannotDeleteSelf 之前)
                 let modalText = await page.evaluate(() => document.body.innerText || '')
-                assert.strict.equal(modalText.includes(expectedSpecText['E2E-006-modal-cannot-delete-self'][lang].value), false,
+                assert.strict.equal(modalText.includes(expectedSpecText['E2E-006-3-modal-cannot-delete-self'][lang].value), false,
                     `應為 userAddEmpty 而非 cannotDeleteSelf (rows.length===0 檢查在自我保護之前)`)
 
                 await page.locator(`text="${kpLangText[lang].ok}"`).first().click()
@@ -690,14 +863,27 @@ else {
                 assert.strict.notEqual(selfRowIdx, null, 'admin 自己列應存在')
 
                 await checkRowSelectionByRowIdx(page, selfRowIdx)
+
+                //[E2E-006 stage1] 勾選後、trash 前截「admin 自己列已被勾選」觸發態 (框該列, 顯示 checkbox 勾選)
+                await page.mouse.move(0, 0)
+                await page.waitForTimeout(500)
+                let buf006Sel = await captureStableWithBox(page, rowBoxSel(selfRowIdx))
+                await assertSpecForCase(page, lang, 'E2E-006-1-self-row-selected')
+                assertBaseline(buf006Sel, 'E2E-006-1-self-row-selected')
+
                 let trashBtn = await locateMdiButton(page, mdiTrashCanOutline)
                 await page.mouse.click(trashBtn.x, trashBtn.y)
                 await page.waitForTimeout(800)
 
+                //[E2E-006 stage2] trash 後 save 前的 grid — admin 自己列已從前端移除 (DB 未刪)
+                let buf006Grid = await captureStableWithBox(page, SEL_GRID)
+                await assertSpecForCase(page, lang, 'E2E-006-2-grid-after-self-trash')
+                assertBaseline(buf006Grid, 'E2E-006-2-grid-after-self-trash')
+
                 let saveBtnSel = `div[tabindex]:has(svg path[d="${mdiCloudUploadOutline}"])`
                 await page.locator(saveBtnSel).first().click()
 
-                let txt = expectedSpecText['E2E-006-modal-cannot-delete-self'][lang].value
+                let txt = expectedSpecText['E2E-006-3-modal-cannot-delete-self'][lang].value
                 await page.waitForFunction(
                     (t) => (document.body.innerText || '').includes(t),
                     txt,
@@ -705,10 +891,10 @@ else {
                 )
                 await page.waitForTimeout(500)
 
-                //baseline 006 + spec
-                let buf = await captureStable(page)
-                await assertSpecForCase(page, lang, 'E2E-006-modal-cannot-delete-self')
-                assertBaseline(buf, 'E2E-006-modal-cannot-delete-self')
+                //[E2E-006 stage3] cannotDeleteSelf modal
+                let buf006Modal = await captureStableWithBox(page, SEL_MODAL)
+                await assertSpecForCase(page, lang, 'E2E-006-3-modal-cannot-delete-self')
+                assertBaseline(buf006Modal, 'E2E-006-3-modal-cannot-delete-self')
 
                 await page.locator(`text="${kpLangText[lang].ok}"`).first().click()
                 await page.waitForTimeout(1000)
@@ -724,11 +910,24 @@ else {
 
                 let tgtRowIdx = await findRowIndexByAccount(page, testUsers.target.account)
                 await checkRowSelectionByRowIdx(page, tgtRowIdx)
+
+                //[E2E-007 stage1] 勾選後、trash 前截「target 列已被勾選」觸發態 (框該列, 顯示 checkbox 勾選; token 此時仍有效)
+                await page.mouse.move(0, 0)
+                await page.waitForTimeout(500)
+                let buf007Sel = await captureStableWithBox(page, rowBoxSel(tgtRowIdx))
+                await assertSpecForCase(page, lang, 'E2E-007-1-target-row-selected')
+                assertBaseline(buf007Sel, 'E2E-007-1-target-row-selected')
+
                 let trashBtn = await locateMdiButton(page, mdiTrashCanOutline)
                 await page.mouse.click(trashBtn.x, trashBtn.y)
                 await page.waitForTimeout(800)
 
-                //中途刪 admin token (對應 spec bullet 4)
+                //[E2E-007 stage2] trash 後 save 前的 grid — target 列已從前端移除 (DB 未刪; token 此時仍有效)
+                let buf007Grid = await captureStableWithBox(page, SEL_GRID)
+                await assertSpecForCase(page, lang, 'E2E-007-2-grid-after-target-trash')
+                assertBaseline(buf007Grid, 'E2E-007-2-grid-after-target-trash')
+
+                //中途刪 admin token (對應 spec bullet 4, stage1/stage2 截圖後才刪)
                 await _delTokensByUserId(testUsers.admin.id)
                 let leftover = await woItems.tokens.select({ userId: testUsers.admin.id })
                 assert.strict.equal(leftover.length, 0, `admin tokens 應全清空, 實際剩 ${leftover.length} 筆`)
@@ -736,7 +935,7 @@ else {
                 let saveBtnSel = `div[tabindex]:has(svg path[d="${mdiCloudUploadOutline}"])`
                 await page.locator(saveBtnSel).first().click()
 
-                let txt = expectedSpecText['E2E-007-modal-save-fail-token-deleted'][lang].value
+                let txt = expectedSpecText['E2E-007-3-modal-save-fail-token-deleted'][lang].value
                 await page.waitForFunction(
                     (t) => (document.body.innerText || '').includes(t),
                     txt,
@@ -744,10 +943,10 @@ else {
                 )
                 await page.waitForTimeout(500)
 
-                //baseline 007 + spec
-                let buf = await captureStable(page)
-                await assertSpecForCase(page, lang, 'E2E-007-modal-save-fail-token-deleted')
-                assertBaseline(buf, 'E2E-007-modal-save-fail-token-deleted')
+                //[E2E-007 stage3] save fail modal (token 被刪後端 reject)
+                let buf007Modal = await captureStableWithBox(page, SEL_MODAL)
+                await assertSpecForCase(page, lang, 'E2E-007-3-modal-save-fail-token-deleted')
+                assertBaseline(buf007Modal, 'E2E-007-3-modal-save-fail-token-deleted')
 
                 await page.locator(`text="${kpLangText[lang].ok}"`).first().click()
                 await page.waitForTimeout(1000)

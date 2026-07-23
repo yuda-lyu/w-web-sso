@@ -25,7 +25,7 @@ import WServHapiServer from 'w-serv-hapi/src/WServHapiServer.mjs'
 import WServOrm from 'w-serv-orm/src/WServOrm.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
-import srLogInit from './srLog.mjs'
+import srLogInit, { maskToken } from './srLog.mjs'
 import srEmailInit from './srEmail.mjs'
 import procCore from './procCore.mjs'
 import procLang from './procLang.mjs'
@@ -48,6 +48,16 @@ import procSettings from './procSettings.mjs'
  *
  *
  */
+//normalizeAllowUserRegistration: 正規化 allowUserRegistration 設定(非布林一律回預設 true)
+//具名匯出供 unit test 直測真實正規化路徑(取代測試檔自行複製本邏輯之現狀指紋)
+function normalizeAllowUserRegistration(opt) {
+    let allowUserRegistration = get(opt, 'allowUserRegistration', true)
+    if (allowUserRegistration !== true && allowUserRegistration !== false) {
+        allowUserRegistration = true
+    }
+    return allowUserRegistration
+}
+
 function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let instWServHapiServer = null
 
@@ -116,7 +126,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     // * @param {String} [opt.subfolder=''] 輸入站台所在子目錄字串，提供站台位於內網採反向代理進行服務時，故需支援位於子目錄情形，預設''
     // * @param {String} [opt.mappingBy='email'] 輸入外部系統識別使用者token後所提供之資料物件，與權限系統之使用者資料物件，兩者間查找之對應欄位，可選'id'、'email'、'name'，預設'email'
     // * @param {Object} [opt.kpLangExt={}] 輸入擴充前端語系物件，預設{}
-    // * @param {String} [opt.logFd='./_logs'] 輸入log紀錄儲存位置字串，預設'./_logs'
+    // * @param {String} [opt.logFd='./logs'] 輸入log紀錄儲存位置字串，預設'./logs'
     // * @param {String} [opt.logInterval='hr'] 輸入log紀錄檔案拆檔時長字串，預設'hr'
     // * @param {String} [opt.emSrcEmail=null] 輸入email寄信用email字串，預設null
     // * @param {String} [opt.emSrcPW=null] 輸入email寄信用密碼字串，預設null
@@ -167,8 +177,19 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let webKey = get(opt, 'webKey', '')
 
 
-    //salt
+    //salt (作為 per-user scrypt 之伺服器端 pepper; per-user 隨機 salt 已在 hashPassword 內處理)
+    //D21: 強制要求引用方部署時注入真實 pepper (經 SALT 環境變數); 啟動時若為空/佔位符則拒啟.
     let salt = get(opt, 'salt', '')
+    if (isestr(process.env.SALT)) {
+        salt = process.env.SALT //生產環境經 SALT env 注入真實 pepper (優先於 settings 佔位符)
+    }
+    if (!isestr(salt) || salt === '{salt}') {
+        //測試/開發可設 ALLOW_PLACEHOLDER_SALT=1 沿用佔位符 (測試密碼非機密); 生產一律須注入真實 SALT.
+        if (!isestr(process.env.ALLOW_PLACEHOLDER_SALT)) {
+            throw new Error(`SALT pepper 未設定: 請以環境變數 SALT 注入真實高熵 pepper 後再啟動 (測試/開發可設 ALLOW_PLACEHOLDER_SALT=1 沿用佔位符)`)
+        }
+        console.log(`[WARN] SALT pepper 為佔位符/空值, 因 ALLOW_PLACEHOLDER_SALT 啟用而放行 — 切勿用於生產環境`)
+    }
 
 
     //minExpired, 使用者成功登入後產生token之有效時間(分鐘)
@@ -264,10 +285,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
 
     //allowUserRegistration
-    let allowUserRegistration = get(opt, 'allowUserRegistration', true)
-    if (allowUserRegistration !== true && allowUserRegistration !== false) {
-        allowUserRegistration = true
-    }
+    let allowUserRegistration = normalizeAllowUserRegistration(opt)
 
 
     //以下設定僅在 allowUserRegistration=true 時才需檢查
@@ -430,7 +448,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         wp = WServOrm(ds, WOrm, url, db, optWServOrm)
     }
     catch (err) {
-        console.log(err)
+        console.log('WServOrm init failed', err)
+        throw err
     }
     let { woItems, procOrm } = wp
 
@@ -466,6 +485,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 requireLowercase: passwordPolicy.requireLowercase,
                 requireDigit: passwordPolicy.requireDigit,
                 requireSpecial: passwordPolicy.requireSpecial,
+                consecutiveCharsMinMatch: passwordPolicy.consecutiveCharsMinMatch,
             },
 
         }
@@ -496,32 +516,23 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         numForIpCallApi,
         minBlockForIpCallApi,
     })
-    let pf = procStaInfor(woItems, p, {})
+    //D43: 統計子系統(staLogs worker)之 log 掃描目錄須承接設定值, 不可硬讀預設 './logs'(與 srLog 實際寫入位置不一致)
+    let logFd = get(opt, 'logFd', '')
+    let pf = procStaInfor(woItems, p, { srLog, logFd })
 
 
     //kpfun 入口統一 user-input string guard, 防 NoSQL operator injection
     //(w-orm-lmdb 之 select 內部用 mingo.Query, 接受 {$ne: null} 等 operator object
-    //→ 全表 scan + log 噪音; 雖被 _getGenUserByKV duplicate check + timingSafePasswordEqual
+    //→ 全表 scan + log 噪音; 雖被 _getGenUserByKV duplicate check + verifyPassword
     //+ hashPassword 三層防住無 auth bypass, 但 DoS 風險仍存. 詳 ADR-003 Consequences.)
     //錯訊統一映射至 ADR-006 'token expired' (token 系) / ADR-003 'incorrect user account or password'
     //(login 系) / 'invalid rows' (admin batch update 系), 不洩 type check 失敗 vs business 失敗.
     let _strictStr = (...vals) => vals.every((v) => isestr(v))
 
 
-    //_tErr: kpfun 邊界層統一把後端 reject 轉成 { key, msg } 回前端.
-    //- key: 機器可讀識別碼 (= procLang 字典 key 名), 供前端「判斷錯誤種類」(如 showResendVerify) + 後端 log.
-    //- msg: 依 lang 查 kpLang 翻譯後之文字, 供前端「直接顯示」(前端不再自行 $t 映射 raw 英文).
-    //設計對齊 verifyEmail HTTP handler 模式 (底層 reject key 名 → 邊界層依 lang 產製訊息).
-    //err 為非字串 (Error / 物件, 屬 internal invariant violation) → 統一收斂為 anUnexpectedErrorOccurred.
-    //查不到 key → msg fallback 回 err 原值 (相容 procCore 已自行 get(kpLang) 翻譯的舊訊息, 不必動已 work 者).
-    let _tErr = (lang, err) => {
-        if (lang !== 'eng' && lang !== 'cht') {
-            lang = 'eng'
-        }
-        let key = isestr(err) ? err : 'anUnexpectedErrorOccurred'
-        let msg = get(kpLang, `${lang}.${key}`, key)
-        return { key, msg }
-    }
+    //錯誤契約 (key-only): kpfun 邊界層一律 reject 後端 key 字串 (= procLang 字典 key 名), 前端以 $t(key)
+    //顯示 (字典查無則回 key 本身) + 以字串值判斷錯誤種類 (如 err === 'userRegistrationNotVerified').
+    //內層 (procCore/procProtect) 本就 reject key 字串, 邊界層不再包成 { key, msg } / 不在後端翻譯.
 
 
     //funCheckAdmin
@@ -627,6 +638,9 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 if (isErr(r.msg)) {
                     r.msg = r.msg.message
                 }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
+                }
                 // console.log('cleanKpIpCallApi', r)
 
                 return r
@@ -684,6 +698,9 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 if (isErr(r.msg)) {
                     r.msg = r.msg.message
                 }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
+                }
                 // console.log('cleanKpAccountLoginFailed', r)
 
                 return r
@@ -703,7 +720,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     // console.log('token', token)
 
                     //info
-                    srLog.info({ event: 'api/logoutSsoUser', token })
+                    srLog.info({ event: 'api/logoutSsoUser', token: maskToken(token) })
 
                     //logoutByToken
                     let b = await p.logoutByToken(token)
@@ -716,6 +733,9 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 let r = await pm2resolve(core)()
                 if (isErr(r.msg)) {
                     r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
                 }
                 // console.log('logoutSsoUser', r)
 
@@ -736,7 +756,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     // console.log('token', token)
 
                     //info
-                    srLog.info({ event: 'api/checkToken', token })
+                    srLog.info({ event: 'api/checkToken', token: maskToken(token) })
 
                     //callApiByToken
                     pp.callApiByToken(token)
@@ -752,6 +772,9 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 let r = await pm2resolve(core)()
                 if (isErr(r.msg)) {
                     r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
                 }
                 // console.log('checkToken', r)
 
@@ -772,7 +795,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     // console.log('token', token)
 
                     //info
-                    srLog.info({ event: 'api/refreshToken', token })
+                    srLog.info({ event: 'api/refreshToken', token: maskToken(token) })
 
                     //callApiByToken
                     pp.callApiByToken(token)
@@ -788,6 +811,9 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 let r = await pm2resolve(core)()
                 if (isErr(r.msg)) {
                     r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
                 }
                 // console.log('refreshToken', r)
 
@@ -808,7 +834,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     // console.log('token', token)
 
                     //info
-                    srLog.info({ event: 'api/logoutByToken', token })
+                    srLog.info({ event: 'api/logoutByToken', token: maskToken(token) })
 
                     //callApiByToken
                     pp.callApiByToken(token)
@@ -824,6 +850,9 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 let r = await pm2resolve(core)()
                 if (isErr(r.msg)) {
                     r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
                 }
                 // console.log('logoutByToken', r)
 
@@ -844,7 +873,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     // console.log('token', token)
 
                     //info
-                    srLog.info({ event: 'api/getSsoUsersList', token })
+                    srLog.info({ event: 'api/getSsoUsersList', token: maskToken(token) })
 
                     //callApiByToken
                     pp.callApiByToken(token)
@@ -861,6 +890,9 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 let r = await pm2resolve(core)()
                 if (isErr(r.msg)) {
                     r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
                 }
                 // console.log('getSsoUsersList', r)
 
@@ -888,8 +920,14 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     let value = get(req, 'query.value', '')
                     // console.log('value', value)
 
+                    //check(入口一致性, 對齊 kpfun getUserInfor 之 guard)
+                    if (!_strictStr(token, key, value)) return Promise.reject('tokenExpired')
+
+                    //valueLog: key==='token' 時 value 即明文目標 token, 記 log 前需遮罩
+                    let valueLog = (key === 'token') ? maskToken(value) : value
+
                     //info
-                    srLog.info({ event: 'api/getSsoUserInfor', token, key, value })
+                    srLog.info({ event: 'api/getSsoUserInfor', token: maskToken(token), key, value: valueLog })
 
                     //callApiByToken
                     pp.callApiByToken(token)
@@ -907,10 +945,10 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
                     //check
                     if (!iseobj(userTarget)) {
-                        console.log('token', token)
-                        console.log('key', key, 'value', value)
+                        // console.log('token', token)
+                        // console.log('key', key, 'value', value)
                         console.log(`token does not have permission`)
-                        return Promise.reject(`token does not have permission`)
+                        return Promise.reject('tokenNoPermission') //原則5: 外部 API 錯誤回乾淨 key
                     }
 
                     return userTarget
@@ -920,6 +958,9 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 let r = await pm2resolve(core)()
                 if (isErr(r.msg)) {
                     r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
                 }
                 // console.log('getSsoUserInfor', r)
 
@@ -938,7 +979,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     let token = get(req, 'query.token', '')
 
                     //info
-                    srLog.info({ event: 'api/verifyEmail', token })
+                    srLog.info({ event: 'api/verifyEmail', token: maskToken(token) })
 
                     //verifyEmail
                     let r = await p.verifyEmail(token)
@@ -950,6 +991,9 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 let r = await pm2resolve(core)()
                 if (isErr(r.msg)) {
                     r.msg = r.msg.message
+                }
+                if (r.state === 'error') {
+                    srLog.error({ event: 'api-error', key: r.msg }) //原則3: 後端錯誤 log error key
                 }
 
                 //lang from query (依語系直接渲染結果頁，避免轉址回 SPA 後 lang 重置)
@@ -984,7 +1028,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
 
     //WServHapiServer
-    instWServHapiServer = new WServHapiServer({
+    let optHapi = {
         port: opt.serverPort,
         pathStaticFiles,
         apiName: 'api',
@@ -1056,21 +1100,21 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
             checkToken: async (_t, token) => { //sso前端通過$fapi.checkToken調用
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                srLog.info({ event: 'kpfun-checkToken', token })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-checkToken', token: maskToken(token) })
                 let r = await p.checkToken(token)
                 return r
             },
 
             refreshToken: async (_t, token) => { //sso前端通過$fapi.refreshToken調用
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                srLog.info({ event: 'kpfun-refreshToken', token })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-refreshToken', token: maskToken(token) })
                 let r = await p.refreshToken(token)
                 return r
             },
 
             loginByAccountAndPassword: async (_t, lang, account, password) => {
-                if (!_strictStr(account, password)) return Promise.reject(_tErr(lang, 'failedLoginForCatch'))
+                if (!_strictStr(account, password)) return Promise.reject('failedLoginForCatch')
 
                 //info, 使用者登入前
                 srLog.info({ event: 'kpfun-loginByAccountAndPassword-before', account })
@@ -1097,13 +1141,13 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     return u
                 }
                 //msg 為 procCore/procProtect reject 之 key (failedLoginForCatch / userRegistrationNotVerified
-                /// loginAccountExpired / loginAccountBlocked), 經 _tErr 依 lang 翻譯成 { key, msg } 回前端
-                return Promise.reject(_tErr(lang, msg))
+                /// loginAccountExpired / loginAccountBlocked), 直接以 key 字串 reject 回前端 (前端 $t 顯示)
+                return Promise.reject(msg)
             },
 
             logoutByToken: async (_t, token) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                srLog.info({ event: 'kpfun-logoutByToken', token })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-logoutByToken', token: maskToken(token) })
                 let r = await p.logoutByToken(token)
                 return r
             },
@@ -1112,12 +1156,11 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 srLog.info({ event: 'kpfun-createUser', lang, account })
                 let data = { lang, account, password, confirmPassword, name, email }
                 let r = await p.createUser(lang, data)
-                    .catch((err) => Promise.reject(_tErr(lang, err)))
                 return r
             },
 
             verifyEmail: async (_t, token) => {
-                srLog.info({ event: 'kpfun-verifyEmail', token })
+                srLog.info({ event: 'kpfun-verifyEmail', token: maskToken(token) })
                 let r = await p.verifyEmail(token)
                 return r
             },
@@ -1125,13 +1168,12 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             resendVerifyEmail: async (_t, lang, account, email) => {
                 srLog.info({ event: 'kpfun-resendVerifyEmail', lang, account })
                 let r = await p.resendVerifyEmail(lang, account, email)
-                    .catch((err) => Promise.reject(_tErr(lang, err)))
                 return r
             },
 
             getUserByToken: async (_t, token) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                srLog.info({ event: 'kpfun-getUserByToken', token })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getUserByToken', token: maskToken(token) })
                 //console.log('call getUserByToken...')
                 let r = await p.checkTokenAndGetUserByToken(token, token)
                 //console.log('call getUserByToken end')
@@ -1139,8 +1181,10 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
             getUserInfor: async (_t, token, key, value) => {
-                if (!_strictStr(token, key, value)) return Promise.reject('token expired')
-                srLog.info({ event: 'kpfun-getUserInfor', token, key, value })
+                if (!_strictStr(token, key, value)) return Promise.reject('tokenExpired')
+                //valueLog: key==='token' 時 value 即明文目標 token, 記 log 前需遮罩
+                let valueLog = (key === 'token') ? maskToken(value) : value
+                srLog.info({ event: 'kpfun-getUserInfor', token: maskToken(token), key, value: valueLog })
                 //console.log('call getUserInfor...')
                 let r = await p.checkTokenAndGetUserInfor(token, key, value, { fun: funCheckAdmin })
                 //console.log('call getUserInfor end')
@@ -1157,28 +1201,26 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
             changeUserPassword: async (_t, token, lang, pwOld, pwNew) => {
-                if (!_strictStr(token)) return Promise.reject(_tErr(lang, 'tokenExpired'))
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
                 //僅記 event / token / lang, 不記任何密碼明文 (對齊 ADR-014 + adminResetUserPassword 之記法).
-                srLog.info({ event: 'kpfun-changeUserPassword', token, lang })
+                srLog.info({ event: 'kpfun-changeUserPassword', token: maskToken(token), lang })
                 //console.log('call checkTokenAndChangePassword...')
                 let r = await p.checkTokenAndChangePassword(token, lang, pwOld, pwNew)
-                    .catch((err) => Promise.reject(_tErr(lang, err)))
                 //console.log('call checkTokenAndChangePassword end')
                 return r
             },
 
             adminResetUserPassword: async (_t, token, lang, targetUserId) => {
-                if (!_strictStr(token, targetUserId)) return Promise.reject(_tErr(lang, 'tokenExpired'))
+                if (!_strictStr(token, targetUserId)) return Promise.reject('tokenExpired')
                 //僅記 event / token / targetUserId, 不記任何密碼明文
-                srLog.info({ event: 'kpfun-adminResetUserPassword', token, lang, targetUserId })
+                srLog.info({ event: 'kpfun-adminResetUserPassword', token: maskToken(token), lang, targetUserId })
                 let r = await p.adminResetUserPassword(token, lang, targetUserId)
-                    .catch((err) => Promise.reject(_tErr(lang, err)))
                 return r
             },
 
             getUsersList: async (_t, token) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                srLog.info({ event: 'kpfun-getUsersList', token })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getUsersList', token: maskToken(token) })
                 //console.log('call getUsersList...')
                 let rs = await p.checkTokenAndGetUsersList(token, { fun: funCheckAdmin })
                 //console.log('call getUsersList end')
@@ -1186,20 +1228,19 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
             updateUsersList: async (_t, token, lang, rows) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject(_tErr(lang, 'invalidRows'))
-                srLog.info({ event: 'kpfun-updateUsersList', token, lang })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject('invalidRows')
+                srLog.info({ event: 'kpfun-updateUsersList', token: maskToken(token), lang })
                 //console.log('call updateUsersList...')
-                //catch → _tErr: 後端 reject key 名 (含 checkToken 之 'tokenExpired'), kpfun 邊界依 lang 翻譯回 { key, msg }
+                //內層 reject key 字串 (含 checkToken 之 tokenExpired) 直接透出回前端 (前端 $t 顯示)
                 let rs = await p.checkTokenAndUpdateUsersList(token, lang, rows, { fun: funCheckAdmin })
-                    .catch((err) => Promise.reject(_tErr(lang, err)))
                 //console.log('call updateUsersList end')
                 return rs
             },
 
             getTokensList: async (_t, token) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                srLog.info({ event: 'kpfun-getTokensList', token })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getTokensList', token: maskToken(token) })
                 //console.log('call getTokensList...')
                 let rs = await p.checkTokenAndGetTokensList(token, { fun: funCheckAdmin })
                 //console.log('call getTokensList end')
@@ -1207,19 +1248,18 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
             updateTokensList: async (_t, token, lang, rows) => {
-                if (!_strictStr(token)) return Promise.reject(_tErr(lang, 'tokenExpired'))
-                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject(_tErr(lang, 'invalidRows'))
-                srLog.info({ event: 'kpfun-updateTokensList', token, lang })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject('invalidRows')
+                srLog.info({ event: 'kpfun-updateTokensList', token: maskToken(token), lang })
                 //console.log('call updateTokensList...')
                 let rs = await p.checkTokenAndUpdateTokensList(token, rows, { fun: funCheckAdmin })
-                    .catch((err) => Promise.reject(_tErr(lang, err)))
                 //console.log('call updateTokensList end')
                 return rs
             },
 
             getIpsList: async (_t, token) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                srLog.info({ event: 'kpfun-getIpsList', token })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getIpsList', token: maskToken(token) })
                 //console.log('call getIpsList...')
                 let rs = await p.checkTokenAndGetIpsList(token, { fun: funCheckAdmin })
                 //console.log('call getIpsList end')
@@ -1227,19 +1267,18 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
             updateIpsList: async (_t, token, lang, rows) => {
-                if (!_strictStr(token)) return Promise.reject(_tErr(lang, 'tokenExpired'))
-                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject(_tErr(lang, 'invalidRows'))
-                srLog.info({ event: 'kpfun-updateIpsList', token, lang })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject('invalidRows')
+                srLog.info({ event: 'kpfun-updateIpsList', token: maskToken(token), lang })
                 //console.log('call updateIpsList...')
                 let rs = await p.checkTokenAndUpdateIpsList(token, rows, { fun: funCheckAdmin })
-                    .catch((err) => Promise.reject(_tErr(lang, err)))
                 //console.log('call updateIpsList end')
                 return rs
             },
 
             getStaUserSummary: async (_t, token) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                srLog.info({ event: 'kpfun-getStaUserSummary', token })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getStaUserSummary', token: maskToken(token) })
                 //console.log('call getStaUserSummary...')
                 let r = await pf.checkTokenAndGetStaUserSummary(token, { fun: funCheckAdmin })
                 //console.log('call getStaUserSummary end')
@@ -1247,8 +1286,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
             getStaTokenSummary: async (_t, token) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                srLog.info({ event: 'kpfun-getStaTokenSummary', token })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getStaTokenSummary', token: maskToken(token) })
                 //console.log('call getStaTokenSummary...')
                 let r = await pf.checkTokenAndGetStaTokenSummary(token, { fun: funCheckAdmin })
                 //console.log('call getStaTokenSummary end')
@@ -1256,8 +1295,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
             getStaIpSummary: async (_t, token) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                srLog.info({ event: 'kpfun-getStaIpSummary', token })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getStaIpSummary', token: maskToken(token) })
                 //console.log('call getStaIpSummary...')
                 let r = await pf.checkTokenAndGetStaIpSummary(token, { fun: funCheckAdmin })
                 //console.log('call getStaIpSummary end')
@@ -1265,8 +1304,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
             getStaUserAccountLogin: async (_t, token) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                srLog.info({ event: 'kpfun-getStaUserAccountLogin', token })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getStaUserAccountLogin', token: maskToken(token) })
                 //console.log('call getStaUserAccountLogin...')
                 let r = await pf.checkTokenAndGetStaUserAccountLogin(token, { fun: funCheckAdmin })
                 //console.log('call getStaUserAccountLogin end')
@@ -1274,8 +1313,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
             getStaToken: async (_t, token) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                srLog.info({ event: 'kpfun-getStaToken', token })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getStaToken', token: maskToken(token) })
                 //console.log('call getStaToken...')
                 let r = await pf.checkTokenAndGetStaToken(token, { fun: funCheckAdmin })
                 //console.log('call getStaToken end')
@@ -1283,8 +1322,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
             getStaIp: async (_t, token) => {
-                if (!_strictStr(token)) return Promise.reject('token expired')
-                srLog.info({ event: 'kpfun-getStaIp', token })
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-getStaIp', token: maskToken(token) })
                 //console.log('call getStaIp...')
                 let r = await pf.checkTokenAndGetStaIp(token, { fun: funCheckAdmin })
                 //console.log('call getStaIp end')
@@ -1293,11 +1332,29 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
         },
         fnTableTags: 'tableTags-web-sso.json',
-    })
+    }
+
+    //原則3: 後端錯誤統一 log error key. 集中包一層 kpFunExt — 任一 kpfun reject 時記 { fun, key } 再原樣
+    //re-throw (不改既有行為/回傳契約). key 為字串時直接記; 非字串 (Error/物件, 內部 invariant) 取 message.
+    optHapi.kpFunExt = Object.fromEntries(Object.entries(optHapi.kpFunExt).map(([fnName, fn]) => [
+        fnName,
+        async (...args) => {
+            try {
+                return await fn(...args)
+            }
+            catch (err) {
+                srLog.error({ event: 'kpfun-error', fun: fnName, key: isestr(err) ? err : (isErr(err) ? err.message : String(err)) })
+                throw err
+            }
+        },
+    ]))
+
+    instWServHapiServer = new WServHapiServer(optHapi)
 
 
     return instWServHapiServer
 }
 
 
+export { normalizeAllowUserRegistration }
 export default WWebSso

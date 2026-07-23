@@ -233,7 +233,8 @@
                                 :backgroundColorHover="'rgba(255,255,255,0.7)'"
                                 _shadow="false"
                                 :editable="hasAcPw"
-                                @click="login"
+                                :promiseUnlock="true"
+                                @click="onClickLoginBtn"
                             ></WButtonChip>
                         </div>
 
@@ -601,7 +602,15 @@ export default {
                 //1) 初始化：清空上次 inline 錯誤
                 vo.regError = ''
 
-                //2) 無事先檢測：送出鈕已由 hasRegFields computed 控管 (欄位齊全才可點), 直接打 API
+                //2) 事先檢測 (D12: 同步 early-return, 在開 loading 之前) — 密碼不符 / 密碼政策不過則不送出
+                if (vo.password !== vo.regConfirmPassword) {
+                    vo.regError = vo.$t('userChangePasswordNotSame') //與後端 createUser 同 key, 防帳號列舉前先擋
+                    return
+                }
+                if (vo.regPasswordErrors.length > 0) {
+                    vo.regError = vo.regPasswordErrors[0] //顯示首條密碼政策錯誤 (與 reactive 提示同源)
+                    return
+                }
 
                 //3) 確定要打 API 才開 loading
                 vo.$ui.updateLoading(true)
@@ -613,7 +622,7 @@ export default {
                     })
                     .catch((err) => {
                         //後端統一 reject { key, msg }: msg 已依 lang 翻譯, 直接顯示 (不再以 raw 英文字串判斷種類)
-                        vo.regError = (err && err.msg) ? err.msg : vo.$t('loginUnknownError')
+                        vo.regError = isestr(err) ? vo.$tErr(err) : vo.$t('loginUnknownError')
                     })
 
                 //API 有錯 (catch 已設 vo.regError inline 紅字) → 中止, 不往下走成功流程
@@ -625,7 +634,7 @@ export default {
                 //close before showCheckYes (ADR-002 modal 等待期避免 loading 疊著);
                 //finally 仍會再呼叫一次當作兜底, updateLoading 對重複關閉是 idempotent
                 vo.$ui.updateLoading(false)
-                await vo.$dg.showCheckYes(vo.$t('userRegistrationSuccess'))
+                await vo.$dg.showCheckYes(vo.$t('userRegistrationSuccess'), { type: 'success' })
                 vo.regName = ''
                 vo.regEmail = ''
                 vo.regConfirmPassword = ''
@@ -683,8 +692,8 @@ export default {
                         ok = true
                     })
                     .catch((err) => {
-                        //後端統一 reject { key, msg }: msg 已依 lang 翻譯, 直接顯示
-                        vo.resendError = (err && err.msg) ? err.msg : vo.$t('loginUnknownError')
+                        //後端統一 reject key 字串: 以 $t(key) 顯示 (字典查無回 key 本身); 非字串 (網路錯) 回通用訊息
+                        vo.resendError = isestr(err) ? vo.$tErr(err) : vo.$t('loginUnknownError')
                     })
                 if (!ok) {
                     return
@@ -694,7 +703,7 @@ export default {
                 //close before showCheckYes (ADR-002 modal 等待期避免 loading 疊著);
                 //finally 仍會再呼叫一次當作兜底, updateLoading 對重複關閉是 idempotent
                 vo.$ui.updateLoading(false)
-                await vo.$dg.showCheckYes(vo.$t('userRegistrationResendSuccess'))
+                await vo.$dg.showCheckYes(vo.$t('userRegistrationResendSuccess'), { type: 'success' })
                 vo.showResendVerify = false
                 vo.loginError = ''
                 vo.viewMode = 'login'
@@ -722,6 +731,15 @@ export default {
             let vo = this
             msg.pm.resolve()
             vo.resendVerify()
+        },
+
+        onClickLoginBtn: function(msg) {
+            //同 onClickRegisterBtn: handler 第一行立即 pm.resolve 釋放 button 視覺鎖, fire-and-forget login.
+            //同步雙擊由 WButtonChip clickBtn `if (loadingTrans) return` 擋, 非同步雙擊由 mUI.login 內部
+            //updateLoading 全頁 overlay 接管 (登入特例: 成功轉址路徑不關 loading, 見 mUI.login hideLoadingForEnd).
+            let vo = this
+            msg.pm.resolve()
+            vo.login()
         },
 
         login: function() {
@@ -761,17 +779,15 @@ export default {
                 })
                 .catch((err) => {
 
-                    //err 來源有二:
-                    //(1) 後端登入失敗 → mUI 上拋之 { key, msg } (key 機器可讀供判斷種類, msg 已依 lang 翻譯供顯示)
+                    //err 一律為 key 字串 (key-only 契約):
+                    //(1) 後端登入失敗之 key (failedLoginForCatch / userRegistrationNotVerified / loginAccountBlocked
+                    //    / loginAccountExpired) — 於 procLang 字典內, $t 可譯
                     //(2) mUI 前端層 reject 之字串 (invalid redir / invalid user / invalid token / invalid $keyLS)
-                    if (err && err.key) {
-                        //未驗證帳號: 以 key 判斷 → 顯示「重寄驗證信」連結 (不以 raw 英文字串比對, 對齊 i18n key 架構)
-                        if (err.key === 'userRegistrationNotVerified') {
-                            vo.showResendVerify = true
-                        }
-                        //其餘 (failedLoginForCatch 含帳號不存在/密碼錯/inactive 過濾後 / loginAccountBlocked /
-                        // loginAccountExpired) 一律直接顯示後端翻譯訊息
-                        vo.loginError = err.msg
+                    //    — 非字典 key, $t 查無會回原字串
+                    if (err === 'userRegistrationNotVerified') {
+                        //未驗證帳號: 以 key 判斷 → 顯示「重寄驗證信」連結
+                        vo.showResendVerify = true
+                        vo.loginError = vo.$tErr(err)
                     }
                     else if (err === 'invalid redir') {
                         //view=login 模式下 user.redir 為空, mUI 已 alert 但 4s 後消失;
@@ -779,8 +795,12 @@ export default {
                         vo.loginError = vo.$t('failedLoginForNoRedir')
                     }
                     else {
-                        console.log('login unknown error', err)
-                        vo.loginError = vo.$t('loginUnknownError')
+                        //字典查得到 (後端 key) → 顯示翻譯; 查不到 (mUI 內部字串 / 非字串) → 通用訊息
+                        let t = isestr(err) ? vo.$tErr(err) : ''
+                        vo.loginError = (isestr(t) && t !== err) ? t : vo.$t('loginUnknownError')
+                        if (!isestr(t) || t === err) {
+                            console.log('login unknown error', err)
+                        }
                     }
 
                     //錯誤發生時提交變更viewState返回登入頁

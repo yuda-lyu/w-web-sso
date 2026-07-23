@@ -92,7 +92,7 @@
         ],
     },
 
-    logFd: './_logs',
+    logFd: './logs',
     logInterval: 'hr',
 
     emSrcEmail: 'example@gmail.com',
