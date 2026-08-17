@@ -1,6 +1,6 @@
 {
   "name": "w-web-sso",
-  "version": "1.0.50",
+  "version": "1.0.51",
   "main": "dist/w-web-sso.umd.js",
   "dependencies": {
     "@mdi/js": "^7.4.47",
@@ -12,7 +12,7 @@
     "w-email": "^1.0.39",
     "w-serv-hapi": "^1.0.77",
     "w-serv-orm": "^1.0.43",
-    "w-syslog": "^1.0.14",
+    "w-syslog": "^1.0.15",
     "wsemi": "^1.8.70"
   },
   "devDependencies": {
