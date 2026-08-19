@@ -1,13 +1,13 @@
 {
   "name": "w-web-sso",
-  "version": "1.0.54",
+  "version": "1.0.55",
   "main": "dist/w-web-sso.umd.js",
   "dependencies": {
     "@mdi/js": "^7.4.47",
     "axios": "^1.18.1",
     "json5": "^2.2.3",
-    "w-aggrid-vue": "^2.0.70",
-    "w-component-vue": "^2.4.85",
+    "w-aggrid-vue": "^2.0.71",
+    "w-component-vue": "^2.4.86",
     "w-data-collector": "^1.0.30",
     "w-email": "^1.0.43",
     "w-serv-hapi": "^1.0.80",
