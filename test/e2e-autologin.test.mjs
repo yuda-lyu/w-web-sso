@@ -358,7 +358,7 @@ async function autoLoginScreenshot(page, lang, opt = {}) {
 }
 
 
-//E2E-002 backstage: Statistics 頁「存取活動監測」區塊起含即時圖表 (WEchartsVueDyn canvas),
+//E2E-002 backstage: Statistics 頁「存取活動監測」區塊起含即時圖表 (WEchartsVue canvas),
 //其 GPU/canvas 渲染跨進程 warm/cold 狀態不同 → pixel 永遠漂移, 無法直接比對.
 //對策(改良版, 取代填黑): 偵測「存取活動監測」區塊 div 及其下方各區塊 div (含「管控狀態」), 取各自
 //bounding rect, 在截圖後用「預存的真實圖表快照 (_chartref-{lang}.png)」覆蓋這些區 → baseline 與

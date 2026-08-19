@@ -94,11 +94,11 @@
                                     </select>
                                 </div>
 
-                                <WEchartsVueDyn
+                                <WEchartsVue
                                     style="width:100%; height:300px;"
                                     :options="optLogin"
                                     v-if="optLogin"
-                                ></WEchartsVueDyn>
+                                ></WEchartsVue>
 
                                 <div
                                     style="padding:0px; font-size:0.8rem; color:#777;"
@@ -128,11 +128,11 @@
                                     </div>
                                 </div>
 
-                                <WEchartsVueDyn
+                                <WEchartsVue
                                     style="width:100%; height:300px;"
                                     :options="optToken"
                                     v-if="optToken"
-                                ></WEchartsVueDyn>
+                                ></WEchartsVue>
 
                                 <div
                                     style="padding:0px; font-size:0.8rem; color:#777;"
@@ -199,11 +199,11 @@
                                     </div>
                                 </div>
 
-                                <WEchartsVueDyn
+                                <WEchartsVue
                                     style="width:100%; height:300px;"
                                     :options="optIp"
                                     v-if="optIp"
-                                ></WEchartsVueDyn>
+                                ></WEchartsVue>
 
                                 <div
                                     style="padding:0px; font-size:0.8rem; color:#777;"
@@ -333,14 +333,14 @@ import isearr from 'wsemi/src/isearr.mjs'
 import strright from 'wsemi/src/strright.mjs'
 import haskey from 'wsemi/src/haskey.mjs'
 import debounce from 'wsemi/src/debounce.mjs'
-import WEchartsVueDyn from 'w-component-vue/src/components/WEchartsVueDyn.vue'
+import WEchartsVue from 'w-echarts-vue/src/components/WEchartsVue.vue'
 import { mdiShieldAccountOutline, mdiAccountGroupOutline, mdiAccountCheckOutline, mdiAccountLockOutline, mdiAccountClockOutline, mdiChartBoxOutline, mdiLoginVariant, mdiTicketConfirmationOutline, mdiAccessPointNetwork, mdiMonitorAccount, mdiFolderKeyNetworkOutline, mdiIpNetworkOutline } from '@mdi/js/mdi.js'
 import WIcon from 'w-component-vue/src/components/WIcon.vue'
 
 
 export default {
     components: {
-        WEchartsVueDyn,
+        WEchartsVue,
         WIcon,
     },
     props: {
