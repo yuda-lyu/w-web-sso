@@ -4,7 +4,7 @@
 
 管理員登入後台後，於左側導覽點「Ips list」進入 IP 清單頁（`LayoutContentIps.vue`）。此頁列出系統追蹤的 IP 紀錄（含封鎖到期時間），提供管理員檢視、調整封鎖時間、刪除與儲存。
 
-後端 `getIpsList` / `updateIpsList` 皆以 `funCheckAdmin` 包裝（`server/WWebSso.mjs:1317,1264`，funCheckAdmin 施加於 `checkTokenAndGetIpsList` / `checkTokenAndUpdateIpsList`，`server/procCore.mjs:1944,1922`），**僅具 admin 權限的有效 token 可存取**；token 無效／過期／非 admin 一律 reject。
+後端 `getIpsList` / `updateIpsList` 皆以 `funCheckAdmin` 包裝（`server/WWebSso.mjs:1269,1264`，funCheckAdmin 施加於 `checkTokenAndGetIpsList` / `checkTokenAndUpdateIpsList`，`server/procCore.mjs:1898,1922`），**僅具 admin 權限的有效 token 可存取**；token 無效／過期／非 admin 一律 reject。
 
 ## 重要流程
 
@@ -78,12 +78,12 @@
 006                  → 此分支為死碼, 永遠不進入 (showCheckYes 不會被觸發)
 007          取得當前 opt.rows 與 admin token  [LayoutContentIps.vue:705,714]
 008          呼叫後端 updateIpsList(token, lang, rows)  [LayoutContentIps.vue:719]
-009              checkTokenAndUpdateIpsList(token, rows, {fun: funCheckAdmin})  [procCore.mjs:1967]
-010                  checkToken(token, opt)  [procCore.mjs:1970]
+009              checkTokenAndUpdateIpsList(token, rows, {fun: funCheckAdmin})  [procCore.mjs:1921]
+010                  checkToken(token, opt)  [procCore.mjs:1924]
 011                      token 無效 / 過期 / 非 admin:
 012                          reject  → errTemp 被設值  [LayoutContentIps.vue:721]
-013                  updateIpsList(rows)  [procCore.mjs:1973]
-014                      updateTabItems('ips', rows, 'id', {resetOrder:false}) 差異更新  [procCore.mjs:1960]
+013                  updateIpsList(rows)  [procCore.mjs:1927]
+014                      updateTabItems('ips', rows, 'id', {resetOrder:false}) 差異更新  [procCore.mjs:1914]
 015          檢查 errTemp  [LayoutContentIps.vue:725]
 016              非 null (後端 reject):
 017                  關 loading, 顯示 System message modal 儲存失敗訊息, return  [LayoutContentIps.vue:726-730]

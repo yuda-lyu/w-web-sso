@@ -17,6 +17,7 @@
 > - `passwordPolicy` 未給採內建預設(`server/defaultPasswordPolicy.mjs`)+`[INFO]`, 有給才逐欄 throw
 > - 信件文字鍵(`chpwEmTitle`/`chpwEmContent`/`regVerifyEmTitle`/`regVerifyEmContent`)**恢復完整支援**(2026-08-20 同日二次修正): 初版處置為 WARN 告知改用其他管道, 經業主駁回——settings 既有鍵是安裝方唯一介面, 擴充不可要求搬移;現四鍵皆為優先於內建之覆寫來源(逐語系物件+原樣 `{placeholder}` 置換, 語意同舊版), 廢棄鍵掃描機制隨之移除(已無廢棄鍵)
 > - 信件文字架構定案(2026-08-20 同日三次演進, 業主裁決): ①信件 body 為單行 HTML 字串不該做檔案模板——內建預設全數移入 `procLang.mjs` 語系鍵(`*EmContent` 與 `*EmTitle` 成對), 刪除 6 支信件模板檔, `server/template/` 只留複雜模板 `verifyEmailResult.html`;②全部文字鍵(含新增 `resetPwEmTitle`/`resetPwEmContent`/`verifyEmailResultContent`)各值可給文字**或檔案路徑**(基於啟動路徑, 檔案存在即初始化讀檔, 不存在原樣視為文字);③結果頁模板解析統一移至初始化(不在 API handler 內讀檔);④套件自帶 settings.json 補齊全部擴充鍵與預設文字作為安裝方範本(verifyBaseUrl/信件六鍵/verifyEmailResultContent/pathTemplate)——擴充功能未展示於 settings.json = 沒交付完
+> - 語系資料統一入單一字典(2026-08-20 同日四次演進, 業主裁決): ①信件文字不再以獨立參數旁路傳 procCore——settings 信件鍵於 `WWebSso.mjs` 收斂為 `kpLangExtEmail` 傳入 `procLang` 逐語系覆寫入 kpLang, procCore 寄信只查 kpLang 單一來源(四寄信點 if/else 分支全數收斂);②覆寫順序: 內建 → settings 信件鍵 → `kpLangExt`(最終層, 整鍵覆寫, 供測試/CI 全面覆寫), 由新增 `test/unit-lang.test.mjs`(L1-L4)直測守護;③settings 內容統一經 renderEmailText 之 htmlEscape 置換(原 1.0.37 raw 置換升為防注入, 僅影響含 HTML 特殊字元之注入值);④前端字典分流: `webInfor.kpLang` 改傳 `kpLangWeb`(剔除後端寄信專用 6 鍵), 後端內部文字不外洩前端;⑤server 端語系資料散落全掃零殘留(唯一例外: 前端 `mUI.mjs` 連線中字典為後端字典載入前之刻意 fallback, spec 已文件化)
 > - `verifyBaseUrl` 開放 settings 提供(原硬編 localhost 使註冊於非本機實質不可用), 未給回退本機+開註冊時 `[WARN]`
 > - `pathTemplate` 開放 settings 指定自訂模板資料夾(缺檔逐檔回退內建), 補上信件 body / 結果頁之引用方客製管道
 > - JSDoc `// *` 參數塊補齊 9 個新鍵;unit-register 改測 procCore 真實閘門(`userRegistrationNotAllowed`), 45 unit 全過
@@ -28,7 +29,7 @@
 > **殘留追蹤(未修, 勿爛尾)**:
 > - [x] 版本儀式(2026-08-20 業主裁決): **不升主版號, 維持 1.0.x 照常遞增**.理由: 修復後對 1.0.37 之實質破壞僅剩密碼雜湊+timeVerified(引用方以重建 DB 處置)、SALT 守門(僅影響佔位符 salt, 有 ALLOW_PLACEHOLDER_SALT 逃生口)、信件客製鍵一度停止讀取(同日已恢復完整支援, 不再是破壞)三件;破壞版本早已以 1.0.38~1.0.56 發佈, 補升 2.0.0 攔不到任何人屬純形式.遷移說明由 README Upgrade Notes 承載, 不另做 CHANGELOG.
 > - [ ] `siteUrl` 仍為「驗證後傳入 procCore 但零使用」之懸空設定(現已因 opt-in 僅在開註冊時才要求, 破壞面消失), 未來要嘛實際使用要嘛降選填
-> - [ ] jsdoc 產出(`docs/`)自始不含任何 `opt.*` 參數(`// *` 行註解格式 jsdoc 不解析, 1.0.37 即如此, 非本次事件造成), 引用方僅能靠原始碼查設定, 待另案改善
+> - [x] jsdoc 源頭已修(2026-08-20 同日): `WWebSso.mjs` 標頭 JSDoc 全面維護——描述由錯誤的「權限伺服器」改為 SSO 服務實述、`pathSettings` 預設值改對(`./settings.json`)、45 個設定鍵自函式內失效之 `// *` 行註解升格為正式 `@param {*} [optExt.*]`(jsdoc 可解析), 失效註解塊刪除;`docs/` 產出待 release 時重產即含全部設定參數
 > - [x] README Upgrade Notes 已補(2026-08-20 同日): settings 啟動契約 + DB 資料契約遷移作法 + 廢棄鍵替代管道 + SALT 守門
 
 ## ✅ 覆核(2026-07-11 主代理派獨立子代理逐項查證)

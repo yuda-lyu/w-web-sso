@@ -36,22 +36,67 @@ import { defaultPasswordPolicy } from './defaultPasswordPolicy.mjs'
 
 
 /**
- * 權限伺服器
+ * WWebSso 單一登入(SSO)伺服器
+ *
+ * 建立SSO web服務: 使用者登入/自動登入/登出, 自助註冊與email驗證, 變更/重設密碼與通知信,
+ * token發放/驗證/更新, 後台使用者/金鑰/IP管理與統計資訊, 以及供外部系統查驗token與使用者資訊之API
  *
  * @class
  * @param {Function} WOrm 輸入資料庫ORM函數
  * @param {String} url 輸入資料庫連線字串，例如w-orm-lmdb為'./db'，或w-orm-mongodb為'mongodb://username:password@$127.0.0.1:27017'
  * @param {String} db 輸入資料庫名稱字串
- * @param {String} [pathSettings='./settings'] 輸入設定檔案路徑字串，預設'./settings'
+ * @param {String} [pathSettings='./settings.json'] 輸入設定檔案路徑字串，檔案為json5格式，非既存檔案則回退'./settings.json'，預設'./settings.json'
+ * @param {Object} [optExt={}] 輸入額外設定物件，與設定檔內容合併且同名鍵以optExt為準，以下各鍵亦可直接寫於設定檔(各鍵之預設值與範例詳套件自帶settings.json)，預設{}
+ * @param {Integer} [optExt.serverPort=11007] 輸入伺服器通訊port整數，預設11007
+ * @param {Boolean} [optExt.useCheckUser=false] 輸入是否檢查使用者資訊布林值，預設false
+ * @param {Function} [optExt.getUserById=null] 輸入當useCheckUser=true時依照使用者ID取得使用者資訊物件函數，預設null
+ * @param {Boolean} [optExt.useExcludeWhenNotAdmin=false] 輸入使用ORM的select方法時是否自動刪除數據內isActive欄位之布林值，預設false
+ * @param {Object} [optExt.webName={}] 輸入站台名稱物件，至少包含語系eng與cht鍵的名稱，預設{}
+ * @param {Object} [optExt.webDescription={}] 輸入站台描述物件，至少包含語系eng與cht鍵的名稱，預設{}
+ * @param {String} [optExt.webLogo=''] 輸入站台logo字串，採base64格式，預設''
+ * @param {Array} [optExt.webBackgoundGradientColors=['#FFE0B2', '#FFCC80', '#FFF59D', '#F2D6A2', '#F0CC88']] 輸入使用者登入頁顏色陣列，前3色為背景線性linear-gradient，第4色為登入區塊背景色，第5色為站台logo背景色，若不給則預設白色。預設['#FFE0B2', '#FFCC80', '#FFF59D', '#F2D6A2', '#F0CC88']
+ * @param {String} [optExt.webKey=''] 輸入站台識別字串，預設''
+ * @param {String} [optExt.salt=''] 輸入密碼加鹽字串，預設''
+ * @param {Integer} [optExt.minExpired=30] 輸入創建或更新金鑰有效時間整數，單位分鐘(min)，預設30
+ * @param {Integer} [optExt.minForAccountLoginFailed=10] 輸入限制帳號最大登入失敗(密碼錯誤)次數之判準時間整數，單位分鐘(min)，預設10
+ * @param {Integer} [optExt.numForAccountLoginFailed=3] 輸入限制帳號最大登入失敗(密碼錯誤)之次數整數，預設3
+ * @param {Integer} [optExt.minBlockForAccountLoginFailed=30] 輸入限制帳號最大登入失敗(密碼錯誤)次數之觸發後封鎖時間整數，單位分鐘(min)，預設30
+ * @param {Integer} [optExt.minForTokenCallApi=10] 輸入限制token最大調用API次數之判準時間整數，單位分鐘(min)，預設10
+ * @param {Integer} [optExt.numForTokenCallApi=1000] 輸入限制token最大調用API之次數整數，預設1000
+ * @param {Integer} [optExt.minBlockForTokenCallApi=30] 輸入限制token最大調用API次數之觸發後封鎖時間整數，單位分鐘(min)，預設30
+ * @param {Integer} [optExt.minForIpCallApi=10] 輸入限制IP最大調用API次數之判準時間整數，單位分鐘(min)，預設10
+ * @param {Integer} [optExt.numForIpCallApi=10000] 輸入限制IP最大調用API之次數整數，預設10000
+ * @param {Integer} [optExt.minBlockForIpCallApi=30] 輸入限制IP最大調用API次數之觸發後封鎖時間整數，單位分鐘(min)，預設30
+ * @param {String} [optExt.userLogo=''] 輸入使用者logo字串，採base64格式，預設''
+ * @param {String} [optExt.subfolder=''] 輸入站台所在子目錄字串，提供站台位於內網採反向代理進行服務時，故需支援位於子目錄情形，預設''
+ * @param {String} [optExt.mappingBy='email'] 輸入外部系統識別使用者token後所提供之資料物件，與權限系統之使用者資料物件，兩者間查找之對應欄位，可選'id'、'email'、'name'，預設'email'
+ * @param {Object} [optExt.kpLangExt={}] 輸入擴充前端語系物件，預設{}
+ * @param {String} [optExt.logFd='./logs'] 輸入log紀錄儲存位置字串，預設'./logs'
+ * @param {String} [optExt.logInterval='hr'] 輸入log紀錄檔案拆檔時長字串，預設'hr'
+ * @param {String} [optExt.emSrcEmail=null] 輸入email寄信用email字串，預設null
+ * @param {String} [optExt.emSrcPW=null] 輸入email寄信用密碼字串，預設null
+ * @param {String} [optExt.emSrcHost=null] 輸入email寄信用host字串，預設null
+ * @param {String} [optExt.emSrcPort=null] 輸入email寄信用port整數，預設null
+ * @param {Boolean} [optExt.allowUserRegistration=false] 輸入是否開放使用者自助註冊布林值，新功能採opt-in，須明確給true才啟用，預設false
+ * @param {String} [optExt.siteUrl=''] 輸入站台前端網址字串，當allowUserRegistration=true時必填(不給則啟動時throw)，預設''
+ * @param {String} [optExt.verifyBaseUrl=''] 輸入後端API base URL字串，用於組出註冊驗證信內之連結，當allowUserRegistration=true且部署於非本機環境時必填，不給則回退'http://localhost:{serverPort}'(僅本機開發可用)，預設''
+ * @param {Object} [optExt.passwordPolicy={詳見server/defaultPasswordPolicy.mjs}] 輸入密碼政策物件，不給則採程式內建預設；有給則13個子欄位(minLength、maxLength、requireLetter、requireUppercase、requireLowercase、requireDigit、requireSpecial、noSpace、onlyAscii、forbiddenChars、noConsecutiveCharsFromAccount、consecutiveCharsMinMatch、commonPasswordBlacklist)逐欄驗證，缺一或型別錯即啟動時throw，預設內建政策
+ * @param {Array} [optExt.cleanKpIpCallApiForIps=['127.0.0.1','::1','::ffff:127.0.0.1']] 輸入允許呼叫/api/cleanKpIpCallApi的連線IP白名單陣列，預設本機IP
+ * @param {String} [optExt.cleanKpIpCallApiForToken=''] 輸入呼叫/api/cleanKpIpCallApi須附帶之識別token字串，預設''
+ * @param {Array} [optExt.cleanKpAccountLoginFailedForIps=['127.0.0.1','::1','::ffff:127.0.0.1']] 輸入允許呼叫/api/cleanKpAccountLoginFailed的連線IP白名單陣列，預設本機IP
+ * @param {String} [optExt.cleanKpAccountLoginFailedForToken=''] 輸入呼叫/api/cleanKpAccountLoginFailed須附帶之識別token字串，預設''
+ * @param {String} [optExt.pathTemplate=''] 輸入自訂結果頁模板資料夾路徑字串，內放verifyEmailResult.html即覆寫內建結果頁模板(缺檔回退套件內建)，不給則採內建模板，預設''
+ * @param {Object} [optExt.chpwEmTitle={}] 輸入變更密碼通知信標題物件，逐語系鍵(eng、cht)各自給文字，或給檔案路徑(絕對或基於啟動路徑之相對，檔案存在即讀檔作為文字，不存在則原樣視為文字)，未給之語系採內建語系文字，預設{}
+ * @param {Object} [optExt.chpwEmContent={}] 輸入變更密碼通知信內容物件，逐語系鍵(eng、cht)各自給HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{sender}與{name}置換符，未給之語系採內建語系文字，預設{}
+ * @param {Object} [optExt.regVerifyEmTitle={}] 輸入註冊驗證信標題物件，逐語系鍵(eng、cht)各自給文字或檔案路徑(檔案存在即讀檔作為文字)，未給之語系採內建語系文字，預設{}
+ * @param {Object} [optExt.regVerifyEmContent={}] 輸入註冊驗證信內容物件，逐語系鍵(eng、cht)各自給HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{sender}、{name}與{verifyUrl}置換符，未給之語系採內建語系文字，預設{}
+ * @param {Object} [optExt.resetPwEmTitle={}] 輸入重設密碼通知信標題物件，逐語系鍵(eng、cht)各自給文字或檔案路徑(檔案存在即讀檔作為文字)，未給之語系採內建語系文字，預設{}
+ * @param {Object} [optExt.resetPwEmContent={}] 輸入重設密碼通知信內容物件，逐語系鍵(eng、cht)各自給HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{sender}、{name}、{account}與{newPassword}置換符，未給之語系採內建語系文字，預設{}
+ * @param {String} [optExt.verifyEmailResultContent=''] 輸入註冊驗證結果頁HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{title}與{message}置換符({message}依請求lang代入對應語系文字故單一模板即可)，未給採pathTemplate之verifyEmailResult.html(缺檔回退套件內建模板)，預設''
  * @returns {Object} 回傳物件，其內server為hapi伺服器實體，wsrv為w-converhp的伺服器事件物件，wsds為w-serv-webdata的伺服器事件物件，可監聽error事件
- * @example
- *
- *
- *
  */
 function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let instWServHapiServer = null
-
 
     //check WOrm
     if (!isfun(WOrm)) {
@@ -59,13 +104,11 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         throw new Error('invalid WOrm')
     }
 
-
     //check url
     if (!isestr(url)) {
         console.log('invalid url', url)
         throw new Error('invalid url')
     }
-
 
     //check db
     if (!isestr(db)) {
@@ -73,16 +116,13 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         throw new Error('invalid db')
     }
 
-
     //check pathSettings
     if (!fsIsFile(pathSettings)) {
         pathSettings = './settings.json'
     }
 
-
     //setFilepath
     procSettings.setFilepath(pathSettings)
-
 
     //getSettings
     let opt = procSettings.getSettings()
@@ -92,54 +132,6 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             ...optExt,
         }
     }
-    // * @param {Object|String} [opt={}] 輸入設定物件或設定檔檔案路徑字串，若給予檔案路徑則會預設檔案為json格式且讀入成為opt物件，預設{}
-    // * @param {Integer} [opt.serverPort=11007] 輸入伺服器通訊port整數，預設11007
-    // * @param {Boolean} [opt.useCheckUser=false] 輸入是否檢查使用者資訊布林值，預設false
-    // * @param {Function} [opt.getUserById=null] 輸入當useCheckUser=true時依照使用者ID取得使用者資訊物件函數，預設null
-    // * @param {Boolean} [opt.useExcludeWhenNotAdmin=false] 輸入使用ORM的select方法時是否自動刪除數據內isActive欄位之布林值，預設false
-    // * @param {Object} [opt.webName={}] 輸入站台名稱物件，至少包含語系eng與cht鍵的名稱，預設{}
-    // * @param {Object} [opt.webDescription={}] 輸入站台描述物件，至少包含語系eng與cht鍵的名稱，預設{}
-    // * @param {String} [opt.webLogo=''] 輸入站台logo字串，採base64格式，預設''
-    // * @param {Array} [opt.webBackgoundGradientColors=['#FFE0B2', '#FFCC80', '#FFF59D', '#F2D6A2', '#F0CC88']] 輸入使用者登入頁顏色陣列，前3色為背景線性linear-gradient，第4色為登入區塊背景色，第5色為站台logo背景色，若不給則預設白色。預設['#FFE0B2', '#FFCC80', '#FFF59D', '#F2D6A2', '#F0CC88']
-    // * @param {String} [opt.webKey=''] 輸入站台識別字串，預設''
-    // * @param {String} [opt.salt=''] 輸入密碼加鹽字串，預設''
-    // * @param {Integer} [opt.minExpired=30] 輸入創建或更新金鑰有效時間整數，單位分鐘(min)，預設30
-    // * @param {Integer} [opt.minForAccountLoginFailed=10] 輸入限制帳號最大登入失敗(密碼錯誤)次數之判準時間整數，單位分鐘(min)，預設10
-    // * @param {Integer} [opt.numForAccountLoginFailed=3] 輸入限制帳號最大登入失敗(密碼錯誤)之次數整數，預設3
-    // * @param {Integer} [opt.minBlockForAccountLoginFailed=30] 輸入限制帳號最大登入失敗(密碼錯誤)次數之觸發後封鎖時間整數，單位分鐘(min)，預設30
-    // * @param {Integer} [opt.minForTokenCallApi=10] 輸入限制token最大調用API次數之判準時間整數，單位分鐘(min)，預設10
-    // * @param {Integer} [opt.numForTokenCallApi=1000] 輸入限制token最大調用API之次數整數，預設1000
-    // * @param {Integer} [opt.minBlockForTokenCallApi=30] 輸入限制token最大調用API次數之觸發後封鎖時間整數，單位分鐘(min)，預設30
-    // * @param {Integer} [opt.minForIpCallApi=10] 輸入限制IP最大調用API次數之判準時間整數，單位分鐘(min)，預設10
-    // * @param {Integer} [opt.numForIpCallApi=10000] 輸入限制IP最大調用API之次數整數，預設10000
-    // * @param {Integer} [opt.minBlockForIpCallApi=30] 輸入限制IP最大調用API次數之觸發後封鎖時間整數，單位分鐘(min)，預設30
-    // * @param {String} [opt.userLogo=''] 輸入使用者logo字串，採base64格式，預設''
-    // * @param {String} [opt.subfolder=''] 輸入站台所在子目錄字串，提供站台位於內網採反向代理進行服務時，故需支援位於子目錄情形，預設''
-    // * @param {String} [opt.mappingBy='email'] 輸入外部系統識別使用者token後所提供之資料物件，與權限系統之使用者資料物件，兩者間查找之對應欄位，可選'id'、'email'、'name'，預設'email'
-    // * @param {Object} [opt.kpLangExt={}] 輸入擴充前端語系物件，預設{}
-    // * @param {String} [opt.logFd='./logs'] 輸入log紀錄儲存位置字串，預設'./logs'
-    // * @param {String} [opt.logInterval='hr'] 輸入log紀錄檔案拆檔時長字串，預設'hr'
-    // * @param {String} [opt.emSrcEmail=null] 輸入email寄信用email字串，預設null
-    // * @param {String} [opt.emSrcPW=null] 輸入email寄信用密碼字串，預設null
-    // * @param {String} [opt.emSrcHost=null] 輸入email寄信用host字串，預設null
-    // * @param {String} [opt.emSrcPort=null] 輸入email寄信用port整數，預設null
-    // * @param {Boolean} [opt.allowUserRegistration=false] 輸入是否開放使用者自助註冊布林值，新功能採opt-in，須明確給true才啟用，預設false
-    // * @param {String} [opt.siteUrl=''] 輸入站台前端網址字串，當allowUserRegistration=true時必填(不給則啟動時throw)，預設''
-    // * @param {String} [opt.verifyBaseUrl=''] 輸入後端API base URL字串，用於組出註冊驗證信內之連結，當allowUserRegistration=true且部署於非本機環境時必填，不給則回退'http://localhost:{serverPort}'(僅本機開發可用)，預設''
-    // * @param {Object} [opt.passwordPolicy={詳見server/defaultPasswordPolicy.mjs}] 輸入密碼政策物件，不給則採程式內建預設；有給則13個子欄位(minLength、maxLength、requireLetter、requireUppercase、requireLowercase、requireDigit、requireSpecial、noSpace、onlyAscii、forbiddenChars、noConsecutiveCharsFromAccount、consecutiveCharsMinMatch、commonPasswordBlacklist)逐欄驗證，缺一或型別錯即啟動時throw，預設內建政策
-    // * @param {Array} [opt.cleanKpIpCallApiForIps=['127.0.0.1','::1','::ffff:127.0.0.1']] 輸入允許呼叫/api/cleanKpIpCallApi的連線IP白名單陣列，預設本機IP
-    // * @param {String} [opt.cleanKpIpCallApiForToken=''] 輸入呼叫/api/cleanKpIpCallApi須附帶之識別token字串，預設''
-    // * @param {Array} [opt.cleanKpAccountLoginFailedForIps=['127.0.0.1','::1','::ffff:127.0.0.1']] 輸入允許呼叫/api/cleanKpAccountLoginFailed的連線IP白名單陣列，預設本機IP
-    // * @param {String} [opt.cleanKpAccountLoginFailedForToken=''] 輸入呼叫/api/cleanKpAccountLoginFailed須附帶之識別token字串，預設''
-    // * @param {String} [opt.pathTemplate=''] 輸入自訂結果頁模板資料夾路徑字串，內放verifyEmailResult.html即覆寫內建結果頁模板(缺檔回退套件內建)，不給則採內建模板，預設''
-    // * @param {Object} [opt.chpwEmTitle={}] 輸入變更密碼通知信標題物件，逐語系鍵(eng、cht)各自給文字，或給檔案路徑(絕對或基於啟動路徑之相對，檔案存在即讀檔作為文字，不存在則原樣視為文字)，未給之語系採內建語系文字，預設{}
-    // * @param {Object} [opt.chpwEmContent={}] 輸入變更密碼通知信內容物件，逐語系鍵(eng、cht)各自給HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{sender}與{name}置換符，未給之語系採內建語系文字，預設{}
-    // * @param {Object} [opt.regVerifyEmTitle={}] 輸入註冊驗證信標題物件，逐語系鍵(eng、cht)各自給文字或檔案路徑(檔案存在即讀檔作為文字)，未給之語系採內建語系文字，預設{}
-    // * @param {Object} [opt.regVerifyEmContent={}] 輸入註冊驗證信內容物件，逐語系鍵(eng、cht)各自給HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{sender}、{name}與{verifyUrl}置換符，未給之語系採內建語系文字，預設{}
-    // * @param {Object} [opt.resetPwEmTitle={}] 輸入重設密碼通知信標題物件，逐語系鍵(eng、cht)各自給文字或檔案路徑(檔案存在即讀檔作為文字)，未給之語系採內建語系文字，預設{}
-    // * @param {Object} [opt.resetPwEmContent={}] 輸入重設密碼通知信內容物件，逐語系鍵(eng、cht)各自給HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{sender}、{name}、{account}與{newPassword}置換符，未給之語系採內建語系文字，預設{}
-    // * @param {String} [opt.verifyEmailResultContent=''] 輸入註冊驗證結果頁HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{title}與{message}置換符({message}依請求lang代入對應語系文字故單一模板即可)，未給採pathTemplate之verifyEmailResult.html(缺檔回退套件內建模板)，預設''
-
 
     //serverPort
     let serverPort = get(opt, 'serverPort')
@@ -148,30 +140,23 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     }
     serverPort = cint(serverPort)
 
-
     //useCheckUser
     let useCheckUser = get(opt, 'useCheckUser', false)
-
 
     //getUserById
     let getUserById = get(opt, 'getUserById', null)
 
-
     //useExcludeWhenNotAdmin
     let useExcludeWhenNotAdmin = get(opt, 'useExcludeWhenNotAdmin', false)
-
 
     //webName
     let webName = get(opt, 'webName', {})
 
-
     //webDescription
     let webDescription = get(opt, 'webDescription', {})
 
-
     //webLogo
     let webLogo = get(opt, 'webLogo', '')
-
 
     //webBackgoundGradientColors
     let webBackgoundGradientColors = get(opt, 'webBackgoundGradientColors', [])
@@ -179,10 +164,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         webBackgoundGradientColors = ['#FFE0B2', '#FFCC80', '#FFF59D', '#F2D6A2', '#F0CC88']
     }
 
-
     //webKey
     let webKey = get(opt, 'webKey', '')
-
 
     //salt (作為 per-user scrypt 之伺服器端 pepper; per-user 隨機 salt 已在 hashPassword 內處理)
     //D21: 強制要求引用方部署時注入真實 pepper (經 SALT 環境變數); 啟動時若為空/佔位符則拒啟.
@@ -198,13 +181,11 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         console.log(`[WARN] SALT pepper 為佔位符/空值, 因 ALLOW_PLACEHOLDER_SALT 啟用而放行 — 切勿用於生產環境`)
     }
 
-
     //minExpired, 使用者成功登入後產生token之有效時間(分鐘)
     let minExpired = get(opt, 'minExpired', '')
     if (!ispnum(minExpired)) {
         minExpired = 30
     }
-
 
     //minForAccountLoginFailed, 限制帳號最大登入失敗(密碼錯誤)次數之判準時間(分鐘)
     let minForAccountLoginFailed = get(opt, 'minForAccountLoginFailed', '')
@@ -212,13 +193,11 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         minForAccountLoginFailed = 10
     }
 
-
     //numForAccountLoginFailed, 限制帳號最大登入失敗(密碼錯誤)之次數
     let numForAccountLoginFailed = get(opt, 'numForAccountLoginFailed', '')
     if (!ispnum(numForAccountLoginFailed)) {
         numForAccountLoginFailed = 3
     }
-
 
     //minBlockForAccountLoginFailed, 限制帳號最大登入失敗(密碼錯誤)次數之觸發後封鎖時間(分鐘)
     let minBlockForAccountLoginFailed = get(opt, 'minBlockForAccountLoginFailed', '')
@@ -226,13 +205,11 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         minBlockForAccountLoginFailed = 30
     }
 
-
     //minForTokenCallApi, 限制token最大調用API次數之判準時間(分鐘)
     let minForTokenCallApi = get(opt, 'minForTokenCallApi', '')
     if (!ispnum(minForTokenCallApi)) {
         minForTokenCallApi = 10
     }
-
 
     //numForTokenCallApi, 限制token最大調用API之次數
     let numForTokenCallApi = get(opt, 'numForTokenCallApi', '')
@@ -240,13 +217,11 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         numForTokenCallApi = 1000
     }
 
-
     //minBlockForTokenCallApi, 限制token最大調用API次數之觸發後封鎖時間(分鐘)
     let minBlockForTokenCallApi = get(opt, 'minBlockForTokenCallApi', '')
     if (!ispnum(minBlockForTokenCallApi)) {
         minBlockForTokenCallApi = 30
     }
-
 
     //minForIpCallApi, 限制IP最大調用API次數之判準時間(分鐘)
     let minForIpCallApi = get(opt, 'minForIpCallApi', '')
@@ -254,13 +229,11 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         minForIpCallApi = 10
     }
 
-
     //numForIpCallApi, 限制IP最大調用API之次數
     let numForIpCallApi = get(opt, 'numForIpCallApi', '')
     if (!ispnum(numForIpCallApi)) {
         numForIpCallApi = 10000
     }
-
 
     //minBlockForIpCallApi, 限制IP最大調用API次數之觸發後封鎖時間(分鐘)
     let minBlockForIpCallApi = get(opt, 'minBlockForIpCallApi', '')
@@ -268,17 +241,14 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         minBlockForIpCallApi = 30
     }
 
-
     //cleanKpIpCallApiForIps, 允許呼叫 /api/cleanKpIpCallApi 的連線 IP 白名單
     let cleanKpIpCallApiForIps = get(opt, 'cleanKpIpCallApiForIps', [])
     if (!isearr(cleanKpIpCallApiForIps)) {
         cleanKpIpCallApiForIps = ['127.0.0.1', '::1', '::ffff:127.0.0.1']
     }
 
-
     //cleanKpIpCallApiForToken, 呼叫 /api/cleanKpIpCallApi 須附帶之識別 token
     let cleanKpIpCallApiForToken = get(opt, 'cleanKpIpCallApiForToken', '')
-
 
     //cleanKpAccountLoginFailedForIps, 允許呼叫 /api/cleanKpAccountLoginFailed 的連線 IP 白名單
     let cleanKpAccountLoginFailedForIps = get(opt, 'cleanKpAccountLoginFailedForIps', [])
@@ -286,14 +256,11 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         cleanKpAccountLoginFailedForIps = ['127.0.0.1', '::1', '::ffff:127.0.0.1']
     }
 
-
     //cleanKpAccountLoginFailedForToken, 呼叫 /api/cleanKpAccountLoginFailed 須附帶之識別 token
     let cleanKpAccountLoginFailedForToken = get(opt, 'cleanKpAccountLoginFailedForToken', '')
 
-
     //allowUserRegistration, 是否開放使用者自助註冊, 新功能採opt-in, 未給預設false, 引用方明確設true才啟用(===true嚴格判定, 免'y'等字串誤開)
     let allowUserRegistration = get(opt, 'allowUserRegistration', false) === true
-
 
     //以下設定僅在 allowUserRegistration=true 時才需檢查
     let siteUrl = ''
@@ -306,7 +273,6 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         }
 
     }
-
 
     //passwordPolicy, 未給時採程式內建預設(對齊其他設定[未給即回退預設值]慣例, 舊引用方settings原封升級不會啟動失敗); 有給時才逐欄嚴格驗證
     let passwordPolicy = get(opt, 'passwordPolicy')
@@ -377,10 +343,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         throw new Error('invalid passwordPolicy.commonPasswordBlacklist: each element must be a string')
     }
 
-
     //userLogo
     let userLogo = get(opt, 'userLogo', '')
-
 
     //subfolder
     let subfolder = get(opt, 'subfolder', '')
@@ -403,17 +367,6 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let showModeEditIps = get(opt, 'showModeEditIps', 'n')
     let modeEditIps = get(opt, 'modeEditIps', 'n')
 
-    //是否可於登入頁提供申請註冊使用者按鈕
-    //是否使用圖形驗證碼模組
-
-    //email模板
-    // 註冊驗證信模板
-    // 變更使用者密碼驗證信模板
-    // 註冊請求通知(給SSO系統管理員)信模板
-    // 註冊核可成功通知信模板
-    // 變更使用者資訊通知信模板
-
-
     //mappingBy
     let mappingBy = get(opt, 'mappingBy', '')
     if (mappingBy !== 'id' && mappingBy !== 'email' && mappingBy !== 'name') {
@@ -421,95 +374,14 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     }
     // console.log('mappingBy', mappingBy)
 
-
     //kpLangExt
     let kpLangExt = get(opt, 'kpLangExt', {})
-
 
     //srLog
     let srLog = srLogInit(opt)
 
-
     //srEmail
     let srEmail = srEmailInit(opt)
-
-
-    //kpLang
-    let kpLang = procLang({ kpLangExt, webName, webDescription })
-
-
-    //WServOrm
-    let optWServOrm = {
-        useCheckUser,
-        getUserById,
-        useExcludeWhenNotAdmin,
-    }
-    let wp = {}
-    try {
-        wp = WServOrm(ds, WOrm, url, db, optWServOrm)
-    }
-    catch (err) {
-        console.log('WServOrm init failed', err)
-        throw err
-    }
-    let { woItems, procOrm } = wp
-
-
-    //getWebInfor
-    let getWebInfor = () => {
-        return {
-
-            // webName, //已併入kpLang
-            // webDescription, //已併入kpLang
-            webLogo,
-            webBackgoundGradientColors,
-            webKey,
-            userLogo,
-
-            showLanguage,
-            language,
-            kpLang,
-
-            showModeEditUsers,
-            modeEditUsers,
-            showModeEditTokens,
-            modeEditTokens,
-            showModeEditIps,
-            modeEditIps,
-
-            allowUserRegistration,
-            passwordPolicyInfo: {
-                minLength: passwordPolicy.minLength,
-                maxLength: passwordPolicy.maxLength,
-                requireLetter: passwordPolicy.requireLetter,
-                requireUppercase: passwordPolicy.requireUppercase,
-                requireLowercase: passwordPolicy.requireLowercase,
-                requireDigit: passwordPolicy.requireDigit,
-                requireSpecial: passwordPolicy.requireSpecial,
-                consecutiveCharsMinMatch: passwordPolicy.consecutiveCharsMinMatch,
-            },
-
-        }
-    }
-
-
-    //procCore, procProtect, procStaInfor, procLang
-    //verifyBaseUrl, 後端 API base URL，用於驗證信內連結; 可由settings提供, 未給回退本機網址(僅本機開發可用)
-    let verifyBaseUrl = get(opt, 'verifyBaseUrl', '')
-    if (!isestr(verifyBaseUrl)) {
-        verifyBaseUrl = `http://localhost:${serverPort}`
-        if (allowUserRegistration) {
-            console.log(`[WARN] settings 未提供 verifyBaseUrl, 註冊驗證信連結將採 ${verifyBaseUrl}, 非本機部署時收信人將無法完成驗證, 請於 settings 提供對外可連之後端 base URL`)
-        }
-    }
-
-    //pathTemplateDefault 內建模板資料夾路徑（dev / npm 兩種來源）, 現僅存放複雜模板 verifyEmailResult.html(驗證結果頁); 信件文字內建預設在 procLang.mjs
-    //供本檔 /api/verifyEmail handler 渲染結果頁
-    let pathTemplateDefault = './server/template'
-    let npmPathTemplate = './node_modules/w-web-sso/server/template'
-    if (fsIsFolder(npmPathTemplate)) {
-        pathTemplateDefault = npmPathTemplate
-    }
 
     //readTextIfFile, 值若為既存檔案路徑(絕對或基於啟動路徑之相對)則於初始化讀檔內容作為模板或文字, 否則原樣視為文字
     let readTextIfFile = (v) => {
@@ -536,17 +408,103 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         return r
     }
 
-    //信件文字 settings 鍵(逐語系物件), 為安裝方於設定檔客製信件之正式介面, 各欄位各自指定語系文字或指定檔案路徑讀檔作為內容;
-    //未給時標題與內容皆採內建語系文字(procLang 同名鍵)
+    //kpLangExtEmail, 信件文字 settings 鍵(逐語系物件), 為安裝方於設定檔客製信件之正式介面;
+    //讀到才逐語系覆寫 kpLang 內建同名鍵, 其後 kpLangExt 仍可全面覆寫(最終覆寫層, 供測試/CI)
     //chpwEmTitle/chpwEmContent: 變更密碼通知信({sender}/{name} 置換)
-    let chpwEmTitle = getEmText('chpwEmTitle')
-    let chpwEmContent = getEmText('chpwEmContent')
     //regVerifyEmTitle/regVerifyEmContent: 註冊驗證信({sender}/{name}/{verifyUrl} 置換)
-    let regVerifyEmTitle = getEmText('regVerifyEmTitle')
-    let regVerifyEmContent = getEmText('regVerifyEmContent')
     //resetPwEmTitle/resetPwEmContent: 重設密碼通知信({sender}/{name}/{account}/{newPassword} 置換)
-    let resetPwEmTitle = getEmText('resetPwEmTitle')
-    let resetPwEmContent = getEmText('resetPwEmContent')
+    let kpLangExtEmail = {}
+    let emTextKeys = ['chpwEmTitle', 'chpwEmContent', 'regVerifyEmTitle', 'regVerifyEmContent', 'resetPwEmTitle', 'resetPwEmContent']
+    emTextKeys.forEach((k) => {
+        let kp = getEmText(k)
+        if (size(kp) > 0) {
+            kpLangExtEmail[k] = kp
+        }
+    })
+
+    //kpLang, 語系字典: 內建(procLang) → settings 信件文字鍵(逐語系覆寫) → kpLangExt(整鍵覆寫, 最終層)
+    let kpLang = procLang({ kpLangExtEmail, kpLangExt, webName, webDescription })
+
+    //kpLangWeb, 傳送前端之語系字典: 剔除僅後端寄信使用之信件文字鍵(前端零使用, 避免外洩後端內部文字與增肥前端酬載)
+    let kpLangWeb = {}
+    Object.keys(kpLang).forEach((lang) => {
+        let kp = { ...kpLang[lang] }
+        emTextKeys.forEach((k) => {
+            delete kp[k]
+        })
+        kpLangWeb[lang] = kp
+    })
+
+    //WServOrm
+    let optWServOrm = {
+        useCheckUser,
+        getUserById,
+        useExcludeWhenNotAdmin,
+    }
+    let wp = {}
+    try {
+        wp = WServOrm(ds, WOrm, url, db, optWServOrm)
+    }
+    catch (err) {
+        console.log('WServOrm init failed', err)
+        throw err
+    }
+    let { woItems, procOrm } = wp
+
+    //getWebInfor
+    let getWebInfor = () => {
+        return {
+
+            // webName, //已併入kpLang
+            // webDescription, //已併入kpLang
+            webLogo,
+            webBackgoundGradientColors,
+            webKey,
+            userLogo,
+
+            showLanguage,
+            language,
+            kpLang: kpLangWeb, //前端字典(已剔除後端寄信專用鍵)
+
+            showModeEditUsers,
+            modeEditUsers,
+            showModeEditTokens,
+            modeEditTokens,
+            showModeEditIps,
+            modeEditIps,
+
+            allowUserRegistration,
+            passwordPolicyInfo: {
+                minLength: passwordPolicy.minLength,
+                maxLength: passwordPolicy.maxLength,
+                requireLetter: passwordPolicy.requireLetter,
+                requireUppercase: passwordPolicy.requireUppercase,
+                requireLowercase: passwordPolicy.requireLowercase,
+                requireDigit: passwordPolicy.requireDigit,
+                requireSpecial: passwordPolicy.requireSpecial,
+                consecutiveCharsMinMatch: passwordPolicy.consecutiveCharsMinMatch,
+            },
+
+        }
+    }
+
+    //procCore, procProtect, procStaInfor, procLang
+    //verifyBaseUrl, 後端 API base URL，用於驗證信內連結; 可由settings提供, 未給回退本機網址(僅本機開發可用)
+    let verifyBaseUrl = get(opt, 'verifyBaseUrl', '')
+    if (!isestr(verifyBaseUrl)) {
+        verifyBaseUrl = `http://localhost:${serverPort}`
+        if (allowUserRegistration) {
+            console.log(`[WARN] settings 未提供 verifyBaseUrl, 註冊驗證信連結將採 ${verifyBaseUrl}, 非本機部署時收信人將無法完成驗證, 請於 settings 提供對外可連之後端 base URL`)
+        }
+    }
+
+    //pathTemplateDefault 內建模板資料夾路徑（dev / npm 兩種來源）, 現僅存放複雜模板 verifyEmailResult.html(驗證結果頁); 信件文字內建預設在 procLang.mjs
+    //供本檔 /api/verifyEmail handler 渲染結果頁
+    let pathTemplateDefault = './server/template'
+    let npmPathTemplate = './node_modules/w-web-sso/server/template'
+    if (fsIsFolder(npmPathTemplate)) {
+        pathTemplateDefault = npmPathTemplate
+    }
 
     //pathTemplate, 可由settings提供自訂模板資料夾供客製結果頁(verifyEmailResult.html), 缺檔回退內建模板; 未給則直接採內建
     let pathTemplate = get(opt, 'pathTemplate', '')
@@ -568,7 +526,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         verifyEmailResultContent = fs.readFileSync(fpTpl, 'utf8')
     }
 
-    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpwEmTitle, chpwEmContent, regVerifyEmTitle, regVerifyEmContent, resetPwEmTitle, resetPwEmContent, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl })
+    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl })
     let pp = procProtect(woItems, p, {
         minForAccountLoginFailed,
         numForAccountLoginFailed,
@@ -584,7 +542,6 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let logFd = get(opt, 'logFd', '')
     let pf = procStaInfor(woItems, p, { srLog, logFd })
 
-
     //kpfun 入口統一 user-input string guard, 防 NoSQL operator injection
     //(w-orm-lmdb 之 select 內部用 mingo.Query, 接受 {$ne: null} 等 operator object
     //→ 全表 scan + log 噪音; 雖被 _getGenUserByKV duplicate check + verifyPassword
@@ -593,11 +550,9 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     //(login 系) / 'invalid rows' (admin batch update 系), 不洩 type check 失敗 vs business 失敗.
     let _strictStr = (...vals) => vals.every((v) => isestr(v))
 
-
     //錯誤契約 (key-only): kpfun 邊界層一律 reject 後端 key 字串 (= procLang 字典 key 名), 前端以 $t(key)
     //顯示 (字典查無則回 key 本身) + 以字串值判斷錯誤種類 (如 err === 'userRegistrationNotVerified').
     //內層 (procCore/procProtect) 本就 reject key 字串, 邊界層不再包成 { key, msg } / 不在後端翻譯.
-
 
     //funCheckAdmin
     let funCheckAdmin = (tk, u) => {
@@ -607,7 +562,6 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         return b
     }
 
-
     //pathStaticFiles
     let pathStaticFiles = 'dist'
     let npmPathStaticFiles = './node_modules/w-web-sso/dist'
@@ -615,7 +569,6 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         pathStaticFiles = npmPathStaticFiles
     }
     // console.log('pathStaticFiles', pathStaticFiles)
-
 
     //subfolder
     let fnEntryIn = 'index.tmp'
@@ -640,7 +593,6 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         console.log(err)
         console.log(`can not generate ${fnEntryOut}`)
     }
-
 
     //apis
     let apis = [
@@ -1089,7 +1041,6 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
     ]
 
-
     //WServHapiServer
     let optHapi = {
         port: opt.serverPort,
@@ -1413,7 +1364,6 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     ]))
 
     instWServHapiServer = new WServHapiServer(optHapi)
-
 
     return instWServHapiServer
 }

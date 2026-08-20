@@ -1172,6 +1172,12 @@ let kpLang = {
 
 let init = (opt = {}) => {
 
+    //kpLangExtEmail, 信件文字 settings 鍵(chpwEm*/regVerifyEm*/resetPwEm*), 逐語系覆寫內建同名鍵
+    let kpLangExtEmail = get(opt, 'kpLangExtEmail')
+    if (!iseobj(kpLangExtEmail)) {
+        kpLangExtEmail = {}
+    }
+
     //kpLangExt
     let kpLangExt = get(opt, 'kpLangExt')
     if (!iseobj(kpLangExt)) {
@@ -1197,6 +1203,16 @@ let init = (opt = {}) => {
     kp = {
         ...kp,
         ...kpLang,
+    }
+
+    //ext kpLangExtEmail, settings 信件文字鍵逐語系合併覆寫內建同名鍵; 先於 kpLangExt 套用, 故 kpLangExt 仍可全面覆寫(最終覆寫層, 供測試/CI)
+    if (iseobj(kpLangExtEmail)) {
+        each(kpLangExtEmail, (v, k) => {
+            kp[k] = {
+                ...get(kp, k, {}),
+                ...v,
+            }
+        })
     }
 
     //ext kpLangExt

@@ -68,7 +68,7 @@ function timingSafePasswordEqual(a, b) {
 }
 
 
-function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpwEmTitle, chpwEmContent, regVerifyEmTitle, regVerifyEmContent, resetPwEmTitle, resetPwEmContent, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl }) {
+function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl }) {
 
 
     //pmKeyMutex: per-key in-memory mutex, 同 key 序列化、不同 key 並行.
@@ -856,26 +856,14 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
             })
 
         //send verify email (若失敗，使用者可透過「重寄驗證信」補救)
+        //信件標題與內容皆取 kpLang 語系鍵(settings 信件鍵與 kpLangExt 已於初始化覆寫入 kpLang)
         try {
             let sender = get(kpLang, `${lang}.webName`, '')
-            //title, 優先採 settings 之 regVerifyEmTitle[lang](既有鍵之向後相容覆寫), 未給採 procLang 之 regVerifyEmTitle 鍵
-            let title = get(regVerifyEmTitle, lang, '')
-            if (!isestr(title)) {
-                title = getEmailTitle('regVerifyEmTitle', lang)
-            }
+            let title = getEmailTitle('regVerifyEmTitle', lang)
             let verifyUrl = `${verifyBaseUrl}/api/verifyEmail?token=${tokenVerify}&lang=${lang}`
-            //body, 優先採 settings 之 regVerifyEmContent[lang](既有鍵之向後相容覆寫, 沿用其 {sender}/{name}/{verifyUrl} 原樣置換語意), 未給採內建語系文字
-            let content = get(regVerifyEmContent, lang, '')
-            if (isestr(content)) {
-                content = content.replaceAll('{sender}', sender)
-                content = content.replaceAll('{name}', name)
-                content = content.replaceAll('{verifyUrl}', verifyUrl)
-            }
-            else {
-                content = renderEmailText('regVerifyEmContent', lang, {
-                    sender, name, verifyUrl,
-                })
-            }
+            let content = renderEmailText('regVerifyEmContent', lang, {
+                sender, name, verifyUrl,
+            })
             await srEmail.send(sender, title, content, email)
         }
         catch (err) {
@@ -981,26 +969,14 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
             lastResendTime.set(account, now)
 
             //send verify email
+            //信件標題與內容皆取 kpLang 語系鍵(settings 信件鍵與 kpLangExt 已於初始化覆寫入 kpLang)
             try {
                 let sender = get(kpLang, `${lang}.webName`, '')
-                //title, 優先採 settings 之 regVerifyEmTitle[lang](既有鍵之向後相容覆寫), 未給採內建語系文字
-                let title = get(regVerifyEmTitle, lang, '')
-                if (!isestr(title)) {
-                    title = getEmailTitle('regVerifyEmTitle', lang)
-                }
+                let title = getEmailTitle('regVerifyEmTitle', lang)
                 let verifyUrl = `${verifyBaseUrl}/api/verifyEmail?token=${tokenVerify}&lang=${lang}`
-                //body, 優先採 settings 之 regVerifyEmContent[lang](既有鍵之向後相容覆寫, 沿用其 {sender}/{name}/{verifyUrl} 原樣置換語意), 未給採內建語系文字
-                let content = get(regVerifyEmContent, lang, '')
-                if (isestr(content)) {
-                    content = content.replaceAll('{sender}', sender)
-                    content = content.replaceAll('{name}', name)
-                    content = content.replaceAll('{verifyUrl}', verifyUrl)
-                }
-                else {
-                    content = renderEmailText('regVerifyEmContent', lang, {
-                        sender, name, verifyUrl,
-                    })
-                }
+                let content = renderEmailText('regVerifyEmContent', lang, {
+                    sender, name, verifyUrl,
+                })
                 await srEmail.send(sender, title, content, email)
             }
             catch (err) {
@@ -1154,27 +1130,17 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
                 //name
                 let name = get(u, 'name', 'unknow')
 
-                //title, 優先採 settings 之 chpwEmTitle[lang](1.0.37 既有鍵之向後相容覆寫), 未給採 procLang 之 chpwEmTitle 鍵
-                let title = get(chpwEmTitle, lang, '')
-                if (!isestr(title)) {
-                    title = getEmailTitle('chpwEmTitle', lang)
-                }
+                //title, 取 kpLang 之 chpwEmTitle 鍵(settings 信件鍵與 kpLangExt 已於初始化覆寫入 kpLang)
+                let title = getEmailTitle('chpwEmTitle', lang)
                 if (!isestr(title)) {
                     console.log('chpwEmTitle 取不到, lang', lang)
                     throw new Error(`invalid title`)
                 }
 
-                //body, 優先採 settings 之 chpwEmContent[lang](1.0.37 既有鍵之向後相容覆寫, 沿用其 {sender}/{name} 原樣置換語意), 未給採內建語系文字
-                let content = get(chpwEmContent, lang, '')
-                if (isestr(content)) {
-                    content = content.replaceAll('{sender}', sender)
-                    content = content.replaceAll('{name}', name)
-                }
-                else {
-                    content = renderEmailText('chpwEmContent', lang, {
-                        sender, name,
-                    })
-                }
+                //body, 取 kpLang 之 chpwEmContent 鍵做 {sender}/{name} 置換
+                let content = renderEmailText('chpwEmContent', lang, {
+                    sender, name,
+                })
 
                 //send
                 await srEmail.send(sender, title, content, email)
@@ -1292,28 +1258,16 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpw
                         throw new Error(`invalid sender`)
                     }
 
-                    //title, 優先採 settings 之 resetPwEmTitle[lang](安裝方客製介面), 未給採內建語系文字
-                    let title = get(resetPwEmTitle, lang, '')
-                    if (!isestr(title)) {
-                        title = getEmailTitle('resetPwEmTitle', lang)
-                    }
+                    //title, 取 kpLang 之 resetPwEmTitle 鍵(settings 信件鍵與 kpLangExt 已於初始化覆寫入 kpLang)
+                    let title = getEmailTitle('resetPwEmTitle', lang)
                     if (!isestr(title)) {
                         throw new Error(`invalid title`)
                     }
 
-                    //body, 優先採 settings 之 resetPwEmContent[lang](安裝方客製介面, {sender}/{name}/{account}/{newPassword} 原樣置換), 未給採內建語系文字
-                    let content = get(resetPwEmContent, lang, '')
-                    if (isestr(content)) {
-                        content = content.replaceAll('{sender}', sender)
-                        content = content.replaceAll('{name}', targetName)
-                        content = content.replaceAll('{account}', targetAccount)
-                        content = content.replaceAll('{newPassword}', newPassword)
-                    }
-                    else {
-                        content = renderEmailText('resetPwEmContent', lang, {
-                            sender, name: targetName, account: targetAccount, newPassword,
-                        })
-                    }
+                    //body, 取 kpLang 之 resetPwEmContent 鍵做 {sender}/{name}/{account}/{newPassword} 置換
+                    let content = renderEmailText('resetPwEmContent', lang, {
+                        sender, name: targetName, account: targetAccount, newPassword,
+                    })
 
                     //send
                     await srEmail.send(sender, title, content, targetEmail)
