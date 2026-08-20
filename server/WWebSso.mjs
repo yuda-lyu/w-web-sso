@@ -78,9 +78,9 @@ import { defaultPasswordPolicy } from './defaultPasswordPolicy.mjs'
  * @param {String} [optExt.emSrcHost=null] 輸入email寄信用host字串，預設null
  * @param {String} [optExt.emSrcPort=null] 輸入email寄信用port整數，預設null
  * @param {Boolean} [optExt.allowUserRegistration=false] 輸入是否開放使用者自助註冊布林值，新功能採opt-in，須明確給true才啟用，預設false
- * @param {String} [optExt.siteUrl=''] 輸入站台前端網址字串，當allowUserRegistration=true時必填(不給則啟動時throw)，預設''
+ * @param {String} [optExt.siteUrl=''] 輸入站台前端網址字串，選填(目前僅保留供未來使用，尚無功能讀取)，預設''
  * @param {String} [optExt.verifyBaseUrl=''] 輸入後端API base URL字串，用於組出註冊驗證信內之連結，當allowUserRegistration=true且部署於非本機環境時必填，不給則回退'http://localhost:{serverPort}'(僅本機開發可用)，預設''
- * @param {Object} [optExt.passwordPolicy={詳見server/defaultPasswordPolicy.mjs}] 輸入密碼政策物件，不給則採程式內建預設；有給則13個子欄位(minLength、maxLength、requireLetter、requireUppercase、requireLowercase、requireDigit、requireSpecial、noSpace、onlyAscii、forbiddenChars、noConsecutiveCharsFromAccount、consecutiveCharsMinMatch、commonPasswordBlacklist)逐欄驗證，缺一或型別錯即啟動時throw，預設內建政策
+ * @param {Object} [optExt.passwordPolicy={詳見server/defaultPasswordPolicy.mjs}] 輸入密碼政策物件，不給則採程式內建預設；有給則以內建預設為底淺層merge(可只給欲調整之欄位如minLength，未給欄位沿用內建)，merge後13個子欄位(minLength、maxLength、requireLetter、requireUppercase、requireLowercase、requireDigit、requireSpecial、noSpace、onlyAscii、forbiddenChars、noConsecutiveCharsFromAccount、consecutiveCharsMinMatch、commonPasswordBlacklist)逐欄驗證，型別錯即啟動時throw，預設內建政策
  * @param {Array} [optExt.cleanKpIpCallApiForIps=['127.0.0.1','::1','::ffff:127.0.0.1']] 輸入允許呼叫/api/cleanKpIpCallApi的連線IP白名單陣列，預設本機IP
  * @param {String} [optExt.cleanKpIpCallApiForToken=''] 輸入呼叫/api/cleanKpIpCallApi須附帶之識別token字串，預設''
  * @param {Array} [optExt.cleanKpAccountLoginFailedForIps=['127.0.0.1','::1','::ffff:127.0.0.1']] 輸入允許呼叫/api/cleanKpAccountLoginFailed的連線IP白名單陣列，預設本機IP
@@ -140,6 +140,15 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     }
     serverPort = cint(serverPort)
 
+    //srLog, 提前初始化(僅依賴opt之logFd/logInterval), 使後續啟動期訊息可雙寫入log
+    let srLog = srLogInit(opt)
+
+    //logBoot, 啟動期訊息: console 與 srLog 雙寫(stdout 供互動可見, srLog 供與其他事件同源查閱)
+    let logBoot = (level, msg) => {
+        console.log(`[${level.toUpperCase()}] ${msg}`)
+        srLog[level]({ event: 'boot', msg })
+    }
+
     //useCheckUser
     let useCheckUser = get(opt, 'useCheckUser', false)
 
@@ -178,7 +187,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         if (!isestr(process.env.ALLOW_PLACEHOLDER_SALT)) {
             throw new Error(`SALT pepper 未設定: 請以環境變數 SALT 注入真實高熵 pepper 後再啟動 (測試/開發可設 ALLOW_PLACEHOLDER_SALT=1 沿用佔位符)`)
         }
-        console.log(`[WARN] SALT pepper 為佔位符/空值, 因 ALLOW_PLACEHOLDER_SALT 啟用而放行 — 切勿用於生產環境`)
+        logBoot('warn', `SALT pepper 為佔位符/空值, 因 ALLOW_PLACEHOLDER_SALT 啟用而放行 — 切勿用於生產環境`)
     }
 
     //minExpired, 使用者成功登入後產生token之有效時間(分鐘)
@@ -262,23 +271,23 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     //allowUserRegistration, 是否開放使用者自助註冊, 新功能採opt-in, 未給預設false, 引用方明確設true才啟用(===true嚴格判定, 免'y'等字串誤開)
     let allowUserRegistration = get(opt, 'allowUserRegistration', false) === true
 
-    //以下設定僅在 allowUserRegistration=true 時才需檢查
-    let siteUrl = ''
-    if (allowUserRegistration) {
-
-        //siteUrl
-        siteUrl = get(opt, 'siteUrl', '')
-        if (!isestr(siteUrl)) {
-            throw new Error('invalid siteUrl: must be a non-empty string when allowUserRegistration is enabled')
-        }
-
+    //siteUrl, 站台前端網址, 選填(目前僅保留傳遞供未來使用, 尚無功能讀取, 不強制安裝方提供)
+    let siteUrl = get(opt, 'siteUrl', '')
+    if (!isestr(siteUrl)) {
+        siteUrl = ''
     }
 
-    //passwordPolicy, 未給時採程式內建預設(對齊其他設定[未給即回退預設值]慣例, 舊引用方settings原封升級不會啟動失敗); 有給時才逐欄嚴格驗證
+    //passwordPolicy, 未給時採程式內建預設; 有給時以內建預設為底做淺層merge(只給部分欄位如minLength亦可, 未給欄位沿用內建, 未來新增欄位不構成破壞性變更), merge後逐欄嚴格驗證(給了就必須給對)
     let passwordPolicy = get(opt, 'passwordPolicy')
     if (!iseobj(passwordPolicy)) {
         passwordPolicy = defaultPasswordPolicy
-        console.log('[INFO] settings 未提供 passwordPolicy, 採用程式內建預設密碼政策')
+        logBoot('info', 'settings 未提供 passwordPolicy, 採用程式內建預設密碼政策')
+    }
+    else {
+        passwordPolicy = {
+            ...defaultPasswordPolicy,
+            ...passwordPolicy,
+        }
     }
     let ppMinLength = get(passwordPolicy, 'minLength')
     if (!ispint(ppMinLength) || cint(ppMinLength) < 1) {
@@ -377,20 +386,21 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     //kpLangExt
     let kpLangExt = get(opt, 'kpLangExt', {})
 
-    //srLog
-    let srLog = srLogInit(opt)
-
     //srEmail
     let srEmail = srEmailInit(opt)
 
     //readTextIfFile, 值若為既存檔案路徑(絕對或基於啟動路徑之相對)則於初始化讀檔內容作為模板或文字, 否則原樣視為文字
-    let readTextIfFile = (v) => {
+    let readTextIfFile = (v, label = '') => {
         if (!isestr(v)) {
             return v
         }
         let fp = path.resolve(v)
         if (fsIsFile(fp)) {
             return fs.readFileSync(fp, 'utf8')
+        }
+        //疑似檔案路徑(相對/絕對/磁碟機開頭或常見模板副檔名)但檔案不存在: 印WARN(含resolve後絕對路徑, 供排查cwd差異), 仍原樣視為文字
+        if (/^(\.{1,2}[\\/]|[\\/]|[A-Za-z]:[\\/])/.test(v) || /\.(html|txt)$/i.test(v)) {
+            logBoot('warn', `settings.${label} 疑似檔案路徑但檔案不存在(${fp}), 將原樣視為文字`)
         }
         return v
     }
@@ -403,7 +413,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         }
         let r = {}
         Object.keys(kp).forEach((k) => {
-            r[k] = readTextIfFile(kp[k])
+            r[k] = readTextIfFile(kp[k], `${key}.${k}`)
         })
         return r
     }
@@ -494,7 +504,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     if (!isestr(verifyBaseUrl)) {
         verifyBaseUrl = `http://localhost:${serverPort}`
         if (allowUserRegistration) {
-            console.log(`[WARN] settings 未提供 verifyBaseUrl, 註冊驗證信連結將採 ${verifyBaseUrl}, 非本機部署時收信人將無法完成驗證, 請於 settings 提供對外可連之後端 base URL`)
+            logBoot('warn', `settings 未提供 verifyBaseUrl, 註冊驗證信連結將採 ${verifyBaseUrl}, 非本機部署時收信人將無法完成驗證, 請於 settings 提供對外可連之後端 base URL`)
         }
     }
 
@@ -510,14 +520,14 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let pathTemplate = get(opt, 'pathTemplate', '')
     if (!isestr(pathTemplate) || !fsIsFolder(pathTemplate)) {
         if (isestr(pathTemplate)) {
-            console.log(`[WARN] settings.pathTemplate 指定之資料夾不存在(${pathTemplate}), 改採套件內建模板`)
+            logBoot('warn', `settings.pathTemplate 指定之資料夾不存在(${pathTemplate}), 改採套件內建模板`)
         }
         pathTemplate = pathTemplateDefault
     }
 
     //verifyEmailResultContent, 註冊驗證結果頁HTML(內含{title}/{message}置換符), 可由settings直接提供文字或檔案路徑(優先);
     //未給則於初始化解析模板檔一次(自訂資料夾缺檔回退內建), 供 /api/verifyEmail handler 置換使用
-    let verifyEmailResultContent = readTextIfFile(get(opt, 'verifyEmailResultContent', ''))
+    let verifyEmailResultContent = readTextIfFile(get(opt, 'verifyEmailResultContent', ''), 'verifyEmailResultContent')
     if (!isestr(verifyEmailResultContent)) {
         let fpTpl = path.resolve(pathTemplate, 'verifyEmailResult.html')
         if (!fsIsFile(fpTpl)) {

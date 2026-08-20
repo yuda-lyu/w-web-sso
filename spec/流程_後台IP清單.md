@@ -4,7 +4,7 @@
 
 管理員登入後台後，於左側導覽點「Ips list」進入 IP 清單頁（`LayoutContentIps.vue`）。此頁列出系統追蹤的 IP 紀錄（含封鎖到期時間），提供管理員檢視、調整封鎖時間、刪除與儲存。
 
-後端 `getIpsList` / `updateIpsList` 皆以 `funCheckAdmin` 包裝（`server/WWebSso.mjs:1269,1264`，funCheckAdmin 施加於 `checkTokenAndGetIpsList` / `checkTokenAndUpdateIpsList`，`server/procCore.mjs:1898,1922`），**僅具 admin 權限的有效 token 可存取**；token 無效／過期／非 admin 一律 reject。
+後端 `getIpsList` / `updateIpsList` 皆以 `funCheckAdmin` 包裝（`server/WWebSso.mjs:1279,1264`，funCheckAdmin 施加於 `checkTokenAndGetIpsList` / `checkTokenAndUpdateIpsList`，`server/procCore.mjs:1898,1922`），**僅具 admin 權限的有效 token 可存取**；token 無效／過期／非 admin 一律 reject。
 
 ## 重要流程
 

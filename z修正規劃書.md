@@ -1,5 +1,20 @@
 # w-web-sso 修正規劃書
 
+## 🟡 外部報告第二輪(2026-08-20, 引用方對 1.0.58 之六項回饋)— 處置完畢
+
+> 引用方複測 1.0.58 後回饋六項(原始報告文件閱畢後由業主處置), 逐項查證與裁決:
+>
+> | # | 項目 | 查證 | 裁決與處置 |
+> |---|---|---|---|
+> | 1 | 密碼雜湊/timeVerified 無遷移且失敗不可辨識 | 屬實 | **不修(業主裁決)**: 重建 DB 能解的就不管;套件端不做遷移/辨識機制(維持 ADR-035/ADR-047 條款「不加相容層」), README Upgrade Notes 已載明重建作法.記入已知不修 |
+> | 2 | passwordPolicy 有給須 13 欄全給 | 屬實 | **已修**: 有給時以 `defaultPasswordPolicy` 為底淺層 merge 後才逐欄驗證——可只給欲調整欄位, 黑名單等隨套件更新, 未來新增子欄位不再是破壞性變更(驗收: `{minLength:10}` 單欄啟動成功) |
+> | 3 | readTextIfFile 路徑判錯靜默降級 | 屬實 | **已修**: 值疑似路徑(./ ../ / 磁碟機開頭或 .html/.txt 結尾)但檔案不存在時印 `[WARN]` 含 resolve 後絕對路徑(供排查 cwd 差異), 行為不變仍原樣視為文字(對齊業主先前裁決), 與 pathTemplate 之 WARN 風格一致(驗收: 不存在路徑啟動印出絕對路徑 WARN) |
+> | 4 | siteUrl 強制驗證但零使用 | 屬實(grep 全案僅解構) | **已修**: 降選填, 移除 throw, 保留傳遞供未來使用(驗收: 開註冊+siteUrl 空啟動成功) |
+> | 5 | 無升級說明文件 | **與 repo 不符**: repo README 已有 Upgrade Notes(含 DB 遷移/SALT 守門/信件介面), 為 1.0.58 發佈產物未含最新 README——下次發佈即含 | 無需動作(發佈同步問題) |
+> | 6 | 啟動 INFO/WARN 未進 srLog | 屬實 | **已修**: srLog 初始化提前(僅依賴 opt), 新增 logBoot 雙寫(console+srLog event:'boot'), 五處啟動訊息全數改走(驗收: log 檔見 boot 事件) |
+>
+> 全數驗收於單次啟動完成(部分 policy/路徑 WARN/siteUrl 空/log 落檔), 49 unit 全過.
+
 ## 🔴 升級破壞事件(2026-08-20, 引用方 1.0.37 → 1.0.56 原封升級啟動失敗)— 已修復, 根因須引以為戒
 
 > **事件**: 引用方 `rddmanager_sso` 僅升版套件、settings 一鍵未動, 啟動即連撞 `invalid siteUrl` 與 `invalid passwordPolicy` 兩次 throw 無法起服;補鍵啟動後, 舊 DB 全體使用者(含 admin)因密碼雜湊格式變更(scrypt-only)登入失敗且被誤導為「密碼錯誤」計入封鎖。事證要點已收錄於本節與 ADR-050(supersede ADR-047), 原始外部報告文件已閱畢刪除。
@@ -28,7 +43,7 @@
 >
 > **殘留追蹤(未修, 勿爛尾)**:
 > - [x] 版本儀式(2026-08-20 業主裁決): **不升主版號, 維持 1.0.x 照常遞增**.理由: 修復後對 1.0.37 之實質破壞僅剩密碼雜湊+timeVerified(引用方以重建 DB 處置)、SALT 守門(僅影響佔位符 salt, 有 ALLOW_PLACEHOLDER_SALT 逃生口)、信件客製鍵一度停止讀取(同日已恢復完整支援, 不再是破壞)三件;破壞版本早已以 1.0.38~1.0.56 發佈, 補升 2.0.0 攔不到任何人屬純形式.遷移說明由 README Upgrade Notes 承載, 不另做 CHANGELOG.
-> - [ ] `siteUrl` 仍為「驗證後傳入 procCore 但零使用」之懸空設定(現已因 opt-in 僅在開註冊時才要求, 破壞面消失), 未來要嘛實際使用要嘛降選填
+> - [x] `siteUrl` 已降選填(2026-08-20 外部報告第二輪處置): 移除 allowUserRegistration=true 時之強制 throw, 保留讀取與傳遞供未來使用;JSDoc/README 同步標示「選填, 尚無功能讀取」——填錯無徵兆之風險由文件明示取代強制驗證
 > - [x] jsdoc 源頭已修(2026-08-20 同日): `WWebSso.mjs` 標頭 JSDoc 全面維護——描述由錯誤的「權限伺服器」改為 SSO 服務實述、`pathSettings` 預設值改對(`./settings.json`)、45 個設定鍵自函式內失效之 `// *` 行註解升格為正式 `@param {*} [optExt.*]`(jsdoc 可解析), 失效註解塊刪除;`docs/` 產出待 release 時重產即含全部設定參數
 > - [x] README Upgrade Notes 已補(2026-08-20 同日): settings 啟動契約 + DB 資料契約遷移作法 + 廢棄鍵替代管道 + SALT 守門
 
