@@ -2,6 +2,7 @@
 
     serverPort: 11007,
     siteUrl: 'http://localhost:8080',
+    verifyBaseUrl: 'http://localhost:11007', //後端 API base URL, 用於組出註冊驗證信內連結, 正式機須給對外可連網址
     subfolder: '', //msso
 
     showLanguage: 'y', //'n',
@@ -53,6 +54,35 @@
     cleanKpAccountLoginFailedForToken: '{cleanKpAccountLoginFailedForToken}',
 
     allowUserRegistration: true,
+
+    //信件文字(逐語系), 各值可給文字, 或給檔案路徑(絕對或基於啟動路徑之相對, 檔案存在即讀檔作為內容, 不存在則原樣視為文字); 未給採內建語系文字
+    chpwEmTitle: { //變更密碼通知信標題
+        eng: 'Password has been changed',
+        cht: '密碼已進行變更',
+    },
+    chpwEmContent: { //變更密碼通知信內容, 支援 {sender}/{name} 置換
+        eng: 'Dear User {name},<br><br>This is to inform you that the password for your {sender} account has been successfully changed.<br><br>If you did not perform this action or have any concerns regarding your account security, please contact the system administrator as soon as possible to ensure the safety of your account.<br><br>This is an automated system notification. Please do not reply to this email.',
+        cht: '使用者 {name} 您好：<br><br>您於「{sender}」的密碼已成功變更。<br><br>若您未曾進行此操作，或對帳號安全有任何疑慮，請您儘速聯絡系統管理單位，以確保帳號安全。<br><br>此為系統自動通知信件，請勿直接回覆。',
+    },
+    regVerifyEmTitle: { //註冊驗證信標題
+        eng: 'Please verify your email',
+        cht: '請驗證您的電子郵件',
+    },
+    regVerifyEmContent: { //註冊驗證信內容, 支援 {sender}/{name}/{verifyUrl} 置換
+        eng: 'Dear {name},<br><br>Thank you for registering at {sender}.<br><br>Please click the link below to verify your email and activate your account:<br><a href="{verifyUrl}">{verifyUrl}</a><br><br>If you did not register, please ignore this email.<br><br>This is an automated notification. Please do not reply.',
+        cht: '{name} 您好：<br><br>感謝您註冊「{sender}」。<br><br>請點擊以下連結以驗證您的電子郵件並啟用帳號：<br><a href="{verifyUrl}">{verifyUrl}</a><br><br>若您未曾進行此操作，請忽略此信。<br><br>此為系統自動通知信件，請勿直接回覆。',
+    },
+    resetPwEmTitle: { //重設密碼通知信標題
+        eng: 'Your password has been reset',
+        cht: '您的密碼已被重設',
+    },
+    resetPwEmContent: { //重設密碼通知信內容, 支援 {sender}/{name}/{account}/{newPassword} 置換
+        eng: 'Dear {name},<br><br>The administrator has reset the password for your {sender} account.<br><br>Account: {account}<br>New password: <strong>{newPassword}</strong><br><br>Please log in with this password and immediately set your own new password upon login.<br><br>If you did not expect this change, please contact the administrator.<br><br>This is an automated notification.',
+        cht: '使用者 {name} 您好：<br><br>管理員已重設您於「{sender}」的密碼。<br><br>帳號：{account}<br>新密碼：<strong>{newPassword}</strong><br><br>請以此密碼登入後，立即變更為您自己的新密碼。<br><br>若非您預期之操作，請聯繫管理員。<br><br>此為系統自動通知信件。',
+    },
+    //驗證結果頁, 可給HTML文字或檔案路徑(支援 {title}/{message} 置換); 未給採 pathTemplate 之 verifyEmailResult.html(缺檔回退套件內建)
+    verifyEmailResultContent: '',
+    pathTemplate: '', //自訂結果頁模板資料夾, 內放 verifyEmailResult.html 即覆寫內建
 
     passwordPolicy: {
         minLength: 8,

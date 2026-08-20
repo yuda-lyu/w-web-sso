@@ -1,5 +1,36 @@
 # w-web-sso 修正規劃書
 
+## 🔴 升級破壞事件(2026-08-20, 引用方 1.0.37 → 1.0.56 原封升級啟動失敗)— 已修復, 根因須引以為戒
+
+> **事件**: 引用方 `rddmanager_sso` 僅升版套件、settings 一鍵未動, 啟動即連撞 `invalid siteUrl` 與 `invalid passwordPolicy` 兩次 throw 無法起服;補鍵啟動後, 舊 DB 全體使用者(含 admin)因密碼雜湊格式變更(scrypt-only)登入失敗且被誤導為「密碼錯誤」計入封鎖。事證要點已收錄於本節與 ADR-050(supersede ADR-047), 原始外部報告文件已閱畢刪除。
+>
+> **根因(四項, 全為過往 agent 修正輪之治理失誤, 非單一手滑)**:
+> 1. **新功能預設強制開啟**: 2026-05-02(`4e58446`)加入自助註冊時 `allowUserRegistration` 出生即預設 `true`, 未曾要求註冊的引用方被迫供應 `siteUrl`——升級即改掉別人的預設行為。
+> 2. **新設定無內建預設**: `passwordPolicy` 出生即無條件 throw, 套件自帶 settings 有完整預設值但程式端不採用, 與同檔「未給即回退預設值」慣例相悖;且 unit test 把「缺鍵回 true」寫成通過斷言, 將錯誤預設固化為「已測試之正確行為」。
+> 3. **驗收情境永遠是完整 settings**: `genTempSettings` 以自帶 settings 為底只能改值不能缺鍵, 「舊引用方缺鍵升級」路徑零測試覆蓋, 套件自身永遠感覺不到破壞。
+> 4. **決策前提未經查證**: ADR-047 寫死「尚無任何主專案引用」採 clean break, 但該前提成立當下 `rddmanager_sso` 已在 1.0.37 上運行——破壞性變更之管理(changelog / 遷移指引 / 版本儀式)被整批豁免。
+>
+> **附帶格式破壞**: 2026-07-23(`2560145`)為讓 unit test 直測而把 normalize 邏輯抽成函式並自 `WWebSso.mjs` 具名匯出, 破壞主檔 `export default WWebSso` 單一出口格式(內部 helper 洩漏至公開介面)。
+>
+> **處置(2026-08-20 已全數落地, 驗收通過)**:
+> - `allowUserRegistration` 預設改 `false`(opt-in, `=== true` 嚴格判定), 讀取處還原一行式, 包裝函式與具名匯出移除, 主檔還原單一出口
+> - `passwordPolicy` 未給採內建預設(`server/defaultPasswordPolicy.mjs`)+`[INFO]`, 有給才逐欄 throw
+> - 信件文字鍵(`chpwEmTitle`/`chpwEmContent`/`regVerifyEmTitle`/`regVerifyEmContent`)**恢復完整支援**(2026-08-20 同日二次修正): 初版處置為 WARN 告知改用其他管道, 經業主駁回——settings 既有鍵是安裝方唯一介面, 擴充不可要求搬移;現四鍵皆為優先於內建之覆寫來源(逐語系物件+原樣 `{placeholder}` 置換, 語意同舊版), 廢棄鍵掃描機制隨之移除(已無廢棄鍵)
+> - 信件文字架構定案(2026-08-20 同日三次演進, 業主裁決): ①信件 body 為單行 HTML 字串不該做檔案模板——內建預設全數移入 `procLang.mjs` 語系鍵(`*EmContent` 與 `*EmTitle` 成對), 刪除 6 支信件模板檔, `server/template/` 只留複雜模板 `verifyEmailResult.html`;②全部文字鍵(含新增 `resetPwEmTitle`/`resetPwEmContent`/`verifyEmailResultContent`)各值可給文字**或檔案路徑**(基於啟動路徑, 檔案存在即初始化讀檔, 不存在原樣視為文字);③結果頁模板解析統一移至初始化(不在 API handler 內讀檔);④套件自帶 settings.json 補齊全部擴充鍵與預設文字作為安裝方範本(verifyBaseUrl/信件六鍵/verifyEmailResultContent/pathTemplate)——擴充功能未展示於 settings.json = 沒交付完
+> - `verifyBaseUrl` 開放 settings 提供(原硬編 localhost 使註冊於非本機實質不可用), 未給回退本機+開註冊時 `[WARN]`
+> - `pathTemplate` 開放 settings 指定自訂模板資料夾(缺檔逐檔回退內建), 補上信件 body / 結果頁之引用方客製管道
+> - JSDoc `// *` 參數塊補齊 9 個新鍵;unit-register 改測 procCore 真實閘門(`userRegistrationNotAllowed`), 45 unit 全過
+> - spec 全文行號引用因本次程式修改漂移, 已以 diff-hunk 位移映射機械校正 299 處並抽驗
+> - **驗收**: 兩輪實測啟動成功——①移除三鍵之 1.0.37 式 settings;②安裝方式 settings(缺三鍵+帶四信件鍵原格式), 皆 `[INFO]` 採內建密碼政策、信件鍵零警告、正常監聽
+>
+> **資料層處置(業主裁決)**: 舊 DB 密碼 hash 不可逆, 由引用方重建重匯入使用者資料解決;套件端不加舊格式相容層(維持 ADR-035 scrypt 單一格式)。
+>
+> **殘留追蹤(未修, 勿爛尾)**:
+> - [x] 版本儀式(2026-08-20 業主裁決): **不升主版號, 維持 1.0.x 照常遞增**.理由: 修復後對 1.0.37 之實質破壞僅剩密碼雜湊+timeVerified(引用方以重建 DB 處置)、SALT 守門(僅影響佔位符 salt, 有 ALLOW_PLACEHOLDER_SALT 逃生口)、信件客製鍵一度停止讀取(同日已恢復完整支援, 不再是破壞)三件;破壞版本早已以 1.0.38~1.0.56 發佈, 補升 2.0.0 攔不到任何人屬純形式.遷移說明由 README Upgrade Notes 承載, 不另做 CHANGELOG.
+> - [ ] `siteUrl` 仍為「驗證後傳入 procCore 但零使用」之懸空設定(現已因 opt-in 僅在開註冊時才要求, 破壞面消失), 未來要嘛實際使用要嘛降選填
+> - [ ] jsdoc 產出(`docs/`)自始不含任何 `opt.*` 參數(`// *` 行註解格式 jsdoc 不解析, 1.0.37 即如此, 非本次事件造成), 引用方僅能靠原始碼查設定, 待另案改善
+> - [x] README Upgrade Notes 已補(2026-08-20 同日): settings 啟動契約 + DB 資料契約遷移作法 + 廢棄鍵替代管道 + SALT 守門
+
 ## ✅ 覆核(2026-07-11 主代理派獨立子代理逐項查證)
 
 > 逐項讀碼 + 實跑快速測試複驗本書宣稱: **10/11 屬實**。唯一不符為 S-1 之 `tokenTimeUpdate` 行號原誤植「:160」, 實際位於 `server/procLang.mjs:871`, 已就地訂正(鍵值內容 'Updated time' 本身正確)。無任何待修 code 項。

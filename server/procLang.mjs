@@ -1091,18 +1091,30 @@ let kpLang = {
         cht: '顯示全部',
     },
 
-    //email titles (對應 server/template/{*Email}-{lang}.html body)
+    //email texts (信件標題與內容之內建預設; settings 之同名鍵可覆寫, 內容鍵支援 {placeholder} 置換)
     regVerifyEmTitle: {
         eng: `Please verify your email`,
         cht: `請驗證您的電子郵件`,
+    },
+    regVerifyEmContent: {
+        eng: `Dear {name},<br><br>Thank you for registering at {sender}.<br><br>Please click the link below to verify your email and activate your account:<br><a href="{verifyUrl}">{verifyUrl}</a><br><br>If you did not register, please ignore this email.<br><br>This is an automated notification. Please do not reply.`,
+        cht: `{name} 您好：<br><br>感謝您註冊「{sender}」。<br><br>請點擊以下連結以驗證您的電子郵件並啟用帳號：<br><a href="{verifyUrl}">{verifyUrl}</a><br><br>若您未曾進行此操作，請忽略此信。<br><br>此為系統自動通知信件，請勿直接回覆。`,
     },
     chpwEmTitle: {
         eng: `Password has been changed`,
         cht: `密碼已進行變更`,
     },
+    chpwEmContent: {
+        eng: `Dear User {name},<br><br>This is to inform you that the password for your {sender} account has been successfully changed.<br><br>If you did not perform this action or have any concerns regarding your account security, please contact the system administrator as soon as possible to ensure the safety of your account.<br><br>This is an automated system notification. Please do not reply to this email.`,
+        cht: `使用者 {name} 您好：<br><br>您於「{sender}」的密碼已成功變更。<br><br>若您未曾進行此操作，或對帳號安全有任何疑慮，請您儘速聯絡系統管理單位，以確保帳號安全。<br><br>此為系統自動通知信件，請勿直接回覆。`,
+    },
     resetPwEmTitle: {
         eng: `Your password has been reset`,
         cht: `您的密碼已被重設`,
+    },
+    resetPwEmContent: {
+        eng: `Dear {name},<br><br>The administrator has reset the password for your {sender} account.<br><br>Account: {account}<br>New password: <strong>{newPassword}</strong><br><br>Please log in with this password and immediately set your own new password upon login.<br><br>If you did not expect this change, please contact the administrator.<br><br>This is an automated notification.`,
+        cht: `使用者 {name} 您好：<br><br>管理員已重設您於「{sender}」的密碼。<br><br>帳號：{account}<br>新密碼：<strong>{newPassword}</strong><br><br>請以此密碼登入後，立即變更為您自己的新密碼。<br><br>若非您預期之操作，請聯繫管理員。<br><br>此為系統自動通知信件。`,
     },
 
     //adminResetUserPassword (前端 modifyItemPasswordById)

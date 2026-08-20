@@ -1,5 +1,3 @@
-import path from 'path'
-import fs from 'fs'
 import crypto from 'crypto'
 import ot from 'dayjs'
 import get from 'lodash-es/get.js'
@@ -70,7 +68,7 @@ function timingSafePasswordEqual(a, b) {
 }
 
 
-function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pathTemplate, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl }) {
+function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpwEmTitle, chpwEmContent, regVerifyEmTitle, regVerifyEmContent, resetPwEmTitle, resetPwEmContent, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl }) {
 
 
     //pmKeyMutex: per-key in-memory mutex, 同 key 序列化、不同 key 並行.
@@ -96,11 +94,10 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         return get(kpLang, `${lang}.${key}`, '')
     }
 
-    //email body 從 server/template/{templateName}-{lang}.html 讀檔並做 placeholder 替換
-    let renderEmailBody = (templateName, lang, kvMap = {}) => {
+    //email body 以內建語系鍵(kpLang 之 *EmContent)為字串模板做 placeholder 替換(值經 htmlEscape 防注入)
+    let renderEmailText = (key, lang, kvMap = {}) => {
         if (lang !== 'eng' && lang !== 'cht') { lang = 'eng' }
-        let fpTpl = path.resolve(pathTemplate, `${templateName}-${lang}.html`)
-        let content = fs.readFileSync(fpTpl, 'utf8')
+        let content = get(kpLang, `${lang}.${key}`, '')
         for (let k in kvMap) {
             content = content.replaceAll(`{${k}}`, htmlEscape(kvMap[k]))
         }
@@ -861,11 +858,24 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
         //send verify email (若失敗，使用者可透過「重寄驗證信」補救)
         try {
             let sender = get(kpLang, `${lang}.webName`, '')
-            let title = getEmailTitle('regVerifyEmTitle', lang)
+            //title, 優先採 settings 之 regVerifyEmTitle[lang](既有鍵之向後相容覆寫), 未給採 procLang 之 regVerifyEmTitle 鍵
+            let title = get(regVerifyEmTitle, lang, '')
+            if (!isestr(title)) {
+                title = getEmailTitle('regVerifyEmTitle', lang)
+            }
             let verifyUrl = `${verifyBaseUrl}/api/verifyEmail?token=${tokenVerify}&lang=${lang}`
-            let content = renderEmailBody('regVerifyEmail', lang, {
-                sender, name, verifyUrl,
-            })
+            //body, 優先採 settings 之 regVerifyEmContent[lang](既有鍵之向後相容覆寫, 沿用其 {sender}/{name}/{verifyUrl} 原樣置換語意), 未給採內建語系文字
+            let content = get(regVerifyEmContent, lang, '')
+            if (isestr(content)) {
+                content = content.replaceAll('{sender}', sender)
+                content = content.replaceAll('{name}', name)
+                content = content.replaceAll('{verifyUrl}', verifyUrl)
+            }
+            else {
+                content = renderEmailText('regVerifyEmContent', lang, {
+                    sender, name, verifyUrl,
+                })
+            }
             await srEmail.send(sender, title, content, email)
         }
         catch (err) {
@@ -973,11 +983,24 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
             //send verify email
             try {
                 let sender = get(kpLang, `${lang}.webName`, '')
-                let title = getEmailTitle('regVerifyEmTitle', lang)
+                //title, 優先採 settings 之 regVerifyEmTitle[lang](既有鍵之向後相容覆寫), 未給採內建語系文字
+                let title = get(regVerifyEmTitle, lang, '')
+                if (!isestr(title)) {
+                    title = getEmailTitle('regVerifyEmTitle', lang)
+                }
                 let verifyUrl = `${verifyBaseUrl}/api/verifyEmail?token=${tokenVerify}&lang=${lang}`
-                let content = renderEmailBody('regVerifyEmail', lang, {
-                    sender, name, verifyUrl,
-                })
+                //body, 優先採 settings 之 regVerifyEmContent[lang](既有鍵之向後相容覆寫, 沿用其 {sender}/{name}/{verifyUrl} 原樣置換語意), 未給採內建語系文字
+                let content = get(regVerifyEmContent, lang, '')
+                if (isestr(content)) {
+                    content = content.replaceAll('{sender}', sender)
+                    content = content.replaceAll('{name}', name)
+                    content = content.replaceAll('{verifyUrl}', verifyUrl)
+                }
+                else {
+                    content = renderEmailText('regVerifyEmContent', lang, {
+                        sender, name, verifyUrl,
+                    })
+                }
                 await srEmail.send(sender, title, content, email)
             }
             catch (err) {
@@ -1131,17 +1154,27 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
                 //name
                 let name = get(u, 'name', 'unknow')
 
-                //title from procLang
-                let title = getEmailTitle('chpwEmTitle', lang)
+                //title, 優先採 settings 之 chpwEmTitle[lang](1.0.37 既有鍵之向後相容覆寫), 未給採 procLang 之 chpwEmTitle 鍵
+                let title = get(chpwEmTitle, lang, '')
+                if (!isestr(title)) {
+                    title = getEmailTitle('chpwEmTitle', lang)
+                }
                 if (!isestr(title)) {
                     console.log('chpwEmTitle 取不到, lang', lang)
                     throw new Error(`invalid title`)
                 }
 
-                //body from server/template/changePasswordEmail-{lang}.html
-                let content = renderEmailBody('changePasswordEmail', lang, {
-                    sender, name,
-                })
+                //body, 優先採 settings 之 chpwEmContent[lang](1.0.37 既有鍵之向後相容覆寫, 沿用其 {sender}/{name} 原樣置換語意), 未給採內建語系文字
+                let content = get(chpwEmContent, lang, '')
+                if (isestr(content)) {
+                    content = content.replaceAll('{sender}', sender)
+                    content = content.replaceAll('{name}', name)
+                }
+                else {
+                    content = renderEmailText('chpwEmContent', lang, {
+                        sender, name,
+                    })
+                }
 
                 //send
                 await srEmail.send(sender, title, content, email)
@@ -1259,16 +1292,28 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, path
                         throw new Error(`invalid sender`)
                     }
 
-                    //title from procLang
-                    let title = getEmailTitle('resetPwEmTitle', lang)
+                    //title, 優先採 settings 之 resetPwEmTitle[lang](安裝方客製介面), 未給採內建語系文字
+                    let title = get(resetPwEmTitle, lang, '')
+                    if (!isestr(title)) {
+                        title = getEmailTitle('resetPwEmTitle', lang)
+                    }
                     if (!isestr(title)) {
                         throw new Error(`invalid title`)
                     }
 
-                    //body from server/template/resetPasswordEmail-{lang}.html
-                    let content = renderEmailBody('resetPasswordEmail', lang, {
-                        sender, name: targetName, account: targetAccount, newPassword,
-                    })
+                    //body, 優先採 settings 之 resetPwEmContent[lang](安裝方客製介面, {sender}/{name}/{account}/{newPassword} 原樣置換), 未給採內建語系文字
+                    let content = get(resetPwEmContent, lang, '')
+                    if (isestr(content)) {
+                        content = content.replaceAll('{sender}', sender)
+                        content = content.replaceAll('{name}', targetName)
+                        content = content.replaceAll('{account}', targetAccount)
+                        content = content.replaceAll('{newPassword}', newPassword)
+                    }
+                    else {
+                        content = renderEmailText('resetPwEmContent', lang, {
+                            sender, name: targetName, account: targetAccount, newPassword,
+                        })
+                    }
 
                     //send
                     await srEmail.send(sender, title, content, targetEmail)

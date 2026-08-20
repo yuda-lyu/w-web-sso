@@ -29,7 +29,7 @@
 <nav >
     
     
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="normalizeAllowUserRegistration.html">normalizeAllowUserRegistration</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="WWebSso.html">WWebSso</a></li></ul>
     
 </nav>
 
@@ -79,6 +79,7 @@ import procLang from './procLang.mjs'
 import procProtect from './procProtect.mjs'
 import procStaInfor from './procStaInfor.mjs'
 import procSettings from './procSettings.mjs'
+import { defaultPasswordPolicy } from './defaultPasswordPolicy.mjs'
 
 
 /**
@@ -95,16 +96,6 @@ import procSettings from './procSettings.mjs'
  *
  *
  */
-//normalizeAllowUserRegistration: 正規化 allowUserRegistration 設定(非布林一律回預設 true)
-//具名匯出供 unit test 直測真實正規化路徑(取代測試檔自行複製本邏輯之現狀指紋)
-function normalizeAllowUserRegistration(opt) {
-    let allowUserRegistration = get(opt, 'allowUserRegistration', true)
-    if (allowUserRegistration !== true &amp;&amp; allowUserRegistration !== false) {
-        allowUserRegistration = true
-    }
-    return allowUserRegistration
-}
-
 function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let instWServHapiServer = null
 
@@ -179,6 +170,22 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     // * @param {String} [opt.emSrcPW=null] 輸入email寄信用密碼字串，預設null
     // * @param {String} [opt.emSrcHost=null] 輸入email寄信用host字串，預設null
     // * @param {String} [opt.emSrcPort=null] 輸入email寄信用port整數，預設null
+    // * @param {Boolean} [opt.allowUserRegistration=false] 輸入是否開放使用者自助註冊布林值，新功能採opt-in，須明確給true才啟用，預設false
+    // * @param {String} [opt.siteUrl=''] 輸入站台前端網址字串，當allowUserRegistration=true時必填(不給則啟動時throw)，預設''
+    // * @param {String} [opt.verifyBaseUrl=''] 輸入後端API base URL字串，用於組出註冊驗證信內之連結，當allowUserRegistration=true且部署於非本機環境時必填，不給則回退'http://localhost:{serverPort}'(僅本機開發可用)，預設''
+    // * @param {Object} [opt.passwordPolicy={詳見server/defaultPasswordPolicy.mjs}] 輸入密碼政策物件，不給則採程式內建預設；有給則13個子欄位(minLength、maxLength、requireLetter、requireUppercase、requireLowercase、requireDigit、requireSpecial、noSpace、onlyAscii、forbiddenChars、noConsecutiveCharsFromAccount、consecutiveCharsMinMatch、commonPasswordBlacklist)逐欄驗證，缺一或型別錯即啟動時throw，預設內建政策
+    // * @param {Array} [opt.cleanKpIpCallApiForIps=['127.0.0.1','::1','::ffff:127.0.0.1']] 輸入允許呼叫/api/cleanKpIpCallApi的連線IP白名單陣列，預設本機IP
+    // * @param {String} [opt.cleanKpIpCallApiForToken=''] 輸入呼叫/api/cleanKpIpCallApi須附帶之識別token字串，預設''
+    // * @param {Array} [opt.cleanKpAccountLoginFailedForIps=['127.0.0.1','::1','::ffff:127.0.0.1']] 輸入允許呼叫/api/cleanKpAccountLoginFailed的連線IP白名單陣列，預設本機IP
+    // * @param {String} [opt.cleanKpAccountLoginFailedForToken=''] 輸入呼叫/api/cleanKpAccountLoginFailed須附帶之識別token字串，預設''
+    // * @param {String} [opt.pathTemplate=''] 輸入自訂結果頁模板資料夾路徑字串，內放verifyEmailResult.html即覆寫內建結果頁模板(缺檔回退套件內建)，不給則採內建模板，預設''
+    // * @param {Object} [opt.chpwEmTitle={}] 輸入變更密碼通知信標題物件，逐語系鍵(eng、cht)各自給文字，或給檔案路徑(絕對或基於啟動路徑之相對，檔案存在即讀檔作為文字，不存在則原樣視為文字)，未給之語系採內建語系文字，預設{}
+    // * @param {Object} [opt.chpwEmContent={}] 輸入變更密碼通知信內容物件，逐語系鍵(eng、cht)各自給HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{sender}與{name}置換符，未給之語系採內建語系文字，預設{}
+    // * @param {Object} [opt.regVerifyEmTitle={}] 輸入註冊驗證信標題物件，逐語系鍵(eng、cht)各自給文字或檔案路徑(檔案存在即讀檔作為文字)，未給之語系採內建語系文字，預設{}
+    // * @param {Object} [opt.regVerifyEmContent={}] 輸入註冊驗證信內容物件，逐語系鍵(eng、cht)各自給HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{sender}、{name}與{verifyUrl}置換符，未給之語系採內建語系文字，預設{}
+    // * @param {Object} [opt.resetPwEmTitle={}] 輸入重設密碼通知信標題物件，逐語系鍵(eng、cht)各自給文字或檔案路徑(檔案存在即讀檔作為文字)，未給之語系採內建語系文字，預設{}
+    // * @param {Object} [opt.resetPwEmContent={}] 輸入重設密碼通知信內容物件，逐語系鍵(eng、cht)各自給HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{sender}、{name}、{account}與{newPassword}置換符，未給之語系採內建語系文字，預設{}
+    // * @param {String} [opt.verifyEmailResultContent=''] 輸入註冊驗證結果頁HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{title}與{message}置換符({message}依請求lang代入對應語系文字故單一模板即可)，未給採pathTemplate之verifyEmailResult.html(缺檔回退套件內建模板)，預設''
 
 
     //serverPort
@@ -331,8 +338,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let cleanKpAccountLoginFailedForToken = get(opt, 'cleanKpAccountLoginFailedForToken', '')
 
 
-    //allowUserRegistration
-    let allowUserRegistration = normalizeAllowUserRegistration(opt)
+    //allowUserRegistration, 是否開放使用者自助註冊, 新功能採opt-in, 未給預設false, 引用方明確設true才啟用(===true嚴格判定, 免'y'等字串誤開)
+    let allowUserRegistration = get(opt, 'allowUserRegistration', false) === true
 
 
     //以下設定僅在 allowUserRegistration=true 時才需檢查
@@ -345,16 +352,14 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             throw new Error('invalid siteUrl: must be a non-empty string when allowUserRegistration is enabled')
         }
 
-        //email title 已搬到 procLang.mjs（regVerifyEmTitle 鍵），可由 kpLangExt 覆寫
-        //email body 已搬到 server/template/regVerifyEmail-{lang}.html
-
     }
 
 
-    //passwordPolicy
+    //passwordPolicy, 未給時採程式內建預設(對齊其他設定[未給即回退預設值]慣例, 舊引用方settings原封升級不會啟動失敗); 有給時才逐欄嚴格驗證
     let passwordPolicy = get(opt, 'passwordPolicy')
     if (!iseobj(passwordPolicy)) {
-        throw new Error('invalid passwordPolicy: missing or not an object')
+        passwordPolicy = defaultPasswordPolicy
+        console.log('[INFO] settings 未提供 passwordPolicy, 採用程式內建預設密碼政策')
     }
     let ppMinLength = get(passwordPolicy, 'minLength')
     if (!ispint(ppMinLength) || cint(ppMinLength) &lt; 1) {
@@ -468,10 +473,6 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let kpLangExt = get(opt, 'kpLangExt', {})
 
 
-    //email title 已搬到 procLang.mjs（chpwEmTitle 鍵），可由 kpLangExt 覆寫
-    //email body 已搬到 server/template/changePasswordEmail-{lang}.html
-
-
     //srLog
     let srLog = srLogInit(opt)
 
@@ -540,18 +541,81 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
 
     //procCore, procProtect, procStaInfor, procLang
-    //verifyBaseUrl, 後端 API base URL，用於驗證信內連結
-    let verifyBaseUrl = `http://localhost:${serverPort}`
-
-    //pathTemplate 模板資料夾路徑（dev / npm 兩種來源）
-    //供 procCore 渲染 email body 與本檔 /api/verifyEmail handler 渲染結果頁
-    let pathTemplate = './server/template'
-    let npmPathTemplate = './node_modules/w-web-sso/server/template'
-    if (fsIsFolder(npmPathTemplate)) {
-        pathTemplate = npmPathTemplate
+    //verifyBaseUrl, 後端 API base URL，用於驗證信內連結; 可由settings提供, 未給回退本機網址(僅本機開發可用)
+    let verifyBaseUrl = get(opt, 'verifyBaseUrl', '')
+    if (!isestr(verifyBaseUrl)) {
+        verifyBaseUrl = `http://localhost:${serverPort}`
+        if (allowUserRegistration) {
+            console.log(`[WARN] settings 未提供 verifyBaseUrl, 註冊驗證信連結將採 ${verifyBaseUrl}, 非本機部署時收信人將無法完成驗證, 請於 settings 提供對外可連之後端 base URL`)
+        }
     }
 
-    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pathTemplate, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl })
+    //pathTemplateDefault 內建模板資料夾路徑（dev / npm 兩種來源）, 現僅存放複雜模板 verifyEmailResult.html(驗證結果頁); 信件文字內建預設在 procLang.mjs
+    //供本檔 /api/verifyEmail handler 渲染結果頁
+    let pathTemplateDefault = './server/template'
+    let npmPathTemplate = './node_modules/w-web-sso/server/template'
+    if (fsIsFolder(npmPathTemplate)) {
+        pathTemplateDefault = npmPathTemplate
+    }
+
+    //readTextIfFile, 值若為既存檔案路徑(絕對或基於啟動路徑之相對)則於初始化讀檔內容作為模板或文字, 否則原樣視為文字
+    let readTextIfFile = (v) => {
+        if (!isestr(v)) {
+            return v
+        }
+        let fp = path.resolve(v)
+        if (fsIsFile(fp)) {
+            return fs.readFileSync(fp, 'utf8')
+        }
+        return v
+    }
+
+    //getEmText, 讀取信件文字 settings 鍵(逐語系物件), 各語系值可為文字或檔案路徑(檔案存在即讀檔)
+    let getEmText = (key) => {
+        let kp = get(opt, key)
+        if (!iseobj(kp)) {
+            return {}
+        }
+        let r = {}
+        Object.keys(kp).forEach((k) => {
+            r[k] = readTextIfFile(kp[k])
+        })
+        return r
+    }
+
+    //信件文字 settings 鍵(逐語系物件), 為安裝方於設定檔客製信件之正式介面, 各欄位各自指定語系文字或指定檔案路徑讀檔作為內容;
+    //未給時標題與內容皆採內建語系文字(procLang 同名鍵)
+    //chpwEmTitle/chpwEmContent: 變更密碼通知信({sender}/{name} 置換)
+    let chpwEmTitle = getEmText('chpwEmTitle')
+    let chpwEmContent = getEmText('chpwEmContent')
+    //regVerifyEmTitle/regVerifyEmContent: 註冊驗證信({sender}/{name}/{verifyUrl} 置換)
+    let regVerifyEmTitle = getEmText('regVerifyEmTitle')
+    let regVerifyEmContent = getEmText('regVerifyEmContent')
+    //resetPwEmTitle/resetPwEmContent: 重設密碼通知信({sender}/{name}/{account}/{newPassword} 置換)
+    let resetPwEmTitle = getEmText('resetPwEmTitle')
+    let resetPwEmContent = getEmText('resetPwEmContent')
+
+    //pathTemplate, 可由settings提供自訂模板資料夾供客製結果頁(verifyEmailResult.html), 缺檔回退內建模板; 未給則直接採內建
+    let pathTemplate = get(opt, 'pathTemplate', '')
+    if (!isestr(pathTemplate) || !fsIsFolder(pathTemplate)) {
+        if (isestr(pathTemplate)) {
+            console.log(`[WARN] settings.pathTemplate 指定之資料夾不存在(${pathTemplate}), 改採套件內建模板`)
+        }
+        pathTemplate = pathTemplateDefault
+    }
+
+    //verifyEmailResultContent, 註冊驗證結果頁HTML(內含{title}/{message}置換符), 可由settings直接提供文字或檔案路徑(優先);
+    //未給則於初始化解析模板檔一次(自訂資料夾缺檔回退內建), 供 /api/verifyEmail handler 置換使用
+    let verifyEmailResultContent = readTextIfFile(get(opt, 'verifyEmailResultContent', ''))
+    if (!isestr(verifyEmailResultContent)) {
+        let fpTpl = path.resolve(pathTemplate, 'verifyEmailResult.html')
+        if (!fsIsFile(fpTpl)) {
+            fpTpl = path.resolve(pathTemplateDefault, 'verifyEmailResult.html')
+        }
+        verifyEmailResultContent = fs.readFileSync(fpTpl, 'utf8')
+    }
+
+    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, chpwEmTitle, chpwEmContent, regVerifyEmTitle, regVerifyEmContent, resetPwEmTitle, resetPwEmContent, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl })
     let pp = procProtect(woItems, p, {
         minForAccountLoginFailed,
         numForAccountLoginFailed,
@@ -1058,12 +1122,11 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     msgKey = (r.msg &amp;&amp; typeof r.msg === 'string') ? r.msg : 'verifyEmailInvalidToken'
                 }
 
-                //render template (pathTemplate 為上層共用變數)
+                //render (verifyEmailResultContent 已於初始化解析: settings 直接提供優先, 否則模板檔)
                 let title = get(kpLang, `${lang}.webName`, '')
                 let message = get(kpLang, `${lang}.${msgKey}`, msgKey)
 
-                let fpTpl = path.resolve(pathTemplate, 'verifyEmailResult.html')
-                let html = fs.readFileSync(fpTpl, 'utf8')
+                let html = verifyEmailResultContent
                 html = replace(html, '{title}', title)
                 html = replace(html, '{message}', message)
 
@@ -1403,7 +1466,6 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 }
 
 
-export { normalizeAllowUserRegistration }
 export default WWebSso
 </code></pre>
         </article>
@@ -1419,7 +1481,7 @@ export default WWebSso
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Thu Aug 20 2026 00:57:26 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Thu Aug 20 2026 12:39:15 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>

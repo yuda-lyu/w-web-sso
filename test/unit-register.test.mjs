@@ -3,7 +3,6 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import get from 'lodash-es/get.js'
 import proc from '../server/procCore.mjs'
-import { normalizeAllowUserRegistration } from '../server/WWebSso.mjs'
 
 
 //resolve server/template (scenario B: 路徑落在套件自身資料夾, 用 fileURLToPath, 全域 §5.2)
@@ -274,22 +273,42 @@ describe('register - field validation logic', function() {
 
 
 describe('register - allowUserRegistration setting', function() {
-    //呼叫 WWebSso 具名匯出之真實正規化函式, 非測試檔自行複製邏輯——
-    //WWebSso.mjs 之 normalizeAllowUserRegistration 改壞時本組 case 須轉紅(全域 §14.2)
+    //測真實閘門(procCore.createUser 之 allowUserRegistration 檢查), 非測試檔自行複製邏輯(全域 §14.2)
+    //spec: 新功能採 opt-in, settings 未給預設 false(WWebSso.mjs 讀取處 ===true 嚴格判定), 明確給 true 才啟用;
+    //預設 false 確保舊引用方 settings 原封升級後啟動與行為皆與升級前一致
 
-    // A3: default when not set
-    it('A3: should default to true when allowUserRegistration is not set', function() {
-        assert.strict.equal(normalizeAllowUserRegistration({}), true)
+    // A2: gate off → createUser rejected
+    it('A2: should reject createUser with userRegistrationNotAllowed when allowUserRegistration is false', async function() {
+        let p = buildProc(mkWoItems(), async () => {}, { allowUserRegistration: false })
+        let errKey = ''
+        await p.createUser('eng', {
+            account: 'newuser',
+            name: 'New User',
+            email: 'new@x.com',
+            password: 'Ab@12345',
+            confirmPassword: 'Ab@12345',
+        })
+            .catch((err) => {
+                errKey = err
+            })
+        assert.strict.equal(errKey, 'userRegistrationNotAllowed')
     })
 
-    // A4: non-boolean should default to true
-    it('A4: should default to true when allowUserRegistration is non-boolean', function() {
-        assert.strict.equal(normalizeAllowUserRegistration({ allowUserRegistration: 'yes' }), true)
-    })
-
-    // A2: false should stay false
-    it('A2: should stay false when set to false', function() {
-        assert.strict.equal(normalizeAllowUserRegistration({ allowUserRegistration: false }), false)
+    // A5: gate on → createUser proceeds (真實 opt-in 啟用路徑)
+    it('A5: should allow createUser when allowUserRegistration is true', async function() {
+        let inserted = []
+        let p = buildProc(mkWoItems(), async (operatorId, table, op, args) => {
+            inserted.push(...args)
+        }, { allowUserRegistration: true })
+        let r = await p.createUser('eng', {
+            account: 'newuser',
+            name: 'New User',
+            email: 'new@x.com',
+            password: 'Ab@12345',
+            confirmPassword: 'Ab@12345',
+        })
+        assert.strict.equal(r.state, 'success')
+        assert.strict.equal(inserted.length, 1)
     })
 
 })
