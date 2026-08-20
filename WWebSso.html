@@ -64,7 +64,7 @@
 
     
 
-    <h4 class="name" id="WWebSso"><span class="type-signature"></span>new WWebSso<span class="signature">(WOrm, url, db, pathSettings<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+    <h4 class="name" id="WWebSso"><span class="type-signature"></span>new WWebSso<span class="signature">(WOrm, url, db, pathSettings<span class="signature-attributes">opt</span>, optExt<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
 
     
 
@@ -74,13 +74,15 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li><p>權限伺服器</p></li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li><p>WWebSso 單一登入(SSO)伺服器</p>
+<p>建立SSO web服務: 使用者登入/自動登入/登出, 自助註冊與email驗證, 變更/重設密碼與通知信,
+token發放/驗證/更新, 後台使用者/金鑰/IP管理與統計資訊, 以及供外部系統查驗token與使用者資訊之API</p></li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="server_WWebSso.mjs.html">server/WWebSso.mjs</a>, <a href="server_WWebSso.mjs.html#line52">line 52</a>
+        <a href="server_WWebSso.mjs.html">server/WWebSso.mjs</a>, <a href="server_WWebSso.mjs.html#line98">line 98</a>
     </li></ul></dd>
     
 
@@ -123,11 +125,6 @@
 
 
 
-
-
-    <h5 class="h5-examples">Example</h5>
-    
-    <pre class="prettyprint"><code></code></pre>
 
 
 
@@ -297,12 +294,1922 @@
             
                 <td class="default">
                 
-                    <code>'./settings'</code>
+                    <code>'./settings.json'</code>
                 
                 </td>
             
 
-            <td class="description last"><p>輸入設定檔案路徑字串，預設'./settings'</p></td>
+            <td class="description last"><p>輸入設定檔案路徑字串，檔案為json5格式，非既存檔案則回退'./settings.json'，預設'./settings.json'</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>optExt</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>{}</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入額外設定物件，與設定檔內容合併且同名鍵以optExt為準，以下各鍵亦可直接寫於設定檔(各鍵之預設值與範例詳套件自帶settings.json)，預設{}</p>
+                <h6>Properties</h6>
+                
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+        <th>Default</th>
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>serverPort</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>11007</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入伺服器通訊port整數，預設11007</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>useCheckUser</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Boolean</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>false</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入是否檢查使用者資訊布林值，預設false</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>getUserById</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>null</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入當useCheckUser=true時依照使用者ID取得使用者資訊物件函數，預設null</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>useExcludeWhenNotAdmin</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Boolean</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>false</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入使用ORM的select方法時是否自動刪除數據內isActive欄位之布林值，預設false</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>webName</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>{}</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入站台名稱物件，至少包含語系eng與cht鍵的名稱，預設{}</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>webDescription</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>{}</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入站台描述物件，至少包含語系eng與cht鍵的名稱，預設{}</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>webLogo</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>''</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入站台logo字串，採base64格式，預設''</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>webBackgoundGradientColors</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>['#FFE0B2', '#FFCC80', '#FFF59D', '#F2D6A2', '#F0CC88']</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入使用者登入頁顏色陣列，前3色為背景線性linear-gradient，第4色為登入區塊背景色，第5色為站台logo背景色，若不給則預設白色。預設['#FFE0B2', '#FFCC80', '#FFF59D', '#F2D6A2', '#F0CC88']</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>webKey</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>''</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入站台識別字串，預設''</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>salt</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>''</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入密碼加鹽字串，預設''</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>minExpired</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>30</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入創建或更新金鑰有效時間整數，單位分鐘(min)，預設30</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>minForAccountLoginFailed</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>10</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入限制帳號最大登入失敗(密碼錯誤)次數之判準時間整數，單位分鐘(min)，預設10</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>numForAccountLoginFailed</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>3</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入限制帳號最大登入失敗(密碼錯誤)之次數整數，預設3</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>minBlockForAccountLoginFailed</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>30</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入限制帳號最大登入失敗(密碼錯誤)次數之觸發後封鎖時間整數，單位分鐘(min)，預設30</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>minForTokenCallApi</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>10</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入限制token最大調用API次數之判準時間整數，單位分鐘(min)，預設10</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>numForTokenCallApi</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>1000</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入限制token最大調用API之次數整數，預設1000</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>minBlockForTokenCallApi</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>30</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入限制token最大調用API次數之觸發後封鎖時間整數，單位分鐘(min)，預設30</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>minForIpCallApi</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>10</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入限制IP最大調用API次數之判準時間整數，單位分鐘(min)，預設10</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>numForIpCallApi</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>10000</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入限制IP最大調用API之次數整數，預設10000</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>minBlockForIpCallApi</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>30</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入限制IP最大調用API次數之觸發後封鎖時間整數，單位分鐘(min)，預設30</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>userLogo</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>''</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入使用者logo字串，採base64格式，預設''</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>subfolder</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>''</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入站台所在子目錄字串，提供站台位於內網採反向代理進行服務時，故需支援位於子目錄情形，預設''</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>mappingBy</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>'email'</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入外部系統識別使用者token後所提供之資料物件，與權限系統之使用者資料物件，兩者間查找之對應欄位，可選'id'、'email'、'name'，預設'email'</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>kpLangExt</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>{}</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入擴充前端語系物件，預設{}</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>logFd</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>'./logs'</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入log紀錄儲存位置字串，預設'./logs'</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>logInterval</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>'hr'</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入log紀錄檔案拆檔時長字串，預設'hr'</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>emSrcEmail</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>null</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入email寄信用email字串，預設null</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>emSrcPW</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>null</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入email寄信用密碼字串，預設null</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>emSrcHost</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>null</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入email寄信用host字串，預設null</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>emSrcPort</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>null</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入email寄信用port整數，預設null</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>allowUserRegistration</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Boolean</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>false</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入是否開放使用者自助註冊布林值，新功能採opt-in，須明確給true才啟用，預設false</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>siteUrl</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>''</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入站台前端網址字串，當allowUserRegistration=true時必填(不給則啟動時throw)，預設''</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>verifyBaseUrl</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>''</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入後端API base URL字串，用於組出註冊驗證信內之連結，當allowUserRegistration=true且部署於非本機環境時必填，不給則回退'http://localhost:{serverPort}'(僅本機開發可用)，預設''</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>passwordPolicy</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>{詳見server/defaultPasswordPolicy.mjs}</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入密碼政策物件，不給則採程式內建預設；有給則13個子欄位(minLength、maxLength、requireLetter、requireUppercase、requireLowercase、requireDigit、requireSpecial、noSpace、onlyAscii、forbiddenChars、noConsecutiveCharsFromAccount、consecutiveCharsMinMatch、commonPasswordBlacklist)逐欄驗證，缺一或型別錯即啟動時throw，預設內建政策</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>cleanKpIpCallApiForIps</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>['127.0.0.1','::1','::ffff:127.0.0.1']</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入允許呼叫/api/cleanKpIpCallApi的連線IP白名單陣列，預設本機IP</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>cleanKpIpCallApiForToken</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>''</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入呼叫/api/cleanKpIpCallApi須附帶之識別token字串，預設''</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>cleanKpAccountLoginFailedForIps</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>['127.0.0.1','::1','::ffff:127.0.0.1']</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入允許呼叫/api/cleanKpAccountLoginFailed的連線IP白名單陣列，預設本機IP</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>cleanKpAccountLoginFailedForToken</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>''</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入呼叫/api/cleanKpAccountLoginFailed須附帶之識別token字串，預設''</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>pathTemplate</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>''</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入自訂結果頁模板資料夾路徑字串，內放verifyEmailResult.html即覆寫內建結果頁模板(缺檔回退套件內建)，不給則採內建模板，預設''</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>chpwEmTitle</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>{}</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入變更密碼通知信標題物件，逐語系鍵(eng、cht)各自給文字，或給檔案路徑(絕對或基於啟動路徑之相對，檔案存在即讀檔作為文字，不存在則原樣視為文字)，未給之語系採內建語系文字，預設{}</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>chpwEmContent</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>{}</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入變更密碼通知信內容物件，逐語系鍵(eng、cht)各自給HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{sender}與{name}置換符，未給之語系採內建語系文字，預設{}</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>regVerifyEmTitle</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>{}</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入註冊驗證信標題物件，逐語系鍵(eng、cht)各自給文字或檔案路徑(檔案存在即讀檔作為文字)，未給之語系採內建語系文字，預設{}</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>regVerifyEmContent</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>{}</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入註冊驗證信內容物件，逐語系鍵(eng、cht)各自給HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{sender}、{name}與{verifyUrl}置換符，未給之語系採內建語系文字，預設{}</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>resetPwEmTitle</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>{}</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入重設密碼通知信標題物件，逐語系鍵(eng、cht)各自給文字或檔案路徑(檔案存在即讀檔作為文字)，未給之語系採內建語系文字，預設{}</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>resetPwEmContent</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>{}</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入重設密碼通知信內容物件，逐語系鍵(eng、cht)各自給HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{sender}、{name}、{account}與{newPassword}置換符，未給之語系採內建語系文字，預設{}</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>verifyEmailResultContent</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>''</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入註冊驗證結果頁HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{title}與{message}置換符({message}依請求lang代入對應語系文字故單一模板即可)，未給採pathTemplate之verifyEmailResult.html(缺檔回退套件內建模板)，預設''</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+            </td>
         </tr>
 
     
@@ -387,7 +2294,7 @@
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Thu Aug 20 2026 12:39:15 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Thu Aug 20 2026 13:11:25 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
