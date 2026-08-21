@@ -610,6 +610,7 @@ export default {
                 },
                 legend: {
                     show: true,
+                    top: 0, //須明給: echarts 6 起 legend 預設由 top:0 改為 bottom, 不給會落到底部壓住 x 軸時間標籤
                 },
                 xAxis: [
                     {

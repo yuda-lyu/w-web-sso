@@ -440,6 +440,7 @@ export default {
 
             firstLoading: true,
             firstSetting: true,
+            systemProcing: false, //程式端載入/重載清單資料期間為true, 用於排除非使用者操作之rowsChange
             showIsEditable: false,
             isEditable: false,
             isModified: false,
@@ -554,6 +555,7 @@ export default {
                 // console.log(res)
                 res = sortBy(res, 'order')
                 vo.users = res
+                vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
             })
             .catch((err) => {
                 console.log(err)
@@ -830,6 +832,19 @@ export default {
     },
     methods: {
 
+        //markDataReload, 標記接下來由程式端資料載入/重載所觸發之 rowsChange 非使用者變更
+        //why: rowsChange 由 Vue 更新 + aggrid 渲染後才非同步觸發, 早於此之旗標(firstLoading/firstSetting)
+        //於觸發當下皆已失效, 故須於寫入資料當下標記, 待渲染完成後才解除
+        markDataReload: function() {
+            let vo = this
+            vo.systemProcing = true
+            vo.$nextTick(() => {
+                setTimeout(() => {
+                    vo.systemProcing = false
+                }, 1)
+            })
+        },
+
         cellTimeForInput: function(v) {
             if (istimemsTZ(v)) {
                 return ot(v).format('YYYY-MM-DDTHH:mm:ss')
@@ -1046,7 +1061,7 @@ export default {
                         // console.log('rowsChange cloneDeep(vo.opt.rows)', cloneDeep(vo.opt.rows))
 
                         //check
-                        if (!vo.syncState || vo.firstLoading || vo.firstSetting) {
+                        if (!vo.syncState || vo.firstLoading || vo.firstSetting || vo.systemProcing) {
                             return
                         }
 
@@ -1508,6 +1523,7 @@ export default {
                     .then((res) => {
                         res = sortBy(res, 'order')
                         vo.users = res
+                        vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
                     })
                     .catch((err) => {
                         console.log('refresh getUsersList catch', err)

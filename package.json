@@ -1,6 +1,6 @@
 {
   "name": "w-web-sso",
-  "version": "1.0.59",
+  "version": "1.0.60",
   "main": "dist/w-web-sso.umd.js",
   "dependencies": {
     "axios": "^1.18.1",
