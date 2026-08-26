@@ -85,7 +85,7 @@
 **調研方法與證據鏈(逐層排除)**:
 1. **S1**: `api-resetpassword` 於全新 DB+後端**單跑 9/9 綠**(先前失敗之 API-001 過)。
 2. **S2**: **全部 8 支 api 檔合跑 40/40 綠**(API-001 + D13 全過)→「api 檔互相污染」不成立。
-3. **S3**: 完整 `npm test` 於**真正乾淨基座**(重殺殘留進程 + g.initialData + 重啟後端)重跑 → **342 passing / 14 failing**(對照先前 245/111)。**若 token 計數器理論為真, S3 跑同樣的累積呼叫量應同樣大量失敗——並沒有**。D13 於套件內 4/4 綠、autoblock 於套件內全綠。
+3. **S3**: 完整 `npm test` 於**真正乾淨基座**(重殺殘留進程 + g.initialData〔2026-08-20 起更名為 `g_initialData.mjs`〕 + 重啟後端)重跑 → **342 passing / 14 failing**(對照先前 245/111)。**若 token 計數器理論為真, S3 跑同樣的累積呼叫量應同樣大量失敗——並沒有**。D13 於套件內 4/4 綠、autoblock 於套件內全綠。
 4. **結論一(大量失敗的真因)**: 先前 run1-run4 的百餘顆失敗是**操作面環境假象**——多次強殺跑批留下殭屍 mocha/服務進程(事後在 perm 抓到 4 隻同型殭屍)、Windows LMDB 記憶體映射殘留(§11.4)、後端缺位/雙前端互搶所致, 非套件設計缺陷。1,206 筆 tokenExpired 為此類壞境下的次生噪音。
 5. **結論二(真正的既有債 = 3 個 suite 共 14 顆過期 baseline, 單跑亦倒)**: S3 的 14 顆失敗全為 pixel mismatch 且**單檔跑同樣失敗**(e2e-tokens 單跑 8/8 倒), 與合併模式無關:
    - `tokens`(eng+cht ×4 case): 側欄選單文字整體 ~7px 位移 —— 與**同日產製**(06-20)之 adduser baseline 對照, adduser 全過而 tokens 全倒, 證明 tokens 該批圖產製當下環境有微差(baseline 自身不一致), 非 UI 迴歸。

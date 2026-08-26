@@ -2,13 +2,13 @@ import map from 'lodash-es/map.js'
 import { pathToFileURL } from 'url'
 import ds from './src/schema/index.mjs'
 import hashPassword from './server/hashPassword.mjs'
-import { woItems } from './g.mOrm.mjs'
+import { woItems } from './g_mOrm.mjs'
 
 
 let salt = process.env.SALT || '{salt}' //D21: 生產經 SALT env 注入真實 pepper, 須與後端 verify pepper 一致; 未設時用佔位符(僅測試/開發)
 
 
-//基本測試數據 (使用者) 原始定義 — 為 g.initialData 重建 DB 與 e2e setup 的單一真理來源.
+//基本測試數據 (使用者) 原始定義 — 為 g_initialData 重建 DB 與 e2e setup 的單一真理來源.
 //e2e 各測試 setup 階段透過 buildBaseUsers() 重建這批基本數據 (含系統管理員 ac-admin),
 //確保每個 e2e 都從相同已知 DB 狀態起跑, 不受其他 e2e 非預期殘留影響.
 let baseUsersRaw = [
@@ -111,7 +111,7 @@ function buildBaseTokens() {
 }
 
 
-//重建整個資料庫為基本測試數據 (清空 users / tokens 後插入基本種子). 供 node g.initialData.mjs 用.
+//重建整個資料庫為基本測試數據 (清空 users / tokens 後插入基本種子). 供 node g_initialData.mjs 用.
 async function initialData() {
     await woItems.users.delAll()
     await woItems.users.insert(buildBaseUsers())
@@ -126,7 +126,7 @@ async function initialData() {
 export { baseUsersRaw, baseTokensRaw, buildBaseUsers, buildBaseTokens, initialData }
 
 
-//main-guard: 僅在「直接以 node g.initialData.mjs 執行」時重建 DB; 被 import 時不執行 (避免副作用)
+//main-guard: 僅在「直接以 node g_initialData.mjs 執行」時重建 DB; 被 import 時不執行 (避免副作用)
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     initialData()
         .catch((err) => {
@@ -136,4 +136,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
 
 //重建資料庫
-//node g.initialData.mjs
+//node g_initialData.mjs

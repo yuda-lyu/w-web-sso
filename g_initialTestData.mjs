@@ -1,5 +1,5 @@
 import ds from './src/schema/index.mjs'
-import { woItems } from './g.mOrm.mjs'
+import { woItems } from './g_mOrm.mjs'
 import genTestData from 'w-serv-orm/src/genTestData.mjs'
 
 
@@ -18,4 +18,4 @@ initialTestData()
 
 
 //刪除舊檔與重建測試資料庫
-//node g.initialTestData.mjs
+//node g_initialTestData.mjs

@@ -1,6 +1,6 @@
 import WOrm from 'w-orm-lmdb/src/WOrmLmdb.mjs'
 import WWebSso from './server/WWebSso.mjs'
-import getSettings from './g.getSettings.mjs'
+import getSettings from './g_getSettings.mjs'
 
 
 //st

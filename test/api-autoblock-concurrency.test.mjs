@@ -1,7 +1,7 @@
 import assert from 'assert'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
-import { woItems } from '../g.mOrm.mjs'
+import { woItems } from '../g_mOrm.mjs'
 import { startServersOnce, cleanup, apiUrl, getFapi, callFapi } from './api-setup.mjs'
 
 

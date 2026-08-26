@@ -9,8 +9,8 @@ import JSON5 from 'json5'
 import sharp from 'sharp'
 import pixelmatch from 'pixelmatch'
 import { PNG } from 'pngjs'
-import { woItems } from '../g.mOrm.mjs'
-import { buildBaseUsers, buildBaseTokens } from '../g.initialData.mjs'
+import { woItems } from '../g_mOrm.mjs'
+import { buildBaseUsers, buildBaseTokens } from '../g_initialData.mjs'
 
 //D21: 測試環境放行佔位符 pepper (測試密碼非機密; spawn 的 backend 繼承此 env → WWebSso 啟動檢查放行).
 //生產環境不設此旗標 + 未注入 SALT → 後端拒啟. 種子(此檔 buildBaseUsers)與後端 verify 在測試下同用 '{salt}', 一致.
@@ -151,11 +151,11 @@ function genTempSettings(overrides = {}) {
 //修法: backendProc=null 時用 OS-level 查 port 11007 之 PID + taskkill, 殺乾淨後才 spawn 新.
 //
 //envOverride: 可選, 注入額外環境變數給新 backend 進程 (與 process.env 淺合併後傳 spawn).
-//why 需要它而非僅靠 genTempSettings 改 settings 檔: backend 最終設定 = settings 檔 overlay g.getSettings()
-//(srv.mjs 把 g.getSettings() 當 optExt 傳入, WWebSso 內 { ...settings檔, ...optExt } → optExt 後蓋勝),
-//而 g.getSettings() 會把 .env 的 EM_SRC_* 等覆寫進 optExt → 真實 SMTP 憑證凌駕 settings 檔之上, 連
-//genTempSettings({emSrcHost:...}) 都被蓋掉. 但 g.getSettings 的 loadEnv 是「process.env 已有該 key 就不從
-//.env 載入」(g.getSettings.mjs:23) → 故在 spawn env 預先放 EM_SRC_HOST 等, 即可使 .env 失效、改用注入值.
+//why 需要它而非僅靠 genTempSettings 改 settings 檔: backend 最終設定 = settings 檔 overlay g_getSettings()
+//(srv.mjs 把 g_getSettings() 當 optExt 傳入, WWebSso 內 { ...settings檔, ...optExt } → optExt 後蓋勝),
+//而 g_getSettings() 會把 .env 的 EM_SRC_* 等覆寫進 optExt → 真實 SMTP 憑證凌駕 settings 檔之上, 連
+//genTempSettings({emSrcHost:...}) 都被蓋掉. 但 g_getSettings 的 loadEnv 是「process.env 已有該 key 就不從
+//.env 載入」(g_getSettings.mjs:23) → 故在 spawn env 預先放 EM_SRC_HOST 等, 即可使 .env 失效、改用注入值.
 //典型用途: E2E-021 以 EM_SRC_HOST=127.0.0.1 / EM_SRC_PORT=1 (connection-refused) 讓 srEmail.send 瞬間失敗.
 async function restartBackend(pathSettings = './settings.json', envOverride = null) {
     if (backendProc) {
@@ -597,7 +597,7 @@ async function maskBelowY(buf, y) {
 }
 
 
-//e2e 資料庫起始狀態重置: 清空 users / tokens / ips 三張表, 再插入「基本測試數據」(g.initialData
+//e2e 資料庫起始狀態重置: 清空 users / tokens / ips 三張表, 再插入「基本測試數據」(g_initialData
 //的 3 使用者 + 4 token, 含系統管理員 ac-admin). 每個 e2e 測試 setup 階段先呼叫此函式, 再插入
 //自己的特化數據, 即可保證從相同已知 DB 狀態起跑 — 不受其他 e2e 非預期結束殘留 / 既有數據變動影響.
 //teardown 階段各測試只刪自己的特化數據, 不動基本種子 → 非 e2e 時段仍保有完整基本數據可用.

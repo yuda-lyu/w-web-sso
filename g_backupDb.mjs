@@ -1,4 +1,4 @@
-import { woItems } from './g.mOrm.mjs'
+import { woItems } from './g_mOrm.mjs'
 import getDb from 'w-serv-orm/src/getDb.mjs'
 
 
@@ -7,4 +7,4 @@ getDb.backup(woItems)
 
 
 //備份資料重與由備份資料重建資料庫
-//node g.backupDb.mjs
+//node g_backupDb.mjs

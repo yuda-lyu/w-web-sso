@@ -2,7 +2,7 @@ import assert from 'assert'
 import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
-import { woItems } from '../g.mOrm.mjs'
+import { woItems } from '../g_mOrm.mjs'
 import { startServersOnce, callFapi } from './api-setup.mjs'
 import { resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
 
@@ -45,7 +45,7 @@ import { resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
 // 已知 seed 狀態 (在 before() 先 resetToBaseSeed() 把全表還原成 canonical base seed,
 //   再插入本檔特化資料 → 整個 DB 成為「完全已知的固定資料集」, 故可斷言絕對計數):
 //
-//   base seed (g.initialData.buildBaseUsers / buildBaseTokens, 經 resetToBaseSeed 還原):
+//   base seed (g_initialData.buildBaseUsers / buildBaseTokens, 經 resetToBaseSeed 還原):
 //     users  ×3: id-for-viewer(active,verified), id-for-basic(active,未驗證), id-for-admin(active,admin)
 //                → 全部 isActive='y' / timeBlocked='' / timeExpired=2030(未過期)
 //                → base 貢獻: total+3, active+3, blocked+0, expired+0

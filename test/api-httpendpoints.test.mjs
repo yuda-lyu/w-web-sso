@@ -1,6 +1,6 @@
 import assert from 'assert'
 import ot from 'dayjs'
-import { woItems } from '../g.mOrm.mjs'
+import { woItems } from '../g_mOrm.mjs'
 import ds from '../src/schema/index.mjs'
 import { startServersOnce, apiUrl } from './api-setup.mjs'
 import { resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'

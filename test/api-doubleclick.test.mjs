@@ -4,7 +4,7 @@ import obj2u8arr from 'wsemi/src/obj2u8arr.mjs'
 import u8arr2obj from 'wsemi/src/u8arr2obj.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword, { verifyPassword } from '../server/hashPassword.mjs'
-import { woItems } from '../g.mOrm.mjs'
+import { woItems } from '../g_mOrm.mjs'
 import { startServersOnce, cleanup, apiUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
 
 

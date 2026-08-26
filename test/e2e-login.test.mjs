@@ -6,7 +6,7 @@ import map from 'lodash-es/map.js'
 import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
-import { woItems } from '../g.mOrm.mjs'
+import { woItems } from '../g_mOrm.mjs'
 import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
 import { mdiEye, mdiEyeOff } from '@mdi/js/mdi.js'
 

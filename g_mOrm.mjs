@@ -1,7 +1,7 @@
 import WOrm from 'w-orm-lmdb/src/WOrmLmdb.mjs'
 import WServOrm from 'w-serv-orm/src/WServOrm.mjs'
 import ds from './src/schema/index.mjs'
-import getSettings from './g.getSettings.mjs'
+import getSettings from './g_getSettings.mjs'
 
 
 //getSettings

@@ -5,7 +5,7 @@ import { chromium } from 'playwright'
 import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
-import { woItems } from '../g.mOrm.mjs'
+import { woItems } from '../g_mOrm.mjs'
 import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch } from './e2e-setup.mjs'
 
 

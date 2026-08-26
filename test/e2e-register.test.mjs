@@ -6,7 +6,7 @@ import map from 'lodash-es/map.js'
 import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
-import { woItems } from '../g.mOrm.mjs'
+import { woItems } from '../g_mOrm.mjs'
 import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, assertBaselineMatch, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput } from './e2e-setup.mjs'
 
 
@@ -642,9 +642,9 @@ async function captureResendEmailMismatch(page, lang) {
 //後端 catch → reject('userRegistrationResendFailed') → 前端 inline resendError 紅字快速浮出 (實測點寄送→紅字 ~80ms)。
 //
 //注入手法為「spawn env 帶 EM_SRC_*」而非「genTempSettings 改 settings 檔的 emSrcHost」: 後者單獨無效, 因 backend
-//最終設定 = settings 檔 overlay g.getSettings(), 而 g.getSettings() 把 .env 的真實 EM_SRC_* (smtp.gmail.com + 真 app
+//最終設定 = settings 檔 overlay g_getSettings(), 而 g_getSettings() 把 .env 的真實 EM_SRC_* (smtp.gmail.com + 真 app
 //pw) 覆寫進去、後蓋勝過 settings 檔 → 仍連真實 gmail 寄信「成功」(回 userRegistrationResendSuccess) → 本 case (預期
-//失敗) 永遠等不到失敗紅字而 timeout。改走 env: g.getSettings 的 loadEnv 對「process.env 已有的 key」不從 .env 載入,
+//失敗) 永遠等不到失敗紅字而 timeout。改走 env: g_getSettings 的 loadEnv 對「process.env 已有的 key」不從 .env 載入,
 //故 spawn env 預放 EM_SRC_HOST=127.0.0.1 等即使 .env 失效、確定改連 127.0.0.1:1。(restartBackend envOverride 之機制詳該函式 doc。)
 //why 不沿用預設 (smtp.gmail.com:587): 連真實 gmail 是「慢慢 timeout」(易 TimeoutError、不確定), 且 .env 有真 pw 會寄信成功使本 case 反而錯誤。
 //

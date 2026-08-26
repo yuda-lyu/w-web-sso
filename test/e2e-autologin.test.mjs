@@ -6,7 +6,7 @@ import map from 'lodash-es/map.js'
 import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
-import { woItems } from '../g.mOrm.mjs'
+import { woItems } from '../g_mOrm.mjs'
 import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, maskRegions, overlayRegions, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
 import { mdiChartBoxOutline } from '@mdi/js/mdi.js'
 
