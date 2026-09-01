@@ -73,6 +73,7 @@ import { defaultPasswordPolicy } from './defaultPasswordPolicy.mjs'
  * @param {Object} [optExt.kpLangExt={}] 輸入擴充前端語系物件，預設{}
  * @param {String} [optExt.logFd='./logs'] 輸入log紀錄儲存位置字串，預設'./logs'
  * @param {String} [optExt.logInterval='hr'] 輸入log紀錄檔案拆檔時長字串，預設'hr'
+ * @param {Integer} [optExt.logNumKeep=null] 輸入log檔保留數上限正整數，超出者自最舊刪除，未給採w-syslog預設(hr模式365*24、day模式365)，預設null
  * @param {String} [optExt.emSrcEmail=null] 輸入email寄信用email字串，預設null
  * @param {String} [optExt.emSrcPW=null] 輸入email寄信用密碼字串，預設null
  * @param {String} [optExt.emSrcHost=null] 輸入email寄信用host字串，預設null
@@ -538,6 +539,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
     let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl })
     let pp = procProtect(woItems, p, {
+        srLog, //app token 跳過速率封鎖時記 debug (ADR-052)
         minForAccountLoginFailed,
         numForAccountLoginFailed,
         minBlockForAccountLoginFailed,

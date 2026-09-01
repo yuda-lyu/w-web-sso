@@ -8,7 +8,7 @@
 
         <div
             style="height:100%; background:#f9fafb; overflow-y:auto;"
-            v-if="!firstLoading && !errMsg"
+            v-if="!errMsg"
         >
 
             <div style="padding:20px 30px;">
@@ -35,7 +35,8 @@
                                 </div>
                                 <div class="ml-4">
                                     <div class="text-gray-500 text-sm">{{$t('totalUsers')}}</div>
-                                    <div class="text-2xl font-bold text-gray-900">{{ userOverview.total || 0 }}</div>
+                                    <div class="text-2xl font-bold text-gray-900" v-if="!loadingUserSummary">{{ userOverview.total || 0 }}</div>
+                                    <div class="flex items-center" style="height:32px;" v-else><WIconLoading :name="'cir-rotate'" :size="20" :color="'#6b7280'"></WIconLoading></div>
                                 </div>
                             </div>
 
@@ -45,7 +46,8 @@
                                 </div>
                                 <div class="ml-4">
                                     <div class="text-gray-500 text-sm">{{$t('activeUsers')}}</div>
-                                    <div class="text-2xl font-bold text-gray-900">{{ userOverview.active || 0 }}</div>
+                                    <div class="text-2xl font-bold text-gray-900" v-if="!loadingUserSummary">{{ userOverview.active || 0 }}</div>
+                                    <div class="flex items-center" style="height:32px;" v-else><WIconLoading :name="'cir-rotate'" :size="20" :color="'#6b7280'"></WIconLoading></div>
                                 </div>
                             </div>
 
@@ -55,7 +57,8 @@
                                 </div>
                                 <div class="ml-4">
                                     <div class="text-gray-500 text-sm">{{$t('blockedUsers')}}</div>
-                                    <div class="text-2xl font-bold text-gray-900">{{ userOverview.locked || 0 }}</div>
+                                    <div class="text-2xl font-bold text-gray-900" v-if="!loadingUserSummary">{{ userOverview.locked || 0 }}</div>
+                                    <div class="flex items-center" style="height:32px;" v-else><WIconLoading :name="'cir-rotate'" :size="20" :color="'#6b7280'"></WIconLoading></div>
                                 </div>
                             </div>
 
@@ -65,7 +68,8 @@
                                 </div>
                                 <div class="ml-4">
                                     <div class="text-gray-500 text-sm">{{$t('expiredUsers')}}</div>
-                                    <div class="text-2xl font-bold text-gray-900">{{ userOverview.expired || 0 }}</div>
+                                    <div class="text-2xl font-bold text-gray-900" v-if="!loadingUserSummary">{{ userOverview.expired || 0 }}</div>
+                                    <div class="flex items-center" style="height:32px;" v-else><WIconLoading :name="'cir-rotate'" :size="20" :color="'#6b7280'"></WIconLoading></div>
                                 </div>
                             </div>
 
@@ -101,10 +105,11 @@
                                 ></WEchartsVue>
 
                                 <div
-                                    style="padding:0px; font-size:0.8rem; color:#777;"
+                                    style="height:300px; display:flex; align-items:center; justify-content:center; gap:8px; font-size:0.8rem; color:#6b7280;"
                                     v-else
                                 >
-                                    {{$t('waitingData')}}
+                                    <WIconLoading :name="'cir-rotate'" :size="24" :color="'#6b7280'"></WIconLoading>
+                                    <span>{{$t('waitingData')}}</span>
                                 </div>
 
                             </div>
@@ -135,10 +140,11 @@
                                 ></WEchartsVue>
 
                                 <div
-                                    style="padding:0px; font-size:0.8rem; color:#777;"
+                                    style="height:300px; display:flex; align-items:center; justify-content:center; gap:8px; font-size:0.8rem; color:#6b7280;"
                                     v-else
                                 >
-                                    {{$t('waitingData')}}
+                                    <WIconLoading :name="'cir-rotate'" :size="24" :color="'#6b7280'"></WIconLoading>
+                                    <span>{{$t('waitingData')}}</span>
                                 </div>
 
                                 <!-- 金鑰對應使用者用量統計 -->
@@ -206,10 +212,11 @@
                                 ></WEchartsVue>
 
                                 <div
-                                    style="padding:0px; font-size:0.8rem; color:#777;"
+                                    style="height:300px; display:flex; align-items:center; justify-content:center; gap:8px; font-size:0.8rem; color:#6b7280;"
                                     v-else
                                 >
-                                    {{$t('waitingData')}}
+                                    <WIconLoading :name="'cir-rotate'" :size="24" :color="'#6b7280'"></WIconLoading>
+                                    <span>{{$t('waitingData')}}</span>
                                 </div>
 
                                 <!-- IP 使用量統計 -->
@@ -270,10 +277,10 @@
                                     <div class="font-semibold text-gray-700">{{$t('tokenCharacteristic')}}</div>
                                 </div>
                                 <div class="space-y-2 text-sm">
-                                    <div class="flex justify-between"><span>{{$t('activeTokens')}}:</span> <span class="font-bold">{{ tokenStatus.active || 0 }}</span></div>
-                                    <div class="flex justify-between"><span>{{$t('createdLast24h')}}:</span> <span class="font-bold">{{ tokenStatus.created24h || 0 }}</span></div>
-                                    <div class="flex justify-between"><span>{{$t('endingNext24h')}}:</span> <span class="font-bold">{{ tokenStatus.ending24h || 0 }}</span></div>
-                                    <div class="flex justify-between"><span>{{$t('endedTokens')}}:</span> <span class="font-bold">{{ tokenStatus.ended || 0 }}</span></div>
+                                    <div class="flex justify-between"><span>{{$t('activeTokens')}}:</span> <span class="font-bold" v-if="!loadingTokenSummary">{{ tokenStatus.active || 0 }}</span><WIconLoading v-else :name="'cir-rotate'" :size="14" :color="'#6b7280'"></WIconLoading></div>
+                                    <div class="flex justify-between"><span>{{$t('createdLast24h')}}:</span> <span class="font-bold" v-if="!loadingTokenSummary">{{ tokenStatus.created24h || 0 }}</span><WIconLoading v-else :name="'cir-rotate'" :size="14" :color="'#6b7280'"></WIconLoading></div>
+                                    <div class="flex justify-between"><span>{{$t('endingNext24h')}}:</span> <span class="font-bold" v-if="!loadingTokenSummary">{{ tokenStatus.ending24h || 0 }}</span><WIconLoading v-else :name="'cir-rotate'" :size="14" :color="'#6b7280'"></WIconLoading></div>
+                                    <div class="flex justify-between"><span>{{$t('endedTokens')}}:</span> <span class="font-bold" v-if="!loadingTokenSummary">{{ tokenStatus.ended || 0 }}</span><WIconLoading v-else :name="'cir-rotate'" :size="14" :color="'#6b7280'"></WIconLoading></div>
                                 </div>
                             </div>
 
@@ -284,8 +291,8 @@
                                     <div class="font-semibold text-gray-700">{{$t('ipCharacteristic')}}</div>
                                 </div>
                                 <div class="space-y-2 text-sm">
-                                    <div class="flex justify-between"><span>{{$t('conn24h')}}:</span> <span class="font-bold">{{ ipCharacteristic.conn24h || 0 }}</span></div>
-                                    <div class="flex justify-between"><span>{{$t('blockedIps')}}:</span> <span class="font-bold">{{ ipCharacteristic.blocked || 0 }}</span></div>
+                                    <div class="flex justify-between"><span>{{$t('conn24h')}}:</span> <span class="font-bold" v-if="!loadingIpSummary">{{ ipCharacteristic.conn24h || 0 }}</span><WIconLoading v-else :name="'cir-rotate'" :size="14" :color="'#6b7280'"></WIconLoading></div>
+                                    <div class="flex justify-between"><span>{{$t('blockedIps')}}:</span> <span class="font-bold" v-if="!loadingIpSummary">{{ ipCharacteristic.blocked || 0 }}</span><WIconLoading v-else :name="'cir-rotate'" :size="14" :color="'#6b7280'"></WIconLoading></div>
                                 </div>
                             </div>
 
@@ -298,12 +305,6 @@
 
         </div>
         <template v-else>
-            <div
-                style="padding:10px 15px; font-size:0.8rem;"
-                v-if="firstLoading"
-            >
-                {{$t('waitingData')}}
-            </div>
             <div
                 style="padding:10px 15px; font-size:0.8rem;"
                 v-if="errMsg"
@@ -336,12 +337,14 @@ import debounce from 'wsemi/src/debounce.mjs'
 import WEchartsVue from 'w-echarts-vue/src/components/WEchartsVue.vue'
 import { mdiShieldAccountOutline, mdiAccountGroupOutline, mdiAccountCheckOutline, mdiAccountLockOutline, mdiAccountClockOutline, mdiChartBoxOutline, mdiLoginVariant, mdiTicketConfirmationOutline, mdiAccessPointNetwork, mdiMonitorAccount, mdiFolderKeyNetworkOutline, mdiIpNetworkOutline } from '@mdi/js/mdi.js'
 import WIcon from 'w-component-vue/src/components/WIcon.vue'
+import WIconLoading from 'w-component-vue/src/components/WIconLoading.vue'
 
 
 export default {
     components: {
         WEchartsVue,
         WIcon,
+        WIconLoading,
     },
     props: {
     },
@@ -366,7 +369,10 @@ export default {
             panelWidth: 100,
             panelHeight: 100,
 
-            firstLoading: true,
+            //各區塊各自 loading 旗標 (先到先畫): 卡片/管控狀態以旗標切換數字與轉圈; 三張圖以 optX 是否為 null 判定
+            loadingUserSummary: true,
+            loadingTokenSummary: true,
+            loadingIpSummary: true,
             errMsg: '',
 
             userOverview: {},
@@ -403,18 +409,14 @@ export default {
 
         let vo = this
 
-        //firstLoading, errMsg
-        vo.firstLoading = true
+        //errMsg
         vo.errMsg = ''
 
-        //getAndRelaData
+        //getAndRelaData, 各區塊資料到達即各自渲染 (先到先畫), 任一 reject 才整頁切為 errMsg
         vo.getAndRelaData()
             .catch((err) => {
                 console.log(err)
                 vo.errMsg = vo.$t('getDataError')
-            })
-            .finally(() => {
-                vo.firstLoading = false
             })
 
     },
@@ -638,6 +640,7 @@ export default {
             let token = vo.userToken
 
             //getStaUserSummary
+            vo.loadingUserSummary = true
             await vo.$fapi.getStaUserSummary(token)
                 .then((res) => {
                     vo.userOverview = res
@@ -645,6 +648,9 @@ export default {
                 .catch((err) => {
                     console.log('getStaUserSummary catch', err)
                     throw err
+                })
+                .finally(() => {
+                    vo.loadingUserSummary = false
                 })
 
         },
@@ -656,6 +662,7 @@ export default {
             let token = vo.userToken
 
             //getStaTokenSummary
+            vo.loadingTokenSummary = true
             await vo.$fapi.getStaTokenSummary(token)
                 .then((res) => {
                     vo.tokenStatus = res
@@ -663,6 +670,9 @@ export default {
                 .catch((err) => {
                     console.log('getStaTokenSummary catch', err)
                     throw err
+                })
+                .finally(() => {
+                    vo.loadingTokenSummary = false
                 })
 
         },
@@ -674,6 +684,7 @@ export default {
             let token = vo.userToken
 
             //getStaIpSummary
+            vo.loadingIpSummary = true
             await vo.$fapi.getStaIpSummary(token)
                 .then((res) => {
                     vo.ipCharacteristic = res
@@ -681,6 +692,9 @@ export default {
                 .catch((err) => {
                     console.log('getStaIpSummary catch', err)
                     throw err
+                })
+                .finally(() => {
+                    vo.loadingIpSummary = false
                 })
 
         },

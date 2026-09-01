@@ -1,46 +1,11 @@
-import { fileURLToPath } from 'url'
-import path from 'path'
-import { Worker } from 'worker_threads'
-import genPm from 'wsemi/src/genPm.mjs'
+import { staLogs } from './staLogsCore.callWorker.mjs'
 
 
-let __filename = fileURLToPath(import.meta.url)
-let __dirname = path.dirname(__filename)
-
+//staUserAccountLogin (worker 版): 掃描交由 staLogsCore 單一 worker, 快取與 single-flight 在主執行緒; 簽章與輸出形狀不變
 async function staUserAccountLogin(timeLength = 7, timeInterval = 'hr', opt = {}) {
-    let pm = genPm()
-
-    //fpWk
-    let fpWk = path.resolve(__dirname, 'staUserAccountLogin.shellWorker.mjs')
-    // console.log('fpWk', fpWk)
-
-    //wk
-    let wk = new Worker(fpWk)
-
-    wk.on('message', (msg) => {
-
-        if (msg.mode === 'done') {
-            pm.resolve(msg.payload)
-        }
-        else if (msg.mode === 'error') {
-            pm.reject(msg.payload)
-        }
-
-        wk.terminate()
-
-    })
-
-    wk.on('error', (err) => {
-        pm.reject(err)
-    })
-
-    wk.postMessage({
-        timeLength,
-        timeInterval,
-        opt,
-    })
-
-    return pm
+    let r = await staLogs(timeLength, timeInterval, opt)
+    return r.login
 }
+
 
 export default staUserAccountLogin

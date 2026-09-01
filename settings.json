@@ -124,6 +124,7 @@
 
     logFd: './logs',
     logInterval: 'hr',
+    logNumKeep: 8760, //log 檔保留數上限, 超出者自最舊刪除; hr 模式每小時 1 檔, 8760 約 1 年 (= w-syslog 預設, 未給亦同)
 
     emSrcEmail: 'example@gmail.com',
     emSrcPW: '{pw}',

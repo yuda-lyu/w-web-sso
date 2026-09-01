@@ -144,6 +144,37 @@ let testUsers = {
 let userTokens = {}
 
 
+//E2E-007 固定 fixture log (spec 流程_後台統計資訊 E2E-007 測試資料):
+//本機 e2e 只有 127.0.0.1 一個真實 IP (後端刻意不讀 x-forwarded-for, WWebSso.mjs:640), 「IP 使用量統計」表之列數
+//原本來自 ./logs 內歷史真實資料, 隨 7 天窗移動而漂移 (baseline 5 列 vs 現況 1 列 → 尺寸不符必紅).
+//改以「非 ISO 檔名」(filterVpfsByWindow fail-open 一律保留, 且 w-syslog cleanLogs 只刪 ISO 檔名不會誤刪) 寫入
+//4 個固定 IP 之 verifyConn 行, time 相對執行當下推算 (2h 前 + 26h 前, 皆在 7 天窗內) → 表恆有 ≥5 個 IP →
+//預設只顯示 5 列 (showAllIpUsers=false) → 表格高度確定; 近 N 時計數仍為 wall-clock 會飄, 由既有貼圖覆蓋處理.
+let fixtureLogPath = './logs/e2e-stainfor-fixture.log'
+function writeFixtureLog() {
+    let now = ot()
+    let ips = ['203.0.113.11', '203.0.113.12', '203.0.113.13', '203.0.113.14']
+    let lines = []
+    ips.forEach((ip, i) => {
+        let t2h = now.subtract(2, 'hour').valueOf()
+        let t26h = now.subtract(26, 'hour').valueOf()
+        for (let k = 0; k < 40 - i * 5; k++) {
+            lines.push(JSON.stringify({ level: 30, time: t2h + k * 1000, pid: 0, hostname: 'e2e', event: 'verifyConn', ip }))
+        }
+        for (let k = 0; k < 20 - i * 3; k++) {
+            lines.push(JSON.stringify({ level: 30, time: t26h + k * 1000, pid: 0, hostname: 'e2e', event: 'verifyConn', ip }))
+        }
+    })
+    if (!fs.existsSync('./logs')) {
+        fs.mkdirSync('./logs', { recursive: true })
+    }
+    fs.writeFileSync(fixtureLogPath, lines.join('\n') + '\n')
+}
+function deleteFixtureLog() {
+    fs.rmSync(fixtureLogPath, { force: true })
+}
+
+
 async function insertTestUsersAndTokens() {
     //先 wipe 全表並重置為 canonical base seed, 再插入本檔專屬資料.
     await resetToBaseSeed()
@@ -180,13 +211,17 @@ async function insertTestUsersAndTokens() {
     userTokens[testUsers.admin.id] = t.token
     await woItems.tokens.insert([t])
 
-    console.log('inserted 1 admin user + 1 admin token')
+    //E2E-007 固定 fixture log (每案重寫, time 相對當下)
+    writeFixtureLog()
+
+    console.log('inserted 1 admin user + 1 admin token + fixture log')
 }
 
 
 async function deleteTestUsersAndTokens() {
     await deleteNonBaseSeed()
-    console.log('deleted stainfor test users + admin token')
+    deleteFixtureLog()
+    console.log('deleted stainfor test users + admin token + fixture log')
 }
 
 

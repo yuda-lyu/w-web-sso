@@ -28,12 +28,14 @@ import arrHas from 'wsemi/src/arrHas.mjs'
 import pm2resolve from 'wsemi/src/pm2resolve.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
 import ds from '../src/schema/index.mjs'
+import { maskToken } from './srLog.mjs'
 
 
 function proc(woItems, p, opt = {}) {
 
     //params
     let {
+        srLog,
         minForAccountLoginFailed,
         numForAccountLoginFailed,
         minBlockForAccountLoginFailed,
@@ -296,6 +298,15 @@ function proc(woItems, p, opt = {}) {
         // //check, 不用檢測, 若resolve必定有, 若reject則由外部處理
         // if (!iseobj(t)) {
         // }
+
+        //isApp, 應用系統 token (isApp='y') 為受信任之系統整合 token, 無對應使用者, 不套用個人 token 之速率封鎖 (ADR-052).
+        //原先靠 getGenUserByUserId 查無使用者而 reject 達成隱性豁免 (每 2 秒 console 洗版 3 行), 此處改為明確跳過並記 debug
+        if (get(t, 'isApp', '') === 'y') {
+            if (srLog && isfun(srLog.debug)) {
+                srLog.debug({ event: 'fun-blockAccountByToken', key: 'appTokenSkipRateLimit', token: maskToken(token) })
+            }
+            return
+        }
 
         //userId
         let userId = get(t, 'userId', '')

@@ -144,16 +144,17 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
         //check
         if (nus === 0) {
-            console.log('keyUser', keyUser)
-            console.log('valueUser', valueUser)
+            if (srLog && isfun(srLog.debug)) {
+                srLog.debug({ event: 'fun-getGenUserByKV', key: 'userNotFound', keyUser, valueUser })
+            }
             return Promise.reject(`can not find the user by ${keyUser}`)
         }
 
         //check
         if (nus >= 2) {
-            console.log('keyUser', keyUser)
-            console.log('valueUser', valueUser)
-            console.log(`duplicate ${keyUser}`)
+            if (srLog && isfun(srLog.debug)) {
+                srLog.debug({ event: 'fun-getGenUserByKV', key: 'userDuplicate', keyUser, valueUser })
+            }
             return Promise.reject(`duplicate ${keyUser}`)
         }
 
