@@ -1,12 +1,11 @@
 import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
-import { chromium } from 'playwright'
 import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, launchBrowser } from './e2e-setup.mjs'
 
 
 //
@@ -390,7 +389,7 @@ async function generateBaselineForLang(lang) {
         await deleteTestUsersAndTokens()
         await insertTestUsersAndTokens()
 
-        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+        let browser = await launchBrowser()
         let context = await browser.newContext()
         let page = await context.newPage()
         page.on('dialog', (d) => d.accept())
@@ -408,6 +407,7 @@ async function generateBaselineForLang(lang) {
 
 
 async function generateBaseline() {
+    process.env.E2E_STRICT_CAPTURE = '1'
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
@@ -457,7 +457,7 @@ else {
                 await deleteTestUsersAndTokens()
                 await insertTestUsersAndTokens()
 
-                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+                browser = await launchBrowser()
                 let context = await browser.newContext()
                 page = await context.newPage()
                 page.on('dialog', (d) => d.accept())

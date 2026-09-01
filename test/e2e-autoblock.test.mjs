@@ -1,12 +1,11 @@
 import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
-import { chromium } from 'playwright'
 import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, launchBrowser, typeIntoNthInput } from './e2e-setup.mjs'
 
 
 //
@@ -268,41 +267,6 @@ async function makeXForwardedForContext(browser, virtIp) {
 }
 
 
-//真鍵盤輸入 nth(idx) 的 input — Pattern D (取代 keyboard.type 在 Vue v-model 場景的漏字 race).
-//詳全域 CLAUDE.md §6.3「Vue v-model 文字輸入 race」, 與 e2e-adduser.test.mjs 同款 helper.
-async function typeIntoNthInput(page, idx, value) {
-    let inp = page.locator('input').nth(idx)
-    await inp.waitFor({ state: 'visible', timeout: 5000 })
-
-    let maxAttempts = 3
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        await inp.click()
-        await page.waitForFunction((i) => {
-            let inputs = document.querySelectorAll('input')
-            return document.activeElement === inputs[i]
-        }, idx, { timeout: 3000 })
-        let cur = await page.evaluate((i) => document.querySelectorAll('input')[i]?.value || '', idx)
-        if (cur) {
-            await page.keyboard.press('End')
-            for (let k = 0; k < cur.length + 2; k++) await page.keyboard.press('Backspace')
-        }
-        await page.keyboard.insertText(value)
-        await page.waitForTimeout(200)
-        let got = await page.evaluate((i) => {
-            let el = document.querySelectorAll('input')[i]
-            return el ? el.value : null
-        }, idx)
-        if (got === value) return
-
-        console.warn(`typeIntoNthInput attempt ${attempt}/${maxAttempts}: 預期「${value}」實得「${got}」, 重試`)
-        await page.waitForTimeout(400)
-    }
-
-    let final = await page.evaluate((i) => document.querySelectorAll('input')[i]?.value, idx)
-    throw new Error(`typeIntoNthInput ${maxAttempts} 次仍漏字: 預期「${value}」(${value.length} 字), 最終「${final}」(${(final || '').length} 字)`)
-}
-
-
 //gotoCleanLogin: 進登入頁 + 設指定語系 + 等表單 mount
 //?lang= URL 參數為 SPA 最高優先語系設定來源 (詳 src/plugins/mUI.mjs:137)
 async function gotoCleanLogin(page, lang) {
@@ -508,7 +472,7 @@ async function execIpBlockTrigger(browserRef, lang, u, virtIp) {
 
     //新 browser context 帶 X-Forwarded-For
     await browserRef.current.close()
-    browserRef.current = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+    browserRef.current = await launchBrowser()
     let ctx = await makeXForwardedForContext(browserRef.current, virtIp)
     let page = await ctx.newPage()
 
@@ -581,7 +545,7 @@ async function execIpBlockedRejected(browserRef, lang, virtIp) {
     await insertIpWithBlockState(virtIp, timeBlocked)
 
     await browserRef.current.close()
-    browserRef.current = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+    browserRef.current = await launchBrowser()
     let ctx = await makeXForwardedForContext(browserRef.current, virtIp)
     let page = await ctx.newPage()
 
@@ -604,7 +568,7 @@ async function execIpExpiryImplicitUnlock(browserRef, lang, virtIp) {
     await insertIpWithBlockState(virtIp, timeBlocked)
 
     await browserRef.current.close()
-    browserRef.current = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+    browserRef.current = await launchBrowser()
     let ctx = await makeXForwardedForContext(browserRef.current, virtIp)
     let page = await ctx.newPage()
 
@@ -633,7 +597,7 @@ async function execNewIpRegistration(browserRef, lang, u, virtIp) {
     await insertUser(u)
 
     await browserRef.current.close()
-    browserRef.current = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+    browserRef.current = await launchBrowser()
     let ctx = await makeXForwardedForContext(browserRef.current, virtIp)
     let page = await ctx.newPage()
     page.on('dialog', (d) => d.accept())
@@ -744,7 +708,7 @@ async function generateBaselineForLang(lang) {
         await cleanKpIpCallApi()
         await cleanKpAccountLoginFailed()
 
-        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+        let browser = await launchBrowser()
         let context = await browser.newContext()
         let page = await context.newPage()
         page.on('dialog', (d) => d.accept())
@@ -771,6 +735,7 @@ async function generateBaselineForLang(lang) {
 
 
 async function generateBaseline() {
+    process.env.E2E_STRICT_CAPTURE = '1'
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
@@ -829,7 +794,7 @@ else {
                 await cleanKpIpCallApi()
                 await cleanKpAccountLoginFailed()
 
-                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+                browser = await launchBrowser()
                 let context = await browser.newContext()
                 page = await context.newPage()
                 page.on('dialog', (d) => d.accept())

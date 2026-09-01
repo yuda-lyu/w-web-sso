@@ -1,12 +1,11 @@
 import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
-import { chromium } from 'playwright'
 import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed, waitDrawerReady, assertBaselineMatch, captureStableWithBox, overlayRegions } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed, waitDrawerReady, assertBaselineMatch, captureStableWithBox, overlayRegions, composeBox, launchBrowser, REGEN, waitUntilExist, typeIntoNthInput } from './e2e-setup.mjs'
 
 
 //
@@ -312,50 +311,6 @@ let kpUiText = {
 }
 
 
-//每步驟先偵測對象出現再操作 (10s timeout). 超時拋錯 = 真實異常 (而非 sleep 不夠).
-async function waitUntilExist(page, label, fn, opts = {}) {
-    let { timeout = 10000, arg = null } = opts
-    try {
-        await page.waitForFunction(fn, arg, { timeout })
-    }
-    catch (err) {
-        throw new Error(`waitUntilExist 超過 ${timeout}ms 仍找不到「${label}」 — 此為真實異常 (production race / 元件未渲染)`)
-    }
-}
-
-
-//真鍵盤輸入 nth(idx) 的 input (取代 .fill() L4 偷工 — 詳見全域 CLAUDE.md Pattern D)
-async function typeIntoNthInput(page, idx, value) {
-    let inp = page.locator('input').nth(idx)
-    await inp.waitFor({ state: 'visible', timeout: 5000 })
-
-    let maxAttempts = 3
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        await inp.click()
-        await page.waitForFunction((i) => {
-            let inputs = document.querySelectorAll('input')
-            return document.activeElement === inputs[i]
-        }, idx, { timeout: 3000 })
-        let cur = await page.evaluate((i) => document.querySelectorAll('input')[i]?.value || '', idx)
-        if (cur) {
-            await page.keyboard.press('End')
-            for (let k = 0; k < cur.length + 2; k++) await page.keyboard.press('Backspace')
-        }
-        await page.keyboard.insertText(value)
-        await page.waitForTimeout(200)
-        let got = await page.evaluate((i) => {
-            let el = document.querySelectorAll('input')[i]
-            return el ? el.value : null
-        }, idx)
-        if (got === value) return
-        console.warn(`typeIntoNthInput attempt ${attempt}/${maxAttempts}: 預期「${value}」實得「${got}」, 重試`)
-        await page.waitForTimeout(400)
-    }
-    let final = await page.evaluate((i) => document.querySelectorAll('input')[i]?.value, idx)
-    throw new Error(`typeIntoNthInput ${maxAttempts} 次仍漏字: 預期「${value}」, 最終「${final}」`)
-}
-
-
 //login 頁 → 填帳密 → 進 backstage (預設 Statistics 頁)
 async function loginAsAdmin(page, lang) {
     let t = kpUiText[lang]
@@ -419,9 +374,10 @@ async function waitStaInforErrMsg(page, lang) {
 //僅依賴 DB seed 計數 (與 wall-clock 無關), 取此區段做 pixel 確定性穩定.
 //等價 retry-until-stable: 連續兩張截到一致才回傳 (對齊 captureStable 思路).
 //
-//target: CSS selector 字串, 指定本 case 要標注的區域元素. clip screenshot 前注入 #f26/5px 紅框
-//(DOM div #__e2e_box__) 包住 target 元素聯集外圍 + 6px padding, 截完後移除.
-//null 時不注入紅框 (fallback). 紅框須落在 clip 範圍 (y:0..330) 內才可被截到.
+//target: CSS selector 字串, 指定本 case 要標注的區域元素. 紅框改為截圖後以 composeBox (sharp 合成)
+//疊上 (2026-09-01 起, 不再注入暫時 DOM 紅框元素 — 技能 §8.3「截圖後合成, 不注入 DOM」).
+//null 時不疊框 (fallback). clip 原點 (0,0) 與 viewport 左上角重合 (呼叫時頁面未捲動), 故
+//getBoundingClientRect 座標可直接當 clip buffer 座標傳給 composeBox, 不需另加 scrollX/Y.
 //
 //  E2E-001-page-loaded:                 '.space-y-8 > div:first-child'
 //    ↑ 使用者資訊區 wrapper (標籤行 + 4 張 user 卡片), y 落在 0..330 內.
@@ -436,27 +392,16 @@ async function captureCardsOnly(page, target = null) {
     //E2E-002-admin-token-expired-page-empty 偶發 sidebar 空白). 對齊「進後台截圖皆先 waitDrawerReady」.
     await waitDrawerReady(page)
 
-    //clip screenshot 前注入紅框 (標注本 case 觀看區域, 對齊技能 role-code-for-test-e2e 「標注要求」).
-    //紅框以 DOM div #__e2e_box__ 疊加 (fixed, pointer-events:none, z-index 最高), 截完後移除.
-    //target = null 時跳過注入 (保留 fallback).
+    //取 target 元素之 clip buffer 座標框 (截圖前量, 版面於截圖過程不變動)
+    let box = null
     if (target) {
-        await page.evaluate((sel) => {
+        let rc = await page.evaluate((sel) => {
             let el = document.querySelector(sel)
-            if (!el) return
-            let rc = el.getBoundingClientRect()
-            let M = 3    //最小邊距, 避免框線貼邊截掉
-            let vw = window.innerWidth
-            let vh = window.innerHeight
-            let bl = Math.max(M, rc.left - 6)
-            let bt = Math.max(M, rc.top - 6)
-            let br = Math.min(vw - M, rc.right + 6)
-            let bb = Math.min(vh - M, rc.bottom + 6)
-            let box = document.createElement('div')
-            box.id = '__e2e_box__'
-            box.style.cssText = `position:fixed; left:${bl}px; top:${bt}px; width:${br - bl}px; height:${bb - bt}px; border:5px solid #f26; box-sizing:border-box; z-index:2147483647; pointer-events:none; border-radius:4px;`
-            document.body.appendChild(box)
+            if (!el) return null
+            let r = el.getBoundingClientRect()
+            return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
         }, target)
-        await page.waitForTimeout(150)    //等框 render 進下一 frame
+        if (rc) box = rc
     }
 
     let opts = { animations: 'disabled', clip: { x: 0, y: 0, width: 1280, height: 330 } }
@@ -465,25 +410,12 @@ async function captureCardsOnly(page, target = null) {
         await page.waitForTimeout(200)
         let curr = await page.screenshot(opts)
         if (curr.equals(prev)) {
-            //移除紅框 div (不殘留到後續操作)
-            if (target) {
-                await page.evaluate(() => {
-                    let b = document.getElementById('__e2e_box__')
-                    if (b) b.remove()
-                })
-            }
-            return curr
+            return box ? await composeBox(curr, box) : curr
         }
         prev = curr
     }
-    //未 settle 仍移除紅框再回傳最後一張
-    if (target) {
-        await page.evaluate(() => {
-            let b = document.getElementById('__e2e_box__')
-            if (b) b.remove()
-        })
-    }
-    return prev
+    //未 settle 仍回傳最後一張 (視需要疊框)
+    return box ? await composeBox(prev, box) : prev
 }
 
 
@@ -684,10 +616,14 @@ async function captureActivityItem(page, lang, itemTitle, overlayKind, refName) 
         throw new Error(`captureActivityItem: 找不到 overlay 目標 (title=${itemTitle}, kind=${overlayKind})`)
     }
 
-    //per-item ref bootstrap: ref 不存在時以當次截圖建立, 之後固定沿用 (刪檔可重產).
+    //per-item ref bootstrap: 僅 REGEN (--baseline / E2E_REGEN=1) 允許 ref 不存在時以當次截圖建立,
+    //之後固定沿用 (刪檔可重產). 正常測試模式缺檔即 fail, 不得靜默自舉.
     //baseline 與 runtime 兩端貼同一張 ref → 該區永遠一致而視覺呈現真實圖表/表格.
     let refPath = path.join(baselineDir, `_staref-${refName}-${lang}.png`)
     if (!fs.existsSync(refPath)) {
+        if (!REGEN) {
+            throw new Error(`per-item ref 不存在: ${refPath}（請以 --baseline 產製）`)
+        }
         fs.writeFileSync(refPath, buf)
     }
     let refBuf = fs.readFileSync(refPath)
@@ -817,26 +753,11 @@ async function captureFocusedItem(page, lang, itemTitle, kind, refName) {
     let clipB = Math.min(vh, Math.round(geo.target.bottom + PAD))
     let clip = { x: clipX, y: clipY, width: clipR - clipX, height: clipB - clipY }
 
-    //3) 注入紅框 (#f26/5px) 只框目標子元素 (viewport 座標), 落在 clip 範圍內
-    await page.evaluate((arg) => {
-        let t = arg.target
-        let M = 3
-        let vw = window.innerWidth, vh = window.innerHeight
-        let bl = Math.max(M, t.left - 6)
-        let bt = Math.max(M, t.top - 6)
-        let br = Math.min(vw - M, t.right + 6)
-        let bb = Math.min(vh - M, t.bottom + 6)
-        let box = document.createElement('div')
-        box.id = '__e2e_box__'
-        box.style.cssText = `position:fixed; left:${bl}px; top:${bt}px; width:${br - bl}px; height:${bb - bt}px; border:5px solid #f26; box-sizing:border-box; z-index:2147483647; pointer-events:none; border-radius:4px;`
-        document.body.appendChild(box)
-    }, { target: geo.target })
-    await page.waitForTimeout(150)
-
     //等左側 WDrawer sidebar 展開到位 (此 clip 不含 sidebar, 但維持與其他 backstage 截圖一致前置)
     await waitDrawerReady(page)
 
-    //4) clip 截圖, retry-until-stable (連兩張一致). 期間紅框維持不移除.
+    //3) clip 截圖, retry-until-stable (連兩張一致). 紅框改截圖後以 composeBox (sharp 合成) 疊上
+    //(2026-09-01 起, 不再注入暫時 DOM 紅框元素 — 技能 §8.3), 故此處不再插入/移除任何 DOM.
     let shotOpts = { animations: 'disabled', clip }
     let buf = await page.screenshot(shotOpts)
     for (let i = 0; i < 8; i++) {
@@ -849,13 +770,7 @@ async function captureFocusedItem(page, lang, itemTitle, kind, refName) {
         buf = curr
     }
 
-    //5) 移除紅框
-    await page.evaluate(() => {
-        let b = document.getElementById('__e2e_box__')
-        if (b) b.remove()
-    })
-
-    //6) overlay 貼 per-item ref: 動態區 viewport rect 轉 clip-relative (clip 後 buffer 原點 = clip 左上角)
+    //4) overlay 貼 per-item ref: 動態區 viewport rect 轉 clip-relative (clip 後 buffer 原點 = clip 左上角)
     let rects = geo.overlays.map((o) => ({
         x: o.left - clip.x,
         y: o.top - clip.y,
@@ -866,14 +781,28 @@ async function captureFocusedItem(page, lang, itemTitle, kind, refName) {
         throw new Error(`captureFocusedItem: 找不到 overlay 目標 (title=${itemTitle}, kind=${kind})`)
     }
 
-    //per-item ref bootstrap: ref 不存在時以當次 clip 截圖建立, 之後固定沿用 (刪檔可重產).
+    //per-item ref bootstrap: 僅 REGEN (--baseline / E2E_REGEN=1) 允許 ref 不存在時以當次 clip 截圖建立,
+    //之後固定沿用 (刪檔可重產). 正常測試模式缺檔即 fail, 不得靜默自舉.
     //ref 與 baseline / runtime 皆為 clip 後同尺寸圖 → 同座標 overlay 對齊.
     let refPath = path.join(baselineDir, `_staref-${refName}-${lang}.png`)
     if (!fs.existsSync(refPath)) {
+        if (!REGEN) {
+            throw new Error(`per-item ref 不存在: ${refPath}（請以 --baseline 產製）`)
+        }
         fs.writeFileSync(refPath, buf)
     }
     let refBuf = fs.readFileSync(refPath)
-    return await overlayRegions(buf, rects, refBuf)
+    let overlaid = await overlayRegions(buf, rects, refBuf)
+
+    //5) 紅框只框目標子元素, 疊在遮罩/覆蓋之上 (composeBox 內部自動 outer 擴 6px + M=3 clamp), 座標轉
+    //clip-relative (clip 後 buffer 原點 = clip 左上角), 對齊 captureStableWithBox 之「遮罩 → 紅框」順序.
+    let box = {
+        left: geo.target.left - clip.x,
+        top: geo.target.top - clip.y,
+        right: geo.target.right - clip.x,
+        bottom: geo.target.bottom - clip.y,
+    }
+    return await composeBox(overlaid, box)
 }
 
 
@@ -946,7 +875,7 @@ async function generateBaselineForLang(lang) {
         await deleteTestUsersAndTokens()
         await insertTestUsersAndTokens()
 
-        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+        let browser = await launchBrowser()
         let page = await browser.newPage()
         page.on('dialog', async (dialog) => { await dialog.accept() })
 
@@ -960,6 +889,7 @@ async function generateBaselineForLang(lang) {
 
 
 async function generateBaseline() {
+    process.env.E2E_STRICT_CAPTURE = '1'
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
@@ -1016,7 +946,7 @@ else {
                 await deleteTestUsersAndTokens()
                 await insertTestUsersAndTokens()
 
-                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+                browser = await launchBrowser()
                 let context = await browser.newContext()
                 page = await context.newPage()
 

@@ -9,8 +9,32 @@ import JSON5 from 'json5'
 import sharp from 'sharp'
 import pixelmatch from 'pixelmatch'
 import { PNG } from 'pngjs'
+import { fileURLToPath } from 'url'
+import { chromium } from 'playwright'
 import { woItems } from '../g_mOrm.mjs'
 import { buildBaseUsers, buildBaseTokens } from '../g_initialData.mjs'
+
+//REGEN: 標準圖產製模式 (各檔直跑 --baseline 或 env E2E_REGEN=1). 供「只在 regen 才允許之副作用」判斷 (如 _staref 自舉)
+//規則: 診斷 env 生效時絕不可寫正式 baseline (技能 references/pixel-mismatch-diagnosis.md §6)
+let REGEN = process.argv.includes('--baseline') || process.env.E2E_REGEN === '1'
+if (REGEN && (process.env.E2E_BARE || process.env.E2E_DIAG)) {
+    throw new Error('拒絕在診斷 env (E2E_BARE / E2E_DIAG) 下寫入正式 baseline')
+}
+
+//確定性渲染組 (全專案唯一 chromium.launch 出口; 技能 §8.4). headless Chromium 預設 GPU 光柵化 + subpixel 字形 AA
+//在像素比對下非決定性 (eng 拉丁字偶發散落差異, CJK 灰階 AA 較穩故常只 eng 中招); 六旗標為姊妹專案實測組
+//(self-consistency 2/4 → 5/5). 2026-09-01 由舊四旗標 (--font-render-hinting=none 版) 升級, 全量重產 baseline.
+let chromiumLaunchArgs = [
+    '--disable-gpu', //改走 CPU Skia (本已軟體合成之機器為 no-op, 仍保留防環境變動)
+    '--force-color-profile=srgb', //固定色彩管理
+    '--disable-lcd-text', //關 LCD 次像素文字 AA → 灰階 AA
+    '--disable-font-subpixel-positioning', //關字形次像素定位
+    '--disable-skia-runtime-opts', //關 Skia runtime 最佳化分支
+    '--disable-partial-raster', //關部分光柵化 → 消 tile 重用殘影 / 位移
+]
+async function launchBrowser() {
+    return await chromium.launch({ headless: true, args: chromiumLaunchArgs })
+}
 
 //D21: 測試環境放行佔位符 pepper (測試密碼非機密; spawn 的 backend 繼承此 env → WWebSso 啟動檢查放行).
 //生產環境不設此旗標 + 未注入 SALT → 後端拒啟. 種子(此檔 buildBaseUsers)與後端 verify 在測試下同用 '{salt}', 一致.
@@ -134,13 +158,33 @@ async function startServersOnce() {
 //注意: 本專案 ./settings.json 為 JSON5 格式 (無引號鍵 / 單引號字串 / 註解 / 尾逗號),
 //backend 用 JSON5 解析 (server/procSettings.mjs), 故此處讀檔須用 JSON5.parse 不可用 JSON.parse.
 //寫出時用 JSON.stringify 產出純 JSON — JSON5 解析器吃純 JSON 沒問題, backend 啟動可正常讀取.
+//落點 test/_tmp/ (gitignore) 而非專案 ./tmp/: ./tmp/ 為 AI 代理暫存區隨時會被整個清除, 後端讀不到 settings 會啟動失敗; 三專案統一此目錄名.
+//測完即刪: 本進程產生者由 cleanup() 一併刪除 (追蹤路徑逐檔 rm, 目錄空了再 rmdir).
+let tmpSettingsSeq = 0
+let tmpSettingsFiles = []
 function genTempSettings(overrides = {}) {
     let base = JSON5.parse(fs.readFileSync('./settings.json', 'utf8'))
     let merged = { ...base, ...overrides }
-    if (!fs.existsSync('./tmp')) fs.mkdirSync('./tmp', { recursive: true })
-    let p = `./tmp/settings-e2e-${Date.now()}.json`
+    let tmpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '_tmp')
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+    let p = path.join(tmpDir, `settings-e2e-${process.pid}-${tmpSettingsSeq++}.json`)
     fs.writeFileSync(p, JSON.stringify(merged, null, 2))
+    tmpSettingsFiles.push(p)
     return p
+}
+function cleanupTempSettings() {
+    for (let p of tmpSettingsFiles) {
+        try {
+            fs.rmSync(p, { force: true })
+        }
+        catch (err) { /* ignore */ }
+    }
+    tmpSettingsFiles = []
+    try {
+        let tmpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '_tmp')
+        if (fs.existsSync(tmpDir) && fs.readdirSync(tmpDir).length === 0) fs.rmdirSync(tmpDir)
+    }
+    catch (err) { /* ignore */ }
 }
 
 
@@ -223,6 +267,7 @@ function cleanup() {
         killProc(backendProc)
         backendProc = null
     }
+    cleanupTempSettings()
 }
 
 process.on('exit', cleanup)
@@ -308,8 +353,10 @@ async function waitDrawerReady(page) {
 }
 
 
+//opts.strict: regen 端用 — 重試耗盡仍未 settle 時 throw (拒絕把未穩定畫面寫成 baseline), 測試端預設 false 回最後一張讓比對揭露 flake
 async function captureStable(page, opts = {}) {
-    let { maxRetries = 8, intervalMs = 200, initialWaitMs = 1500 } = opts
+    //strict 未指定時, regen 直跑 (各檔 generateBaseline 設 E2E_STRICT_CAPTURE=1) 亦視為 strict
+    let { maxRetries = 8, intervalMs = 200, initialWaitMs = 1500, strict = (process.env.E2E_STRICT_CAPTURE === '1') } = opts
     //animations: 'disabled' 是 baseline 的標配 (finite 動畫跳完, infinite 動畫 reset),
     //與 Playwright toHaveScreenshot 預設一致
     let shotOpts = { fullPage: true, animations: 'disabled' }
@@ -422,8 +469,31 @@ async function captureStable(page, opts = {}) {
         }
         prev = curr
     }
-    //未 settle 也回傳最後一張, 後續 baseline 之 pixelmatch 容差比對失敗會揭露真實 flake (而非偽裝穩定)
+    //未 settle: strict (regen) 拒絕寫入; 否則回傳最後一張, 後續 baseline 之 pixelmatch 容差比對失敗會揭露真實 flake (而非偽裝穩定)
+    if (strict) {
+        throw new Error(`captureStable ${maxRetries} 次仍未 settle (regen 拒絕寫入未穩定畫面)`)
+    }
     return prev
+}
+
+
+//把紅框 (#f26 / 5px / 圓角 4) 以 sharp 疊到截圖 buffer 上 (截圖後合成, 不注入 DOM; 技能 §8.3).
+//box: { left, top, right, bottom } 為 buffer 座標之「目標區」(已含 scroll offset / clip 位移); 外擴 6、四邊夾在 buffer 內 (M=3),
+//stroke 置中於路徑故外緣落在 bl..br / bt..bb, 等效原 DOM 版 border-box 之 5px 內縮框線.
+async function composeBox(buf, box) {
+    let meta = await sharp(buf).metadata()
+    let M = 3
+    let bl = Math.max(M, box.left - 6)
+    let bt = Math.max(M, box.top - 6)
+    let br = Math.min(meta.width - M, box.right + 6)
+    let bb = Math.min(meta.height - M, box.bottom + 6)
+    if (br - bl <= 5 || bb - bt <= 5) {
+        return buf
+    }
+    let svg = `<svg width="${meta.width}" height="${meta.height}" xmlns="http://www.w3.org/2000/svg">` +
+        `<rect x="${bl + 2.5}" y="${bt + 2.5}" width="${br - bl - 5}" height="${bb - bt - 5}" fill="none" stroke="#f26" stroke-width="5" rx="4" ry="4"/>` +
+        `</svg>`
+    return await sharp(buf).composite([{ input: Buffer.from(svg), top: 0, left: 0 }]).png().toBuffer()
 }
 
 
@@ -436,8 +506,8 @@ async function captureStable(page, opts = {}) {
 //fold 以下的目標會先把第一個 scrollIntoView 捲進視窗再框 (同組目標應在同一捲動位置).
 //opts.mask: 要遮黑的非決定性區域陣列 (selector 字串, 或 { sel, fixedWidth } 錨右緣固定寬度往左延伸).
 //
-//紅框由 DOM 注入 (<div id="__e2e_box__">), 故 baseline 產製端與比對端只要傳相同 target 即得相同框,
-//截完移除不殘留. 內部仍走 captureStable (沿用 WDrawer 展開等待 / SVG 凍結 / 字型就緒等所有穩定化處理).
+//紅框與遮罩皆於截圖後以 sharp 合成 (2026-09-01 起, 原為 DOM 注入 <div id="__e2e_box__"> 再移除), baseline 產製端與比對端
+//傳相同 target 即得相同框. 內部仍走 captureStable (沿用 WDrawer 展開等待 / SVG 凍結 / 字型就緒等所有穩定化處理); opts 透傳 (如 strict).
 async function captureStableWithBox(page, target, opts = {}) {
     let { mask = [] } = opts
     let items = Array.isArray(target) ? target : [target]
@@ -470,27 +540,9 @@ async function captureStableWithBox(page, target, opts = {}) {
             }
         }
     }
-    //畫紅框 (多個取聯集; 四邊夾在視窗內避免貼邊元素框線跑出畫面而少邊) + 遮黑非決定性區域
-    await page.evaluate((arg) => {
-        let rs = arg.rs
-        let ms = arg.ms
-        let M = 3
-        let vw = window.innerWidth
-        let vh = window.innerHeight
-        if (rs.length > 0) {
-            let left = Math.min(...rs.map((r) => r.x))
-            let top = Math.min(...rs.map((r) => r.y))
-            let right = Math.max(...rs.map((r) => r.x + r.width))
-            let bottom = Math.max(...rs.map((r) => r.y + r.height))
-            let bl = Math.max(M, left - 6)
-            let bt = Math.max(M, top - 6)
-            let br = Math.min(vw - M, right + 6)
-            let bb = Math.min(vh - M, bottom + 6)
-            let box = document.createElement('div')
-            box.id = '__e2e_box__'
-            box.style.cssText = `position:fixed; left:${bl}px; top:${bt}px; width:${br - bl}px; height:${bb - bt}px; border:5px solid #f26; box-sizing:border-box; z-index:2147483647; pointer-events:none; border-radius:4px;`
-            document.body.appendChild(box)
-        }
+    //遮罩區 (viewport 座標; 字串 → 元素 bbox; { sel, fixedWidth } → 錨右緣固定寬往左延伸, 位數變動不致黑塊邊界浮動)
+    let maskRects = await page.evaluate((ms) => {
+        let out = []
         ms.forEach((s) => {
             let sel = (typeof s === 'string') ? s : s.sel
             let e = document.querySelector(sel)
@@ -504,21 +556,26 @@ async function captureStableWithBox(page, target, opts = {}) {
                 width = s.fixedWidth
                 left = (r.left + r.width) - width
             }
-            let m = document.createElement('div')
-            m.className = '__e2e_mask__'
-            m.style.cssText = `position:fixed; left:${left}px; top:${r.top}px; width:${width}px; height:${r.height}px; background:#000; z-index:2147483646; pointer-events:none;`
-            document.body.appendChild(m)
+            out.push({ x: left, y: r.top, w: width, h: r.height })
         })
-    }, { rs: rects, ms: mask })
-    await page.waitForTimeout(150)
-    let buf = await captureStable(page)
-    await page.evaluate(() => {
-        let b = document.getElementById('__e2e_box__')
-        if (b) {
-            b.remove()
-        }
-        document.querySelectorAll('.__e2e_mask__').forEach((m) => m.remove())
-    })
+        return out
+    }, mask)
+    //fullPage 截圖座標 = viewport rect + scroll offset (本專案頁高皆 ≤ 視窗, offset 通常為 0)
+    let env = await page.evaluate(() => ({ sx: window.scrollX, sy: window.scrollY }))
+    //先截圖 (含 captureStable 內建之 SMIL 遮罩 / drawer 等待 / 字型就緒), 再以 sharp 後製: 遮罩 → 紅框 (框永遠可見, 疊在遮罩之上).
+    //why 不注入 DOM: 插入後又移除的暫時 DOM 偶發使整頁光柵化偏 1px (w-web-api toast 殷鑑; 技能 §8.3), 量測工具不得改動被測頁
+    let buf = await captureStable(page, opts)
+    if (maskRects.length > 0) {
+        buf = await maskRegions(buf, maskRects.map((r) => ({ x: r.x + env.sx, y: r.y + env.sy, w: r.w, h: r.h })))
+    }
+    if (rects.length > 0) {
+        buf = await composeBox(buf, {
+            left: Math.min(...rects.map((r) => r.x)) + env.sx,
+            top: Math.min(...rects.map((r) => r.y)) + env.sy,
+            right: Math.max(...rects.map((r) => r.x + r.width)) + env.sx,
+            bottom: Math.max(...rects.map((r) => r.y + r.height)) + env.sy,
+        })
+    }
     return buf
 }
 
@@ -738,4 +795,53 @@ function assertBaselineMatch(buf, baselinePath, label, opts = {}) {
 }
 
 
-export { startServersOnce, cleanup, captureStable, captureStableWithBox, waitDrawerReady, assertBaselineMatch, baseUrl, apiUrl, maskRegions, overlayRegions, maskBelowY, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput }
+//每步驟先偵測對象出現再操作 (預設 10s timeout). 超時拋錯 = 真實異常 (而非 sleep 不夠).
+//arg: 傳給 fn 的參數 (page.waitForFunction 內 fn 序列化跨 process 執行, 不能 closure). 2026-09-01 自各 e2e 檔 (adduser/ips/modifyuser/stainfor/tokens) 收斂至此.
+async function waitUntilExist(page, label, fn, opts = {}) {
+    let { timeout = 10000, arg = null } = opts
+    try {
+        await page.waitForFunction(fn, arg, { timeout })
+    }
+    catch (err) {
+        throw new Error(`waitUntilExist 超過 ${timeout}ms 仍找不到「${label}」 — 此為真實異常 (production race / 元件未渲染)`)
+    }
+}
+
+
+//真鍵盤輸入 nth(idx) 的 input (Pattern D, 與 typeIntoInput 同機制, 以 index 定位供無穩定 selector 之表單).
+//2026-09-01 自各 e2e 檔 (adduser/autoblock/ips/modifyuser/stainfor/tokens 六份重複) 收斂至此.
+async function typeIntoNthInput(page, idx, value) {
+    let inp = page.locator('input').nth(idx)
+    await inp.waitFor({ state: 'visible', timeout: 5000 })
+
+    let maxAttempts = 3
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        await inp.click()
+        await page.waitForFunction((i) => {
+            let inputs = document.querySelectorAll('input')
+            return document.activeElement === inputs[i]
+        }, idx, { timeout: 3000 })
+        //清空 (Backspace N 次, 不用剪貼簿 / Ctrl+A 組合鍵)
+        let cur = await page.evaluate((i) => document.querySelectorAll('input')[i]?.value || '', idx)
+        if (cur) {
+            await page.keyboard.press('End')
+            for (let k = 0; k < cur.length + 2; k++) await page.keyboard.press('Backspace')
+        }
+        await page.keyboard.insertText(value)
+        await page.waitForTimeout(200)
+        let got = await page.evaluate((i) => {
+            let el = document.querySelectorAll('input')[i]
+            return el ? el.value : null
+        }, idx)
+        if (got === value) return
+
+        console.warn(`typeIntoNthInput attempt ${attempt}/${maxAttempts}: 預期「${value}」實得「${got}」, 重試`)
+        await page.waitForTimeout(400)
+    }
+
+    let final = await page.evaluate((i) => document.querySelectorAll('input')[i]?.value, idx)
+    throw new Error(`typeIntoNthInput ${maxAttempts} 次仍漏字: 預期「${value}」(${value.length} 字), 最終「${final}」(${(final || '').length} 字)`)
+}
+
+
+export { startServersOnce, cleanup, launchBrowser, chromiumLaunchArgs, REGEN, captureStable, captureStableWithBox, composeBox, waitDrawerReady, assertBaselineMatch, baseUrl, apiUrl, maskRegions, overlayRegions, maskBelowY, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput, typeIntoNthInput, waitUntilExist }

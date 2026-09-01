@@ -1,12 +1,11 @@
 import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
-import { chromium } from 'playwright'
 import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword, { verifyPassword } from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, launchBrowser, waitUntilExist, typeIntoNthInput } from './e2e-setup.mjs'
 
 
 //
@@ -321,62 +320,6 @@ let mdiContentCopy = 'M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,
 let kpUiText = {
     eng: { login: 'Log in', usersList: 'Users list', editMode: 'Edit mode', ok: 'OK', statistics: 'Statistics' },
     cht: { login: '登入', usersList: '使用者清單', editMode: '編輯模式', ok: '確認', statistics: '統計' },
-}
-
-
-//每步驟先偵測對象出現再操作 (10s timeout). 超時拋錯 = 真實異常 (而非 sleep 不夠).
-//設計理由: navigate / Vue mount / refetch 都是 async 且時序不可預測, fixed waitForTimeout
-//容易撞「sleep 太短點空 body」或「sleep 太長浪費時間」. 改成等具體 DOM 條件再行動.
-//arg: 傳給 fn 的參數 (因 page.waitForFunction 內 fn 是序列化跨 process 執行, 不能 closure).
-async function waitUntilExist(page, label, fn, opts = {}) {
-    let { timeout = 10000, arg = null } = opts
-    try {
-        await page.waitForFunction(fn, arg, { timeout })
-    }
-    catch (err) {
-        throw new Error(`waitUntilExist 超過 ${timeout}ms 仍找不到「${label}」 — 此為真實異常 (production race / 元件未渲染)`)
-    }
-}
-
-
-//真鍵盤輸入 nth(idx) 的 input (取代 .fill() L4 偷工 — 全域 CLAUDE.md §6.3 act 階段操作層級表).
-//click 取得 focus → 驗證 activeElement → keyboard.insertText 整段 → 驗證 → 不符則清空重打 (最多 3 次).
-//
-//用 insertText (非 keyboard.type): type 逐字打在 Vue v-model 場景觸發 N 次 input event → N 次 re-render
-//→ focus 中途被吃掉導致漏字 (觀察過: 11 字密碼只進 1 字). insertText 一次 inject 全段, 1 次 input event,
-//本專案 WText/WTextCore 沒 hook keydown listener (僅 @input/@focus/@blur/@change/@keyup.enter),
-//所以 insertText 跟 type 行為等價. 不碰剪貼簿, scoped 到 page renderer, 不影響其他平行 agent.
-async function typeIntoNthInput(page, idx, value) {
-    let inp = page.locator('input').nth(idx)
-    await inp.waitFor({ state: 'visible', timeout: 5000 })
-
-    let maxAttempts = 3
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        await inp.click()
-        await page.waitForFunction((i) => {
-            let inputs = document.querySelectorAll('input')
-            return document.activeElement === inputs[i]
-        }, idx, { timeout: 3000 })
-        //清空 (Backspace N 次, 不用剪貼簿 / Ctrl+A 組合鍵)
-        let cur = await page.evaluate((i) => document.querySelectorAll('input')[i]?.value || '', idx)
-        if (cur) {
-            await page.keyboard.press('End')
-            for (let k = 0; k < cur.length + 2; k++) await page.keyboard.press('Backspace')
-        }
-        await page.keyboard.insertText(value)
-        await page.waitForTimeout(200)
-        let got = await page.evaluate((i) => {
-            let el = document.querySelectorAll('input')[i]
-            return el ? el.value : null
-        }, idx)
-        if (got === value) return
-
-        console.warn(`typeIntoNthInput attempt ${attempt}/${maxAttempts}: 預期「${value}」實得「${got}」, 重試`)
-        await page.waitForTimeout(400)
-    }
-
-    let final = await page.evaluate((i) => document.querySelectorAll('input')[i]?.value, idx)
-    throw new Error(`typeIntoNthInput ${maxAttempts} 次仍漏字: 預期「${value}」(${value.length} 字), 最終「${final}」(${(final || '').length} 字)`)
 }
 
 
@@ -1112,7 +1055,7 @@ async function generateBaselineForLang(lang) {
         await deleteTestUsersAndTokens()
         await insertTestUsersAndTokens()
 
-        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+        let browser = await launchBrowser()
         let page = await browser.newPage()
         page.on('dialog', async (dialog) => { await dialog.accept() })
 
@@ -1130,6 +1073,7 @@ async function generateBaselineForLang(lang) {
 
 
 async function generateBaseline() {
+    process.env.E2E_STRICT_CAPTURE = '1'
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
@@ -1194,7 +1138,7 @@ else {
             await deleteTestUsersAndTokens()
             await insertTestUsersAndTokens()
 
-            browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+            browser = await launchBrowser()
             let context = await browser.newContext()
             page = await context.newPage()
             page.on('dialog', async (dialog) => { await dialog.accept() })
@@ -1358,7 +1302,7 @@ else {
                 await deleteTestUsersAndTokens()
                 await insertTestUsersAndTokens()
 
-                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+                browser = await launchBrowser()
                 let context = await browser.newContext()
                 page = await context.newPage()
 

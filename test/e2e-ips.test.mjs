@@ -1,12 +1,11 @@
 import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
-import { chromium } from 'playwright'
 import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, launchBrowser, waitUntilExist, typeIntoNthInput } from './e2e-setup.mjs'
 
 
 //
@@ -238,52 +237,6 @@ let mdiTrashCanOutline = 'M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20
 let kpUiText = {
     eng: { login: 'Log in', ipsList: 'Ips list', editMode: 'Edit mode', ok: 'OK', statistics: 'Statistics' },
     cht: { login: '登入', ipsList: 'IP清單', editMode: '編輯模式', ok: '確認', statistics: '統計' },
-}
-
-
-//每步驟先偵測對象出現再操作 (10s timeout). 超時拋錯 = 真實異常 (而非 sleep 不夠).
-async function waitUntilExist(page, label, fn, opts = {}) {
-    let { timeout = 10000, arg = null } = opts
-    try {
-        await page.waitForFunction(fn, arg, { timeout })
-    }
-    catch (err) {
-        throw new Error(`waitUntilExist 超過 ${timeout}ms 仍找不到「${label}」 — 此為真實異常 (production race / 元件未渲染)`)
-    }
-}
-
-
-//真鍵盤輸入 nth(idx) 的 input (取代 .fill() L4 偷工 — 詳見 e2e-adduser 之說明)
-async function typeIntoNthInput(page, idx, value) {
-    let inp = page.locator('input').nth(idx)
-    await inp.waitFor({ state: 'visible', timeout: 5000 })
-
-    let maxAttempts = 3
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        await inp.click()
-        await page.waitForFunction((i) => {
-            let inputs = document.querySelectorAll('input')
-            return document.activeElement === inputs[i]
-        }, idx, { timeout: 3000 })
-        let cur = await page.evaluate((i) => document.querySelectorAll('input')[i]?.value || '', idx)
-        if (cur) {
-            await page.keyboard.press('End')
-            for (let k = 0; k < cur.length + 2; k++) await page.keyboard.press('Backspace')
-        }
-        await page.keyboard.insertText(value)
-        await page.waitForTimeout(200)
-        let got = await page.evaluate((i) => {
-            let el = document.querySelectorAll('input')[i]
-            return el ? el.value : null
-        }, idx)
-        if (got === value) return
-
-        console.warn(`typeIntoNthInput attempt ${attempt}/${maxAttempts}: 預期「${value}」實得「${got}」, 重試`)
-        await page.waitForTimeout(400)
-    }
-
-    let final = await page.evaluate((i) => document.querySelectorAll('input')[i]?.value, idx)
-    throw new Error(`typeIntoNthInput ${maxAttempts} 次仍漏字: 預期「${value}」(${value.length} 字), 最終「${final}」(${(final || '').length} 字)`)
 }
 
 
@@ -817,7 +770,7 @@ async function generateBaselineForLang(lang) {
         await deleteTestUsersAndTokensAndIps()
         await insertTestUsersAndTokensAndIps()
 
-        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+        let browser = await launchBrowser()
         let page = await browser.newPage()
         page.on('dialog', async (dialog) => { await dialog.accept() })
 
@@ -835,6 +788,7 @@ async function generateBaselineForLang(lang) {
 
 
 async function generateBaseline() {
+    process.env.E2E_STRICT_CAPTURE = '1'
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
@@ -893,7 +847,7 @@ else {
                 await deleteTestUsersAndTokensAndIps()
                 await insertTestUsersAndTokensAndIps()
 
-                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+                browser = await launchBrowser()
                 let context = await browser.newContext()
                 page = await context.newPage()
 

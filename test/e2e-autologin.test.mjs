@@ -1,13 +1,12 @@
 import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
-import { chromium } from 'playwright'
 import map from 'lodash-es/map.js'
 import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, maskRegions, overlayRegions, resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, maskRegions, overlayRegions, resetToBaseSeed, deleteNonBaseSeed, launchBrowser, REGEN } from './e2e-setup.mjs'
 import { mdiChartBoxOutline } from '@mdi/js/mdi.js'
 
 
@@ -420,9 +419,13 @@ async function autoLoginBackstageMasked(page, lang, opt = {}) {
     }
     //以「真實圖表快照」覆蓋動態區 (取代填黑): baseline 與 runtime 兩端皆貼同一張 ref 圖 → 該區永遠一致
     //(e2e 穩定), 視覺呈現真實頻率圖而非突兀黑塊 (緣由: echarts canvas GPU 跨進程漂移無法 pixel 穩定).
-    //ref 不存在時以當次真實截圖建立 (bootstrap), 之後固定沿用; 要更新快照: 刪 _chartref-{lang}.png 再重產.
+    //ref 不存在時僅 REGEN (--baseline / E2E_REGEN=1) 允許以當次真實截圖建立 (bootstrap), 之後固定沿用;
+    //要更新快照: 刪 _chartref-{lang}.png 再重產. 正常測試模式缺檔即 fail, 不得靜默自舉.
     let refPath = `./test/pics/autologin/_chartref-${lang}.png`
     if (!fs.existsSync(refPath)) {
+        if (!REGEN) {
+            throw new Error(`per-item ref 不存在: ${refPath}（請以 --baseline 產製）`)
+        }
         fs.writeFileSync(refPath, buf)
     }
     let refBuf = fs.readFileSync(refPath)
@@ -432,64 +435,54 @@ async function autoLoginBackstageMasked(page, lang, opt = {}) {
 
 // --- 產生標準圖模式 ---
 
-async function generateBaselineForLang(page, lang) {
+//001~009 每個 case 各自 { name, fn(page) }；fn 內用當次 DB 重建後的 userTokens (見下方迴圈).
+function buildAutoLoginCases(lang) {
+    return [
+        // 001: token 有效 + view=login → autoLogin 成功 → redirect 到 user view
+        { name: 'E2E-001-ok-redir', fn: (page) => autoLoginScreenshot(page, lang, { token: userTokens['id-autologin-ok'] }) },
+        // 002: token 有效 (admin) + view=backstage → autoLogin 成功 → 停留 backstage 看 full dashboard
+        // (「存取活動監測」以下即時圖表填黑遮蔽, 穩定 pixel baseline)
+        // admin user: view=backstage 須由 admin 觸發, 否則 LayoutContent isAdmin filter 只能看 mmUserInfor.
+        { name: 'E2E-002-ok-backstage', fn: (page) => autoLoginBackstageMasked(page, lang, { token: userTokens['id-autologin-ok-admin'] }) },
+        // 003: token 有效 + view=user → autoLogin 成功 → 停留 user view
+        { name: 'E2E-003-ok-user', fn: (page) => autoLoginScreenshot(page, lang, { token: userTokens['id-autologin-ok'], viewParam: 'user' }) },
+        // 004: 無 token → autoLogin 'no token' reject → 回登入頁
+        { name: 'E2E-004-no-token', fn: (page) => autoLoginScreenshot(page, lang, { token: '' }) },
+        // 005: token 有效但 user.redir 為空 → 顯示 'failedLoginForNoRedir' alert + 回登入頁
+        // 須等 autoLogin 完成 (~2s) 但仍在 WAlert 4s 自動消失前截圖；3.5s 為兩端窗口
+        { name: 'E2E-005-no-redir', fn: (page) => autoLoginScreenshot(page, lang, { token: userTokens['id-autologin-no-redir'], waitMs: 3500 }) },
+        // 009: token 有效 (非 admin) + view=backstage → autoLogin 成功 → 停留 backstage 但僅
+        // mmUserInfor menu (LayoutContent isAdmin filter 阻擋 admin-only menu 與 admin-only API).
+        // 對應 LayoutContent.vue: isAdmin computed + menus.adminOnly flag 過濾 + mounted hook
+        // 設 menuKey='mmUserInfor'. 議題 1 fix 驗 (commit 5006ac0).
+        // 框左側 sidebar 導航本體（[ev-stable]，即 WDrawer 內 ref="divDrawer" + v-domstable，x≈0 寬≈229px），
+        // 比 [state]（WDrawer 根、全屏）更聚焦「sidebar 導航項目（確認無 admin-only 項目）」這個驗證標的。
+        { name: 'E2E-009-ok-backstage-nonadmin', fn: (page) => autoLoginScreenshot(page, lang, { token: userTokens['id-autologin-ok'], viewParam: 'backstage', boxTarget: page.locator('[ev-stable]').first() }) },
+    ]
+}
+
+
+async function generateBaselineForLang(lang) {
     console.log(`=== 產生標準圖（${lang}）===`)
 
-    await deleteTestUsersAndTokens()
-    await insertTestUsersAndTokens()
+    for (let { name, fn } of buildAutoLoginCases(lang)) {
+        if (!shouldGen(lang, name)) continue
+        console.log(`  ${name}`)
 
-    let okToken = userTokens['id-autologin-ok']
-    let okAdminToken = userTokens['id-autologin-ok-admin']
-    let noRedirToken = userTokens['id-autologin-no-redir']
+        //per-case fresh DB + browser, 與 mocha beforeEach/afterEach 對稱 (技能 §6 隔離/ §7.5 產製端測試端同管線)
+        await deleteTestUsersAndTokens()
+        await insertTestUsersAndTokens()
 
-    // 001: token 有效 + view=login → autoLogin 成功 → redirect 到 user view
-    if (shouldGen(lang, 'E2E-001-ok-redir')) {
-        console.log(`  001-ok-redir`)
-        let buf1 = await autoLoginScreenshot(page, lang, { token: okToken })
-        writeBaseline(lang, 'E2E-001-ok-redir', buf1)
-    }
+        let browser = await launchBrowser()
+        let page = await browser.newPage()
+        page.on('dialog', async (dialog) => {
+            await dialog.accept()
+        })
 
-    // 002: token 有效 (admin) + view=backstage → autoLogin 成功 → 停留 backstage 看 full dashboard
-    // (「存取活動監測」以下即時圖表填黑遮蔽, 穩定 pixel baseline)
-    // admin user: view=backstage 須由 admin 觸發, 否則 LayoutContent isAdmin filter 只能看 mmUserInfor.
-    if (shouldGen(lang, 'E2E-002-ok-backstage')) {
-        console.log(`  002-ok-backstage`)
-        let buf2 = await autoLoginBackstageMasked(page, lang, { token: okAdminToken })
-        writeBaseline(lang, 'E2E-002-ok-backstage', buf2)
-    }
+        let buf = await fn(page)
+        writeBaseline(lang, name, buf)
 
-    // 003: token 有效 + view=user → autoLogin 成功 → 停留 user view
-    if (shouldGen(lang, 'E2E-003-ok-user')) {
-        console.log(`  003-ok-user`)
-        let buf3 = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'user' })
-        writeBaseline(lang, 'E2E-003-ok-user', buf3)
-    }
-
-    // 004: 無 token → autoLogin 'no token' reject → 回登入頁
-    if (shouldGen(lang, 'E2E-004-no-token')) {
-        console.log(`  004-no-token`)
-        let buf4 = await autoLoginScreenshot(page, lang, { token: '' })
-        writeBaseline(lang, 'E2E-004-no-token', buf4)
-    }
-
-    // 005: token 有效但 user.redir 為空 → 顯示 'failedLoginForNoRedir' alert + 回登入頁
-    // 須等 autoLogin 完成 (~2s) 但仍在 WAlert 4s 自動消失前截圖；3.5s 為兩端窗口
-    if (shouldGen(lang, 'E2E-005-no-redir')) {
-        console.log(`  005-no-redir`)
-        let buf5 = await autoLoginScreenshot(page, lang, { token: noRedirToken, waitMs: 3500 })
-        writeBaseline(lang, 'E2E-005-no-redir', buf5)
-    }
-
-    // 009: token 有效 (非 admin) + view=backstage → autoLogin 成功 → 停留 backstage 但僅
-    // mmUserInfor menu (LayoutContent isAdmin filter 阻擋 admin-only menu 與 admin-only API).
-    // 對應 LayoutContent.vue: isAdmin computed + menus.adminOnly flag 過濾 + mounted hook
-    // 設 menuKey='mmUserInfor'. 議題 1 fix 驗 (commit 5006ac0).
-    if (shouldGen(lang, 'E2E-009-ok-backstage-nonadmin')) {
-        console.log(`  009-ok-backstage-nonadmin`)
-        //框左側 sidebar 導航本體（[ev-stable]，即 WDrawer 內 ref="divDrawer" + v-domstable，x≈0 寬≈229px），
-        //比 [state]（WDrawer 根、全屏）更聚焦「sidebar 導航項目（確認無 admin-only 項目）」這個驗證標的。
-        let buf9 = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'backstage', boxTarget: page.locator('[ev-stable]').first() })
-        writeBaseline(lang, 'E2E-009-ok-backstage-nonadmin', buf9)
+        await browser.close()
     }
 
     await deleteTestUsersAndTokens()
@@ -497,24 +490,15 @@ async function generateBaselineForLang(page, lang) {
 
 
 async function generateBaseline() {
+    process.env.E2E_STRICT_CAPTURE = '1'
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    //每個 lang 啟動 fresh browser, 與 mocha test mode 一致 (每個 describe 各自 launch browser).
-    //避免「warm 跑 regen / cold 跑 test」導致 cht / chart canvas 等 process-state 累積差異.
     for (let lang of langs) {
-        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
-        let page = await browser.newPage()
-        page.on('dialog', async (dialog) => {
-            await dialog.accept()
-        })
-
-        await generateBaselineForLang(page, lang)
-
-        await browser.close()
+        await generateBaselineForLang(lang)
     }
 
     console.log('=== 標準圖產生完成 ===')
@@ -550,7 +534,7 @@ else {
                 await deleteTestUsersAndTokens()
                 await insertTestUsersAndTokens()
 
-                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+                browser = await launchBrowser()
                 let context = await browser.newContext()
                 page = await context.newPage()
 

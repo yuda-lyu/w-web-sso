@@ -20,9 +20,9 @@ import staUserAccountLogin from '../server/staLogs/staUserAccountLogin.mjs'
 import filterVpfsByWindow from '../server/staLogs/filterVpfsByWindow.mjs'
 
 
-//fixture 目錄錨定於 test 檔所在之上一層 tmp/(≡ 專案 cwd 下 tmp/),不受執行 cwd 影響
+//fixture 目錄錨定於 test/_tmp/(gitignore, after() 清除),不受執行 cwd 影響; 不落專案 ./tmp/(AI 代理暫存區, 隨時會被整個清除)
 let __dirname = path.dirname(fileURLToPath(import.meta.url))
-let fdLog = path.resolve(__dirname, '..', 'tmp', 'fixture-logs')
+let fdLog = path.resolve(__dirname, '_tmp', 'fixture-logs')
 
 //hr fmt(各 staLogs 於 timeInterval='hr' 之 fmt,見 staIp.mjs:25)
 let fmt = 'YYYY-MM-DDTHH'
@@ -125,6 +125,12 @@ describe('unit-staLogs', function() {
 
     after(function() {
         fs.rmSync(fdLog, { recursive: true, force: true })
+        //測完即刪: test/_tmp/ 本身若已空也移除
+        try {
+            let d = path.dirname(fdLog)
+            if (fs.existsSync(d) && fs.readdirSync(d).length === 0) fs.rmdirSync(d)
+        }
+        catch (err) { /* ignore */ }
     })
 
 

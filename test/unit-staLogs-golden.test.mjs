@@ -1,9 +1,11 @@
 //staLogsCore golden / 快取 / 併發 / 失敗路徑 單元測試
 //對應需求 (tmp/validate-plan.md R01–R12; 契約: 改造前三支掃描器之輸出語意):
-//  fixture: test/staLogs-golden/logs/ (由 tmp/zz_gen_golden.mjs 確定性產生, 173 檔)
-//  expected: test/staLogs-golden/expected-{hr,day}.json —— 以「改造前」之 staToken/staIp/staUserAccountLogin
+//  fixture: test/staLogs-golden/logs/ (由 test/staLogs-golden/gen-expected.mjs 確定性產生, 173 檔)
+//  expected: test/staLogs-golden/expected-{hr,day}.json —— 以「改造前」(git 5d341b8^) 之
+//            test/staLogs-golden/legacy/{staToken,staIp,staUserAccountLogin}.mjs
 //            在假時鐘 FIXED=1788150896789 (2026-08-31 12:34:56.789 +08:00) 下產出, 為本測試之真理來源
-//  重產方式: 自 git 歷史還原舊三檔至 tmp/old/ 並改 zz_gen_golden.mjs 之 import, 再 node --import ./tmp/zz_fakeDate.mjs tmp/zz_gen_golden.mjs expected
+//  重產方式: node test/staLogs-golden/gen-expected.mjs fixture
+//            → node --import ./test/staLogs-golden/fakeDate.mjs test/staLogs-golden/gen-expected.mjs expected
 import './staLogs-golden/setTz.mjs'
 import assert from 'assert'
 import fs from 'fs'
@@ -17,14 +19,16 @@ import staTokenWk from '../server/staLogs/staToken.callWorker.mjs'
 import staIpWk from '../server/staLogs/staIp.callWorker.mjs'
 import staUserAccountLoginWk from '../server/staLogs/staUserAccountLogin.callWorker.mjs'
 import { staLogs, scanFiles, scanFile, genPlan, clearCache, getCacheSize } from '../server/staLogs/staLogsCore.mjs'
+import { runWorker, staLogs as staLogsWk } from '../server/staLogs/staLogsCore.callWorker.mjs'
 import srLogInit from '../server/srLog.mjs'
 
 
 let __dirname = path.dirname(fileURLToPath(import.meta.url))
 let fdGolden = path.resolve(__dirname, 'staLogs-golden')
 let fdLog = path.join(fdGolden, 'logs')
-let fdCopy = path.resolve(__dirname, '..', 'tmp', 'golden-copy') //快取/失敗路徑測試用之可寫副本
-let fdTmp = path.resolve(__dirname, '..', 'tmp', 'golden-tmp')
+//測試中介資料一律落 test/_tmp/ (gitignore, after() 清除), 不落專案 ./tmp/ (AI 代理暫存區, 隨時會被整個清除)
+let fdCopy = path.resolve(__dirname, '_tmp', 'golden-copy') //快取/失敗路徑測試用之可寫副本
+let fdTmp = path.resolve(__dirname, '_tmp', 'golden-tmp')
 
 let FIXED = 1788150896789
 let T_START = FIXED - 7 * 86400000
@@ -66,6 +70,12 @@ describe('unit-staLogs-golden', function() {
     after(function() {
         fs.rmSync(fdCopy, { recursive: true, force: true })
         fs.rmSync(fdTmp, { recursive: true, force: true })
+        //測完即刪: test/_tmp/ 本身若已空也移除 (其他測試可能同時使用, 非空則留)
+        try {
+            let d = path.dirname(fdTmp)
+            if (fs.existsSync(d) && fs.readdirSync(d).length === 0) fs.rmdirSync(d)
+        }
+        catch (err) { /* ignore */ }
         clearCache()
     })
 
@@ -308,6 +318,66 @@ describe('unit-staLogs-golden', function() {
         await srLog.clear()
         let srLog2 = srLogInit({ logFd: fdTmp, logInterval: 'hr' }) //未給鍵 → 可啟動
         await srLog2.clear()
+    })
+
+
+    //GOLD-030: 檔級快取跨 timeLength: 先以較小 timeLength 查詢 (窄窗, 檔內有行被窗過濾), 再以較大 timeLength 查詢, 結果須與清快取後直接查詢全等
+    //  述語對應 ADR-051 修正紀錄 P1: 沿用須同時滿足「彙總完整 (minTimeMs > scanTStartMs)」與「整檔在新窗內」
+    it('GOLD-030-cache-not-reused-when-timeLength-widens', async function() {
+        fs.rmSync(fdTmp, { recursive: true, force: true })
+        fs.mkdirSync(fdTmp, { recursive: true })
+        //同一檔 (非 ISO 檔名, 不被檔名層窗過濾) 內含 20 天前 5 筆 verifyConn(1.1.1.1) 與 2 天前 3 筆 verifyConn(2.2.2.2)
+        let lines = []
+        for (let i = 0; i < 5; i++) {
+            lines.push(JSON.stringify({ level: 30, time: ot(FIXED).subtract(20, 'day').valueOf() + i * 1000, event: 'verifyConn', ip: '1.1.1.1' }))
+        }
+        for (let i = 0; i < 3; i++) {
+            lines.push(JSON.stringify({ level: 30, time: ot(FIXED).subtract(2, 'day').valueOf() + i * 1000, event: 'verifyConn', ip: '2.2.2.2' }))
+        }
+        fs.writeFileSync(path.join(fdTmp, 'mixed.log'), lines.join('\n') + '\n')
+        clearCache()
+        let r7 = await staLogs(7, 'hr', { fdLog: fdTmp, timeNow: FIXED })
+        assert.strict.equal(sumKey(r7.ip, '1.1.1.1'), 0)
+        assert.strict.equal(sumKey(r7.ip, '2.2.2.2'), 3)
+        assert.strict.equal(r7.stat.nScanned, 1)
+        //窗變寬: 該檔 minTimeMs (20 天前) > 30 天窗起點, 但掃描時曾被 7 天窗過濾 → 不得沿用, 須重掃
+        let r30 = await staLogs(30, 'hr', { fdLog: fdTmp, timeNow: FIXED })
+        let r30f = await staLogs(30, 'hr', { fdLog: fdTmp, timeNow: FIXED, useCache: false })
+        assert.strict.equal(r30.stat.nScanned, 1, '窗變寬時不得沿用窄窗彙總')
+        assert.strict.equal(sumKey(r30.ip, '1.1.1.1'), 5)
+        assert.strict.equal(sumKey(r30.ip, '2.2.2.2'), 3)
+        assert.deepStrictEqual(r30.ip, r30f.ip)
+        //窗變寬後彙總完整 → 同窗可沿用; 再變窄時該檔含窗外行 (整檔不在新窗內) → 仍須重掃, 結果與首次窄窗查詢全等
+        let r30b = await staLogs(30, 'hr', { fdLog: fdTmp, timeNow: FIXED })
+        assert.strict.equal(r30b.stat.nCached, 1)
+        assert.deepStrictEqual(r30b.ip, r30f.ip)
+        let r7b = await staLogs(7, 'hr', { fdLog: fdTmp, timeNow: FIXED })
+        assert.strict.equal(r7b.stat.nScanned, 1, '窗變窄且檔含窗外行時不得沿用寬窗彙總')
+        assert.deepStrictEqual(r7b.ip, r7.ip)
+    })
+
+
+    //WORKER-002: worker 未回傳訊息即退出 → promise 須 reject (非 pending), 且同 key 之後續呼叫可正常重試
+    //  述語對應 ADR-051 修正紀錄 P2
+    it('WORKER-002-worker-exit-without-message-rejects-and-retry-ok', async function() {
+        let fpExit = path.join(fdGolden, 'exitWorker.mjs')
+        let settled = false
+        let pm = runWorker({ files: [], tStartMs: 0, fmt: 'YYYY-MM-DDTHH' }, fpExit)
+            .then(() => {
+                settled = 'resolved'
+            }, (err) => {
+                settled = String(err.message)
+            })
+        await Promise.race([pm, new Promise((resolve) => setTimeout(resolve, 3000))])
+        assert.ok(settled && settled !== 'resolved', `worker exit 後 promise 須 reject, 實際: ${settled}`)
+        assert.match(settled, /exited without result, code=0/)
+        //single-flight 釋放: 同參數呼叫改走正常 worker 可正常取得結果
+        clearCache()
+        let scanFilesExit = () => runWorker({ files: [], tStartMs: 0, fmt: 'YYYY-MM-DDTHH' }, fpExit)
+        let bad = await staLogs(7, 'hr', { fdLog, timeNow: FIXED, scanFiles: scanFilesExit }).then(() => 'resolved', (err) => String(err.message))
+        assert.match(bad, /exited without result/)
+        let ok = await staLogsWk(7, 'hr', { fdLog, timeNow: FIXED })
+        assert.deepStrictEqual(ok.token, expectedHr.token, '同 key 於 reject 後重試須正常')
     })
 
 })

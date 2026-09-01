@@ -1,13 +1,12 @@
 import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
-import { chromium } from 'playwright'
 import map from 'lodash-es/map.js'
 import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, launchBrowser } from './e2e-setup.mjs'
 import { mdiEye, mdiEyeOff } from '@mdi/js/mdi.js'
 
 //AgentMail key / inbox: 由 env var 提供, 不寫死 in repo (避免 public open-source repo 內含 live secret).
@@ -687,7 +686,7 @@ async function resendErrorFlow(page, lang, account, password, resendEmail, preSe
 // 「產 baseline」與「跑比對」皆為 per-case cold browser → 同一 glyph 冷啟條件, 不會 cold/warm 飄移.
 //
 async function withFreshPage(fn) {
-    let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+    let browser = await launchBrowser()
     try {
         let context = await browser.newContext()
         let page = await context.newPage()
@@ -861,6 +860,7 @@ async function generateEyeBaseline018() {
 
 
 async function generateBaseline() {
+    process.env.E2E_STRICT_CAPTURE = '1'
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
@@ -920,7 +920,7 @@ else {
                 await deleteTestUsers()
                 await insertTestUsers()
 
-                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+                browser = await launchBrowser()
                 let context = await browser.newContext()
                 page = await context.newPage()
                 page.on('dialog', async (dialog) => {
@@ -1071,7 +1071,7 @@ else {
             this.timeout(180000)
             await startServersOnce()
 
-            browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+            browser = await launchBrowser()
             let context = await browser.newContext()
             page = await context.newPage()
             page.on('dialog', (d) => d.accept())

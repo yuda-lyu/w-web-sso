@@ -4,13 +4,14 @@ node_modules
 CLAUDE*.md
 .env
 
-_logs
+logs
 db
 uploadTemp
 testPending
 user_data
 
 tmp
+test/_tmp
 
 test
 spec

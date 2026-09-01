@@ -27,7 +27,7 @@ let EV_LOGIN_SUCCESS = 'kpfun-loginByAccountAndPassword-success'
 let EV_LOGIN_ERROR = 'kpfun-loginByAccountAndPassword-error'
 
 
-//快取: fdLog 絕對路徑 → Map(檔名 → { size, mtimeMs, minTimeMs, agg })
+//快取: fdLog 絕對路徑 → Map(檔名 → { size, mtimeMs, minTimeMs, scanTStartMs, agg }); 沿用須「彙總完整 (minTimeMs > scanTStartMs)」且「整檔在新窗內 (minTimeMs > tStartMs)」, 否則 timeLength 變大時會沿用窄窗彙總而漏算
 let kpCache = new Map()
 
 //single-flight: key → promise
@@ -416,10 +416,12 @@ async function run(plan, opt = {}) {
     let kpAgg = {} //name → agg (依 files 順序合併)
     for (let f of files) {
         let c = useCache ? cacheDir.get(f.name) : undefined
+        //沿用條件: 檔未變 + 彙總完整 (掃描時無行被窗過濾: minTimeMs > scanTStartMs) + 整檔仍在新窗內 (minTimeMs > 新 tStartMs)
+        //  只檢查後者時, timeLength 由小變大 (tStart 後退) 會沿用以窄窗掃出之不完整彙總 → 靜默漏算
         let b = c !== undefined &&
             c.size === f.size &&
             c.mtimeMs === f.mtimeMs &&
-            (c.minTimeMs === null || c.minTimeMs > plan.tStartMs)
+            (c.minTimeMs === null || (c.minTimeMs > c.scanTStartMs && c.minTimeMs > plan.tStartMs))
         if (b) {
             kpAgg[f.name] = c.agg
         }
@@ -451,7 +453,7 @@ async function run(plan, opt = {}) {
             if (r && r.ok) {
                 kpAgg[f.name] = r.agg
                 if (useCache) {
-                    cacheDir.set(f.name, { size: f.size, mtimeMs: f.mtimeMs, minTimeMs: r.agg.minTimeMs, agg: r.agg })
+                    cacheDir.set(f.name, { size: f.size, mtimeMs: f.mtimeMs, minTimeMs: r.agg.minTimeMs, scanTStartMs: plan.tStartMs, agg: r.agg })
                 }
             }
             else {

@@ -1,13 +1,12 @@
 import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
-import { chromium } from 'playwright'
 import map from 'lodash-es/map.js'
 import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, assertBaselineMatch, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, assertBaselineMatch, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput, launchBrowser } from './e2e-setup.mjs'
 
 
 //
@@ -863,7 +862,7 @@ async function generateBaselineForLang(lang) {
         await insertVerifyTestUsers()
         if (prep) await prep()
 
-        let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+        let browser = await launchBrowser()
         let context = await browser.newContext()
         let page = await context.newPage()
         page.on('dialog', async (dialog) => {
@@ -886,6 +885,7 @@ async function generateBaselineForLang(lang) {
 
 
 async function generateBaseline() {
+    process.env.E2E_STRICT_CAPTURE = '1'
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
@@ -907,7 +907,7 @@ async function generateBaseline() {
             for (let lang of langs) {
                 if (!shouldGen(lang, 'E2E-017-registration-not-allowed')) continue
                 console.log(`  E2E-017-registration-not-allowed (${lang})`)
-                let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+                let browser = await launchBrowser()
                 let context = await browser.newContext()
                 let page = await context.newPage()
                 page.on('dialog', async (dialog) => { await dialog.accept() })
@@ -954,7 +954,7 @@ else {
                 await deleteAllRegisterTestUsers()
                 await insertVerifyTestUsers()
 
-                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+                browser = await launchBrowser()
                 let context = await browser.newContext()
                 page = await context.newPage()
 
@@ -1210,7 +1210,7 @@ else {
 
         for (let lang of langs) {
             it(`E2E-017-registration-not-allowed [${lang}]: 不允許自助註冊 → 登入頁不顯示 Register link`, async function() {
-                browser017 = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+                browser017 = await launchBrowser()
                 let context = await browser017.newContext()
                 page017 = await context.newPage()
                 page017.on('dialog', async (dialog) => { await dialog.accept() })

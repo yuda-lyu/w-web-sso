@@ -1,8 +1,7 @@
 import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
-import { chromium } from 'playwright'
-import { cleanup, captureStableWithBox, apiUrl, genTempSettings, restartBackend, assertBaselineMatch } from './e2e-setup.mjs'
+import { cleanup, captureStableWithBox, apiUrl, genTempSettings, restartBackend, assertBaselineMatch, launchBrowser } from './e2e-setup.mjs'
 
 
 //
@@ -41,8 +40,6 @@ import { cleanup, captureStableWithBox, apiUrl, genTempSettings, restartBackend,
 
 let baselineDir = './test/pics/init'
 let langs = ['eng', 'cht']
-
-let launchArgs = ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text']
 
 
 let baselineNamesFilter = null
@@ -84,7 +81,7 @@ function ensureIndexTmpl() {
 //共用: 開新瀏覽器打後端 dist 初始畫面. 不帶 ?lang= (陷阱 3); 清 localStorage 避免 autoLogin.
 //routeHang=true 時攔截 converhp 主連線使其懸而不答 → connState 卡 'csIng' → 穩定呈現「連線中」畫面.
 async function withFreshPage(routeHang, fn) {
-    let browser = await chromium.launch({ headless: true, args: launchArgs })
+    let browser = await launchBrowser()
     try {
         let page = await (await browser.newContext()).newPage()
         if (routeHang) {
@@ -155,7 +152,7 @@ async function captureConnectingScreen(lang) {
 //captureStable animatedRects 自動填黑遮蔽, 同 connecting).
 async function captureForcedState(lang, connState, key, imgPrefix) {
     await restartBackend(genTempSettings({ language: lang }))
-    let browser = await chromium.launch({ headless: true, args: launchArgs })
+    let browser = await launchBrowser()
     try {
         let page = await (await browser.newContext()).newPage()
         await page.route('**/api/**', () => {}) //全部 /api 懸置 → 連線不 resolve, connState 可被強制保持
@@ -196,6 +193,7 @@ let cases = [
 
 
 async function generateBaseline() {
+    process.env.E2E_STRICT_CAPTURE = '1'
     if (!fs.existsSync(baselineDir)) {
         fs.mkdirSync(baselineDir, { recursive: true })
     }

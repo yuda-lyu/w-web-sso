@@ -1,12 +1,11 @@
 import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
-import { chromium } from 'playwright'
 import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, assertBaselineMatch } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, assertBaselineMatch, launchBrowser } from './e2e-setup.mjs'
 
 
 //
@@ -703,7 +702,7 @@ async function clickResetPasswordOnRow(page, account, lang) {
 //per-case cold browser 工廠 (與 login 同 pattern): 每個 case 各自 launch 全新 browser, regen 與
 //mocha test 兩路徑共用「per-case 冷啟」結構 → 同 glyph 條件, 不會 cold/warm pixel drift.
 async function withFreshPage(fn) {
-    let browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+    let browser = await launchBrowser()
     try {
         let context = await browser.newContext()
         let page = await context.newPage()
@@ -883,6 +882,7 @@ async function generateUserFlowBaselinesForLang(lang) {
 
 
 async function generateBaseline() {
+    process.env.E2E_STRICT_CAPTURE = '1'
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
@@ -948,7 +948,7 @@ else {
                 this.timeout(180000)
                 await deleteTestUsersAndTokens()
                 await insertTestUsersAndTokens()
-                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+                browser = await launchBrowser()
                 let context = await browser.newContext()
                 page = await context.newPage()
                 page.on('dialog', async (dialog) => {
@@ -1072,7 +1072,7 @@ else {
                 this.timeout(180000)
                 await deleteTestUsersAndTokens()
                 await insertTestUsersAndTokens()
-                browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'] })
+                browser = await launchBrowser()
                 let context = await browser.newContext()
                 page = await context.newPage()
                 page.on('dialog', async (dialog) => {
