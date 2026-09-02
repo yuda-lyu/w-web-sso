@@ -225,10 +225,10 @@ function proc(woItems, p, opt = {}) {
         return rs
     }
     //wsemi ≥1.8.81 cache: 執行中共用 in-flight promise (併發不再輪詢等待); timeFrom:'end' 使 30 秒自掃描完成起算;
-    //cacheError:false 失敗不快取且拋錯 (取代原「偵測 undefined」ADR-045 與呼叫端 single-flight ADR-051)
+    //useCacheWhenError:false 失敗不快取且拋錯 (取代原「偵測 undefined」ADR-045 與呼叫端 single-flight ADR-051)
     let ocGetStaUserAccountLogin = cache()
     let getStaUserAccountLogin = async () => {
-        let r = await ocGetStaUserAccountLogin.getProxy('fun', { fun: _getStaUserAccountLogin, inputs: null, timeExpired: 30 * 1000, timeFrom: 'end', cacheError: false }) //快取30秒
+        let r = await ocGetStaUserAccountLogin.getProxy('fun', { fun: _getStaUserAccountLogin, inputs: null, timeExpired: 30 * 1000, timeFrom: 'end', useCacheWhenError: false }) //快取30秒
             .catch((err) => {
                 if (srLog) {
                     srLog.error({ event: 'fun-getStaUserAccountLogin', key: 'getStaDataFailed', err: String(get(err, 'message', err)) })
@@ -317,7 +317,7 @@ function proc(woItems, p, opt = {}) {
     let ocGetStaToken = cache()
     let getStaToken = async () => {
         //cache 選項同 getStaUserAccountLogin
-        let r = await ocGetStaToken.getProxy('fun', { fun: _getStaToken, inputs: null, timeExpired: 30 * 1000, timeFrom: 'end', cacheError: false }) //快取30秒
+        let r = await ocGetStaToken.getProxy('fun', { fun: _getStaToken, inputs: null, timeExpired: 30 * 1000, timeFrom: 'end', useCacheWhenError: false }) //快取30秒
             .catch((err) => {
                 if (srLog) {
                     srLog.error({ event: 'fun-getStaToken', key: 'getStaDataFailed', err: String(get(err, 'message', err)) })
@@ -386,7 +386,7 @@ function proc(woItems, p, opt = {}) {
     let ocGetStaIp = cache()
     let getStaIp = async () => {
         //cache 選項同 getStaUserAccountLogin; getStaIpSummary 內部亦呼叫 getStaIp, 與前端直呼者共用 wsemi 之 in-flight promise
-        let r = await ocGetStaIp.getProxy('fun', { fun: _getStaIp, inputs: null, timeExpired: 30 * 1000, timeFrom: 'end', cacheError: false }) //快取30秒
+        let r = await ocGetStaIp.getProxy('fun', { fun: _getStaIp, inputs: null, timeExpired: 30 * 1000, timeFrom: 'end', useCacheWhenError: false }) //快取30秒
             .catch((err) => {
                 if (srLog) {
                     srLog.error({ event: 'fun-getStaIp', key: 'getStaDataFailed', err: String(get(err, 'message', err)) })
