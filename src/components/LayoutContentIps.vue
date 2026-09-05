@@ -583,7 +583,7 @@ export default {
             let cmp = get(vo, '$refs.rftable')
             // console.log('cmp', cmp)
 
-            //refresh, 因set不會觸發kpCellRender, 故須另外調用組件函數refresh, 進而觸發kpCellRender, 使能更新數據
+            //refresh, 因set不會觸發ag-grid重繪, 故須另外調用組件函數refresh(內為redrawRows)重繪各列, 使cell-render slot內容更新(w-aggrid-vue 2.0.56起以cell-render slot取代opt.kpCellRender)
             cmp.refresh()
 
         },
