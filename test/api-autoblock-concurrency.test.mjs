@@ -2,7 +2,7 @@ import assert from 'assert'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, apiUrl, getFapi, callFapi } from './api-setup.mjs'
+import { startServersOnce, apiUrl, getFapi, callFapi } from './tools/api-setup.mjs'
 
 
 //
@@ -76,10 +76,8 @@ describe('AutoBlock Concurrency API — 帳號即時封鎖並發取證 (D40)', f
         await getFapi()
     })
 
-    after(async function() {
-        this.timeout(20000)
-        cleanup()
-    })
+    //不做檔級 cleanup: cleanup 屬進程級 teardown (e2e-setup root after / process exit 已註冊),
+    //檔級呼叫會殺掉共用 backend, 使同一 mocha 進程內後續 api-* 檔全數 ECONNREFUSED
 
     it(`D40-001: ${REPEAT_ROUNDS} 輪, 每輪對同一帳號同時送出 ${numForAccountLoginFailed + 1} 次錯誤密碼登入 → 每輪皆須成功封鎖(DB timeBlocked 有值), 不論交錯順序`, async function() {
 

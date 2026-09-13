@@ -13,8 +13,8 @@
 
             <div style="padding:20px 30px;">
 
-                <!-- 頁面標題 -->
-                <div class="mb-8">
+                <!-- 頁面標題; 選單收合時左側讓位20px, 避免被「顯示選單」圓鈕(absolute left:5px)壓到 -->
+                <div class="mb-8" :style="drawer ? '' : 'padding-left:20px;'">
                     <div style="font-size:1.5rem; font-weight:600;">{{$t('statisticsInformation')}}</div>
                     <div style="font-size:0.9rem; color:#6b7280;">{{$t('statisticsInformationDescription')}}</div>
                 </div>
@@ -347,6 +347,10 @@ export default {
         WIconLoading,
     },
     props: {
+        drawer: { //導覽選單是否展開; 收合時標題區須讓位給左上「顯示選單」圓鈕(同清單頁標題區之讓位padding)
+            type: Boolean,
+            default: true,
+        },
     },
     data: function() {
         return {

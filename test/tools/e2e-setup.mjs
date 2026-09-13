@@ -11,8 +11,8 @@ import pixelmatch from 'pixelmatch'
 import { PNG } from 'pngjs'
 import { fileURLToPath } from 'url'
 import { chromium } from 'playwright'
-import { woItems } from '../g_mOrm.mjs'
-import { buildBaseUsers, buildBaseTokens } from '../g_initialData.mjs'
+import { woItems } from '../../g_mOrm.mjs'
+import { buildBaseUsers, buildBaseTokens } from '../../g_initialData.mjs'
 
 //REGEN: 標準圖產製模式 (各檔直跑 --baseline 或 env E2E_REGEN=1). 供「只在 regen 才允許之副作用」判斷 (如 _staref 自舉)
 //規則: 診斷 env 生效時絕不可寫正式 baseline (技能 references/pixel-mismatch-diagnosis.md §6)
@@ -35,10 +35,6 @@ let chromiumLaunchArgs = [
 async function launchBrowser() {
     return await chromium.launch({ headless: true, args: chromiumLaunchArgs })
 }
-
-//D21: 測試環境放行佔位符 pepper (測試密碼非機密; spawn 的 backend 繼承此 env → WWebSso 啟動檢查放行).
-//生產環境不設此旗標 + 未注入 SALT → 後端拒啟. 種子(此檔 buildBaseUsers)與後端 verify 在測試下同用 '{salt}', 一致.
-process.env.ALLOW_PLACEHOLDER_SALT = process.env.ALLOW_PLACEHOLDER_SALT || '1'
 
 //
 // e2e 共用 base URL
@@ -165,7 +161,7 @@ let tmpSettingsFiles = []
 function genTempSettings(overrides = {}) {
     let base = JSON5.parse(fs.readFileSync('./settings.json', 'utf8'))
     let merged = { ...base, ...overrides }
-    let tmpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '_tmp')
+    let tmpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '_tmp')
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
     let p = path.join(tmpDir, `settings-e2e-${process.pid}-${tmpSettingsSeq++}.json`)
     fs.writeFileSync(p, JSON.stringify(merged, null, 2))
@@ -181,7 +177,7 @@ function cleanupTempSettings() {
     }
     tmpSettingsFiles = []
     try {
-        let tmpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '_tmp')
+        let tmpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '_tmp')
         if (fs.existsSync(tmpDir) && fs.readdirSync(tmpDir).length === 0) fs.rmdirSync(tmpDir)
     }
     catch (err) { /* ignore */ }
@@ -267,6 +263,10 @@ function cleanup() {
         killProc(backendProc)
         backendProc = null
     }
+    //重置 once 旗標: 若 cleanup 於進程中途被誤呼叫(如檔級 after), 後續檔案之 startServersOnce
+    //才能重新偵測/重啟, 不會拿著已死 port 直接 return (殷鑑: 單一 mocha 併跑 api-* 時
+    //api-autoblock-concurrency 檔級 cleanup 使其後所有檔案 ECONNREFUSED)
+    started = false
     cleanupTempSettings()
 }
 

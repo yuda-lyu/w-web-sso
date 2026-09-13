@@ -6,7 +6,7 @@ import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, assertBaselineMatch, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput, launchBrowser } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, assertBaselineMatch, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput, launchBrowser } from './tools/e2e-setup.mjs'
 
 
 //

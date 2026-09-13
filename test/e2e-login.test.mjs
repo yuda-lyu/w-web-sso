@@ -6,7 +6,7 @@ import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, launchBrowser } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, launchBrowser } from './tools/e2e-setup.mjs'
 import { mdiEye, mdiEyeOff } from '@mdi/js/mdi.js'
 
 //AgentMail key / inbox: 由 env var 提供, 不寫死 in repo (避免 public open-source repo 內含 live secret).

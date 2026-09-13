@@ -2,8 +2,8 @@ import assert from 'assert'
 import ot from 'dayjs'
 import { woItems } from '../g_mOrm.mjs'
 import ds from '../src/schema/index.mjs'
-import { startServersOnce, apiUrl } from './api-setup.mjs'
-import { resetToBaseSeed, deleteNonBaseSeed } from './e2e-setup.mjs'
+import { startServersOnce, apiUrl } from './tools/api-setup.mjs'
+import { resetToBaseSeed, deleteNonBaseSeed } from './tools/e2e-setup.mjs'
 
 
 //

@@ -1,7 +1,7 @@
 import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
-import { cleanup, captureStableWithBox, apiUrl, genTempSettings, restartBackend, assertBaselineMatch, launchBrowser } from './e2e-setup.mjs'
+import { cleanup, captureStableWithBox, apiUrl, genTempSettings, restartBackend, assertBaselineMatch, launchBrowser } from './tools/e2e-setup.mjs'
 
 
 //
@@ -66,6 +66,9 @@ let expectedText = {
 
 //確保 dist/index.tmp 不可變模板存在: 由 dist/index.html 以正規式把已注入的 language 值還原為 {language} 佔位符.
 //冪等 — 不論 dist/index.html 目前是 'eng' / 'cht' / '{language}' 皆還原成模板. (陷阱 2)
+//{sfd} 亦須還原: 後端每次啟動會將 index.tmp 之 {sfd}(靜態資源子資料夾佔位符)代換後寫出 index.html
+//(WWebSso 入口生成), 若只還原 {language}, 從已代換之 index.html 重建模板會讓 {sfd} 永久流失,
+//子資料夾部署之資源路徑即壞 (2026-09-07 全套 e2e 後發現 index.tmp 之 {sfd} 被洗掉, 見 ADR-058)
 function ensureIndexTmpl() {
     let distHtml = './dist/index.html'
     let distTmp = './dist/index.tmp'
@@ -74,6 +77,7 @@ function ensureIndexTmpl() {
     }
     let c = fs.readFileSync(distHtml, 'utf8')
     c = c.replace(/language: '[^']*'/, "language: '{language}'")
+    c = c.replace(/"(?:\{sfd\}|\/msso|)(\/(?:js|css)\/)/g, '"{sfd}$1') //還原 js/css 資源路徑前綴為 {sfd} (含 /msso 舊形; 已是 {sfd} 者冪等)
     fs.writeFileSync(distTmp, c, 'utf8')
 }
 

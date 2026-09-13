@@ -5,7 +5,7 @@ import hashPassword from './server/hashPassword.mjs'
 import { woItems } from './g_mOrm.mjs'
 
 
-let salt = process.env.SALT || '{salt}' //D21: 生產經 SALT env 注入真實 pepper, 須與後端 verify pepper 一致; 未設時用佔位符(僅測試/開發)
+let salt = process.env.SALT || '{salt}' //pepper 須與後端 settings 之 salt 一致 (範例 settings.json 為 '{salt}'); 可經環境變數 SALT 覆寫
 
 
 //基本測試數據 (使用者) 原始定義 — 為 g_initialData 重建 DB 與 e2e setup 的單一真理來源.

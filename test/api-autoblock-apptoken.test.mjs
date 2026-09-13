@@ -6,8 +6,8 @@
 //作法: 以 numForTokenCallApi=5 之臨時 settings 重啟後端 (restartBackend), 對 /api/checkToken 連打 8 次 (> 5),
 //      等 timer 跑過 (3 s) 後再驗: app token 仍有效 (豁免); 對照組使用者 token 失效 (機制確有觸發).
 import assert from 'assert'
-import { startServersOnce, apiUrl } from './api-setup.mjs'
-import { restartBackend, genTempSettings, resetToBaseSeed } from './e2e-setup.mjs'
+import { startServersOnce, apiUrl } from './tools/api-setup.mjs'
+import { restartBackend, genTempSettings, resetToBaseSeed } from './tools/e2e-setup.mjs'
 import { woItems } from '../g_mOrm.mjs'
 
 

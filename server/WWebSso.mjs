@@ -178,17 +178,10 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let webKey = get(opt, 'webKey', '')
 
     //salt (作為 per-user scrypt 之伺服器端 pepper; per-user 隨機 salt 已在 hashPassword 內處理)
-    //D21: 強制要求引用方部署時注入真實 pepper (經 SALT 環境變數); 啟動時若為空/佔位符則拒啟.
+    //值由引用方於 settings 自行決定 (settings.json 之 '{salt}' 僅為範例值), 亦可經環境變數 SALT 覆寫; 套件不檢查、不限制其內容
     let salt = get(opt, 'salt', '')
     if (isestr(process.env.SALT)) {
-        salt = process.env.SALT //生產環境經 SALT env 注入真實 pepper (優先於 settings 佔位符)
-    }
-    if (!isestr(salt) || salt === '{salt}') {
-        //測試/開發可設 ALLOW_PLACEHOLDER_SALT=1 沿用佔位符 (測試密碼非機密); 生產一律須注入真實 SALT.
-        if (!isestr(process.env.ALLOW_PLACEHOLDER_SALT)) {
-            throw new Error(`SALT pepper 未設定: 請以環境變數 SALT 注入真實高熵 pepper 後再啟動 (測試/開發可設 ALLOW_PLACEHOLDER_SALT=1 沿用佔位符)`)
-        }
-        logBoot('warn', `SALT pepper 為佔位符/空值, 因 ALLOW_PLACEHOLDER_SALT 啟用而放行 — 切勿用於生產環境`)
+        salt = process.env.SALT
     }
 
     //minExpired, 使用者成功登入後產生token之有效時間(分鐘)
@@ -1357,7 +1350,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
         },
-        fnTableTags: 'tableTags-web-sso.json',
+        fpTableTags: 'tableTags-web-sso.json', //w-serv-hapi 1.0.87 起之正式鍵名(舊名 fnTableTags 於該版前傳下去無效, 現雖有相容處理但屬 deprecated)
     }
 
     //原則3: 後端錯誤統一 log error key. 集中包一層 kpFunExt — 任一 kpfun reject 時記 { fun, key } 再原樣

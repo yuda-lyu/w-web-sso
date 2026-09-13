@@ -53,7 +53,7 @@
                                                     @click="clickChangePassword"
                                                 ></WButtonChip>
                                             </div>
-                                            <div v-else style="padding:10px; margin-top:5px;">
+                                            <div v-else ref="rfChangePwForm" style="padding:10px; margin-top:5px;">
                                                 <div style="margin-bottom:10px;">
                                                     <div style="font-size:0.8rem; color:#444; margin-bottom:2px;">{{$t('userChangePasswordOldPassword')}}</div>
                                                     <WText
@@ -397,6 +397,15 @@ export default {
             vo.chPwOldError = ''
             vo.chPwNewError = ''
             vo.chPwConfirmError = ''
+
+            //展開後將表單捲入可視範圍: 卡片內容區有max-height(overflow-y:auto),
+            //1600x900下展開表單會超出可視高, 主動捲入避免使用者不知下方尚有內容
+            vo.$nextTick(() => {
+                let el = vo.$refs.rfChangePwForm
+                if (el && el.scrollIntoView) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                }
+            })
         },
 
         cancelChangePassword: function() {

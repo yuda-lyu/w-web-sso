@@ -6,20 +6,21 @@
 //機制：每檔前只殺後端（11007）、保留前端（8080，無狀態且啟動慢）。新 mocha 進程 started=false → 偵測 11007 沒人 → spawn 全新後端；
 //  8080 已起 → reuse。
 //
-//用法：node test/run-e2e-isolated.mjs   (exit 0=全綠；非 0=有失敗檔)
+//用法：node test/tools/run-e2e-isolated.mjs   (exit 0=全綠；非 0=有失敗檔)
 
 import { spawnSync, execSync } from 'child_process'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import fs from 'fs'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const projRoot = join(__dirname, '..')
+const __dirname = dirname(fileURLToPath(import.meta.url)) //test/tools
+const testDir = join(__dirname, '..') //test, e2e 測試檔所在
+const projRoot = join(__dirname, '..', '..')
 const isWin = process.platform === 'win32'
 const BACKEND_PORT = 11007
 
 //動態列舉全部 e2e 檔（pattern 白名單）：新增之 e2e-*.test.mjs 自動納入，不因寫死清單而被靜默漏跑
-const E2E_FILES = fs.readdirSync(__dirname)
+const E2E_FILES = fs.readdirSync(testDir)
     .filter((f) => /^e2e-.*\.test\.mjs$/.test(f))
     .sort()
 

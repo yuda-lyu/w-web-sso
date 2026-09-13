@@ -6,7 +6,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, maskRegions, overlayRegions, resetToBaseSeed, deleteNonBaseSeed, launchBrowser, REGEN } from './e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, maskRegions, overlayRegions, resetToBaseSeed, deleteNonBaseSeed, launchBrowser, REGEN } from './tools/e2e-setup.mjs'
 import { mdiChartBoxOutline } from '@mdi/js/mdi.js'
 
 

@@ -472,6 +472,18 @@ let kpLang = {
         eng: `Select date`,
         cht: `請選擇日期`,
     },
+    dtPickerYear: { //日期選擇器之年份後綴(WTimeminute funRenderYear), eng沿用元件預設樣式
+        eng: `y`,
+        cht: `年`,
+    },
+    dtPickerMonth: { //日期選擇器之月份後綴(WTimeminute funRenderMonth), eng沿用元件預設樣式
+        eng: `m`,
+        cht: `月`,
+    },
+    dtPickerWeekdays: { //日期選擇器之星期列文字(WTimeminute funRenderDayOfWeek), 逗號分隔由日至六
+        eng: `Su,Mo,Tu,We,Th,Fr,Sa`,
+        cht: `日,一,二,三,四,五,六`,
+    },
 
     // userList: {
     //     eng: `User list`,

@@ -1,11 +1,10 @@
 import assert from 'assert'
-import fs from 'fs'
-import path from 'path'
 import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, callFapi } from './api-setup.mjs'
+import procLang from '../server/procLang.mjs'
+import { startServersOnce, callFapi } from './tools/api-setup.mjs'
 
 
 //
@@ -232,20 +231,21 @@ describe('ResetPassword API — 後端契約 (API-002/007/008/009)', function() 
         assert.strict.notEqual(afterUs[0].password, originalPwHash, `SMTP fail 仍須 password hash 更新`)
     })
 
-    it('API-007-email-content-template: resetPasswordEmail-{eng,cht}.html 含 {account}/{newPassword} 且不含 http:// / <a href', function() {
+    it('API-007-email-content-text: 語系鍵 resetPwEmContent (eng/cht) 含 {account}/{newPassword} 且不含 http:// / <a href', function() {
+        //email 文字自 2f03bc5 起統一存於語系字典 (server/procLang.mjs, 原 server/template/*.html 已移除); 以 procLang({}) 取內建預設驗證
+        let kp = procLang({})
         for (let lang of ['eng', 'cht']) {
-            let fp = path.resolve('./server/template', `resetPasswordEmail-${lang}.html`)
-            assert.strict.equal(fs.existsSync(fp), true, `template 不存在: ${fp}`)
-            let html = fs.readFileSync(fp, 'utf8')
+            let html = kp[lang] && kp[lang].resetPwEmContent //procLang 回傳形狀為 r[lang][key] (見 unit-lang L1)
+            assert.strict.equal(typeof html === 'string' && html.length > 0, true, `[${lang}] 缺 resetPwEmContent 內文`)
             //spec 二.1: 信件含 account + 明文新密碼
-            assert.strict.equal(html.includes('{account}'), true, `[${lang}] template 缺 {account} placeholder`)
-            assert.strict.equal(html.includes('{newPassword}'), true, `[${lang}] template 缺 {newPassword} placeholder`)
-            assert.strict.equal(html.includes('{sender}'), true, `[${lang}] template 缺 {sender} placeholder`)
-            assert.strict.equal(html.includes('{name}'), true, `[${lang}] template 缺 {name} placeholder`)
+            assert.strict.equal(html.includes('{account}'), true, `[${lang}] resetPwEmContent 缺 {account} placeholder`)
+            assert.strict.equal(html.includes('{newPassword}'), true, `[${lang}] resetPwEmContent 缺 {newPassword} placeholder`)
+            assert.strict.equal(html.includes('{sender}'), true, `[${lang}] resetPwEmContent 缺 {sender} placeholder`)
+            assert.strict.equal(html.includes('{name}'), true, `[${lang}] resetPwEmContent 缺 {name} placeholder`)
             //spec 二.1 + 安全性: 信件不含任何連結 (避免 phishing 與 reset 連結攻擊面)
-            assert.strict.equal(html.includes('http://'), false, `[${lang}] template 不應含 http:// (spec 規定不含連結)`)
-            assert.strict.equal(html.includes('https://'), false, `[${lang}] template 不應含 https:// (spec 規定不含連結)`)
-            assert.strict.equal(/<a\s/i.test(html), false, `[${lang}] template 不應含 <a> tag (spec 規定不含連結)`)
+            assert.strict.equal(html.includes('http://'), false, `[${lang}] resetPwEmContent 不應含 http:// (spec 規定不含連結)`)
+            assert.strict.equal(html.includes('https://'), false, `[${lang}] resetPwEmContent 不應含 https:// (spec 規定不含連結)`)
+            assert.strict.equal(/<a\s/i.test(html), false, `[${lang}] resetPwEmContent 不應含 <a> tag (spec 規定不含連結)`)
         }
     })
 
@@ -275,14 +275,14 @@ describe('ResetPassword API — 後端契約 (API-002/007/008/009)', function() 
         }
     })
 
-    it('API-009-notification-email-template: changePasswordEmail-{eng,cht}.html 含 {sender}/{name} placeholder', function() {
-        //三.1: 變更成功 → 寄變更通知信 (沿用既有 changePasswordEmail template)
+    it('API-009-notification-email-text: 語系鍵 chpwEmContent (eng/cht) 含 {sender}/{name} placeholder', function() {
+        //三.1: 變更成功 → 寄變更通知信 (沿用既有 chpwEmContent 語系鍵; email 文字統一存於 procLang, 見 API-007 註)
+        let kp = procLang({})
         for (let lang of ['eng', 'cht']) {
-            let fp = path.resolve('./server/template', `changePasswordEmail-${lang}.html`)
-            assert.strict.equal(fs.existsSync(fp), true, `template 不存在: ${fp}`)
-            let html = fs.readFileSync(fp, 'utf8')
-            assert.strict.equal(html.includes('{sender}'), true, `[${lang}] template 缺 {sender} placeholder`)
-            assert.strict.equal(html.includes('{name}'), true, `[${lang}] template 缺 {name} placeholder`)
+            let html = kp[lang] && kp[lang].chpwEmContent //procLang 回傳形狀為 r[lang][key] (見 unit-lang L1)
+            assert.strict.equal(typeof html === 'string' && html.length > 0, true, `[${lang}] 缺 chpwEmContent 內文`)
+            assert.strict.equal(html.includes('{sender}'), true, `[${lang}] chpwEmContent 缺 {sender} placeholder`)
+            assert.strict.equal(html.includes('{name}'), true, `[${lang}] chpwEmContent 缺 {name} placeholder`)
             //通知信不應含明文密碼 (使用者已自己設定, 不需也不該再夾帶)
             assert.strict.equal(html.includes('{newPassword}'), false, `[${lang}] 通知信不應含 {newPassword} placeholder`)
             assert.strict.equal(html.includes('{password}'), false, `[${lang}] 通知信不應含 {password} placeholder`)

@@ -1,12 +1,13 @@
-import axios from 'axios'
 import get from 'lodash-es/get.js'
 import isestr from 'wsemi/src/isestr.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import isfun from 'wsemi/src/isfun.mjs'
 import ispm from 'wsemi/src/ispm.mjs'
+import httpGetJson from './httpGetJson.mjs'
 
 
 async function getUserByToken(url, tokenSelf, tokenTar, opt = {}) {
+    //供外部系統直接調用
     //url: http://localhost:11007/api/getSsoUserInfor?token={sysToken}&key=token&value={token}
     let errTemp = null
 
@@ -25,15 +26,15 @@ async function getUserByToken(url, tokenSelf, tokenTar, opt = {}) {
     let funConvertUser = get(opt, 'funConvertUser')
 
     //url
-    if (url.indexOf('token={sysToken}') < 0 && url.indexOf('key=token') < 0 && url.indexOf('value={token}') < 0) {
+    if (url.indexOf('token={sysToken}') < 0 || url.indexOf('key=token') < 0 || url.indexOf('value={token}') < 0) { //三者缺一即拒 (原以 && 串接, 只在三者全缺時才拒, 與訊息不符)
         return Promise.reject(`no 'token={sysToken}', 'key=token', 'value={token}' in url`)
     }
     url = url.replaceAll('{sysToken}', tokenSelf) //系統介接用ssoToken
     url = url.replaceAll('{token}', tokenTar)
     // console.log('getUserByToken: url', url)
 
-    //get
-    let res = await axios.get(url)
+    //get, 內建fetch(語意比照axios.get, 見httpGetJson)
+    let res = await httpGetJson(url)
         .catch((err) => {
             errTemp = err.toString()
         })

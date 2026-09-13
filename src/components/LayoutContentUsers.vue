@@ -276,6 +276,9 @@
                                     @input="handleCellTimeInput('timeVerified', $ui.gv(props.row, 'id'), $event)"
                                     :editable="isEditable"
                                     :textEmpty="$t('selectDate')"
+                                    :funRenderYear="timePickerRenders.funRenderYear"
+                                    :funRenderMonth="timePickerRenders.funRenderMonth"
+                                    :funRenderDayOfWeek="timePickerRenders.funRenderDayOfWeek"
                                     :paddingStyle="{v:1,h:8}"
                                     :placementDistY="3"
                                     :textFontSize="'0.8rem'"
@@ -309,6 +312,9 @@
                                     @input="handleCellTimeInput('timeExpired', $ui.gv(props.row, 'id'), $event)"
                                     :editable="isEditable"
                                     :textEmpty="$t('selectDate')"
+                                    :funRenderYear="timePickerRenders.funRenderYear"
+                                    :funRenderMonth="timePickerRenders.funRenderMonth"
+                                    :funRenderDayOfWeek="timePickerRenders.funRenderDayOfWeek"
                                     :paddingStyle="{v:1,h:8}"
                                     :placementDistY="3"
                                     :textFontSize="'0.8rem'"
@@ -342,6 +348,9 @@
                                     @input="handleCellTimeInput('timeBlocked', $ui.gv(props.row, 'id'), $event)"
                                     :editable="isEditable"
                                     :textEmpty="$t('selectDate')"
+                                    :funRenderYear="timePickerRenders.funRenderYear"
+                                    :funRenderMonth="timePickerRenders.funRenderMonth"
+                                    :funRenderDayOfWeek="timePickerRenders.funRenderDayOfWeek"
                                     :paddingStyle="{v:1,h:8}"
                                     :placementDistY="3"
                                     :textFontSize="'0.8rem'"
@@ -829,6 +838,12 @@ export default {
             return kp
         },
 
+        timePickerRenders: function() {
+            //依當前語系之日期選擇器渲染函數(年/月/星期); 經$ui讀取$store.state.kpText, 語系切換時自動重算
+            let vo = this
+            return vo.$ui.getTimePickerRenderFuns()
+        },
+
     },
     methods: {
 
@@ -1106,9 +1121,16 @@ export default {
             let cmp = get(vo, '$refs.rftable')
             // console.log('cmp', cmp)
 
+            //依完整欄序(tabKeysPick)排序, WInputCheckbox重新勾選時會將鍵名附加至v-model陣列尾端, 直接沿用會使該欄移至最右
+            let tabKeysShow = filter(vo.tabKeysPick, (k) => vo.tabKeysShow.indexOf(k) >= 0)
+            vo.tabKeysShow = tabKeysShow
+
+            //markDataReload, 欄位顯隱(applyColumnState)會令aggrid觸發rowDataUpdated→rowsChange, 非使用者資料變更, 不可設isModified
+            vo.markDataReload()
+
             //showKeys
-            cmp.showKeys(vo.tabKeysShow)
-            // console.log('tabKeysShow', vo.tabKeysShow)
+            cmp.showKeys(tabKeysShow)
+            // console.log('tabKeysShow', tabKeysShow)
 
         },
 

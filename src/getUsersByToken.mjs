@@ -1,4 +1,3 @@
-import axios from 'axios'
 import get from 'lodash-es/get.js'
 import size from 'lodash-es/size.js'
 import isestr from 'wsemi/src/isestr.mjs'
@@ -6,9 +5,11 @@ import iseobj from 'wsemi/src/iseobj.mjs'
 import isfun from 'wsemi/src/isfun.mjs'
 import ispm from 'wsemi/src/ispm.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
+import httpGetJson from './httpGetJson.mjs'
 
 
 async function getUsersByToken(url, tokenSelf, opt = {}) {
+    //供外部系統直接調用
     //url: http://localhost:11007/api/getSsoUsersList?token={sysToken}
     let errTemp = null
 
@@ -30,8 +31,8 @@ async function getUsersByToken(url, tokenSelf, opt = {}) {
     url = url.replaceAll('{sysToken}', tokenSelf) //系統介接用ssoToken
     // console.log('getUsersByToken: url', url)
 
-    //get
-    let res = await axios.get(url)
+    //get, 內建fetch(語意比照axios.get, 見httpGetJson)
+    let res = await httpGetJson(url)
         .catch((err) => {
             errTemp = err.toString()
         })

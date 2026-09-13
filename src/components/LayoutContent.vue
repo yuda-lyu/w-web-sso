@@ -71,6 +71,7 @@
 
                             <LayoutContentStaInfor
                                 v-if="menuKey==='mmStaInfor'"
+                                :drawer="drawer"
                             ></LayoutContentStaInfor>
 
                             <LayoutContentUserInfor
@@ -79,14 +80,17 @@
 
                             <LayoutContentUsers
                                 v-if="menuKey==='mmUsersList'"
+                                :drawer="drawer"
                             ></LayoutContentUsers>
 
                             <LayoutContentTokens
                                 v-if="menuKey==='mmTokensList'"
+                                :drawer="drawer"
                             ></LayoutContentTokens>
 
                             <LayoutContentIps
                                 v-if="menuKey==='mmIpsList'"
+                                :drawer="drawer"
                             ></LayoutContentIps>
 
                         </template>

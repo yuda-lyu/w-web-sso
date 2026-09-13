@@ -760,6 +760,21 @@ function getIcon(icon) {
 }
 
 
+//getTimePickerRenderFuns, 依當前語系提供日期選擇器(WTimeminute系)之年/月/星期渲染函數,
+//文字由語系鍵 dtPickerYear/dtPickerMonth/dtPickerWeekdays 提供(server/procLang.mjs);
+//於組件 computed 內呼叫, 經 getKpText 讀取 $store.state.kpText 使語系切換時自動重算
+function getTimePickerRenderFuns() {
+    let sfxYear = getKpText('dtPickerYear')
+    let sfxMonth = getKpText('dtPickerMonth')
+    let weekdays = split(getKpText('dtPickerWeekdays'), ',')
+    return {
+        funRenderYear: (y) => `${y}${sfxYear}`,
+        funRenderMonth: (m) => `${m}${sfxMonth}`,
+        funRenderDayOfWeek: (i) => get(weekdays, i, ''),
+    }
+}
+
+
 function gv(o, k, cv = null) {
     let r = get(o, k, '')
     if (!isestr(r)) {
@@ -801,6 +816,8 @@ let mUI = {
     logout,
 
     getIcon,
+
+    getTimePickerRenderFuns,
 
     gv,
     cstr,

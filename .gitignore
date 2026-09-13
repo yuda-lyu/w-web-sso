@@ -1,6 +1,6 @@
 node_modules
 .agents
-AGENTS.md
+AGENTS*.md
 .opencode
 .claude
 CLAUDE*.md
@@ -14,3 +14,4 @@ user_data
 
 tmp
 test/_tmp
+

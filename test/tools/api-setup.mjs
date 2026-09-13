@@ -18,7 +18,6 @@
 //   })
 //
 
-import FormData from 'form-data'
 import WServHapiClient from 'w-serv-hapi/src/WServHapiClient.mjs'
 import { startServersOnce, cleanup, apiUrl } from './e2e-setup.mjs'
 
@@ -32,8 +31,7 @@ function getFapi() {
     fapiPm = new Promise((resolve, reject) => {
         let timer = setTimeout(() => reject(new Error('getFapi timeout after 30s — backend not ready')), 30000)
         WServHapiClient({
-            showLog: false,
-            FormData,
+            useShowLog: false,
             url: apiUrl,
             apiName: 'api',
             useWaitToken: false,
