@@ -3,7 +3,7 @@
 <head>
     
     <meta charset="utf-8">
-    <title>Home - Documentation</title>
+    <title>src/httpGetJson.mjs - Documentation</title>
     
     
     <script src="scripts/prettify/prettify.js"></script>
@@ -35,31 +35,58 @@
 
 <div id="main">
     
+    <h1 class="page-title">src/httpGetJson.mjs</h1>
+    
 
     
 
 
 
     
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * httpGetJson
+ *
+ * 以內建fetch(node>=18與現代瀏覽器皆內建)執行GET, 並比照axios.get之回應與錯誤語意:
+ * - 2xx: resolve {data}, data為回應內容(JSON可解析則為物件, 否則保留原字串)
+ * - 非2xx: reject Error('Request failed with status code {status}')
+ * - 網路層錯誤(連線失敗/DNS/中斷): fetch自身reject向外傳遞
+ *
+ * 注意與axios之已知差異: node端fetch不讀取HTTP_PROXY/HTTPS_PROXY環境變數(axios會),
+ * 需經proxy連線SSO之部署環境不適用本函數
+ *
+ * @param {String} url 輸入請求網址字串
+ * @returns {Promise} 回傳Promise, resolve回{data}, reject回錯誤訊息
+ */
+async function httpGetJson(url) {
+
+    //fetch, 網路層錯誤時reject向外傳遞
+    let res = await fetch(url)
+
+    //check, 比照axios預設validateStatus, 非2xx視為錯誤
+    if (!res.ok) {
+        return Promise.reject(new Error(`Request failed with status code ${res.status}`))
+    }
+
+    //text
+    let txt = await res.text()
+
+    //data, 比照axios: JSON可解析則轉物件, 否則保留原字串
+    let data = txt
+    try {
+        data = JSON.parse(txt)
+    }
+    catch (err) {}
+
+    return { data }
+}
 
 
-    <section class="package">
-        <h3> </h3>		
+export default httpGetJson
+</code></pre>
+        </article>
     </section>
-
-
-
-
-
-
-
-
-
-    
-
-
-
-
 
 
 
