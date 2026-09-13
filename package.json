@@ -1,17 +1,17 @@
 {
   "name": "w-web-sso",
-  "version": "1.0.73",
+  "version": "1.0.74",
   "main": "dist/w-web-sso.umd.js",
   "dependencies": {
     "json5": "^2.2.3",
-    "w-aggrid-vue": "^2.0.85",
-    "w-component-vue": "^2.5.12",
-    "w-data-collector": "^1.0.36",
-    "w-echarts-vue": "^1.0.10",
-    "w-email": "^1.0.49",
-    "w-serv-hapi": "^1.0.87",
-    "w-serv-orm": "^1.0.53",
-    "w-syslog": "^1.0.25",
+    "w-aggrid-vue": "^2.0.86",
+    "w-component-vue": "^2.5.13",
+    "w-data-collector": "^1.0.37",
+    "w-echarts-vue": "^1.0.11",
+    "w-email": "^1.0.50",
+    "w-serv-hapi": "^1.0.88",
+    "w-serv-orm": "^1.0.54",
+    "w-syslog": "^1.0.26",
     "wsemi": "^1.8.92"
   },
   "devDependencies": {
@@ -27,10 +27,10 @@
     "eslint-plugin-vue": "^9.10.0",
     "vue": "^2.7.16",
     "vuex": "^3.6.2",
-    "w-orm-lmdb": "^1.0.30",
+    "w-orm-lmdb": "^1.0.31",
     "w-package-tools": "^1.1.16",
     "w-package-tools-e2e": "^1.0.0",
-    "w-screenctl": "^1.0.18"
+    "w-screenctl": "^1.0.19"
   },
   "scripts": {
     "serve": "vue-cli-service serve",
