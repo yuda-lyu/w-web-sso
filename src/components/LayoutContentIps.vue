@@ -580,6 +580,9 @@ export default {
 
             }
 
+            //markDataReload, 重建 opt 屬程式端寫入(changeParams: isEditable 切換 / items 更新皆經此), aggrid 會觸發 rowDataUpdated→rowsChange, 非使用者資料變更, 不可設 isModified (與 perm 同一咽喉點)
+            vo.markDataReload()
+
             //save
             vo.opt = opt
 

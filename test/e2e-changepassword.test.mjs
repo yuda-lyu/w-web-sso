@@ -39,11 +39,13 @@ let kpLangText = {
         changePassword: 'Change Password',
         send: 'Send',
         cancel: 'Cancel',
+        isActive: 'Active', //procLang isActive: 使用者卡片最末列標籤 (spec E2E-001 驗證 2)
     },
     cht: {
         changePassword: '變更密碼',
         send: '送出',
         cancel: '取消',
+        isActive: '帳號是否有效',
     },
 }
 
@@ -304,6 +306,26 @@ async function gotoUserViewAndOpenChangePw(page, lang) {
     // Step 3: 點「變更密碼」按鈕
     await page.locator(`text="${t.changePassword}"`).first().click()
     await page.waitForTimeout(800) // 等表單展開
+
+    // Step 4: 語意斷言 (spec E2E-001 驗證 2): 展開後卡片最末列「帳號是否有效」整列完整落在捲動容器 .sb 內.
+    // 部署方 2026-09-14 回報 1600×900 下末列只露出上半; PageUser 改以 scrollIntoView block:'start' 把表單捲至頂端使其下各列一併可見.
+    // 每個 case 都經此前置, 故每案皆驗; 量測 DOM 幾何不截圖, 與 baseline 尺寸無關.
+    await page.waitForTimeout(600) // smooth scroll settle
+    let vis = await page.evaluate((lastText) => {
+        let sb = document.querySelector('.sb')
+        let sbr = sb.getBoundingClientRect()
+        let lbl = [...document.querySelectorAll('div')].find((d) => d.childElementCount === 0 && d.textContent.trim() === lastText)
+        let row = lbl && lbl.parentElement && lbl.parentElement.parentElement //標籤 div → flex:1 div → 列 div
+        let rr = row ? row.getBoundingClientRect() : null
+        return {
+            found: !!rr,
+            ok: !!(rr && rr.top >= sbr.top - 0.5 && rr.bottom <= sbr.bottom + 0.5),
+            sb: { top: sbr.top, bottom: sbr.bottom, scrollTop: sb.scrollTop, scrollH: sb.scrollHeight, clientH: sb.clientHeight },
+            row: rr ? { top: rr.top, bottom: rr.bottom } : null,
+        }
+    }, t.isActive)
+    assert.ok(vis.found, `找不到最末列標籤「${t.isActive}」: ${JSON.stringify(vis)}`)
+    assert.ok(vis.ok, `展開變更密碼後最末列「${t.isActive}」未完整落在捲動區內: ${JSON.stringify(vis)}`)
 }
 
 

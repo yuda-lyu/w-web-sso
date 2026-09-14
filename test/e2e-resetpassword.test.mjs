@@ -379,6 +379,7 @@ let kpLangText = {
         cancel: 'Cancel',
         usersList: 'Users list',
         editMode: 'Edit mode',
+        isActive: 'Active', //procLang isActive: 使用者卡片最末列標籤 (spec E2E-006 驗證: 強制模式展開表單後末列完整可見)
         resetPassword: 'Reset password',
         yes: 'Yes',
         no: 'No',
@@ -396,6 +397,7 @@ let kpLangText = {
         cancel: '取消',
         usersList: '使用者清單',
         editMode: '編輯模式',
+        isActive: '帳號是否有效',
         resetPassword: '重設密碼',
         yes: '確定',
         no: '取消',
@@ -465,6 +467,20 @@ async function captureForceFormExpanded(page, lang, target) {
     //等表單展開（input[type=password] x3）
     await page.waitForFunction(() => document.querySelectorAll('input[type="password"]').length >= 3, null, { timeout: 15000 })
     await page.waitForTimeout(1500)
+
+    //語意斷言 (spec E2E-006): 強制模式由 mounted 自動展開表單, 與按鈕展開走同一 clickChangePassword —— 展開後卡片最末列「帳號是否有效」須完整落在捲動容器 .sb 內
+    //(部署方 2026-09-14 回報 1600×900 下末列只露出上半; 兩個展開入口皆驗, 見 e2e-changepassword 之 gotoUserViewAndOpenChangePw)
+    let vis = await page.evaluate((lastText) => {
+        let sb = document.querySelector('.sb')
+        let sbr = sb.getBoundingClientRect()
+        let lbl = [...document.querySelectorAll('div')].find((d) => d.childElementCount === 0 && d.textContent.trim() === lastText)
+        let row = lbl && lbl.parentElement && lbl.parentElement.parentElement
+        let rr = row ? row.getBoundingClientRect() : null
+        return { found: !!rr, ok: !!(rr && rr.top >= sbr.top - 0.5 && rr.bottom <= sbr.bottom + 0.5), sb: { top: sbr.top, bottom: sbr.bottom, scrollTop: sb.scrollTop }, row: rr ? { top: rr.top, bottom: rr.bottom } : null }
+    }, t.isActive)
+    assert.ok(vis.found, `找不到最末列標籤「${t.isActive}」: ${JSON.stringify(vis)}`)
+    assert.ok(vis.ok, `強制變更密碼表單展開後最末列「${t.isActive}」未完整落在捲動區內: ${JSON.stringify(vis)}`)
+
     return await captureStableWithBox(page, SEL_USER_CARD)
 }
 

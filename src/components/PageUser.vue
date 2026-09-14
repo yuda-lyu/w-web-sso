@@ -398,12 +398,18 @@ export default {
             vo.chPwNewError = ''
             vo.chPwConfirmError = ''
 
-            //展開後將表單捲入可視範圍: 卡片內容區有max-height(overflow-y:auto),
-            //1600x900下展開表單會超出可視高, 主動捲入避免使用者不知下方尚有內容
+            //展開後把表單捲至內容區頂端(block:'start'): 卡片內容區有max-height(overflow-y:auto), 展開表單後內容超出可視高,
+            //驗收條件是「表單下方之末列(帳號是否有效)完整可見」——置頂會被夾到容器捲動上限, 使表單與其下各列一併進入視野;
+            //先前用 block:'nearest' 於表單本就在視野內時為 no-op, 末列仍被裁(部署方 2026-09-14 回報)
             vo.$nextTick(() => {
+                //ref 位於 v-for(displayUser)內, Vue 2 對 v-for 內之 ref 一律給陣列(即使只命中一個), 須取首元素;
+                //先前直接取 $refs 值得到陣列, el.scrollIntoView 為 undefined 而被 guard 靜默跳過, 捲入從未執行(2026-09-14 探測 tmp/zz_probe_ref: refType=array(len=1))
                 let el = vo.$refs.rfChangePwForm
+                if (Array.isArray(el)) {
+                    el = el[0]
+                }
                 if (el && el.scrollIntoView) {
-                    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
                 }
             })
         },
