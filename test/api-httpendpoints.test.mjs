@@ -3,7 +3,7 @@ import ot from 'dayjs'
 import { woItems } from '../g_mOrm.mjs'
 import ds from '../src/schema/index.mjs'
 import { startServersOnce, apiUrl } from './tools/api-setup.mjs'
-import { resetToBaseSeed, deleteNonBaseSeed } from './tools/e2e-setup.mjs'
+import { resetToBaseSeed, deleteNonBaseSeed, restartBackend, genTempSettings } from './tools/e2e-setup.mjs'
 
 
 //
@@ -225,6 +225,51 @@ describe('對外 HTTP 端點 API — getSsoUsersList / refreshToken (D14)', func
         assert.strict.equal(body.state, 'error', `預期 state=error (token 已過期不可延長), 實際: ${JSON.stringify(body)}`)
         let msgStr = typeof body.msg === 'string' ? body.msg : JSON.stringify(body.msg)
         assert.strict.equal(msgStr.includes('tokenExpired'), true, `預期 msg = key "tokenExpired" (tn>=timeEnd 過期分支), 實際: ${msgStr}`)
+    })
+
+})
+
+
+// ===================================================================
+// 註冊驗證結果頁之三則訊息可由 settings 同名鍵逐語系覆寫 (2026-09-15, ADR-064)
+// 端到端不變式: settings 給 verifyEmailInvalidToken.cht → GET /api/verifyEmail(無效 token, lang=cht) 之 server-rendered 結果頁 {message}
+// 顯示覆寫文字; 未給之 eng 回退內建. 合併層級由 unit-lang L5 守, 此處守 WWebSso 之 emTextKeys 接線與 getEmText 讀取.
+// 換設定重啟走 restartBackend(genTempSettings) 並於 after 還原 ./settings.json (同 api-autoblock-apptoken 之模式).
+// ===================================================================
+
+describe('註冊驗證結果頁訊息 settings 覆寫 (ADR-064)', function() {
+    this.timeout(120000)
+
+    const OVERRIDE_CHT = '驗證連結無效或已失效，請重新由部署系統之單一登入進行身份驗證。'
+    const BUILTIN_CHT = '驗證連結無效或已失效。'
+    const BUILTIN_ENG = 'Invalid or expired verification link.'
+
+    before(async function() {
+        await startServersOnce()
+        //只給 cht, 不給 eng: 驗逐語系覆寫與回退
+        await restartBackend(genTempSettings({ verifyEmailInvalidToken: { cht: OVERRIDE_CHT } }))
+    })
+
+    after(async function() {
+        await restartBackend('./settings.json') //還原預設 settings
+    })
+
+    async function getVerifyPage(lang) {
+        let res = await fetch(`${apiUrl}/api/verifyEmail?token=no-such-token-${Date.now()}&lang=${lang}`)
+        return { status: res.status, html: await res.text() }
+    }
+
+    it('EXT-001: 無效 token + lang=cht → 結果頁顯示 settings 覆寫之 cht 文字, 不再出現內建文字', async function() {
+        let { status, html } = await getVerifyPage('cht')
+        assert.strict.equal(status, 200, `預期 HTTP 200, 實際: ${status}`)
+        assert.strict.equal(html.includes(OVERRIDE_CHT), true, `預期結果頁含覆寫文字, 實際 html: ${html.slice(0, 300)}`)
+        assert.strict.equal(html.includes(BUILTIN_CHT), false, `內建 cht 文字不應再出現, 實際 html: ${html.slice(0, 300)}`)
+    })
+
+    it('EXT-002: 同一鍵 lang=eng 未於 settings 給值 → 回退內建英文 (逐語系回退, 非整鍵取代)', async function() {
+        let { status, html } = await getVerifyPage('eng')
+        assert.strict.equal(status, 200, `預期 HTTP 200, 實際: ${status}`)
+        assert.strict.equal(html.includes(BUILTIN_ENG), true, `預期 eng 回退內建文字, 實際 html: ${html.slice(0, 300)}`)
     })
 
 })

@@ -39,4 +39,21 @@ describe('procLang - 語系字典合併順序 (內建 → kpLangExtEmail → kpL
         assert.strict.equal(r.cht.chpwEmTitle, '密碼已進行變更') //他鍵不受影響
     })
 
+    // L5: 註冊驗證結果頁三則訊息亦走 kpLangExtEmail 逐語系覆寫 (2026-09-15, ADR-064: 部署方須點名系統, 不改內建預設)
+    it('L5: should merge result-page message keys per-lang via kpLangExtEmail and fall back for missing lang', function() {
+        let r = procLang({
+            kpLangExtEmail: {
+                userRegistrationVerifySuccess: { cht: '成功-客製' },
+                verifyEmailAlreadyVerified: { cht: '已驗證-客製' },
+                verifyEmailInvalidToken: { cht: '無效-客製' },
+            },
+        })
+        assert.strict.equal(r.cht.userRegistrationVerifySuccess, '成功-客製')
+        assert.strict.equal(r.cht.verifyEmailAlreadyVerified, '已驗證-客製')
+        assert.strict.equal(r.cht.verifyEmailInvalidToken, '無效-客製')
+        assert.strict.equal(r.eng.userRegistrationVerifySuccess, 'Email verified successfully. Please log in.') //eng 未給, 回退內建
+        assert.strict.equal(r.eng.verifyEmailAlreadyVerified, 'This account has already been verified.')
+        assert.strict.equal(r.eng.verifyEmailInvalidToken, 'Invalid or expired verification link.')
+    })
+
 })
