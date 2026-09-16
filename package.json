@@ -1,10 +1,10 @@
 {
   "name": "w-web-sso",
-  "version": "1.0.77",
+  "version": "1.0.78",
   "main": "dist/w-web-sso.umd.js",
   "dependencies": {
     "json5": "^2.2.3",
-    "w-aggrid-vue": "^2.0.86",
+    "w-aggrid-vue": "^2.0.87",
     "w-component-vue": "^2.5.15",
     "w-data-collector": "^1.0.37",
     "w-echarts-vue": "^1.0.11",
