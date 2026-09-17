@@ -657,7 +657,7 @@ export default {
                     },
                     kpHeadSort: {
                     },
-                    kpHeadFocusHighlight: { //雖然效果不完全, 但因按鈕與cell有padding可被點擊, 故還是需要開啟
+                    kpHeadFocusHighlight: { //此三欄之儲存格不顯示焦點框(欄內為時間選擇器, 焦點框會與控制項本身之框線疊加); w-aggrid-vue 2.0.87 起補 :focus-within, 子控制項取得焦點時亦確實不顯示(該版前僅 :focus, 故效果不完全)
                         'timeCreate': false,
                         'timeEnd': false,
                         'timeUpdate': false,
@@ -715,16 +715,14 @@ export default {
             let cmp = get(vo, '$refs.rftable')
             // console.log('cmp', cmp)
 
-            //依完整欄序(tabKeysPick)排序, WInputCheckbox重新勾選時會將鍵名附加至v-model陣列尾端, 直接沿用會使該欄移至最右
-            let tabKeysShow = filter(vo.tabKeysPick, (k) => vo.tabKeysShow.indexOf(k) >= 0)
-            vo.tabKeysShow = tabKeysShow
-
             //markDataReload, 欄位顯隱(applyColumnState)會令aggrid觸發rowDataUpdated→rowsChange, 非使用者資料變更, 不可設isModified
             vo.markDataReload()
 
-            //showKeys
-            cmp.showKeys(tabKeysShow)
-            // console.log('tabKeysShow', tabKeysShow)
+            //showKeys, applyOrder:false 僅切換顯示與隱藏、不依傳入陣列序重排(w-aggrid-vue 2.0.88 起); 故不再先依 tabKeysPick 重排再傳入(原 ADR-054 補丁已移除).
+            //注意(ADR-066 待裁示): 勾選同時 tabKeysShow 變動會令 computed changeParams 重算(genOpt 內讀 tabKeysShow 而被追蹤為依賴) → genOpt 重建整張表,
+            //欄序回到 opt.keys 原始順序; 故使用者拖曳之欄序目前仍會於顯隱切換時被重置, 勾回之欄回到原位亦是由該重建達成(非本行 applyOrder 之效果)
+            cmp.showKeys(vo.tabKeysShow, { applyOrder: false })
+            // console.log('tabKeysShow', vo.tabKeysShow)
 
         },
 
