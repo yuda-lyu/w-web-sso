@@ -168,6 +168,75 @@
                         <template v-else-if="props.key === 'isApp'">
                             <input type="checkbox" :checked="props.value === 'y'" @click="$dg.toggleItemIsAppById($ui.gv(props.row, 'id'))" :disabled="!isEditable" />
                         </template>
+                        <template v-else-if="props.key === 'perms'">
+                            <!-- 應用系統權限僅適用於 app token (ADR-069); 點擊開啟清單, 編輯模式可勾選, 關閉清單時寫回該列 -->
+                            <div
+                                style="display:flex; align-items:center; height:100%;"
+                                @click.stop.prevent
+                                @mousedown.stop.prevent
+                                v-if="$ui.gv(props.row, 'isApp') === 'y'"
+                            >
+                                <WPopup
+                                    style="flex:1; min-width:0px;"
+                                    :displayType="'line'"
+                                    :isolated="true"
+                                    @show="() => openPermsDraft($ui.gv(props.row, 'id'))"
+                                    @hide="closePermsDraft"
+                                >
+                                    <template v-slot:trigger>
+                                        <div class="perms-trigger">
+                                            <AppPermsTags
+                                                style="flex:1; min-width:0px;"
+                                                :texts="getPermsTexts(props.row)"
+                                            ></AppPermsTags>
+                                        </div>
+                                    </template>
+                                    <template v-slot:content>
+                                        <div style="padding:10px 0px 10px 0px;">
+
+                                            <div style="padding:7px 10px; font-size:0.85rem; color:#222; background:#f2f2f2;">
+                                                {{$t('tokenPerms')}}
+                                            </div>
+
+                                            <div style="padding:7px 9px 0px 7px;">
+
+                                                <WInputCheckbox
+                                                    :items="keysAppPermBase"
+                                                    :value="keysAppPermBase"
+                                                    :editable="false"
+                                                >
+                                                    <template v-slot="p">
+                                                        <div style="padding-left:3px; display:flex; align-items:center; font-size:0.85rem; height:24px;">
+                                                            {{$t(`appPerm_${p.item.data}`)}}
+                                                            <span style="padding-left:6px; font-size:0.75rem;">({{$t('tokenPermsBase')}})</span>
+                                                        </div>
+                                                    </template>
+                                                </WInputCheckbox>
+
+                                                <WInputCheckbox
+                                                    :items="keysAppPermOpt"
+                                                    :value="permsDraft"
+                                                    @input="setPermsDraft"
+                                                    :editable="isEditable"
+                                                >
+                                                    <template v-slot="p">
+                                                        <div :style="`padding-left:3px; display:flex; align-items:center; font-size:0.85rem; height:24px; ${isEditable?'cursor:pointer;':''}`">
+                                                            {{$t(`appPerm_${p.item.data}`)}}
+                                                            <span
+                                                                style="padding-left:6px; font-size:0.75rem; color:#D81B60;"
+                                                                v-if="keysAppPermHigh.includes(p.item.data)"
+                                                            >({{$t('tokenPermsHigh')}})</span>
+                                                        </div>
+                                                    </template>
+                                                </WInputCheckbox>
+
+                                            </div>
+
+                                        </div>
+                                    </template>
+                                </WPopup>
+                            </div>
+                        </template>
                         <template v-else-if="props.key === 'timeCreate'">
                             <div @click.stop.prevent @mousedown.stop.prevent style="display:flex; align-items:center;">
                                 <WTimeminute
@@ -296,6 +365,8 @@ import WPopup from 'w-component-vue/src/components/WPopup.vue'
 import WInputCheckbox from 'w-component-vue/src/components/WInputCheckbox.vue'
 import WAggridVue from 'w-aggrid-vue/src/components/WAggridVue.vue'
 import WTimeminute from 'w-component-vue/src/components/WTimeminute.vue'
+import { keysAppPerm, keysAppPermBase, keysAppPermHigh, getAppPerms, normAppPerms } from '../appPerms.mjs'
+import AppPermsTags from './AppPermsTags.vue'
 
 
 export default {
@@ -307,6 +378,7 @@ export default {
         WInputCheckbox,
         WAggridVue,
         WTimeminute,
+        AppPermsTags,
     },
     props: {
         drawer: {
@@ -337,6 +409,7 @@ export default {
                 'token',
                 'userId',
                 'isApp',
+                'perms',
                 'timeCreate',
                 'timeEnd',
                 'timeUpdate',
@@ -345,6 +418,7 @@ export default {
                 'token',
                 'userId',
                 'isApp',
+                'perms',
                 'timeCreate',
                 'timeEnd',
                 'timeUpdate',
@@ -353,6 +427,7 @@ export default {
                 'token',
                 'userId',
                 'isApp',
+                'perms',
                 'timeCreate',
                 'timeEnd',
                 'timeUpdate',
@@ -362,6 +437,13 @@ export default {
             items: [],
             itemsCheck: [],
             opt: null,
+
+            //應用系統權限清單: 基本權限恆勾選不可取消, 其餘可勾選, 可取得管理者權限者加註提示 (ADR-069)
+            keysAppPermBase,
+            keysAppPermHigh,
+            keysAppPermOpt: keysAppPerm.filter((p) => !keysAppPermBase.includes(p)),
+            permsEditId: '', //清單開啟中之列id
+            permsDraft: [], //清單開啟中之勾選(不含基本權限), 關閉清單時寫回該列
 
         }
     },
@@ -492,6 +574,7 @@ export default {
                 'token': vo.$t('token'),
                 'userId': vo.$t('userId'),
                 'isApp': vo.$t('isApp'),
+                'perms': vo.$t('tokenPerms'),
                 'timeCreate': vo.$t('tokenTimeCreate'),
                 'timeEnd': vo.$t('tokenTimeEnd'),
                 'timeUpdate': vo.$t('tokenTimeUpdate'),
@@ -560,6 +643,10 @@ export default {
 
             //default
             vo.itemsCheck = []
+
+            //權限清單草稿: 重建表格即以 tokens 重置各列(未儲存之修改一併捨棄), 開啟中之清單隨儲存格銷毀而不會送出關閉事件, 故於此清除
+            vo.permsEditId = ''
+            vo.permsDraft = []
 
             //opt
             //  - firstLoading=true (尚未完成第一次載入) + items=0: opt=null, 允許 loading state
@@ -637,6 +724,7 @@ export default {
                         'token': 300,
                         'userId': 300,
                         'isApp': 100,
+                        'perms': 260,
                         'timeCreate': 220,
                         'timeEnd': 220,
                         'timeUpdate': 220,
@@ -654,10 +742,13 @@ export default {
                     kpRowDrag,
                     kpHeadCheckBox,
                     kpHeadFilter: {
+                        'perms': false, //儲存值為權限字串陣列, 顯示為各語系名稱, 文字過濾比對的是前者, 與所見不符故不提供
                     },
                     kpHeadSort: {
+                        'perms': false, //陣列值無有意義之排序
                     },
-                    kpHeadFocusHighlight: { //此三欄之儲存格不顯示焦點框(欄內為時間選擇器, 焦點框會與控制項本身之框線疊加); w-aggrid-vue 2.0.87 起補 :focus-within, 子控制項取得焦點時亦確實不顯示(該版前僅 :focus, 故效果不完全)
+                    kpHeadFocusHighlight: { //此四欄之儲存格不顯示焦點框(欄內為時間選擇器或權限清單觸發框, 焦點框會與控制項本身之框線疊加); w-aggrid-vue 2.0.87 起補 :focus-within, 子控制項取得焦點時亦確實不顯示(該版前僅 :focus, 故效果不完全)
+                        'perms': false,
                         'timeCreate': false,
                         'timeEnd': false,
                         'timeUpdate': false,
@@ -784,6 +875,106 @@ export default {
 
         },
 
+        getPermsTexts: function(row) {
+            //應用系統權限之顯示名稱; 清單開啟中之列顯示勾選中之草稿(清單關閉才寫回列資料, 寫回須重繪各列, 開啟中重繪會關閉清單)
+            let vo = this
+            let id = get(row, 'id', '')
+            let perms = (isestr(id) && id === vo.permsEditId) ? getAppPerms({ perms: vo.permsDraft }) : getAppPerms(row)
+            return perms.map((p) => vo.$t(`appPerm_${p}`))
+        },
+
+        findRowById: function(id) {
+            let vo = this
+            let rows = get(vo, 'opt.rows', [])
+            let kr = null
+            each(rows, (v, k) => {
+                if (get(v, 'id', '') === id) {
+                    kr = k
+                    return false //跳出
+                }
+            })
+            return kr
+        },
+
+        openPermsDraft: function(id) {
+            let vo = this
+
+            //kr
+            let kr = vo.findRowById(id)
+            if (kr === null) {
+                return
+            }
+
+            //permsDraft, 不含基本權限(基本權限另列恆勾選)
+            let perms = normAppPerms(get(vo, `opt.rows[${kr}].perms`))
+            vo.permsDraft = perms.filter((p) => !keysAppPermBase.includes(p))
+            vo.permsEditId = id
+
+        },
+
+        setPermsDraft: function(perms) {
+            let vo = this
+
+            //save
+            vo.permsDraft = perms
+
+            //isModified, 勾選與該列現值不同即標記已修改, 儲存鈕立即出現(按儲存時先寫回草稿, 見saveTokens)
+            let kr = vo.findRowById(vo.permsEditId)
+            if (kr === null) {
+                return
+            }
+            let permsOld = normAppPerms(get(vo, `opt.rows[${kr}].perms`)).filter((p) => !keysAppPermBase.includes(p))
+            if (JSON.stringify(permsOld) !== JSON.stringify(normAppPerms(perms))) {
+                vo.isModified = true
+            }
+
+        },
+
+        closePermsDraft: function() {
+            let vo = this
+
+            //commitPermsDraft
+            vo.commitPermsDraft()
+
+            //clear
+            vo.permsEditId = ''
+            vo.permsDraft = []
+
+        },
+
+        commitPermsDraft: function() {
+            let vo = this
+
+            //check, 非編輯模式或無開啟中之清單不寫回
+            let id = vo.permsEditId
+            if (!vo.isEditable || !isestr(id)) {
+                return
+            }
+
+            //kr
+            let kr = vo.findRowById(id)
+            if (kr === null) {
+                return
+            }
+
+            //check, 未變更不寫回
+            let permsOld = normAppPerms(get(vo, `opt.rows[${kr}].perms`)).filter((p) => !keysAppPermBase.includes(p))
+            let permsNew = normAppPerms(vo.permsDraft)
+            if (JSON.stringify(permsOld) === JSON.stringify(permsNew)) {
+                return
+            }
+
+            //set
+            set(vo, `opt.rows[${kr}].perms`, permsNew)
+
+            //refresh
+            vo.refresh()
+
+            //isModified
+            vo.isModified = true
+
+        },
+
         cellTimeForInput: function(v) {
             if (istimemsTZ(v)) {
                 return ot(v).format('YYYY-MM-DDTHH:mm:ss')
@@ -884,6 +1075,9 @@ export default {
             async function core() {
                 let errTemp = null
 
+                //commitPermsDraft, 權限清單尚未關閉即按儲存時先寫回其勾選
+                vo.commitPermsDraft()
+
                 //show loading
                 vo.$ui.updateLoading(true)
 
@@ -954,5 +1148,20 @@ export default {
 }
 </script>
 <style scoped>
+/* 應用系統權限觸發框: 底色 / 框線 / 圓角沿用同列時間欄 WTimeminute 之設定(#f0f0f0 / hover #e5e5e5 / #767676 / 4px);
+   高 22px 與時間欄同(框線 1 + 內距 2 + 標籤 16 + 內距 2 + 框線 1), 標籤四周留白皆 2px */
+.perms-trigger {
+    display: flex;
+    align-items: center;
+    padding: 2px;
+    border: 1px solid #767676;
+    border-radius: 4px;
+    background: #f0f0f0;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+.perms-trigger:hover {
+    background: #e5e5e5;
+}
 </style>
 

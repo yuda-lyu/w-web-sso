@@ -2,7 +2,7 @@ import assert from 'assert'
 import ot from 'dayjs'
 import { woItems } from '../g_mOrm.mjs'
 import ds from '../src/schema/index.mjs'
-import { startServersOnce, apiUrl } from './tools/api-setup.mjs'
+import { startServersOnce, apiUrl, callFapi } from './tools/api-setup.mjs'
 import { resetToBaseSeed, deleteNonBaseSeed, restartBackend, genTempSettings } from './tools/e2e-setup.mjs'
 
 
@@ -79,6 +79,28 @@ async function insertSpecializedTokens() {
 }
 
 
+//對外清單剝除憑證欄案 (ADR-068): 插一名尚未驗證信箱之使用者, 其 tokenVerify 為非空合成值
+//(base seed 之 tokenVerify 皆為空字串, 只斷言空值無法證明剝除; 以鍵是否存在 + 合成值是否出現雙重斷言)
+let pendingTokenVerify = 'SYNTH-TOKENVERIFY-0199a1b2-c3d4-7e5f-8a9b'
+
+async function insertPendingUser() {
+    let u = ds.users.funNew({
+        account: 'ac-pending-tv',
+        password: 'not-used',
+        name: 'pending-tv',
+        email: 'pending-tv@example.com',
+        description: '',
+        from: 'test',
+        redir: '',
+        isAdmin: 'n',
+    })
+    u.id = 'id-pending-tv'
+    u.tokenVerify = pendingTokenVerify
+    u.timeVerified = ''
+    await woItems.users.insert([u])
+}
+
+
 // ===================================================================
 // HTTP 呼叫 helper — 直接打 backend (apiUrl = http://127.0.0.1:11007), 不經 frontend proxy
 // 回傳 { status, body }: status=HTTP status code, body=JSON parse 後物件 (pm2resolve 格式)
@@ -141,6 +163,33 @@ describe('對外 HTTP 端點 API — getSsoUsersList / refreshToken (D14)', func
         for (let u of body.msg) {
             assert.strict.equal(u.password, undefined, `預期清單每筆不含 password (deletePassword 預設 true), 違規 row: ${JSON.stringify(u)}`)
         }
+    })
+
+
+    it('getSsoUsersList: 對外清單不含憑證欄 tokenVerify (admin 與 app token 皆然); 後台 kpfun getUsersList 刻意保留 (ADR-068)', async function() {
+        //ADR-068 C: 對外介接契約不輸出憑證欄 (password / tokenVerify), 避免憑證經使用者同步擴散至介接端;
+        //後台 kpfun 之整列存回依賴 tokenVerify (updateTabItems 以 ltdtmapping 補齊全欄), 故只在對外路由剝除
+        await insertPendingUser()
+
+        for (let caller of ['token-for-admin', 'token-for-app']) {
+            let { status, body } = await httpGet('getSsoUsersList', caller)
+            assert.strict.equal(status, 200)
+            assert.strict.equal(body.state, 'success', `預期 state=success (${caller}), 實際: ${JSON.stringify(body)}`)
+            let pending = body.msg.find((u) => u.id === 'id-pending-tv')
+            assert.strict.ok(pending, `預期清單含待驗證使用者 (${caller})`)
+            for (let u of body.msg) {
+                assert.strict.equal('tokenVerify' in u, false, `對外清單不得含 tokenVerify 鍵 (${caller}), 違規 row: ${u.account}`)
+                assert.strict.equal('password' in u, false, `對外清單不得含 password 鍵 (${caller}), 違規 row: ${u.account}`)
+            }
+            assert.strict.equal(JSON.stringify(body).includes(pendingTokenVerify), false, `回應不得含 tokenVerify 值 (${caller})`)
+        }
+
+        //後台路徑 (kpfun getUsersList) 刻意保留 tokenVerify
+        let r = await callFapi('getUsersList', ['token-for-admin'])
+        assert.strict.equal(r.ok, true, `後台 getUsersList 應成功, 實際: ${JSON.stringify(r)}`)
+        let pendingAdmin = r.val.find((u) => u.id === 'id-pending-tv')
+        assert.strict.ok(pendingAdmin, '後台清單應含待驗證使用者')
+        assert.strict.equal(pendingAdmin.tokenVerify, pendingTokenVerify, '後台清單之 tokenVerify 應保留 (整列存回依賴)')
     })
 
 

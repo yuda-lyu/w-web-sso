@@ -3,8 +3,8 @@
  *
  * 以內建fetch(node>=18與現代瀏覽器皆內建)執行GET, 並比照axios.get之回應與錯誤語意:
  * - 2xx: resolve {data}, data為回應內容(JSON可解析則為物件, 否則保留原字串)
- * - 非2xx: reject Error('Request failed with status code {status}')
- * - 網路層錯誤(連線失敗/DNS/中斷): fetch自身reject向外傳遞
+ * - 非2xx: reject Error('Request failed with status code {status}'), 並附status屬性供呼叫端診斷(不必解析訊息文字)
+ * - 網路層錯誤(連線失敗/DNS/中斷/網址無法解析): fetch自身reject向外傳遞; 注意其message可能含完整網址, 呼叫端不得原樣輸出
  *
  * 注意與axios之已知差異: node端fetch不讀取HTTP_PROXY/HTTPS_PROXY環境變數(axios會),
  * 需經proxy連線SSO之部署環境不適用本函數
@@ -19,7 +19,9 @@ async function httpGetJson(url) {
 
     //check, 比照axios預設validateStatus, 非2xx視為錯誤
     if (!res.ok) {
-        return Promise.reject(new Error(`Request failed with status code ${res.status}`))
+        let err = new Error(`Request failed with status code ${res.status}`)
+        err.status = res.status
+        return Promise.reject(err)
     }
 
     //text

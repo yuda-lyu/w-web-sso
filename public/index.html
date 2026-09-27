@@ -4,6 +4,8 @@
         <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui">
         <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <!-- referrer: 頁面網址帶 ?token= 登入, 同源請求預設會把完整網址放進 Referer 而進入伺服器與反向代理之 log; strict-origin 只送 origin (ADR-068) -->
+        <meta name="referrer" content="strict-origin">
         <title></title>
 
         <!-- mdi font -->

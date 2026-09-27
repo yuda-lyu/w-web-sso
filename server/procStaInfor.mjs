@@ -202,7 +202,7 @@ function proc(woItems, p, opt = {}) {
     }
 
 
-    // caller 端透過 opt.fun = funCheckAdmin 強制 admin 驗證; 詳 WWebSso.mjs:1437,1444,1451 + Phase A 修補 1415/1422/1429
+    // caller 端透過 opt.fun = funCheckAdmin 強制 admin 驗證, app token 則依 opt.perm = 'readStats'(ADR-069); 詳 WWebSso.mjs 之 kpfun getSta* 六支
     //checkTokenAndGetStaIpSummary
     let checkTokenAndGetStaIpSummary = async (token, opt = {}) => {
 

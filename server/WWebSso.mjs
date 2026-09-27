@@ -25,7 +25,7 @@ import WServHapiServer from 'w-serv-hapi/src/WServHapiServer.mjs'
 import WServOrm from 'w-serv-orm/src/WServOrm.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
-import srLogInit, { maskToken } from './srLog.mjs'
+import srLogInit, { maskToken, maskUrl, maskKv } from './srLog.mjs'
 import srEmailInit from './srEmail.mjs'
 import procCore from './procCore.mjs'
 import procLang from './procLang.mjs'
@@ -908,9 +908,13 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     pp.callApiByToken(token)
 
                     //getSsoUsersList: 收緊為 admin-only (對齊 ADR-004 同款 IDOR 收緊 + 下方 kpfun 版本帶 funCheckAdmin).
-                    //app token (isApp='y') 由 _checkTokenByObj 之 ADR-005 語意自動 bypass fun, 系統介接不影響.
-                    let us = await p.checkTokenAndGetUsersList(token, { fun: funCheckAdmin })
+                    //app token (isApp='y') 不執行 fun, 改依 perm 判斷 (ADR-069); readUsers 為基本權限, 系統介接不影響.
+                    let us = await p.checkTokenAndGetUsersList(token, { fun: funCheckAdmin, perm: 'readUsers' })
                     // console.log('us', us)
+
+                    //對外介接契約不輸出憑證欄(ADR-068): 介接端常以本清單同步使用者, 憑證會擴散至其資料庫與 log;
+                    //只在對外路由剝除, 後台 kpfun getUsersList 之整列存回依賴 tokenVerify(updateTabItems 以 ltdtmapping 補齊全欄)
+                    us = us.map(p.omitUserCredential)
 
                     return us
                 }
@@ -952,8 +956,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     //check(入口一致性, 對齊 kpfun getUserInfor 之 guard)
                     if (!_strictStr(token, key, value)) return Promise.reject('tokenExpired')
 
-                    //valueLog: key==='token' 時 value 即明文目標 token, 記 log 前需遮罩
-                    let valueLog = (key === 'token') ? maskToken(value) : value
+                    //valueLog: key 非識別欄(id / account / email / name)時 value 可能即憑證(token / tokenVerify 等), 記 log 前需遮罩 (ADR-068)
+                    let valueLog = maskKv(key, value)
 
                     //info
                     srLog.info({ event: 'api/getSsoUserInfor', token: maskToken(token), key, value: valueLog })
@@ -964,11 +968,11 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     //userTarget
                     let userTarget = null
                     if (key === 'token') {
-                        userTarget = await p.checkTokenAndGetUserByToken(token, value, { fun: funCheckAdmin })
+                        userTarget = await p.checkTokenAndGetUserByToken(token, value, { fun: funCheckAdmin, perm: 'readUsers' })
                         // console.log('checkTokenAndGetUserByToken userTarget', userTarget)
                     }
                     else {
-                        userTarget = await p.checkTokenAndGetUserInfor(token, key, value, { fun: funCheckAdmin })
+                        userTarget = await p.checkTokenAndGetUserInfor(token, key, value, { fun: funCheckAdmin, perm: 'readUsers' })
                         // console.log('checkTokenAndGetUserInfor userTarget', userTarget)
                     }
 
@@ -1071,8 +1075,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             //origin
             let origin = get(headers, 'origin', '')
 
-            //referer
-            let referer = get(headers, 'referer', '')
+            //referer, 只記 origin + pathname: 前端以 ?token= 開站, 同源請求依瀏覽器預設政策帶完整網址, 原樣記錄即每個請求都把權杖寫進 log (ADR-068)
+            let referer = maskUrl(get(headers, 'referer', ''))
 
             //info
             srLog.info({ event: 'verifyConn', ip, origin, referer })
@@ -1209,11 +1213,11 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
             getUserInfor: async (_t, token, key, value) => {
                 if (!_strictStr(token, key, value)) return Promise.reject('tokenExpired')
-                //valueLog: key==='token' 時 value 即明文目標 token, 記 log 前需遮罩
-                let valueLog = (key === 'token') ? maskToken(value) : value
+                //valueLog: 與 HTTP getSsoUserInfor 同規則, key 非識別欄時 value 可能即憑證, 記 log 前需遮罩 (ADR-068)
+                let valueLog = maskKv(key, value)
                 srLog.info({ event: 'kpfun-getUserInfor', token: maskToken(token), key, value: valueLog })
                 //console.log('call getUserInfor...')
-                let r = await p.checkTokenAndGetUserInfor(token, key, value, { fun: funCheckAdmin })
+                let r = await p.checkTokenAndGetUserInfor(token, key, value, { fun: funCheckAdmin, perm: 'readUsers' })
                 //console.log('call getUserInfor end')
                 return r
             },
@@ -1249,7 +1253,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 if (!_strictStr(token)) return Promise.reject('tokenExpired')
                 srLog.info({ event: 'kpfun-getUsersList', token: maskToken(token) })
                 //console.log('call getUsersList...')
-                let rs = await p.checkTokenAndGetUsersList(token, { fun: funCheckAdmin })
+                let rs = await p.checkTokenAndGetUsersList(token, { fun: funCheckAdmin, perm: 'readUsers' })
                 //console.log('call getUsersList end')
                 return rs
             },
@@ -1260,7 +1264,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 srLog.info({ event: 'kpfun-updateUsersList', token: maskToken(token), lang })
                 //console.log('call updateUsersList...')
                 //內層 reject key 字串 (含 checkToken 之 tokenExpired) 直接透出回前端 (前端 $t 顯示)
-                let rs = await p.checkTokenAndUpdateUsersList(token, lang, rows, { fun: funCheckAdmin })
+                let rs = await p.checkTokenAndUpdateUsersList(token, lang, rows, { fun: funCheckAdmin, perm: 'writeUsers' })
                 //console.log('call updateUsersList end')
                 return rs
             },
@@ -1269,7 +1273,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 if (!_strictStr(token)) return Promise.reject('tokenExpired')
                 srLog.info({ event: 'kpfun-getTokensList', token: maskToken(token) })
                 //console.log('call getTokensList...')
-                let rs = await p.checkTokenAndGetTokensList(token, { fun: funCheckAdmin })
+                let rs = await p.checkTokenAndGetTokensList(token, { fun: funCheckAdmin, perm: 'readTokens' })
                 //console.log('call getTokensList end')
                 return rs
             },
@@ -1279,7 +1283,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject('invalidRows')
                 srLog.info({ event: 'kpfun-updateTokensList', token: maskToken(token), lang })
                 //console.log('call updateTokensList...')
-                let rs = await p.checkTokenAndUpdateTokensList(token, rows, { fun: funCheckAdmin })
+                let rs = await p.checkTokenAndUpdateTokensList(token, rows, { fun: funCheckAdmin, perm: 'writeTokens' })
                 //console.log('call updateTokensList end')
                 return rs
             },
@@ -1288,7 +1292,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 if (!_strictStr(token)) return Promise.reject('tokenExpired')
                 srLog.info({ event: 'kpfun-getIpsList', token: maskToken(token) })
                 //console.log('call getIpsList...')
-                let rs = await p.checkTokenAndGetIpsList(token, { fun: funCheckAdmin })
+                let rs = await p.checkTokenAndGetIpsList(token, { fun: funCheckAdmin, perm: 'readIps' })
                 //console.log('call getIpsList end')
                 return rs
             },
@@ -1298,7 +1302,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject('invalidRows')
                 srLog.info({ event: 'kpfun-updateIpsList', token: maskToken(token), lang })
                 //console.log('call updateIpsList...')
-                let rs = await p.checkTokenAndUpdateIpsList(token, rows, { fun: funCheckAdmin })
+                let rs = await p.checkTokenAndUpdateIpsList(token, rows, { fun: funCheckAdmin, perm: 'writeIps' })
                 //console.log('call updateIpsList end')
                 return rs
             },
@@ -1307,7 +1311,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 if (!_strictStr(token)) return Promise.reject('tokenExpired')
                 srLog.info({ event: 'kpfun-getStaUserSummary', token: maskToken(token) })
                 //console.log('call getStaUserSummary...')
-                let r = await pf.checkTokenAndGetStaUserSummary(token, { fun: funCheckAdmin })
+                let r = await pf.checkTokenAndGetStaUserSummary(token, { fun: funCheckAdmin, perm: 'readStats' })
                 //console.log('call getStaUserSummary end')
                 return r
             },
@@ -1316,7 +1320,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 if (!_strictStr(token)) return Promise.reject('tokenExpired')
                 srLog.info({ event: 'kpfun-getStaTokenSummary', token: maskToken(token) })
                 //console.log('call getStaTokenSummary...')
-                let r = await pf.checkTokenAndGetStaTokenSummary(token, { fun: funCheckAdmin })
+                let r = await pf.checkTokenAndGetStaTokenSummary(token, { fun: funCheckAdmin, perm: 'readStats' })
                 //console.log('call getStaTokenSummary end')
                 return r
             },
@@ -1325,7 +1329,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 if (!_strictStr(token)) return Promise.reject('tokenExpired')
                 srLog.info({ event: 'kpfun-getStaIpSummary', token: maskToken(token) })
                 //console.log('call getStaIpSummary...')
-                let r = await pf.checkTokenAndGetStaIpSummary(token, { fun: funCheckAdmin })
+                let r = await pf.checkTokenAndGetStaIpSummary(token, { fun: funCheckAdmin, perm: 'readStats' })
                 //console.log('call getStaIpSummary end')
                 return r
             },
@@ -1334,7 +1338,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 if (!_strictStr(token)) return Promise.reject('tokenExpired')
                 srLog.info({ event: 'kpfun-getStaUserAccountLogin', token: maskToken(token) })
                 //console.log('call getStaUserAccountLogin...')
-                let r = await pf.checkTokenAndGetStaUserAccountLogin(token, { fun: funCheckAdmin })
+                let r = await pf.checkTokenAndGetStaUserAccountLogin(token, { fun: funCheckAdmin, perm: 'readStats' })
                 //console.log('call getStaUserAccountLogin end')
                 return r
             },
@@ -1343,7 +1347,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 if (!_strictStr(token)) return Promise.reject('tokenExpired')
                 srLog.info({ event: 'kpfun-getStaToken', token: maskToken(token) })
                 //console.log('call getStaToken...')
-                let r = await pf.checkTokenAndGetStaToken(token, { fun: funCheckAdmin })
+                let r = await pf.checkTokenAndGetStaToken(token, { fun: funCheckAdmin, perm: 'readStats' })
                 //console.log('call getStaToken end')
                 return r
             },
@@ -1352,7 +1356,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 if (!_strictStr(token)) return Promise.reject('tokenExpired')
                 srLog.info({ event: 'kpfun-getStaIp', token: maskToken(token) })
                 //console.log('call getStaIp...')
-                let r = await pf.checkTokenAndGetStaIp(token, { fun: funCheckAdmin })
+                let r = await pf.checkTokenAndGetStaIp(token, { fun: funCheckAdmin, perm: 'readStats' })
                 //console.log('call getStaIp end')
                 return r
             },

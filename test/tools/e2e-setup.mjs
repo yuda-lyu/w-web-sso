@@ -10,7 +10,7 @@ import sharp from 'sharp'
 import pixelmatch from 'pixelmatch'
 import { PNG } from 'pngjs'
 import { fileURLToPath } from 'url'
-import { chromium } from 'playwright'
+import launchChromium from 'w-package-tools-e2e/src/launchChromium.mjs'
 import { woItems } from '../../g_mOrm.mjs'
 import { buildBaseUsers, buildBaseTokens } from '../../g_initialData.mjs'
 
@@ -21,7 +21,7 @@ if (REGEN && (process.env.E2E_BARE || process.env.E2E_DIAG)) {
     throw new Error('拒絕在診斷 env (E2E_BARE / E2E_DIAG) 下寫入正式 baseline')
 }
 
-//確定性渲染組 (全專案唯一 chromium.launch 出口; 技能 §8.4). headless Chromium 預設 GPU 光柵化 + subpixel 字形 AA
+//確定性渲染組 (全專案唯一 launchChromium 出口; 技能 §8.4). headless Chromium 預設 GPU 光柵化 + subpixel 字形 AA
 //在像素比對下非決定性 (eng 拉丁字偶發散落差異, CJK 灰階 AA 較穩故常只 eng 中招); 六旗標為姊妹專案實測組
 //(self-consistency 2/4 → 5/5). 2026-09-01 由舊四旗標 (--font-render-hinting=none 版) 升級, 全量重產 baseline.
 let chromiumLaunchArgs = [
@@ -33,7 +33,8 @@ let chromiumLaunchArgs = [
     '--disable-partial-raster', //關部分光柵化 → 消 tile 重用殘影 / 位移
 ]
 async function launchBrowser() {
-    return await chromium.launch({ headless: true, args: chromiumLaunchArgs })
+    //launchChromium, 缺Playwright指定版本之瀏覽器時首次啟動自動下載(與本機同版), 由w-package-tools-e2e提供
+    return await launchChromium({ headless: true, args: chromiumLaunchArgs })
 }
 
 //

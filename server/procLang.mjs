@@ -842,6 +842,64 @@ let kpLang = {
     //     eng: 'Your session has expired. Please log in again.',
     //     cht: '登入逾時，請重新登入。',
     // },
+    //對外查詢 helper (src/getUserByToken / getUserByUserId / getUsersByToken) 之 reject key (ADR-068 K 契約; 詞彙沿用 w-web-perm helper).
+    //供部署端查表映射為自家語系文字; helper 之 reject 值不得原樣回前端
+    invalidUrl: {
+        eng: 'Invalid url.',
+        cht: '網址無效。',
+    },
+    invalidTokenSelf: {
+        eng: 'Invalid self token.',
+        cht: '自身權杖無效。',
+    },
+    invalidTokenTar: {
+        eng: 'Invalid target token.',
+        cht: '目標權杖無效。',
+    },
+    invalidUserIdTar: {
+        eng: 'Invalid target user id.',
+        cht: '目標使用者 Id 無效。',
+    },
+    noTokenKeyValueInUrl: {
+        eng: 'Missing token={sysToken}, key=token or value={token} in url.',
+        cht: '網址缺少 token={sysToken}、key=token 或 value={token}。',
+    },
+    noTokenKeyUserIdInUrl: {
+        eng: 'Missing token={sysToken}, key=id or value={userId} in url.',
+        cht: '網址缺少 token={sysToken}、key=id 或 value={userId}。',
+    },
+    noTokenInUrl: {
+        eng: 'Missing token={sysToken} in url.',
+        cht: '網址缺少 token={sysToken}。',
+    },
+    cannotGetUserByUrl: {
+        eng: 'Cannot get user by url.',
+        cht: '無法由網址取得使用者。',
+    },
+    cannotGetUsersByUrl: {
+        eng: 'Cannot get users by url.',
+        cht: '無法由網址取得使用者清單。',
+    },
+    cannotGetUserDataByUrl: {
+        eng: 'Cannot get user data by url.',
+        cht: '無法由網址取得使用者資料。',
+    },
+    cannotGetUsersDataByUrl: {
+        eng: 'Cannot get users data by url.',
+        cht: '無法由網址取得使用者清單資料。',
+    },
+    noUserDataByUrl: {
+        eng: 'No user data by url.',
+        cht: '該網址無使用者資料。',
+    },
+    noUsersDataByUrl: {
+        eng: 'No users data by url.',
+        cht: '該網址無使用者清單資料。',
+    },
+    noUserDataAfterConvert: {
+        eng: 'No user data after conversion.',
+        cht: '轉換後無使用者資料。',
+    },
     //admin 批次更新 (users/tokens/ips) 之 rows 非合法陣列 (防 NoSQL operator injection guard)
     invalidRows: {
         eng: 'Invalid data format.',
@@ -918,6 +976,52 @@ let kpLang = {
     tokenSaveTokensSuccess: {
         eng: `Save tokens successfully`,
         cht: `儲存金鑰數據成功`,
+    },
+    //應用系統金鑰權限 (ADR-069): 欄名 / 基本權限說明 / 寫入之 perms 不合法(非陣列或含未登錄之權限字串)
+    tokenPerms: {
+        eng: 'App permissions',
+        cht: '應用系統權限',
+    },
+    tokenPermsBase: {
+        eng: 'Basic permission, always granted',
+        cht: '基本權限，恆具備',
+    },
+    tokenPermsHigh: {
+        eng: 'Equivalent to administrator',
+        cht: '等同管理者權限',
+    },
+    tokenPermsInvalid: {
+        eng: 'Invalid app token permissions.',
+        cht: '應用系統金鑰權限設定無效。',
+    },
+    //應用系統金鑰之各權限名稱, 鍵為 appPerm_<權限字串> (權限全集見 src/appPerms.mjs)
+    appPerm_readUsers: {
+        eng: 'Read users',
+        cht: '讀使用者',
+    },
+    appPerm_writeUsers: {
+        eng: 'Write users',
+        cht: '寫使用者',
+    },
+    appPerm_readTokens: {
+        eng: 'Read tokens',
+        cht: '讀金鑰',
+    },
+    appPerm_writeTokens: {
+        eng: 'Write tokens',
+        cht: '寫金鑰',
+    },
+    appPerm_readIps: {
+        eng: 'Read IPs',
+        cht: '讀IP',
+    },
+    appPerm_writeIps: {
+        eng: 'Write IPs',
+        cht: '寫IP',
+    },
+    appPerm_readStats: {
+        eng: 'Read statistics',
+        cht: '讀統計',
     },
 
     ip: {

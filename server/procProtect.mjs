@@ -494,9 +494,9 @@ function proc(woItems, p, opt = {}) {
             }
         }
 
-        //logshow
+        //logshow, 只印標頭名稱: 標頭值含 authorization(Bearer 權杖)、帶 ?token= 之 referer 等憑證 (ADR-068)
         if (!isestr(ip)) {
-            console.log('headers', headers)
+            console.log('headers(keys)', Object.keys(headers || {}))
             console.log('can not get ip of user')
         }
 

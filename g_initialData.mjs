@@ -77,6 +77,7 @@ let baseTokensRaw = [
     {
         token: 'token-for-app',
         userId: 'id-for-app',
+        perms: [], //預設只能讀使用者資料
         isApp: 'y',
     },
 ]

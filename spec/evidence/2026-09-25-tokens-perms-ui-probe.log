@@ -1,0 +1,61 @@
+# 2026-09-25 金鑰清單應用系統權限 UI 探測 (tmp/probe-perms-ui2.mjs; 1280x720 headless chromium, 確定性旗標同 e2e)
+## [P1-cht]
+rows 3 2 1 0
+base {"trigger":{"x":993,"y":337,"w":236,"h":22},"tags":[{"text":"讀使用者","x":996,"y":340,"w":62,"h":16}],"overflow":false}
+PASS 觸發框高 22 (實際 22)
+PASS 標籤高 16、距框外緣上 3 左 3(框線 1 + 留白 2) (實際 h=16 dy=3 dx=3)
+all {"trigger":{"x":993,"y":281,"w":236,"h":22},"tags":[{"text":"讀使用者","x":996,"y":284,"w":62,"h":16},{"text":"寫使用者","x":1061,"y":284,"w":62,"h":16},{"text":"讀金鑰","x":1126,"y":284,"w":50,"h":16},{"text":"+4","x":1179,"y":284,"w":28,"h":16}],"overflow":false}
+PASS 全權限列尾端為 +N
+PASS 全權限列標籤不溢出
+PASS 非 app 列不顯示權限
+PASS hover 底色 #e5e5e5 (實際 rgb(229, 229, 229))
+PASS 授予前 app 不可讀金鑰清單
+PASS 勾選後清單未關閉即出現儲存鈕
+PASS 6-grant: 儲存鈕出現
+PASS 授予後 DB perms (實際 ["readTokens","readStats"])
+PASS 授予後 app 立即可讀金鑰清單
+PASS 7-revoke: 儲存鈕出現
+PASS 撤銷後 DB perms (實際 ["readStats"])
+PASS 撤銷後 app 立即不可讀金鑰清單
+PASS 開關清單未變更 → 不出現儲存鈕
+PASS 切換編輯模式後全權限列仍為 7 項(顯示數 + N), 無殘留草稿 (實際 讀使用者,寫使用者,讀金鑰,+4)
+PASS 切換編輯模式捨棄草稿, DB 不變 (實際 ["readUsers","writeUsers","readTokens","writeTokens","readIps","writeIps","readStats"])
+PASS 切換編輯模式後無殘留開啟之清單 (實際 0)
+PASS 非編輯模式清單 7 項皆不可勾選 (實際 {"n":7,"allDisabled":true})
+PASS 非編輯模式點選不改變 → 不出現儲存鈕
+PASS 非編輯模式 DB 不變 (實際 ["readTokens","readStats"])
+PASS 顯示欄位清單含「應用系統權限」
+all-narrow {"trigger":{"x":993,"y":281,"w":126,"h":22},"tags":[{"text":"讀使用者","x":996,"y":284,"w":62,"h":16},{"text":"+6","x":1061,"y":284,"w":28,"h":16}],"overflow":false}
+PASS 縮窄欄寬後全權限列以 +N 收合且不溢出 (讀使用者,+6)
+PASS 頁面無例外 ([])
+SUMMARY fails=0
+## [P1-eng]
+rows 3 2 1 0
+base {"trigger":{"x":993,"y":337,"w":236,"h":22},"tags":[{"text":"Read users","x":996,"y":340,"w":75,"h":16}],"overflow":false}
+PASS 觸發框高 22 (實際 22)
+PASS 標籤高 16、距框外緣上 3 左 3(框線 1 + 留白 2) (實際 h=16 dy=3 dx=3)
+all {"trigger":{"x":993,"y":281,"w":236,"h":22},"tags":[{"text":"Read users","x":996,"y":284,"w":75,"h":16},{"text":"Write users","x":1074,"y":284,"w":77,"h":16},{"text":"+5","x":1154,"y":284,"w":28,"h":16}],"overflow":false}
+PASS 全權限列尾端為 +N
+PASS 全權限列標籤不溢出
+PASS 非 app 列不顯示權限
+PASS hover 底色 #e5e5e5 (實際 rgb(229, 229, 229))
+PASS 授予前 app 不可讀金鑰清單
+PASS 勾選後清單未關閉即出現儲存鈕
+PASS 6-grant: 儲存鈕出現
+PASS 授予後 DB perms (實際 ["readTokens","readStats"])
+PASS 授予後 app 立即可讀金鑰清單
+PASS 7-revoke: 儲存鈕出現
+PASS 撤銷後 DB perms (實際 ["readStats"])
+PASS 撤銷後 app 立即不可讀金鑰清單
+PASS 開關清單未變更 → 不出現儲存鈕
+PASS 切換編輯模式後全權限列仍為 7 項(顯示數 + N), 無殘留草稿 (實際 Read users,Write users,+5)
+PASS 切換編輯模式捨棄草稿, DB 不變 (實際 ["readUsers","writeUsers","readTokens","writeTokens","readIps","writeIps","readStats"])
+PASS 切換編輯模式後無殘留開啟之清單 (實際 0)
+PASS 非編輯模式清單 7 項皆不可勾選 (實際 {"n":7,"allDisabled":true})
+PASS 非編輯模式點選不改變 → 不出現儲存鈕
+PASS 非編輯模式 DB 不變 (實際 ["readTokens","readStats"])
+PASS 顯示欄位清單含「App permissions」
+all-narrow {"trigger":{"x":993,"y":281,"w":126,"h":22},"tags":[{"text":"Read users","x":996,"y":284,"w":75,"h":16},{"text":"+6","x":1074,"y":284,"w":28,"h":16}],"overflow":false}
+PASS 縮窄欄寬後全權限列以 +N 收合且不溢出 (Read users,+6)
+PASS 頁面無例外 ([])
+SUMMARY fails=0

@@ -11,6 +11,7 @@ import iseobj from 'wsemi/src/iseobj.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
 import ispint from 'wsemi/src/ispint.mjs'
 import isearr from 'wsemi/src/isearr.mjs'
+import isarr from 'wsemi/src/isarr.mjs'
 import ispnum from 'wsemi/src/ispnum.mjs'
 import isbol from 'wsemi/src/isbol.mjs'
 import isUserPw from 'wsemi/src/isUserPw.mjs'
@@ -39,7 +40,12 @@ import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
 import hashPassword, { verifyPassword } from './hashPassword.mjs'
 import genRandomPassword from './genRandomPassword.mjs'
-import { maskToken } from './srLog.mjs'
+import { maskToken, maskKv } from './srLog.mjs'
+import { hasAppPerm, isAppPermsValue, normAppPerms } from '../src/appPerms.mjs'
+
+
+//keysUserCredential: users 表之憑證欄(密碼雜湊 / 註冊驗證用 token), 對外介接輸出一律剝除 (ADR-068); 新增憑證欄時於此登錄
+let keysUserCredential = ['password', 'tokenVerify']
 
 
 //htmlEscape: email body 內所有 placeholder 值套用, 防使用者可控欄位 (name / account 等)
@@ -126,7 +132,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         if (errTemp) {
             console.log(errTemp)
             console.log('keyUser', keyUser)
-            console.log('valueUser', valueUser)
+            console.log('valueUser', maskKv(keyUser, valueUser)) //keyUser 可由對外查詢指定, 非識別欄之值可能即憑證 (ADR-068)
             console.log(`failed to find user`)
             return Promise.reject(`failed to find user`)
         }
@@ -428,6 +434,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //fun
         let fun = get(opt, 'fun', null)
 
+        //perm, 權限閘所需之 app token 權限(src/appPerms.mjs); 僅作用於 app token, 使用者 token 仍以 fun 判斷
+        let perm = get(opt, 'perm', '')
+
         //tn
         let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
         // console.log('tn     ', tn)
@@ -436,7 +445,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
         let b1 = tn < timeEnd //現在時間<到期時間, 代表尚未到期
         let b2 = true
-        // app token (isApp='y') 預設視同 admin, 跳過 fun 驗證; 應僅由內部 token creation 路徑簽發, 不開放外部註冊.
+        //app token (isApp='y') 無使用者資訊故不執行 fun, 改依其 perms 判斷 (ADR-069, 取代 ADR-005 之一律視同 admin); 應僅由內部 token creation 路徑簽發, 不開放外部註冊.
         if (isApp !== 'y') {
             //token來自使用者
 
@@ -459,7 +468,23 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
         }
         else {
-            //token來自應用系統, 因無使用者資訊即便有給fun也略過
+            //token來自應用系統
+
+            if (isestr(perm)) {
+                //權限閘有宣告所需權限: 依 perms 判斷(基本權限 readUsers 恆具備, 多元素為聯集)
+                b2 = hasAppPerm(tk, perm)
+            }
+            else if (isfun(fun)) {
+                //權限閘只給 fun 未宣告權限: app token 一律不通過(fail closed, 新增之權限閘漏宣告時不致對 app 全開)
+                b2 = false
+            }
+            //未給 fun 亦未給 perm: 僅驗 token 本身(checkToken / getUserByToken 等自身權杖操作)
+
+            //warn, 記錄缺權限之拒絕供稽核與介接排錯(對外仍統一回 tokenExpired, ADR-006)
+            if (!b2) {
+                srLog.warn({ event: 'fun-checkToken', key: 'appTokenPermDenied', token: maskToken(get(tk, 'token', '')), userId: get(tk, 'userId', ''), perm })
+            }
+
         }
 
         let b = b1 && b2
@@ -1174,8 +1199,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //寄信失敗 (SMTP 不通) 不視為錯誤, 密碼仍會寫入, 僅記 srLog.error
     let adminResetUserPassword = async (token, lang, targetUserId) => {
 
-        //checkToken
-        await checkToken(token)
+        //checkToken, app token 須具 writeUsers(其虛擬使用者 isAdmin='y', 故不可只靠下方 isAdmin 判斷; ADR-069); 使用者 token 不受 perm 影響
+        await checkToken(token, { perm: 'writeUsers' })
 
         //check lang
         if (!isestr(lang)) {
@@ -1477,6 +1502,35 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
         //diff
         if (size(r.diff) > 0) {
+
+            //陣列欄變短之列先清空該欄: 儲存層 save 以 lodash merge 合併新舊列, 陣列逐索引合併, 新陣列較短時舊陣列尾端元素會殘留
+            //(如 tokens.perms 由 ['readTokens'] 撤銷為 [] 將無效, ADR-069). 先存 null 令該欄不再為陣列, 其後整列存入即為新陣列.
+            //兩次寫入之間該欄短暫為 null, tokens.perms 讀取端視同未設定(僅基本權限), 屬 fail closed 方向.
+            let kpOld = {}
+            each(ltdtOld, (v) => {
+                kpOld[get(v, keyDetect, '')] = v
+            })
+            let rowsClear = []
+            each(r.diff, (row) => {
+                let id = get(row, keyDetect, '')
+                let clear = null
+                each(row, (v, k) => {
+                    let vOld = get(kpOld, [id, k])
+                    if (isarr(v) && isarr(vOld) && v.length < vOld.length) {
+                        if (clear === null) {
+                            clear = { [keyDetect]: id }
+                        }
+                        clear[k] = null
+                    }
+                })
+                if (clear !== null) {
+                    rowsClear.push(clear)
+                }
+            })
+            if (size(rowsClear) > 0) {
+                await procOrm(operatorId, woName, 'save', rowsClear)
+            }
+
             await procOrm(operatorId, woName, 'save', r.diff)
         }
 
@@ -1724,6 +1778,16 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     }
 
 
+    //omitUserCredential: 剝除使用者列之憑證欄, 回新物件不改原列 (供對外介接輸出用; 後台路徑不套用, 見 WWebSso getSsoUsersList)
+    let omitUserCredential = (u) => {
+        let r = { ...u }
+        for (let k of keysUserCredential) {
+            delete r[k]
+        }
+        return r
+    }
+
+
     //checkTokenAndGetActiveUsersList
     let checkTokenAndGetActiveUsersList = async (token, opt = {}) => {
 
@@ -1759,25 +1823,31 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         let uOperator = await getUserByToken(token)
         let operatorId = get(uOperator, 'id', '')
 
-        //自我鎖死保護: 若 rows 內含操作者自己, 且操作者把自己 isAdmin/isActive 改成非 'y', reject
-        let selfRow = null
-        each(rows, (rr) => {
-            if (get(rr, 'id', '') === operatorId) {
-                selfRow = rr
-                return false //跳出
+        //自我保護僅適用於使用者操作者: app token 之操作者為虛擬使用者, users 表無其列, 無「自己」可刪除/降權/停用 (ADR-069)
+        let isAppOperator = get(uOperator, 'isApp', '') === 'y'
+        if (!isAppOperator) {
+
+            //自我鎖死保護: 若 rows 內含操作者自己, 且操作者把自己 isAdmin/isActive 改成非 'y', reject
+            let selfRow = null
+            each(rows, (rr) => {
+                if (get(rr, 'id', '') === operatorId) {
+                    selfRow = rr
+                    return false //跳出
+                }
+            })
+            //自我刪除保護: rows 內找不到操作者 row, 代表 admin 嘗試把自己刪除, reject 防止直接打 API 繞過前端
+            if (isestr(operatorId) && !iseobj(selfRow)) {
+                return Promise.reject('cannotDeleteSelf')
             }
-        })
-        //自我刪除保護: rows 內找不到操作者 row, 代表 admin 嘗試把自己刪除, reject 防止直接打 API 繞過前端
-        if (isestr(operatorId) && !iseobj(selfRow)) {
-            return Promise.reject('cannotDeleteSelf')
-        }
-        if (iseobj(selfRow)) {
-            if (get(selfRow, 'isAdmin', '') !== 'y') {
-                return Promise.reject('cannotDemoteSelf')
+            if (iseobj(selfRow)) {
+                if (get(selfRow, 'isAdmin', '') !== 'y') {
+                    return Promise.reject('cannotDemoteSelf')
+                }
+                if (get(selfRow, 'isActive', '') !== 'y') {
+                    return Promise.reject('cannotDisableSelf')
+                }
             }
-            if (get(selfRow, 'isActive', '') !== 'y') {
-                return Promise.reject('cannotDisableSelf')
-            }
+
         }
 
         //updateUsersList (帶 lang/operatorId 給下層用於 add 群組密碼策略檢查與 audit)
@@ -1852,6 +1922,27 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
     //updateTokensList
     let updateTokensList = async (rows) => {
+
+        //perms: 本批有變動(或新增)之列須為未設定或已登錄權限字串之陣列, 任一列不合法則整批 reject 不寫入 (ADR-069).
+        //與 DB 相同之列不驗: DB 內既有之毀損值(非陣列等)若也擋, 後台整批存回將永遠失敗而無從修正; 其正規化後之有效權限與讀取端 fail closed 結果相同.
+        let kpPermsOld = {}
+        each(await woItems.tokens.select(), (t) => {
+            kpPermsOld[t.id] = JSON.stringify(get(t, 'perms'))
+        })
+        for (let r of rows) {
+            let perms = get(r, 'perms')
+            let id = get(r, 'id', '')
+            if (haskey(kpPermsOld, id) && kpPermsOld[id] === JSON.stringify(perms)) {
+                continue
+            }
+            if (!isAppPermsValue(perms)) {
+                return Promise.reject('tokenPermsInvalid')
+            }
+        }
+        //合法者去重並依全集排序後儲存
+        rows = map(rows, (r) => {
+            return { ...r, perms: normAppPerms(get(r, 'perms')) }
+        })
 
         //updateTabItems
         rows = await updateTabItems('tokens', rows, 'id', { resetOrder: false })
@@ -1992,6 +2083,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         getUsersListCache,
         checkTokenAndGetUsersList,
         checkTokenAndGetActiveUsersList,
+        omitUserCredential,
         updateUsersList,
         checkTokenAndUpdateUsersList,
 

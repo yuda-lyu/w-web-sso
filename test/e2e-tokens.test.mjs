@@ -5,7 +5,9 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
+import procLang from '../server/procLang.mjs'
 import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, launchBrowser, waitUntilExist } from './tools/e2e-setup.mjs'
+import { callFapi } from './tools/api-setup.mjs' //僅 mocha 端之端到端不變式(app token 實際可否呼叫)使用; regen 端不呼叫, 不建立連線
 
 
 //
@@ -20,14 +22,17 @@ import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl
 //
 // 標準圖存放：test/pics/tokens/tokens-{lang}-{number}-{name}.png
 //
-// 涵蓋 4 個 UI distinct 狀態 (× 2 lang = 14 baselines; E2E-002 多階段 3 張、E2E-003 多階段 2 張):
-//   E2E-001-list-loaded:                        進 Tokens list 顯示初始檢視態 (seed 5 列)
+// 涵蓋 7 個案例 (× 2 lang = 50 baselines; E2E-002 多階段 3 張、E2E-003 2 張、E2E-005 / E2E-006 各 7 張、E2E-007 4 張):
+//   E2E-001-list-loaded:                        進 Tokens list 顯示初始檢視態 (seed 6 列, 含應用系統權限欄)
 //   E2E-002-1-isapp-toggled-before-save:        toggle isApp 後、Save 前的 isApp cell 觸發態 (stage1)
 //   E2E-002-2-save-success-modal:               toggle isApp → Save → 成功 modal (stage2)
 //   E2E-002-3-toggle-isapp-result-row:          modal 關閉後 isApp 已切換的結果列 (stage3)
 //   E2E-003-1-row-selected-before-save:         勾選目標列後、刪除/Save 前之已選取列觸發態 (stage1)
 //   E2E-003-2-delete-row-save-success:          勾選某列刪除 → Save → 成功 modal (stage2)
 //   E2E-004-token-expired-save-fail:            Save 前 admin token 過期 → 後端 reject → fail modal
+//   E2E-005-1..7:                               應用系統金鑰授予「讀金鑰」權限 → 儲存 (ADR-069)
+//   E2E-006-1..7:                               應用系統金鑰撤銷「讀統計」權限 → 儲存 (ADR-069)
+//   E2E-007-1..4:                               非編輯模式檢視應用系統權限清單 (唯讀) (ADR-069)
 //
 // 所有 capture 透過真實 UI 互動推進: 鍵盤滑鼠輸入 / ag-grid cell checkbox 點擊 /
 // row selection checkbox 點擊 / 按鈕 SVG path 點擊。不使用 vm.method() / page.evaluate state mutation 抄捷徑.
@@ -105,6 +110,20 @@ let expectedSpecText = {
         eng: { mode: 'text', value: 'Failed to save tokens' },
         cht: { mode: 'text', value: '儲存金鑰數據失敗' },
     },
+    //E2E-005 / E2E-006: 權限變更後儲存成功 modal 文字 tokenSaveTokensSuccess (於 capture 內 modal 仍顯示時斷言, 同 E2E-002)
+    'E2E-005-grant-perms-save-success': {
+        eng: { mode: 'text', value: 'Save tokens successfully' },
+        cht: { mode: 'text', value: '儲存金鑰數據成功' },
+    },
+    'E2E-006-revoke-perms-save-success': {
+        eng: { mode: 'text', value: 'Save tokens successfully' },
+        cht: { mode: 'text', value: '儲存金鑰數據成功' },
+    },
+    //E2E-007: 唯讀清單之標頭 tokenPerms 與基本權限說明 tokenPermsBase 皆可見
+    'E2E-007-view-perms-readonly': {
+        eng: { mode: 'text', value: 'Basic permission, always granted' },
+        cht: { mode: 'text', value: '基本權限，恆具備' },
+    },
 }
 
 
@@ -126,14 +145,17 @@ let testUsers = {
 
 let userTokens = {}
 
-//5 個 seed tokens 列 — 固定 id 與 token 字串 (便於 UI 抓 row + 斷言), 不同 userId / isApp 以區分視覺.
+//6 個 seed tokens 列 — 固定 id 與 token 字串 (便於 UI 抓 row + 斷言), 不同 userId / isApp 以區分視覺.
 //timeEnd 用未來日期, 不同小時數讓 WTimeminute 顯示各異, 更利於視覺辨識
+//perms (ADR-069, 僅 isApp='y' 生效): 4 僅基本權限(E2E-005 授予讀金鑰) / 5 讀金鑰+讀統計(E2E-006 撤銷讀統計) / 6 全部權限(E2E-001 顯示「+N」收合、E2E-007 唯讀清單全勾選)
+let permsAll = ['writeUsers', 'readTokens', 'writeTokens', 'readIps', 'writeIps', 'readStats']
 let testTokens = [
-    { id: 'id-test-token-1', token: 'test-token-1', userId: 'id-user-a', isApp: 'n', timeEnd: '2030-01-01T00:00:00.000+08:00' },
-    { id: 'id-test-token-2', token: 'test-token-2', userId: 'id-user-b', isApp: 'n', timeEnd: '2030-06-15T12:00:00.000+08:00' },
-    { id: 'id-test-token-3', token: 'test-token-3', userId: 'id-user-c', isApp: 'n', timeEnd: '2030-09-20T08:30:00.000+08:00' },
-    { id: 'id-test-token-4', token: 'test-token-4', userId: 'id-user-d', isApp: 'y', timeEnd: '2030-11-05T15:45:00.000+08:00' },
-    { id: 'id-test-token-5', token: 'test-token-5', userId: 'id-user-e', isApp: 'y', timeEnd: '2030-12-31T23:00:00.000+08:00' },
+    { id: 'id-test-token-1', token: 'test-token-1', userId: 'id-user-a', isApp: 'n', perms: [], timeEnd: '2030-01-01T00:00:00.000+08:00' },
+    { id: 'id-test-token-2', token: 'test-token-2', userId: 'id-user-b', isApp: 'n', perms: [], timeEnd: '2030-06-15T12:00:00.000+08:00' },
+    { id: 'id-test-token-3', token: 'test-token-3', userId: 'id-user-c', isApp: 'n', perms: [], timeEnd: '2030-09-20T08:30:00.000+08:00' },
+    { id: 'id-test-token-4', token: 'test-token-4', userId: 'id-user-d', isApp: 'y', perms: [], timeEnd: '2030-11-05T15:45:00.000+08:00' },
+    { id: 'id-test-token-5', token: 'test-token-5', userId: 'id-user-e', isApp: 'y', perms: ['readTokens', 'readStats'], timeEnd: '2030-12-31T23:00:00.000+08:00' },
+    { id: 'id-test-token-6', token: 'test-token-6', userId: 'id-user-f', isApp: 'y', perms: permsAll, timeEnd: '2030-08-08T09:15:00.000+08:00' },
 ]
 
 
@@ -184,6 +206,7 @@ async function insertTestUsersAndTokensAndTestTokens() {
         o.id = r.id
         o.token = r.token
         o.isApp = r.isApp
+        o.perms = [...r.perms]
         o.timeEnd = r.timeEnd
         o.timeCreate = FIX_TIME
         o.timeUpdate = FIX_TIME
@@ -266,6 +289,7 @@ async function resetTestTokensSeed() {
         o.id = r.id
         o.token = r.token
         o.isApp = r.isApp
+        o.perms = [...r.perms]
         o.timeEnd = r.timeEnd
         o.timeCreate = FIX_TIME
         o.timeUpdate = FIX_TIME
@@ -286,6 +310,15 @@ let mdiTrashCanOutline = 'M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20
 let kpUiText = {
     eng: { login: 'Log in', tokensList: 'Tokens list', editMode: 'Edit mode', ok: 'OK', statistics: 'Statistics' },
     cht: { login: '登入', tokensList: '金鑰清單', editMode: '編輯模式', ok: '確認', statistics: '統計' },
+}
+//應用系統權限 (ADR-069) 之畫面文字直接取自 server/procLang.mjs (清單標頭 / 權限名稱), 不另抄寫
+{
+    let kpLang = procLang()
+    for (let lang of ['eng', 'cht']) {
+        kpUiText[lang].permsHead = kpLang[lang].tokenPerms
+        kpUiText[lang].permReadTokens = kpLang[lang].appPerm_readTokens
+        kpUiText[lang].permReadStats = kpLang[lang].appPerm_readStats
+    }
 }
 
 
@@ -528,6 +561,96 @@ async function waitCheckYes(page, lang) {
 }
 
 
+//點 OK 關閉 System message modal → 等 modal 消失 → 捲軸歸位 → 等 ag-grid idle
+//(連續三 raf 之間 cell 數量與首列 cell 內容全等, 與 waitCheckYes 內部同款偵測; E2E-002 / E2E-005 / E2E-006 共用)
+async function closeCheckYesAndWaitGridIdle(page, lang) {
+    let t = kpUiText[lang]
+    await page.locator(`text="${t.ok}"`).first().click()
+
+    //等 modal 消失 (OK button 不再可見)
+    await page.locator(`text="${t.ok}"`).first().waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {})
+
+    await page.evaluate(() => {
+        window.scrollTo(0, 0)
+        let body = document.querySelector('.ag-center-cols-viewport')
+        if (body) body.scrollLeft = 0
+    })
+    await page.waitForFunction(async () => {
+        let body = document.querySelector('.ag-center-cols-viewport')
+        if (!body) return true
+        if (body.scrollLeft !== 0) return false
+        if (!document.querySelector('.ag-header-cell[col-id="token"]')) return false
+        let snap = () => {
+            let cells = document.querySelectorAll('.ag-cell')
+            let row0Cells = Array.from(document.querySelectorAll('.ag-row[row-index="0"] .ag-cell'))
+            return JSON.stringify({
+                count: cells.length,
+                row0: row0Cells.map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
+            })
+        }
+        let s1 = snap()
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        let s2 = snap()
+        if (s1 !== s2) return false
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        let s3 = snap()
+        return s2 === s3
+    }, null, { timeout: 15000 })
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(1500)
+}
+
+
+// ===================================================================
+// 應用系統權限 (ADR-069) 之定位 helpers — 觸發框 / 清單浮層 / 清單中某權限之列 / 儲存鈕 / 編輯模式開關
+// ===================================================================
+
+//某列之應用系統權限觸發框 (僅 isApp='y' 之列渲染)
+function permsTriggerSel(rowIdx) {
+    return `.ag-center-cols-container .ag-row[row-index="${rowIdx}"] .ag-cell[col-id="perms"] .perms-trigger`
+}
+
+//展開之權限清單浮層 (teleport 至 body 之 WPopperFix 內層面板, 以清單標頭文字識別)
+function permsPopupLoc(page, lang) {
+    return page.locator('.WPopperFix').filter({ hasText: kpUiText[lang].permsHead }).locator(':scope > div').first()
+}
+
+//清單中某權限之文字 (點選處) 與其整列 (勾選框 + 名稱 + 提示; WInputCheckbox 每項之可點層為 inline-block 容器)
+function permsItemLoc(page, lang, text) {
+    return permsPopupLoc(page, lang).locator(`text="${text}"`).first()
+}
+function permsItemRowLoc(page, lang, text) {
+    return permsItemLoc(page, lang, text).locator('xpath=ancestor::div[contains(@style,"inline-block")][1]')
+}
+
+//儲存鈕 (雲端上傳圖示之最近 tabindex 容器, 同 locateMdiButton 之可點層)
+function saveBtnLoc(page) {
+    return page.locator(`svg path[d="${mdiCloudUploadOutline}"]`).locator('xpath=ancestor::div[@tabindex][1]')
+}
+
+//編輯模式開關整顆 (開關 + 文字; WSwitch 之可點層為 cursor:pointer 之 inline-block 容器)
+function editSwitchLoc(page, lang) {
+    return page.locator(`text="${kpUiText[lang].editMode}"`).first().locator('xpath=ancestor::div[contains(@style,"cursor: pointer")][1]')
+}
+
+//目標須已在視窗內 (1280 寬時應用系統權限欄於捲軸歸位即完整可見, 不以程式捲動帶入)
+async function assertInViewport(page, sel) {
+    let r = await page.evaluate((s) => {
+        let e = document.querySelector(s)
+        if (!e) return null
+        let b = e.getBoundingClientRect()
+        return { left: b.left, right: b.right, vw: window.innerWidth }
+    }, sel)
+    if (!r) throw new Error(`target not found: ${sel}`)
+    if (r.left < 0 || r.right > r.vw) throw new Error(`target not fully in viewport: ${sel} ${JSON.stringify(r)}`)
+}
+
+//儲存鈕出現 (勾選權限即標記已修改, 清單未關閉即出現)
+async function waitSaveButton(page) {
+    await saveBtnLoc(page).first().waitFor({ state: 'visible', timeout: 5000 })
+}
+
+
 // ===================================================================
 // 共用語意斷言 helpers
 // ===================================================================
@@ -634,7 +757,6 @@ async function captureListLoaded(page, lang) {
 //note: saveTokens 成功後前端直接以 vo.tokens=cloneDeep(rows) 更新, 不 refetch getTokensList,
 //      故 modal 關閉後 grid 即已呈現 toggle 後狀態, 無需等 newValue 出現.
 async function captureToggleIsappSaveSuccess(page, lang) {
-    let t = kpUiText[lang]
     await loginAsAdminAndOpenTokensList(page, lang)
 
     //找 test-token-1 的列 row-index (seed 為 isApp='n', toggle 後變 'y')
@@ -666,41 +788,8 @@ async function captureToggleIsappSaveSuccess(page, lang) {
     //[多階段 stage2] waitCheckYes 後、點 OK 前截「儲存成功 modal」— 框 WDialog 內層 panel
     let bufModal = await captureStableWithBox(page, SEL_MODAL)
 
-    //關閉 modal (點 OK)
-    await page.locator(`text="${t.ok}"`).first().click()
-
-    //等 modal 消失 (OK button 不再可見)
-    await page.locator(`text="${t.ok}"`).first().waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {})
-
-    //等 ag-grid idle: 連續三 raf 之間 cell 數量與首列 cell 內容全等 (與 waitCheckYes 內部同款偵測)
-    await page.evaluate(() => {
-        window.scrollTo(0, 0)
-        let body = document.querySelector('.ag-center-cols-viewport')
-        if (body) body.scrollLeft = 0
-    })
-    await page.waitForFunction(async () => {
-        let body = document.querySelector('.ag-center-cols-viewport')
-        if (!body) return true
-        if (body.scrollLeft !== 0) return false
-        if (!document.querySelector('.ag-header-cell[col-id="token"]')) return false
-        let snap = () => {
-            let cells = document.querySelectorAll('.ag-cell')
-            let row0Cells = Array.from(document.querySelectorAll('.ag-row[row-index="0"] .ag-cell'))
-            return JSON.stringify({
-                count: cells.length,
-                row0: row0Cells.map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
-            })
-        }
-        let s1 = snap()
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s2 = snap()
-        if (s1 !== s2) return false
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s3 = snap()
-        return s2 === s3
-    }, null, { timeout: 15000 })
-    await page.mouse.move(0, 0)
-    await page.waitForTimeout(1500)
+    //關閉 modal (點 OK) → 等 modal 消失與 ag-grid idle
+    await closeCheckYesAndWaitGridIdle(page, lang)
 
     //重新找 test-token-1 的 row-index (儲存後排序可能變動)
     let finalRowIdx = await findRowIdxByTokenValue(page, 'test-token-1')
@@ -779,6 +868,163 @@ async function captureTokenExpiredSaveFail(page, lang) {
 }
 
 
+//成功 modal 仍顯示時 (點 OK 之前) 斷言其文字 (同 E2E-002 stage2 之時機)
+async function assertSuccessModalText(page, lang, name) {
+    let exp = expectedSpecText[name][lang].value
+    let found = await pageHasText(page, exp)
+    if (!found) {
+        let dump = await collectVisibleText(page)
+        assert.fail(`預期成功 modal 含 "${exp}" (${name}), 實際: ${dump}`)
+    }
+}
+
+
+//E2E-005 / E2E-006 共用序列 (ADR-069): 開權限清單 → 勾選或取消某權限 → 儲存 → 成功 modal → 結果列之權限標籤, 共 7 張
+//  1 click-perms       點擊前: 框該列應用系統權限觸發框整顆
+//  2 perms-list        點擊後: 框展開之權限清單浮層整個 (含標頭)
+//  3 check/uncheck-xxx 點擊前: 框清單中該權限之整列 (勾選框 + 名稱 + 提示)
+//  4 xxx-checked/unchecked 點擊後: 框權限清單浮層整個 (該權限勾選狀態已改變; 此時儲存鈕已出現)
+//  5 click-save        點擊前: 框儲存鈕整顆 (權限清單仍開啟)
+//  6 save-success-modal 點擊後: 框成功 modal 面板
+//  7 perms-result      點 OK 關閉後: 框該列應用系統權限觸發框 (標籤已反映新權限)
+async function capturePermsChangeSave(page, lang, o) {
+    let { tokenStr, permText, keyCase, keyStep3, keyStep4 } = o
+    await loginAsAdminAndOpenTokensList(page, lang)
+
+    let rowIdx = await findRowIdxByTokenValue(page, tokenStr)
+    if (rowIdx === null) throw new Error(`seed token row not found: ${tokenStr}`)
+    let trig = permsTriggerSel(rowIdx)
+    await assertInViewport(page, trig)
+
+    //1 點擊前: 框觸發框
+    let buf1 = await captureStableWithBox(page, trig)
+    await page.locator(trig).click()
+    await permsPopupLoc(page, lang).waitFor({ state: 'visible', timeout: 5000 })
+
+    //2 點擊後: 框清單浮層
+    let buf2 = await captureStableWithBox(page, permsPopupLoc(page, lang))
+
+    //3 點擊前: 框該權限整列
+    let buf3 = await captureStableWithBox(page, permsItemRowLoc(page, lang, permText))
+    await permsItemLoc(page, lang, permText).click()
+
+    //勾選即標記已修改: 清單未關閉即出現儲存鈕
+    await waitSaveButton(page)
+
+    //4 點擊後: 框清單浮層
+    let buf4 = await captureStableWithBox(page, permsPopupLoc(page, lang))
+
+    //5 點擊前: 框儲存鈕 (清單仍開啟; 點儲存時清單關閉並寫回勾選)
+    let buf5 = await captureStableWithBox(page, saveBtnLoc(page))
+    await clickSave(page)
+    await waitCheckYes(page, lang)
+    await assertSuccessModalText(page, lang, keyCase)
+
+    //6 點擊後: 框成功 modal
+    let buf6 = await captureStableWithBox(page, SEL_MODAL)
+
+    //點 OK 關閉 → 等 grid idle
+    await closeCheckYesAndWaitGridIdle(page, lang)
+    let finalRowIdx = await findRowIdxByTokenValue(page, tokenStr)
+    if (finalRowIdx === null) throw new Error(`${tokenStr} not found in grid after save`)
+    let trigFinal = permsTriggerSel(finalRowIdx)
+    await assertInViewport(page, trigFinal)
+
+    //7 框結果列之觸發框
+    let buf7 = await captureStableWithBox(page, trigFinal)
+
+    let n = keyCase.slice(0, 7) //'E2E-00N'
+    return {
+        [`${n}-1-click-perms`]: buf1,
+        [`${n}-2-perms-list`]: buf2,
+        [`${n}-3-${keyStep3}`]: buf3,
+        [`${n}-4-${keyStep4}`]: buf4,
+        [`${n}-5-click-save`]: buf5,
+        [`${n}-6-save-success-modal`]: buf6,
+        [`${n}-7-perms-result`]: buf7,
+    }
+}
+
+
+//E2E-005 授予: test-token-4 (僅基本權限) 勾選「讀金鑰」→ 儲存
+async function captureGrantPermsSaveSuccess(page, lang) {
+    return await capturePermsChangeSave(page, lang, {
+        tokenStr: 'test-token-4',
+        permText: kpUiText[lang].permReadTokens,
+        keyCase: 'E2E-005-grant-perms-save-success',
+        keyStep3: 'check-read-tokens',
+        keyStep4: 'read-tokens-checked',
+    })
+}
+
+
+//E2E-006 撤銷: test-token-5 (讀金鑰 + 讀統計) 取消「讀統計」→ 儲存
+async function captureRevokePermsSaveSuccess(page, lang) {
+    return await capturePermsChangeSave(page, lang, {
+        tokenStr: 'test-token-5',
+        permText: kpUiText[lang].permReadStats,
+        keyCase: 'E2E-006-revoke-perms-save-success',
+        keyStep3: 'uncheck-read-stats',
+        keyStep4: 'read-stats-unchecked',
+    })
+}
+
+
+//E2E-007 唯讀檢視 (ADR-069): 關閉編輯模式 → 開 test-token-6 (全部權限) 之權限清單, 各項不可勾選, 共 4 張
+//  1 click-edit-mode      點擊前: 框編輯模式開關整顆
+//  2 view-mode            點擊後: 框表格整個 (列選取框與拖曳把手消失)
+//  3 click-perms          點擊前: 框 test-token-6 之應用系統權限觸發框整顆
+//  4 perms-list-readonly  點擊後: 框展開之權限清單浮層整個 (7 項皆勾選且不可勾選)
+async function captureViewPermsReadonly(page, lang) {
+    await loginAsAdminAndOpenTokensList(page, lang)
+
+    //1 點擊前: 框編輯模式開關 (loginAsAdminAndOpenTokensList 已確保編輯模式為開)
+    let buf1 = await captureStableWithBox(page, editSwitchLoc(page, lang))
+    await editSwitchLoc(page, lang).click()
+    //偵測: 表格重建為非編輯模式 (列選取框消失)
+    await waitUntilExist(page, 'grid rebuilt without selection checkbox', () => {
+        return !!document.querySelector('.ag-header-cell[col-id="token"]') && document.querySelectorAll('.ag-selection-checkbox').length === 0
+    })
+
+    //2 點擊後: 框表格整個
+    let buf2 = await captureStableWithBox(page, SEL_GRID)
+
+    let rowIdx = await findRowIdxByTokenValue(page, 'test-token-6')
+    if (rowIdx === null) throw new Error(`seed token row not found: test-token-6`)
+    let trig = permsTriggerSel(rowIdx)
+    await assertInViewport(page, trig)
+
+    //3 點擊前: 框觸發框
+    let buf3 = await captureStableWithBox(page, trig)
+    await page.locator(trig).click()
+    await permsPopupLoc(page, lang).waitFor({ state: 'visible', timeout: 5000 })
+
+    //語意: 清單 7 項皆勾選且不可勾選
+    let st = await permsPopupLoc(page, lang).evaluate((el) => {
+        let ins = Array.from(el.querySelectorAll('input[type="checkbox"]'))
+        return { n: ins.length, checked: ins.filter((x) => x.checked).length, disabled: ins.filter((x) => x.disabled).length }
+    })
+    assert.deepStrictEqual(st, { n: 7, checked: 7, disabled: 7 }, `非編輯模式之權限清單應 7 項皆勾選且不可勾選, 實際: ${JSON.stringify(st)}`)
+
+    //4 點擊後: 框清單浮層
+    let buf4 = await captureStableWithBox(page, permsPopupLoc(page, lang))
+
+    //點選「讀統計」不改變勾選, 亦不出現儲存鈕
+    await permsItemLoc(page, lang, kpUiText[lang].permReadStats).click()
+    await page.waitForTimeout(500)
+    let st2 = await permsPopupLoc(page, lang).evaluate((el) => Array.from(el.querySelectorAll('input[type="checkbox"]')).filter((x) => x.checked).length)
+    assert.strict.equal(st2, 7, `非編輯模式點選權限不應改變勾選, 實際勾選數: ${st2}`)
+    assert.strict.equal(await saveBtnLoc(page).count(), 0, '非編輯模式不應出現儲存鈕')
+
+    return {
+        'E2E-007-1-click-edit-mode': buf1,
+        'E2E-007-2-view-mode': buf2,
+        'E2E-007-3-click-perms': buf3,
+        'E2E-007-4-perms-list-readonly': buf4,
+    }
+}
+
+
 // ===================================================================
 // 產生標準圖
 // ===================================================================
@@ -791,6 +1037,9 @@ async function generateBaselineForLang(lang) {
         ['E2E-002-toggle-isapp-save-success', captureToggleIsappSaveSuccess],
         ['E2E-003-delete-row-save-success', captureDeleteRowSaveSuccess],
         ['E2E-004-token-expired-save-fail', captureTokenExpiredSaveFail],
+        ['E2E-005-grant-perms-save-success', captureGrantPermsSaveSuccess],
+        ['E2E-006-revoke-perms-save-success', captureRevokePermsSaveSuccess],
+        ['E2E-007-view-perms-readonly', captureViewPermsReadonly],
     ]
 
     //per-case fresh browser + DB setup, 與 mocha test 端 beforeEach/afterEach 對稱.
@@ -901,20 +1150,70 @@ else {
                 ['E2E-002-toggle-isapp-save-success', captureToggleIsappSaveSuccess],
                 ['E2E-003-delete-row-save-success', captureDeleteRowSaveSuccess],
                 ['E2E-004-token-expired-save-fail', captureTokenExpiredSaveFail],
+                ['E2E-005-grant-perms-save-success', captureGrantPermsSaveSuccess],
+                ['E2E-006-revoke-perms-save-success', captureRevokePermsSaveSuccess],
+                ['E2E-007-view-perms-readonly', captureViewPermsReadonly],
             ]
+
+            //應用系統權限案例 (ADR-069) 之前後斷言: pre 於操作前確認 app token 之起始能力, post 於比對標準圖之前驗 DB 與端到端不變式
+            //(app token 實際呼叫後台功能之成敗), 使標準圖缺漏或不符時仍先驗得流程本身
+            let permsChecks = {
+                'E2E-005-grant-perms-save-success': {
+                    pre: async () => {
+                        let r = await callFapi('getTokensList', ['test-token-4'])
+                        assert.strict.equal(r.ok, false, `授予前 test-token-4 (僅基本權限) 不應可讀金鑰清單, 實際: ${JSON.stringify(r).slice(0, 200)}`)
+                    },
+                    post: async () => {
+                        let rs = await woItems.tokens.select({ id: 'id-test-token-4' })
+                        assert.deepStrictEqual(rs[0].perms, ['readTokens'], `id-test-token-4 之 perms 應為 ['readTokens'], 實際: ${JSON.stringify(rs[0].perms)}`)
+                        let r = await callFapi('getTokensList', ['test-token-4'])
+                        assert.strict.equal(r.ok, true, `授予後 test-token-4 應立即可讀金鑰清單, 實際: ${JSON.stringify(r).slice(0, 200)}`)
+                    },
+                },
+                'E2E-006-revoke-perms-save-success': {
+                    pre: async () => {
+                        let r = await callFapi('getStaIp', ['test-token-5'])
+                        assert.strict.equal(r.ok, true, `撤銷前 test-token-5 應可讀統計, 實際: ${JSON.stringify(r).slice(0, 200)}`)
+                    },
+                    post: async () => {
+                        let rs = await woItems.tokens.select({ id: 'id-test-token-5' })
+                        assert.deepStrictEqual(rs[0].perms, ['readTokens'], `id-test-token-5 之 perms 應為 ['readTokens'], 實際: ${JSON.stringify(rs[0].perms)}`)
+                        let r1 = await callFapi('getStaIp', ['test-token-5'])
+                        assert.strict.equal(r1.ok, false, '撤銷後 test-token-5 應立即不可讀統計')
+                        assert.strict.equal(r1.err, 'tokenExpired', `撤銷後讀統計之對外 key 應為 tokenExpired, 實際: ${r1.err}`)
+                        let r2 = await callFapi('getTokensList', ['test-token-5'])
+                        assert.strict.equal(r2.ok, true, '未撤銷之讀金鑰應仍可用')
+                    },
+                },
+                'E2E-007-view-perms-readonly': {
+                    pre: async () => {},
+                    post: async () => {
+                        let rs = await woItems.tokens.select({ id: 'id-test-token-6' })
+                        assert.deepStrictEqual(rs[0].perms, permsAll, `非編輯模式之操作不得改變 id-test-token-6 之 perms, 實際: ${JSON.stringify(rs[0].perms)}`)
+                    },
+                },
+            }
 
             for (let [name, fn] of cases) {
                 it(`${name}`, async function() {
                     await resetAdminToken()
                     await resetTestTokensSeed()
+                    if (permsChecks[name]) {
+                        await permsChecks[name].pre()
+                    }
                     let result = await fn(page, lang)
 
                     //語意斷言 (主): 以 case name 查 expectedSpecText, 每個 case 執行一次.
                     //E2E-002 (toggle isApp) 例外: 其成功 modal 文字已在 capture 函式內 (modal 仍顯示時) 斷言,
                     //post-capture 時 modal 已 dismiss + toggle 結果無唯一可觀察文字 → 改以下方 DB 狀態斷言驗最終態,
-                    //不在此處對已消失的 modal 文字做 pageHasText.
-                    if (name !== 'E2E-002-toggle-isapp-save-success') {
+                    //不在此處對已消失的 modal 文字做 pageHasText. E2E-005 / E2E-006 同理 (capture 內斷言成功 modal 文字).
+                    if (!['E2E-002-toggle-isapp-save-success', 'E2E-005-grant-perms-save-success', 'E2E-006-revoke-perms-save-success'].includes(name)) {
                         await assertSpecForCase(page, lang, name)
+                    }
+
+                    //應用系統權限案例: 先驗 DB 與端到端不變式, 再比對標準圖
+                    if (permsChecks[name]) {
+                        await permsChecks[name].post()
                     }
 
                     //pixel baseline (補強): 多階段 fn 可回 Buffer (單張) 或 dict { baselineName: buf } (多張); 統一成 dict 逐張比對
