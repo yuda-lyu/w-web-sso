@@ -18,7 +18,8 @@ import { callFapi } from './tools/api-setup.mjs' //僅 mocha 端之端到端不�
 // 使用方式：
 //   1. 先產生標準圖：node test/e2e-tokens.test.mjs --baseline
 //   2. 跑測試比對：npx mocha test/e2e-tokens.test.mjs --timeout 240000
-//   --names <eng-E2E-001-list-loaded,...> 進行手術式 baseline 重產
+//   --names <eng-E2E-001-list-loaded,...> 進行手術式 baseline 重產: 給 case 名 (如 eng-E2E-005-grant-perms-save-success)
+//   產該 case 全部階段, 給階段圖鍵 (如 eng-E2E-005-3-check-read-tokens) 只寫該張
 //
 // 標準圖存放：test/pics/tokens/tokens-{lang}-{number}-{name}.png
 //
@@ -54,8 +55,9 @@ let baselineNamesFilter = null
         baselineNamesFilter = new Set(process.argv[i + 1].split(','))
     }
 }
-function writeBaseline(lang, name, buf) {
-    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`)) {
+//--names 指定時: filter 含階段圖鍵 (${lang}-${name}) 只寫該張; 含 case 名 (${lang}-${caseName}) 則寫該 case 全部階段
+function writeBaseline(lang, caseName, name, buf) {
+    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`) && !baselineNamesFilter.has(`${lang}-${caseName}`)) {
         console.log(`  [skip] ${lang}-${name}`)
         return
     }
@@ -64,14 +66,12 @@ function writeBaseline(lang, name, buf) {
 
 
 //是否需要產生此 case 的標準圖. --names 指定時只有指定 case 回 true → 連「截圖」都跳過 (非僅跳寫檔).
-//多階段 dict case (E2E-002/003): --names 可指定 stage key (如 eng-E2E-002-1-isapp-toggled-before-save).
-//outer shouldGen 負責「是否執行此 case」: 若 filter 內有任一 ${lang}-${name}-* 前綴的 stage key, 仍回 true,
-//讓 case 執行並由 writeBaseline inner filter 過濾只寫指定 stage.
+//多階段 dict case (E2E-002/003/005/006/007) 之階段圖鍵為 E2E-NNN-<序>-<名>, 不含 case 名 (如 case E2E-005-grant-perms-save-success
+//之階段 eng-E2E-005-3-check-read-tokens), 故以 case 編號前綴 ${lang}-E2E-NNN- 比對: filter 內有該前綴之鍵 (case 名或任一階段圖鍵)
+//即執行此 case, 再由 writeBaseline 只寫指定者. (2026-09-27 前以 ${lang}-${name}- 比對, 階段圖鍵永不命中而整案靜默略過)
 function shouldGen(lang, name) {
     if (!baselineNamesFilter) return true
-    let directKey = `${lang}-${name}`
-    if (baselineNamesFilter.has(directKey)) return true
-    let prefix = `${lang}-${name}-`
+    let prefix = `${lang}-${name.slice(0, 7)}-` //'eng-E2E-005-'
     for (let k of baselineNamesFilter) {
         if (k.startsWith(prefix)) return true
     }
@@ -1059,7 +1059,7 @@ async function generateBaselineForLang(lang) {
         //多階段: fn 可回 Buffer (單張) 或 dict { baselineName: buf } (多張); 統一成 dict 寫檔
         let stages = Buffer.isBuffer(result) ? { [name]: result } : result
         for (let [bname, b] of Object.entries(stages)) {
-            writeBaseline(lang, bname, b)
+            writeBaseline(lang, name, bname, b)
         }
 
         await browser.close()
