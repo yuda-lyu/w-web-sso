@@ -5,7 +5,8 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, launchBrowser, typeIntoNthInput } from './tools/e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, launchBrowser, typeIntoNthInput, waitUntilExist } from './tools/e2e-setup.mjs'
+import { runBaselineCase, createBaselineGate, itemsUnionBox, pollUntil } from './tools/e2eLib.mjs'
 
 
 //
@@ -22,7 +23,11 @@ import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl
 // 使用方式:
 //   1. 先產生標準圖: node test/e2e-autoblock.test.mjs --baseline
 //   2. 跑測試比對:   npx mocha test/e2e-autoblock.test.mjs --timeout 240000 --reporter list
-//   --names 進行手術式 baseline 重產
+//   手術式重產 (截圖前篩選, 規格詳 w-package-tools-e2e 之 README.md §2.2): --names <項,...> 每項可帶語系前綴 (eng-/cht-), 不帶則兩語系皆產;
+//     案例鍵或編號前綴 (如 eng-E2E-006、E2E-010-new-ip-registration) 寫該案之圖 (本檔每案 1 張, 案例鍵即圖鍵), 不符任何鍵即報錯;
+//     --langs; --write-mode missing|changed; env E2E_BASELINE_OUT_DIR=<dir> 寫到暫存目錄 (等價驗證用)
+//   產製端與比對端呼叫同一案例管線 (runBaselineCase): 每案 DB 重置 + in-memory 計數清除 (cleanKpIpCallApi / cleanKpAccountLoginFailed)
+//     → fresh browser → 流程 → 語意斷言 (semantic) → DB / API 不變式 (verify) → 寫檔 / 比對; 斷言不過一張都不寫
 //
 // 標準圖存放: test/pics/autoblock/autoblock-{lang}-{name}.png
 //   9 case × 2 lang = 18 baselines
@@ -41,26 +46,6 @@ let numForIpCallApi = 12000
 //對應 settings.json 的 cleanKpIpCallApiForToken (呼叫 /api/cleanKpIpCallApi 須附帶之識別 token)
 let cleanKpIpCallApiForToken = '{cleanKpIpCallApiForToken}'
 let cleanKpAccountLoginFailedForToken = '{cleanKpAccountLoginFailedForToken}'
-
-
-let baselineNamesFilter = null
-{
-    let i = process.argv.indexOf('--names')
-    if (i >= 0 && process.argv[i + 1]) {
-        baselineNamesFilter = new Set(process.argv[i + 1].split(','))
-    }
-}
-function writeBaseline(lang, name, buf) {
-    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`)) {
-        console.log(`  [skip] ${lang}-${name}`)
-        return
-    }
-    fs.writeFileSync(bp(lang, name), buf)
-}
-//是否需要產生此 case 的標準圖. --names 指定時只有指定 case 回 true → 連「截圖」都跳過 (非僅跳寫檔).
-function shouldGen(lang, name) {
-    return !baselineNamesFilter || baselineNamesFilter.has(`${lang}-${name}`)
-}
 
 
 function bp(lang, name) {
@@ -276,7 +261,7 @@ async function gotoCleanLogin(page, lang) {
     await page.waitForFunction(() => {
         let inps = document.querySelectorAll('input')
         return inps.length >= 2
-    }, null, { timeout: 15000 })
+    }, null, { timeout: 60000 }) //偵測上限放寬(原 15 秒, 2026-09-28)
     await page.waitForTimeout(500)
 }
 
@@ -294,8 +279,10 @@ async function attemptLogin(page, lang, account, password) {
 async function loginAndGetToken(page, lang, account, password) {
     await gotoCleanLogin(page, lang)
     await attemptLogin(page, lang, account, password)
-    //跨頁 redirect 等 10s
-    await page.waitForTimeout(10000)
+    //偵測式等待「登入完成且已轉至使用者頁」再讀權杖(技能 §4.4; 原固定 10 秒——亦順帶等過轉址)。
+    //只等權杖寫入不夠: 權杖寫入後隨即轉址, 接著之 evaluate 落在轉址途中而 context 被銷毀(2026-09-28 重跑 eng 抓出);
+    //故條件為「無密碼欄且有使用者頁 .sb 且權杖已寫入」(登入頁亦有 .sb, 但有密碼欄)
+    await waitUntilExist(page, '登入完成並轉至使用者頁', () => document.querySelectorAll('input[type="password"]').length === 0 && !!document.querySelector('.sb') && !!localStorage.getItem('ksso:userToken'), { timeout: 60000 })
     let token = await page.evaluate(() => localStorage.getItem('ksso:userToken'))
     return token
 }
@@ -321,7 +308,7 @@ async function execAccountBlockTrigger(page, lang, u) {
         await page.waitForFunction(
             (needle) => (document.body.innerText || '').includes(needle),
             t.loginIncorrect,
-            { timeout: 10000 }
+            { timeout: 60000 } //偵測上限放寬(原 10 秒; 負載高時登入回應較久, 2026-09-28)
         )
     }
 
@@ -334,7 +321,7 @@ async function execAccountBlockTrigger(page, lang, u) {
     await page.waitForFunction(
         (needle) => (document.body.innerText || '').includes(needle),
         t.loginIncorrect,
-        { timeout: 10000 }
+        { timeout: 60000 } //偵測上限放寬(原 10 秒; 負載高時登入回應較久, 2026-09-28)
     )
     await page.waitForTimeout(1500)
 
@@ -358,7 +345,7 @@ async function execAccountFailureReset(page, lang, u) {
         await page.waitForFunction(
             (needle) => (document.body.innerText || '').includes(needle),
             t.loginIncorrect,
-            { timeout: 10000 }
+            { timeout: 60000 } //偵測上限放寬(原 10 秒; 負載高時登入回應較久, 2026-09-28)
         )
     }
 
@@ -371,7 +358,7 @@ async function execAccountFailureReset(page, lang, u) {
     await page.waitForFunction(
         (n) => (document.body.innerText || '').includes(n),
         u.name,
-        { timeout: 15000 }
+        { timeout: 60000 } //登入後轉址於負載高時較久, 偵測上限放寬(原 15 秒, 2026-09-28)
     )
 
     //框 user view 卡 (.sb) 標注登入成功後的使用者資訊頁
@@ -390,7 +377,7 @@ async function execBlockedLoginRejected(page, lang, u) {
     await page.waitForFunction(
         (needle) => (document.body.innerText || '').includes(needle),
         t.loginIncorrect,
-        { timeout: 10000 }
+        { timeout: 60000 } //偵測上限放寬(原 10 秒; 負載高時登入回應較久, 2026-09-28)
     )
     await page.waitForTimeout(1500)
     //框封鎖訊息紅字本身，標注封鎖中嘗試登入後的統一登入失敗訊息區（loginError inline div）
@@ -414,7 +401,7 @@ async function execBlockExpiryImplicitUnlock(page, lang, u) {
     await page.waitForFunction(
         (n) => (document.body.innerText || '').includes(n),
         u.name,
-        { timeout: 15000 }
+        { timeout: 60000 } //登入後轉址於負載高時較久, 偵測上限放寬(原 15 秒, 2026-09-28)
     )
 
     //框 user view 卡 (.sb) 標注封鎖到期隱性解除後登入成功的使用者資訊頁
@@ -438,7 +425,9 @@ async function execTokenBlockTrigger(page, lang, u) {
         await Promise.allSettled(promises)
     }, { apiUrl, token, account: u.account, n: numForTokenCallApi + 1 })
 
-    await page.waitForTimeout(3000)
+    //等權杖封鎖計時器結算: 後端每 2 秒掃描權杖調用數, 超限即封鎖使用者並刪除其權杖(server/procProtect.mjs:386、:341-349);
+    //以「DB 權杖已刪」為完成訊號(原固定 3 秒, 負載高時計時器延遲即誤判, 2026-09-28 改)
+    await pollUntil('權杖封鎖計時器結算(該使用者權杖已刪)', async () => (await woItems.tokens.select({ userId: u.id })).length === 0, { timeout: 60000 })
 
     //再呼叫應 reject
     let result = await page.evaluate(async ({ apiUrl, token, account }) => {
@@ -450,10 +439,10 @@ async function execTokenBlockTrigger(page, lang, u) {
     //截圖此終態作為 baseline (login form 出現, 不見 user view)
     let t = kpUiText[lang]
     await page.reload({ waitUntil: 'networkidle', timeout: 15000 }).catch(() => {})
-    //等 SPA mount + autoLogin 失敗後落回登入表單
-    await page.waitForFunction(() => document.querySelectorAll('input').length >= 2, null, { timeout: 15000 })
-    //再等一下確認停留 login (不會被 autoLogin 拉回)
-    await page.waitForTimeout(3000)
+    //等 autoLogin 走失效路徑落回登入表單: autoLogin 進行中只渲染連線狀態, 結束後才依結果渲染頁面(src/App.vue:7、:17、:113),
+    //故登入表單出現即 autoLogin 已結束且為 reject, 不會再被拉回; 另驗其清空 LS 權杖(src/plugins/mUI.mjs:606, 失效路徑之確定訊號).
+    //原「等表單後再固定等 3 秒確認停留」無非同步來源可等, 2026-09-28 改為此偵測(上限放寬至 60 秒供負載高時)
+    await waitUntilExist(page, 'autoLogin 失效路徑落回登入表單(LS 權杖已清空)', () => document.querySelectorAll('input').length >= 2 && localStorage.getItem('ksso:userToken') === '', { timeout: 60000 })
 
     let pageText = await page.evaluate(() => document.body.innerText || '')
     //框登入卡 (.sb) 標注 token 失效後 reload 落回登入頁的表單區
@@ -485,7 +474,7 @@ async function execIpBlockTrigger(browserRef, lang, u, virtIp) {
             }
         })
         return !!(el && el.__vue__ && el.__vue__.$root && el.__vue__.$root.$fapi)
-    }, null, { timeout: 15000 })
+    }, null, { timeout: 60000 }) //偵測上限放寬(原 15 秒, 2026-09-28)
 
     //分批並行打 $fapi.getWebInfor (走 /api/main → verifyConn → kpIpCallApi)
     let total = numForIpCallApi + 1
@@ -516,20 +505,33 @@ async function execIpBlockTrigger(browserRef, lang, u, virtIp) {
         }
     }
     console.log(`[ip-block-trigger ${lang}] 送出 ${sent} 次 $fapi.getWebInfor, blocked=${blocked}`)
-    await page.waitForTimeout(3000)
 
-    let ips = await woItems.ips.select({ ip: virtIp })
+    //等 C timer 結算(每 2 秒掃描 IP 調用數, 超限寫 ips.timeBlocked, server/procProtect.mjs:770-818): 迴圈內已見封鎖者立即成立;
+    //迴圈以送完次數結束而尚未見封鎖者, 輪詢至寫入為止(原固定 3 秒, 負載高時計時器延遲即讀到未封鎖, 2026-09-28 改)
+    let ips = await pollUntil('C timer 寫入 ips.timeBlocked', async () => {
+        let rs = await woItems.ips.select({ ip: virtIp })
+        return rs.length > 0 && rs[0].timeBlocked !== '' ? rs : null
+    }, { timeout: 60000 })
 
     //驗 UI: 新開 page 進登入頁卡 Connecting (verifyConn 擋連線)
+    //另以網路層確認「伺服器確實拒絕」: 連線層未通過時 /api 回應標頭 Return-Msg 為 permission denied
+    //(node_modules/w-converhp/src/WConverhpServer.mjs:1139、routeSpec.mjs:22), 使「10s 後仍卡 Connecting」不致於負載高、
+    //正常連線本身慢於 10s 時誤判為被擋(spec 之 10s 為使用者觀察期, 仍照等; 2026-09-28 補)
     let page2 = await ctx.newPage()
+    let denied2 = page2.waitForResponse((r) => r.url().includes('/api') && r.headers()['return-msg'] === 'permission denied', { timeout: 60000 }).then(() => true, (err) => err)
     await page2.goto(`${baseUrl}/?lang=${lang}`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {})
     await page2.waitForTimeout(10000)
+    let d2 = await denied2
+    assert.strict.equal(d2, true, `進登入頁後應收到連線層拒絕(Return-Msg: permission denied), 實際: ${d2 && d2.message ? d2.message : d2}`)
 
     //驗 connecting 在 page2 內仍可見, 確認被卡住
     let pageText = await page2.evaluate(() => document.body.innerText || '')
     //框 Connecting 動畫圖示 + 旁邊文字聯集，標注 IP 封鎖後卡 Connecting 的顯示區
-    //img_connection 含 SVG <animate>，captureStable 內部 animatedRects 機制自動後製填黑，不需額外 mask
-    let buf = await captureStableWithBox(page2, ['img[src^="data:image/svg+xml"]', 'div[style*="margin-left:10px"]'])
+    //img_connection 含 SVG <animate>，captureStable 內部 animatedRects 機制自動貼靜態影格，不需額外 mask
+    //文字以 getByText 定位（同 e2e-init）：原 'div[style*="margin-left:10px"]' 永不命中（渲染後 style 為 `margin-left: 10px`，冒號後有空格），
+    //聯集只剩圖示、「連線中…」文字落在框外（2026-09-28 修正）；文字經 itemsUnionBox fit 量墨跡並外擴 inkPad（元素緊貼文字，
+    //直接框元素時紅框內緣距「…」僅約 1px、紅框壓字，2026-09-28 同日再修）
+    let buf = await captureStableWithBox(page2, ['img[src^="data:image/svg+xml"]', itemsUnionBox(page2.getByText(t.connecting).first(), { fit: true })])
 
     await page2.close()
     await deleteIpRecord(virtIp)
@@ -549,12 +551,16 @@ async function execIpBlockedRejected(browserRef, lang, virtIp) {
     let ctx = await makeXForwardedForContext(browserRef.current, virtIp)
     let page = await ctx.newPage()
 
+    //網路層確認伺服器確實拒絕(同 E2E-006, 2026-09-28 補); spec 之 10s 使用者觀察期照等
+    let denied = page.waitForResponse((r) => r.url().includes('/api') && r.headers()['return-msg'] === 'permission denied', { timeout: 60000 }).then(() => true, (err) => err)
     await page.goto(`${baseUrl}/?lang=${lang}`, { waitUntil: 'networkidle', timeout: 15000 })
     await page.waitForTimeout(10000)
+    let d = await denied
+    assert.strict.equal(d, true, `進登入頁後應收到連線層拒絕(Return-Msg: permission denied), 實際: ${d && d.message ? d.message : d}`)
 
     let pageText = await page.evaluate(() => document.body.innerText || '')
-    //框 Connecting 動畫圖示 + 旁邊文字聯集，標注 IP 封鎖中進登入頁卡 Connecting 的顯示區
-    let buf = await captureStableWithBox(page, ['img[src^="data:image/svg+xml"]', 'div[style*="margin-left:10px"]'])
+    //框 Connecting 動畫圖示 + 旁邊文字聯集，標注 IP 封鎖中進登入頁卡 Connecting 的顯示區（文字定位同上，2026-09-28 修正）
+    let buf = await captureStableWithBox(page, ['img[src^="data:image/svg+xml"]', itemsUnionBox(page.getByText(t.connecting).first(), { fit: true })])
 
     await deleteIpRecord(virtIp)
     return { buf, pageText, hasConnecting: pageText.includes(t.connecting), hasLogin: pageText.includes(t.login) }
@@ -579,7 +585,7 @@ async function execIpExpiryImplicitUnlock(browserRef, lang, virtIp) {
     await page.waitForFunction(() => {
         let inps = document.querySelectorAll('input')
         return inps.length >= 2
-    }, null, { timeout: 15000 })
+    }, null, { timeout: 60000 }) //偵測上限放寬(原 15 秒, 2026-09-28)
     await page.waitForTimeout(500)
 
     let pageText = await page.evaluate(() => document.body.innerText || '')
@@ -609,13 +615,16 @@ async function execNewIpRegistration(browserRef, lang, u, virtIp) {
     await page.waitForFunction(
         (n) => (document.body.innerText || '').includes(n),
         u.name,
-        { timeout: 15000 }
+        { timeout: 60000 } //登入後轉址於負載高時較久, 偵測上限放寬(原 15 秒, 2026-09-28)
     )
     let url = page.url()
 
-    //等 3s D timer 補登記
-    await page.waitForTimeout(3000)
-    let ips = await woItems.ips.select({ ip: virtIp })
+    //等 D timer 補登記(每 2 秒比對 kpIpCallApi 與 ips 表差集並 insert, server/procProtect.mjs:703-765);
+    //輪詢至該 IP 出現為止(原固定 3 秒, 負載高時計時器延遲即讀到空表, 2026-09-28 改)
+    let ips = await pollUntil('D timer 補登記新 IP 至 ips 表', async () => {
+        let rs = await woItems.ips.select({ ip: virtIp })
+        return rs.length > 0 ? rs : null
+    }, { timeout: 60000 })
 
     //框 user view 卡 (.sb) 標注新 IP 成功登入後的使用者資訊頁（D timer 已補登記至 ips 表）
     let buf = await captureStableWithBox(page, '.sb')
@@ -626,128 +635,258 @@ async function execNewIpRegistration(browserRef, lang, u, virtIp) {
 
 
 // ===================================================================
-// 產生標準圖 (per case → per lang)
+// 案例宣告與案例管線 (產製端與比對端共用)
 // ===================================================================
 
-async function generateBaselineForLang(lang) {
-    let testUsers = makeTestUsers(lang)
+//虛擬 client IP 之末段基數 (eng 100 / cht 200, 兩語系不撞 in-memory kpIpCallApi 與 ips 表紀錄)
+function ipSufOf(lang) {
+    return lang === 'eng' ? 100 : 200
+}
 
-    let ipSuf = lang === 'eng' ? 100 : 200
-    //編號對齊 spec bullet 順序 (非 mocha case index): 共 10 條 spec, gap 在 009.
-    //  001-008: account/token/ip 系列封鎖機制
-    //  009: 後端取不到 client IP (spec 標明「不測試」) → 無 baseline 檔留 gap
-    //  010: new-ip-registration
-    //如此 baseline 編號跟 spec bullet 一一對應, 看到 fail 訊息「010-new-ip-registration」
-    //就知道是 spec 第 10 條, 對 audit / 追溯都更穩定 (詳全域 CLAUDE.md §6.3 命名編號慣例).
-    let cases = [
-        {
-            name: 'E2E-001-account-block-trigger',
-            fn: async (b) => execAccountBlockTrigger(b.page, lang, testUsers.block1),
-        },
-        {
-            name: 'E2E-002-account-failure-reset',
-            fn: async (b) => execAccountFailureReset(b.page, lang, testUsers.reset2),
-        },
-        {
-            name: 'E2E-003-blocked-login-rejected',
-            fn: async (b) => execBlockedLoginRejected(b.page, lang, testUsers.targetBlocked),
-        },
-        {
-            name: 'E2E-004-block-expiry-implicit-unlock',
-            fn: async (b) => execBlockExpiryImplicitUnlock(b.page, lang, testUsers.targetExpired),
-        },
-        {
-            name: 'E2E-005-token-block-trigger',
-            fn: async (b) => {
-                let r = await execTokenBlockTrigger(b.page, lang, testUsers.token5)
-                return r.buf
-            },
-        },
-        {
-            name: 'E2E-006-ip-block-trigger',
-            fn: async (b) => {
-                let r = await execIpBlockTrigger(b.browserRef, lang, testUsers.ipblock6, `1.2.3.${ipSuf}`)
-                return r.buf
-            },
-        },
-        {
-            name: 'E2E-007-ip-blocked-rejected',
-            fn: async (b) => {
-                let r = await execIpBlockedRejected(b.browserRef, lang, `1.2.3.${ipSuf + 1}`)
-                return r.buf
-            },
-        },
-        {
-            name: 'E2E-008-ip-expiry-implicit-unlock',
-            fn: async (b) => {
-                let r = await execIpExpiryImplicitUnlock(b.browserRef, lang, `1.2.3.${ipSuf + 2}`)
-                return r.buf
-            },
-        },
-        {
-            name: 'E2E-010-new-ip-registration',
-            fn: async (b) => {
-                let r = await execNewIpRegistration(b.browserRef, lang, testUsers.ip9, `1.2.3.${ipSuf + 3}`)
-                return r.buf
-            },
-        },
-    ]
+//UI 文字語意斷言 (原本只在比對端): 頁面顯示統一登入失敗訊息 (D24 anti-enum, == 密碼錯誤文案; 子字串 loginIncorrect 命中 failedLoginForCatch 翻譯)
+async function assertLoginIncorrectShown(page, lang) {
+    let pageText = await page.evaluate(() => document.body.innerText || '')
+    assert.strict.equal(pageText.includes(kpUiText[lang].loginIncorrect), true, `應顯示統一登入失敗訊息, 實際前 200 字: ${pageText.slice(0, 200)}`)
+}
 
-    for (let { name, fn } of cases) {
-        if (!shouldGen(lang, name)) continue
-        console.log(`  ${name}`)
+//順序與 mocha it 相同 (產製順序 ≡ 比對順序); title 為 mocha it 標題 (--grep 依之); 本檔每案 1 張, 圖鍵即案例鍵.
+//編號對齊 spec bullet 順序 (非 mocha case index): 共 10 條 spec, gap 在 009.
+//  001-008: account/token/ip 系列封鎖機制
+//  009: 後端取不到 client IP (spec 標明「不測試」) → 無 baseline 檔留 gap
+//  010: new-ip-registration
+//如此 baseline 編號跟 spec bullet 一一對應, 看到 fail 訊息「010-new-ip-registration」
+//就知道是 spec 第 10 條, 對 audit / 追溯都更穩定 (詳全域 CLAUDE.md §6.3 命名編號慣例).
+//006-010 之 run 會以 ctx.browserRef 換掉瀏覽器 (帶 X-Forwarded-For), 原頁面已關, 故其斷言只讀 run 之回傳 (ctx.result).
+let cases = [
+    {
+        name: 'E2E-001-account-block-trigger',
+        title: `account-block-trigger: 真打 ${numForAccountLoginFailed + 1} 次失敗 → 即時封鎖 (D24) → DB timeBlocked 寫入 + 再登入 UI 顯示統一失敗訊息`,
+        run: (page, lang) => execAccountBlockTrigger(page, lang, makeTestUsers(lang).block1),
+        stages: ['E2E-001-account-block-trigger'],
+        semantic: async (ctx) => {
+            //UI 語意 (對應 spec E2E-001 驗證「UI 出現對應 i18n 之封鎖訊息」): 顯示統一失敗訊息
+            await assertLoginIncorrectShown(ctx.page, ctx.lang)
+            //UI 語意斷言 (對應 spec E2E-001 驗證「當前 URL 不含 view=user (仍停留登入頁)」): 不應 redirect 至 user view
+            let urlNow = ctx.page.url()
+            assert.strict.equal(urlNow.includes('view=user'), false)
+        },
+        verify: async (ctx) => {
+            //DB: user.timeBlocked 為未來時間 (對應 spec E2E-001 驗證「DB users.timeBlocked 為未來時間」)
+            let u = makeTestUsers(ctx.lang).block1
+            let users = await woItems.users.select({ id: u.id })
+            assert.strict.equal(users.length, 1)
+            let blockTime = new Date(users[0].timeBlocked).getTime()
+            assert.strict.equal(blockTime > Date.now(), true, `timeBlocked 應為未來時間, 實際 ${users[0].timeBlocked}`)
+        },
+    },
+    {
+        name: 'E2E-002-account-failure-reset',
+        title: `account-failure-reset: ${numForAccountLoginFailed} 次失敗 (達門檻邊界未封鎖) + 1 次成功 → 失敗歸零, 轉跳使用者資訊頁`,
+        run: (page, lang) => execAccountFailureReset(page, lang, makeTestUsers(lang).reset2),
+        stages: ['E2E-002-account-failure-reset'],
+        semantic: async (ctx) => {
+            //URL 跳 view=user (對應 spec E2E-002 驗證「當前 URL 含 view=user」)
+            let url = ctx.page.url()
+            assert.strict.match(url, /view=user/, `應跳至 user view, 實際 URL: ${url}`)
+        },
+        verify: async (ctx) => {
+            //user.timeBlocked 應仍空 (對應 spec E2E-002 驗證「DB users.timeBlocked 仍為空字串, 失敗紀錄已歸零、未觸發封鎖」)
+            //D07 門檻 >: numForAccountLoginFailed 次失敗 (== 上限, 未 > 上限) 本就不封鎖; 即時化下成功登入亦同步清空 in-memory 失敗紀錄.
+            let u = makeTestUsers(ctx.lang).reset2
+            await ctx.page.waitForTimeout(3000)
+            let users = await woItems.users.select({ id: u.id })
+            assert.strict.equal(users[0].timeBlocked, '', `失敗歸零後不應封鎖, 實際 "${users[0].timeBlocked}"`)
+        },
+    },
+    {
+        name: 'E2E-003-blocked-login-rejected',
+        title: 'blocked-login-rejected: timeBlocked=未來 + 正確密碼 → 顯示統一登入失敗訊息',
+        run: (page, lang) => execBlockedLoginRejected(page, lang, makeTestUsers(lang).targetBlocked),
+        stages: ['E2E-003-blocked-login-rejected'],
+        semantic: async (ctx) => {
+            //UI 語意 (對應 spec E2E-003 驗證「UI 出現對應 i18n 之封鎖訊息」): 顯示統一失敗訊息
+            await assertLoginIncorrectShown(ctx.page, ctx.lang)
+            //對應 spec E2E-003 驗證「當前 URL 不含 view=user (仍停留登入頁)」
+            let urlNow = ctx.page.url()
+            assert.strict.equal(urlNow.includes('view=user'), false)
+        },
+        verify: async (ctx) => {
+            //對應 spec E2E-003 驗證「DB users.timeBlocked 仍為未來時間」
+            let u = makeTestUsers(ctx.lang).targetBlocked
+            let users = await woItems.users.select({ id: u.id })
+            let blockTime = new Date(users[0].timeBlocked).getTime()
+            assert.strict.equal(blockTime > Date.now(), true)
+        },
+    },
+    {
+        name: 'E2E-004-block-expiry-implicit-unlock',
+        title: 'block-expiry-implicit-unlock: timeBlocked=創建後30s → 等33s過期 → 隱性解除 → 登入成功轉跳 user 頁',
+        timeout: 180000,
+        run: (page, lang) => execBlockExpiryImplicitUnlock(page, lang, makeTestUsers(lang).targetExpired),
+        stages: ['E2E-004-block-expiry-implicit-unlock'],
+        semantic: async (ctx) => {
+            let urlNow = ctx.page.url()
+            assert.strict.equal(urlNow.includes('view=user'), true, `應已 redirect 至 user view, 實際 URL: ${urlNow}`)
+        },
+    },
+    {
+        name: 'E2E-005-token-block-trigger',
+        title: `token-block-trigger: Promise.allSettled ${numForTokenCallApi + 1} 次 getSsoUserInfor → token 失效, reload 後落回登入頁`,
+        //回傳 { result, token, userId, buf, pageText, hasLogin }: 截圖取 buf, 其餘供斷言 (ctx.result)
+        run: (page, lang) => execTokenBlockTrigger(page, lang, makeTestUsers(lang).token5),
+        stages: ['E2E-005-token-block-trigger'],
+        semantic: async (ctx) => {
+            let r = ctx.result
+            //UI 語意: reload 後落回登入頁 (見 Log in 按鈕, 不被 autoLogin 拉回)
+            assert.strict.equal(r.hasLogin, true, `reload 後應落回登入頁見 Log in 按鈕, 實際前 200 字: ${r.pageText.slice(0, 200)}`)
+        },
+        verify: async (ctx) => {
+            let r = ctx.result
+            //API 拒絕
+            assert.strict.equal(r.result.state, 'error', `應 reject, 實際 state=${r.result.state}`)
+            //ADR-006 對外統一 防 information leakage. getSsoUserInfor 為 server-to-server REST endpoint
+            //(非 kpfun, 不經 _tErr 翻譯), 回 machine-readable key 'tokenExpired' 供 API caller 判斷.
+            //(批 A: token 驗證鏈 reject 改回 key 名, checkToken/checkTokenByObj catch 統一 'tokenExpired'.)
+            assert.strict.equal(r.result.msg, 'tokenExpired', `應回報 key 'tokenExpired' (ADR-006 統一), 實際 msg=${r.result.msg}`)
 
-        //per-case fresh DB + browser, 與 mocha beforeEach 對稱
-        //先重置為 base seed (wipe users/tokens/ips + 插 3 users/4 tokens), 再清自己特化資料殘留.
-        //須在 fn (內含 insertUser/insertIpWithBlockState) 之前, 因 resetToBaseSeed 會 wipe ips 表.
-        await resetToBaseSeed()
-        await deleteAllTestUsers(testUsers)
-        for (let ip of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) {
-            await deleteIpRecord(ip)
-        }
-        await cleanKpIpCallApi()
-        await cleanKpAccountLoginFailed()
+            //DB token 已刪
+            let tokens = await woItems.tokens.select({ userId: r.userId })
+            assert.strict.equal(tokens.length, 0, `token 應被刪除, 實際剩 ${tokens.length} 筆`)
 
-        let browser = await launchBrowser()
-        let context = await browser.newContext()
-        let page = await context.newPage()
-        page.on('dialog', (d) => d.accept())
+            //user.timeBlocked 未來時間
+            let users = await woItems.users.select({ id: r.userId })
+            let blockTime = new Date(users[0].timeBlocked).getTime()
+            assert.strict.equal(blockTime > Date.now(), true)
+        },
+    },
+    {
+        name: 'E2E-006-ip-block-trigger',
+        title: `ip-block-trigger: Promise.allSettled ${numForIpCallApi + 1} 次 $fapi.getWebInfor → C timer 觸發 → 進登入頁 10s 後仍卡 Connecting`,
+        timeout: 600000,
+        //回傳 { buf, ips, pageText, hasConnecting, hasLogin }
+        run: (page, lang, ctx) => execIpBlockTrigger(ctx.browserRef, lang, makeTestUsers(lang).ipblock6, `1.2.3.${ipSufOf(lang)}`),
+        stages: ['E2E-006-ip-block-trigger'],
+        semantic: async (ctx) => {
+            let r = ctx.result
+            //驗 2 UI 語意: 10s 後仍顯示 Connecting, 不應出現 Log in 按鈕
+            assert.strict.equal(r.hasConnecting, true, `10s 後應仍顯示 Connecting, 實際前 200 字: ${r.pageText.slice(0, 200)}`)
+            assert.strict.equal(r.hasLogin, false, `不應出現 Log in 按鈕, 實際前 200 字: ${r.pageText.slice(0, 200)}`)
+        },
+        verify: async (ctx) => {
+            let r = ctx.result
+            let virtIp = `1.2.3.${ipSufOf(ctx.lang)}`
+            //驗 1 DB: ips.timeBlocked 為未來時間 (run 內刪除該 IP 紀錄前所讀)
+            assert.strict.equal(r.ips.length, 1, `ips 表應有 ${virtIp} 紀錄, 實際 ${r.ips.length} 筆`)
+            let blockTime = new Date(r.ips[0].timeBlocked).getTime()
+            assert.strict.equal(blockTime > Date.now(), true, `timeBlocked 應為未來時間, 實際 ${r.ips[0].timeBlocked}`)
+        },
+    },
+    {
+        name: 'E2E-007-ip-blocked-rejected',
+        title: 'ip-blocked-rejected: ips.timeBlocked=未來 + X-Forwarded-For 該 IP → 進登入頁卡 Connecting',
+        //回傳 { buf, pageText, hasConnecting, hasLogin }
+        run: (page, lang, ctx) => execIpBlockedRejected(ctx.browserRef, lang, `1.2.3.${ipSufOf(lang) + 1}`),
+        stages: ['E2E-007-ip-blocked-rejected'],
+        semantic: async (ctx) => {
+            let r = ctx.result
+            assert.strict.equal(r.hasConnecting, true, `10s 後應仍顯示 Connecting, 實際前 200 字: ${r.pageText.slice(0, 200)}`)
+            assert.strict.equal(r.hasLogin, false, `不應出現 Log in 按鈕, 實際前 200 字: ${r.pageText.slice(0, 200)}`)
+        },
+    },
+    {
+        name: 'E2E-008-ip-expiry-implicit-unlock',
+        title: 'ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單',
+        //回傳 { buf, pageText, hasLogin }
+        run: (page, lang, ctx) => execIpExpiryImplicitUnlock(ctx.browserRef, lang, `1.2.3.${ipSufOf(lang) + 2}`),
+        stages: ['E2E-008-ip-expiry-implicit-unlock'],
+        semantic: async (ctx) => {
+            let r = ctx.result
+            assert.strict.equal(r.hasLogin, true, `過期後應可進登入頁見 Log in 按鈕, 實際前 200 字: ${r.pageText.slice(0, 200)}`)
+        },
+    },
+    {
+        name: 'E2E-010-new-ip-registration',
+        title: 'new-ip-registration: 新 IP 成功登入轉跳使用者資訊頁 → D timer 觸發 → ips 表自動補登記',
+        //回傳 { buf, url, ips }
+        run: (page, lang, ctx) => execNewIpRegistration(ctx.browserRef, lang, makeTestUsers(lang).ip9, `1.2.3.${ipSufOf(lang) + 3}`),
+        stages: ['E2E-010-new-ip-registration'],
+        semantic: async (ctx) => {
+            //URL 跳 view=user
+            assert.strict.match(ctx.result.url, /view=user/, `應跳至 user view, 實際 URL: ${ctx.result.url}`)
+        },
+        verify: async (ctx) => {
+            let r = ctx.result
+            let virtIp = `1.2.3.${ipSufOf(ctx.lang) + 3}`
+            //ips 表自動補登記 (run 內刪除該 IP 紀錄前所讀)
+            assert.strict.equal(r.ips.length, 1, `ips 表應有 ${virtIp} 紀錄, 實際 ${r.ips.length} 筆`)
+            assert.strict.equal(r.ips[0].timeBlocked, '', `純登記, timeBlocked 應為空, 實際 "${r.ips[0].timeBlocked}"`)
+        },
+    },
+]
 
-        //部分 case 需重建 browser context (帶 X-Forwarded-For), 透過 ref 物件讓 exec 能換掉 browser
-        let browserRef = { current: browser }
-
-        try {
-            let buf = await fn({ page, browserRef })
-            if (buf) writeBaseline(lang, name, buf)
-        }
-        finally {
-            if (browserRef.current) {
-                await browserRef.current.close().catch(() => {})
+//單一案例管線: per-case 前置 (DB 重置 + 本語系特化帳號清除 + 本機 IP 紀錄清除 + in-memory 計數清除; 開瀏覽器前, 兩端同序)
+//→ fresh browser (新 context, 自動接受 dialog; 006-010 由 run 以 ctx.browserRef 換成帶 X-Forwarded-For 之瀏覽器, finally 關最新者)
+//→ 流程 → 語意斷言 → DB / API 不變式 → 寫檔 / 比對 → 關瀏覽器 → 清資料
+async function runCase(mode, lang, c, extra = {}) {
+    return await runBaselineCase({
+        mode,
+        lang,
+        name: c.name,
+        run: c.run,
+        stages: c.stages,
+        semantic: c.semantic,
+        verify: c.verify,
+        launch: launchBrowser,
+        pathOf: bp,
+        labelOf: (lg, key) => `autoblock-${lg}-${key}`,
+        match: assertBaselineMatch,
+        prepare: async () => {
+            //先重置為 canonical base seed (wipe users/tokens/ips 全表 + 插入 3 users + 4 tokens),
+            //再清自己的特化資料殘留 + reset in-memory rate-limit state.
+            //resetToBaseSeed 會 wipe ips 表, 故須在每 case 自己 insertUser/insertIpWithBlockState (於 run 內) 之前呼叫.
+            await resetToBaseSeed()
+            await deleteAllTestUsers(makeTestUsers(lang))
+            for (let ip of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) {
+                await deleteIpRecord(ip)
             }
-        }
-
-        //per-case teardown: deleteNonBaseSeed 清掉所有非 base seed users + tokens 並 wipe ips,
-        //取代原本的 deleteAllTestUsers (DB rows). in-memory rate-limit 計數由下一輪迴圈開頭的
-        //cleanKpIpCallApi() / cleanKpAccountLoginFailed() 重置, deleteNonBaseSeed 不涵蓋.
-        await deleteNonBaseSeed()
-    }
+            await cleanKpIpCallApi()
+            await cleanKpAccountLoginFailed()
+        },
+        afterCase: async () => {
+            //deleteNonBaseSeed 清掉所有非 base seed 的 users + tokens 並 wipe ips 表.
+            //server in-memory rate-limit 計數 (kpIpCallApi / kpAccountLoginFailed) 不屬 DB rows, 不涵蓋,
+            //由下一案 prepare 之 cleanKpIpCallApi() + cleanKpAccountLoginFailed() 重置.
+            await deleteNonBaseSeed()
+        },
+        ...extra,
+    })
 }
 
 
+// ===================================================================
+// 產生標準圖
+// ===================================================================
+
 async function generateBaseline() {
     process.env.E2E_STRICT_CAPTURE = '1'
+    //截圖前篩選 (--names / --langs / --write-mode / E2E_BASELINE_OUT_DIR); 不符任何鍵即於此報錯
+    let gate = createBaselineGate({ langs, cases })
+    console.log(gate.describe())
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    for (let lang of langs) {
+    for (let lang of gate.langs) {
         console.log(`=== 產生標準圖（${lang}）===`)
-        await generateBaselineForLang(lang)
+        for (let c of gate.casesFor(lang)) {
+            console.log(`  ${c.name}`)
+            await runCase('regen', lang, c, { gate })
+        }
     }
-
-    //token-block 不出 baseline, 略過產製階段
+    //--names 之任一項未產出即報錯 (不靜默略過)
+    gate.finalize()
 
     console.log('=== 標準圖產生完成 ===')
 
@@ -770,217 +909,24 @@ else {
 
     for (let lang of langs) {
 
-        let browser
-        let page
-        let testUsers = makeTestUsers(lang)
-
         describe(`AutoBlock E2E [${lang}] — 自動封鎖機制完整覆蓋`, function() {
             this.timeout(180000)
 
+            //per-case 獨立 (DB 重置 + in-memory 計數清除 + fresh browser) 由 runCase 負責, 確保單 case --grep 也能跑
             beforeEach(async function() {
                 this.timeout(180000)
                 await startServersOnce()
-
-                //先重置為 canonical base seed (wipe users/tokens/ips 全表 + 插入 3 users + 4 tokens),
-                //再清自己的特化資料殘留 + reset in-memory rate-limit state.
-                //resetToBaseSeed 會 wipe ips 表, 故須在每 case 自己 insertUser/insertIpWithBlockState 之前呼叫.
-                //(autoblock 的 own-data insert 發生在各 it() 內的 exec* 函式, beforeEach 是唯一共同前置點)
-                await resetToBaseSeed()
-
-                await deleteAllTestUsers(testUsers)
-                for (let ip of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) {
-                    await deleteIpRecord(ip)
-                }
-                await cleanKpIpCallApi()
-                await cleanKpAccountLoginFailed()
-
-                browser = await launchBrowser()
-                let context = await browser.newContext()
-                page = await context.newPage()
-                page.on('dialog', (d) => d.accept())
             })
 
-            afterEach(async function() {
-                if (browser) {
-                    await browser.close().catch(() => {})
-                    browser = null
-                }
-                //deleteNonBaseSeed 已清掉所有非 base seed 的 users + tokens 並 wipe ips 表,
-                //取代原本的 deleteAllTestUsers (DB rows). server in-memory rate-limit 計數
-                //(kpIpCallApi / kpAccountLoginFailed) 不屬 DB rows, deleteNonBaseSeed 不涵蓋,
-                //由 beforeEach 的 cleanKpIpCallApi() + cleanKpAccountLoginFailed() 重置 (此處不需重複).
-                await deleteNonBaseSeed()
-            })
-
-
-            async function assertBaseline(buf, caseName) {
-                let baselinePath = bp(lang, caseName)
-                //fail 時自動保留 capture + baseline 到 ./testPending (不覆蓋, 帶 timestamp) 供 diff
-                assertBaselineMatch(buf, baselinePath, `autoblock-${lang}-${caseName}`)
+            //語意斷言與 DB / API 不變式皆於比對標準圖之前 (pixel baseline 為補強層); 個別案例之 it timeout 保留 (004: 180000, 006: 600000)
+            for (let c of cases) {
+                it(c.title, async function() {
+                    if (c.timeout) {
+                        this.timeout(c.timeout)
+                    }
+                    await runCase('compare', lang, c, { onKnownDefect: () => this.skip() })
+                })
             }
-
-
-            it(`account-block-trigger: 真打 ${numForAccountLoginFailed + 1} 次失敗 → 即時封鎖 (D24) → DB timeBlocked 寫入 + 再登入 UI 顯示統一失敗訊息`, async function() {
-                let u = testUsers.block1
-                let buf = await execAccountBlockTrigger(page, lang, u)
-                await assertBaseline(buf, 'E2E-001-account-block-trigger')
-
-                //DB: user.timeBlocked 為未來時間 (對應 spec E2E-001 驗證「DB users.timeBlocked 為未來時間」)
-                let users = await woItems.users.select({ id: u.id })
-                assert.strict.equal(users.length, 1)
-                let blockTime = new Date(users[0].timeBlocked).getTime()
-                assert.strict.equal(blockTime > Date.now(), true, `timeBlocked 應為未來時間, 實際 ${users[0].timeBlocked}`)
-
-                //UI 語意 (對應 spec E2E-001 驗證「UI 出現對應 i18n 之封鎖訊息」): 顯示統一失敗訊息
-                //(D24 anti-enum, == 密碼錯誤文案; 子字串 loginIncorrect 命中 failedLoginForCatch 翻譯)
-                let pageText = await page.evaluate(() => document.body.innerText || '')
-                assert.strict.equal(pageText.includes(kpUiText[lang].loginIncorrect), true, `應顯示統一登入失敗訊息, 實際前 200 字: ${pageText.slice(0, 200)}`)
-
-                //UI 語意斷言 (對應 spec E2E-001 驗證「當前 URL 不含 view=user (仍停留登入頁)」): 不應 redirect 至 user view
-                let urlNow = page.url()
-                assert.strict.equal(urlNow.includes('view=user'), false)
-            })
-
-
-            it(`account-failure-reset: ${numForAccountLoginFailed} 次失敗 (達門檻邊界未封鎖) + 1 次成功 → 失敗歸零, 轉跳使用者資訊頁`, async function() {
-                let u = testUsers.reset2
-                let buf = await execAccountFailureReset(page, lang, u)
-                await assertBaseline(buf, 'E2E-002-account-failure-reset')
-
-                //URL 跳 view=user (對應 spec E2E-002 驗證「當前 URL 含 view=user」)
-                let url = page.url()
-                assert.strict.match(url, /view=user/, `應跳至 user view, 實際 URL: ${url}`)
-
-                //user.timeBlocked 應仍空 (對應 spec E2E-002 驗證「DB users.timeBlocked 仍為空字串, 失敗紀錄已歸零、未觸發封鎖」)
-                //D07 門檻 >: numForAccountLoginFailed 次失敗 (== 上限, 未 > 上限) 本就不封鎖; 即時化下成功登入亦同步清空 in-memory 失敗紀錄.
-                await page.waitForTimeout(3000)
-                let users = await woItems.users.select({ id: u.id })
-                assert.strict.equal(users[0].timeBlocked, '', `失敗歸零後不應封鎖, 實際 "${users[0].timeBlocked}"`)
-            })
-
-
-            it('blocked-login-rejected: timeBlocked=未來 + 正確密碼 → 顯示統一登入失敗訊息', async function() {
-                let u = testUsers.targetBlocked
-                let buf = await execBlockedLoginRejected(page, lang, u)
-                await assertBaseline(buf, 'E2E-003-blocked-login-rejected')
-
-                //UI 語意 (對應 spec E2E-003 驗證「UI 出現對應 i18n 之封鎖訊息」): 顯示統一失敗訊息
-                //(D24 anti-enum, == 密碼錯誤文案; 子字串 loginIncorrect 命中 failedLoginForCatch 翻譯)
-                let pageText = await page.evaluate(() => document.body.innerText || '')
-                assert.strict.equal(pageText.includes(kpUiText[lang].loginIncorrect), true, `應顯示統一登入失敗訊息, 實際前 200 字: ${pageText.slice(0, 200)}`)
-
-                //對應 spec E2E-003 驗證「當前 URL 不含 view=user (仍停留登入頁)」
-                let urlNow = page.url()
-                assert.strict.equal(urlNow.includes('view=user'), false)
-
-                //對應 spec E2E-003 驗證「DB users.timeBlocked 仍為未來時間」
-                let users = await woItems.users.select({ id: u.id })
-                let blockTime = new Date(users[0].timeBlocked).getTime()
-                assert.strict.equal(blockTime > Date.now(), true)
-            })
-
-
-            it('block-expiry-implicit-unlock: timeBlocked=創建後30s → 等33s過期 → 隱性解除 → 登入成功轉跳 user 頁', async function() {
-                this.timeout(180000)
-                let u = testUsers.targetExpired
-                let buf = await execBlockExpiryImplicitUnlock(page, lang, u)
-                await assertBaseline(buf, 'E2E-004-block-expiry-implicit-unlock')
-
-                let urlNow = page.url()
-                assert.strict.equal(urlNow.includes('view=user'), true, `應已 redirect 至 user view, 實際 URL: ${urlNow}`)
-            })
-
-
-            it(`token-block-trigger: Promise.allSettled ${numForTokenCallApi + 1} 次 getSsoUserInfor → token 失效, reload 後落回登入頁`, async function() {
-                let u = testUsers.token5
-                let r = await execTokenBlockTrigger(page, lang, u)
-
-                await assertBaseline(r.buf, 'E2E-005-token-block-trigger')
-
-                //API 拒絕
-                assert.strict.equal(r.result.state, 'error', `應 reject, 實際 state=${r.result.state}`)
-                //ADR-006 對外統一 防 information leakage. getSsoUserInfor 為 server-to-server REST endpoint
-                //(非 kpfun, 不經 _tErr 翻譯), 回 machine-readable key 'tokenExpired' 供 API caller 判斷.
-                //(批 A: token 驗證鏈 reject 改回 key 名, checkToken/checkTokenByObj catch 統一 'tokenExpired'.)
-                assert.strict.equal(r.result.msg, 'tokenExpired', `應回報 key 'tokenExpired' (ADR-006 統一), 實際 msg=${r.result.msg}`)
-
-                //DB token 已刪
-                let tokens = await woItems.tokens.select({ userId: r.userId })
-                assert.strict.equal(tokens.length, 0, `token 應被刪除, 實際剩 ${tokens.length} 筆`)
-
-                //user.timeBlocked 未來時間
-                let users = await woItems.users.select({ id: r.userId })
-                let blockTime = new Date(users[0].timeBlocked).getTime()
-                assert.strict.equal(blockTime > Date.now(), true)
-
-                //UI 語意: reload 後落回登入頁 (見 Log in 按鈕, 不被 autoLogin 拉回)
-                assert.strict.equal(r.hasLogin, true, `reload 後應落回登入頁見 Log in 按鈕, 實際前 200 字: ${r.pageText.slice(0, 200)}`)
-            })
-
-
-            it(`ip-block-trigger: Promise.allSettled ${numForIpCallApi + 1} 次 $fapi.getWebInfor → C timer 觸發 → 進登入頁 10s 後仍卡 Connecting`, async function() {
-                this.timeout(600000)
-                let u = testUsers.ipblock6
-                let virtIp = `1.2.3.${lang === 'eng' ? 100 : 200}`
-                let browserRef = { current: browser }
-                let r = await execIpBlockTrigger(browserRef, lang, u, virtIp)
-                //更新 outer browser 變數 (afterEach 須能關到最新 browser)
-                browser = browserRef.current
-
-                await assertBaseline(r.buf, 'E2E-006-ip-block-trigger')
-
-                //驗 1 DB: ips.timeBlocked 為未來時間
-                assert.strict.equal(r.ips.length, 1, `ips 表應有 ${virtIp} 紀錄, 實際 ${r.ips.length} 筆`)
-                let blockTime = new Date(r.ips[0].timeBlocked).getTime()
-                assert.strict.equal(blockTime > Date.now(), true, `timeBlocked 應為未來時間, 實際 ${r.ips[0].timeBlocked}`)
-
-                //驗 2 UI 語意: 10s 後仍顯示 Connecting, 不應出現 Log in 按鈕
-                assert.strict.equal(r.hasConnecting, true, `10s 後應仍顯示 Connecting, 實際前 200 字: ${r.pageText.slice(0, 200)}`)
-                assert.strict.equal(r.hasLogin, false, `不應出現 Log in 按鈕, 實際前 200 字: ${r.pageText.slice(0, 200)}`)
-            })
-
-
-            it('ip-blocked-rejected: ips.timeBlocked=未來 + X-Forwarded-For 該 IP → 進登入頁卡 Connecting', async function() {
-                let virtIp = `1.2.3.${lang === 'eng' ? 101 : 201}`
-                let browserRef = { current: browser }
-                let r = await execIpBlockedRejected(browserRef, lang, virtIp)
-                browser = browserRef.current
-
-                await assertBaseline(r.buf, 'E2E-007-ip-blocked-rejected')
-
-                assert.strict.equal(r.hasConnecting, true, `10s 後應仍顯示 Connecting, 實際前 200 字: ${r.pageText.slice(0, 200)}`)
-                assert.strict.equal(r.hasLogin, false, `不應出現 Log in 按鈕, 實際前 200 字: ${r.pageText.slice(0, 200)}`)
-            })
-
-
-            it('ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單', async function() {
-                let virtIp = `1.2.3.${lang === 'eng' ? 102 : 202}`
-                let browserRef = { current: browser }
-                let r = await execIpExpiryImplicitUnlock(browserRef, lang, virtIp)
-                browser = browserRef.current
-
-                await assertBaseline(r.buf, 'E2E-008-ip-expiry-implicit-unlock')
-
-                assert.strict.equal(r.hasLogin, true, `過期後應可進登入頁見 Log in 按鈕, 實際前 200 字: ${r.pageText.slice(0, 200)}`)
-            })
-
-
-            it('new-ip-registration: 新 IP 成功登入轉跳使用者資訊頁 → D timer 觸發 → ips 表自動補登記', async function() {
-                let u = testUsers.ip9
-                let virtIp = `1.2.3.${lang === 'eng' ? 103 : 203}`
-                let browserRef = { current: browser }
-                let r = await execNewIpRegistration(browserRef, lang, u, virtIp)
-                browser = browserRef.current
-
-                await assertBaseline(r.buf, 'E2E-010-new-ip-registration')
-
-                //URL 跳 view=user
-                assert.strict.match(r.url, /view=user/, `應跳至 user view, 實際 URL: ${r.url}`)
-
-                //ips 表自動補登記
-                assert.strict.equal(r.ips.length, 1, `ips 表應有 ${virtIp} 紀錄, 實際 ${r.ips.length} 筆`)
-                assert.strict.equal(r.ips[0].timeBlocked, '', `純登記, timeBlocked 應為空, 實際 "${r.ips[0].timeBlocked}"`)
-            })
 
         })
 

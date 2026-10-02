@@ -2,656 +2,141 @@
 //.env 已 gitignore, 不會進 repo. mocha 跑時須先有此檔; 若無則 env var 用呼叫端
 //export 提供, 或單一 case 自行檢查並 throw (詳 e2e-login.test.mjs:14 註解).
 import 'dotenv/config'
-import { spawn, execSync } from 'child_process'
-import fs from 'fs'
+import { spawn } from 'child_process'
 import path from 'path'
-import JSON5 from 'json5'
-import sharp from 'sharp'
-import pixelmatch from 'pixelmatch'
-import { PNG } from 'pngjs'
 import { fileURLToPath } from 'url'
-import launchChromium from 'w-package-tools-e2e/src/launchChromium.mjs'
 import { woItems } from '../../g_mOrm.mjs'
 import { buildBaseUsers, buildBaseTokens } from '../../g_initialData.mjs'
+//e2e 共用設施 (2026-09-27 起組裝自本專案 ./srcPack; 2026-09-29 起為 devDependency w-package-tools-e2e 1.0.2, 同名同行為; 2026-09-30 起 1.0.3; 規格與 API 詳其 README.md; 一律經 ./e2eLib.mjs 引用).
+//本檔只保留本專案之組態 (port、spawn 指令、WDrawer settle、資料庫種子), 匯出名稱與簽章與抽提前相同, 測試檔不必改 import.
+import {
+    getE2eMode,
+    chromiumLaunchArgs,
+    launchBrowser as pkgLaunchBrowser,
+    captureStable as pkgCaptureStable,
+    captureStableWithBox as pkgCaptureStableWithBox,
+    composeBox as composeBoxCore,
+    waitColResizeOverlay,
+    waitDrawerReady,
+    maskRegions,
+    overlayRegions,
+    assertBaselineMatch,
+    typeIntoInput,
+    typeIntoNthInput,
+    waitUntilExist,
+    createTempSettings,
+    createServiceManager,
+    registerCleanupHooks,
+    itemsUnionBox,
+    probeStuckTooltip as pkgProbeStuckTooltip
+} from './e2eLib.mjs'
 
 //REGEN: 標準圖產製模式 (各檔直跑 --baseline 或 env E2E_REGEN=1). 供「只在 regen 才允許之副作用」判斷 (如 _staref 自舉)
-//規則: 診斷 env 生效時絕不可寫正式 baseline (技能 references/pixel-mismatch-diagnosis.md §6)
-let REGEN = process.argv.includes('--baseline') || process.env.E2E_REGEN === '1'
-if (REGEN && (process.env.E2E_BARE || process.env.E2E_DIAG)) {
-    throw new Error('拒絕在診斷 env (E2E_BARE / E2E_DIAG) 下寫入正式 baseline')
-}
+//規則: 診斷 env (E2E_BARE / E2E_DIAG) 生效時絕不可寫正式 baseline, getE2eMode 於此拋錯 (技能 references/pixel-mismatch-diagnosis.md §6)
+let { regen: REGEN } = getE2eMode()
 
-//確定性渲染組 (全專案唯一 launchChromium 出口; 技能 §8.4). headless Chromium 預設 GPU 光柵化 + subpixel 字形 AA
-//在像素比對下非決定性 (eng 拉丁字偶發散落差異, CJK 灰階 AA 較穩故常只 eng 中招); 六旗標為姊妹專案實測組
-//(self-consistency 2/4 → 5/5). 2026-09-01 由舊四旗標 (--font-render-hinting=none 版) 升級, 全量重產 baseline.
-let chromiumLaunchArgs = [
-    '--disable-gpu', //改走 CPU Skia (本已軟體合成之機器為 no-op, 仍保留防環境變動)
-    '--force-color-profile=srgb', //固定色彩管理
-    '--disable-lcd-text', //關 LCD 次像素文字 AA → 灰階 AA
-    '--disable-font-subpixel-positioning', //關字形次像素定位
-    '--disable-skia-runtime-opts', //關 Skia runtime 最佳化分支
-    '--disable-partial-raster', //關部分光柵化 → 消 tile 重用殘影 / 位移
-]
+//確定性渲染組六旗標 (chromiumLaunchArgs) 與唯一 launch 出口; 2026-09-01 由舊四旗標升級並全量重產 baseline (技能 §8.4)
 async function launchBrowser() {
-    //launchChromium, 缺Playwright指定版本之瀏覽器時首次啟動自動下載(與本機同版), 由w-package-tools-e2e提供
-    return await launchChromium({ headless: true, args: chromiumLaunchArgs })
+    return await pkgLaunchBrowser()
 }
 
 //
-// e2e 共用 base URL
-//
-// 一律用 127.0.0.1 不用 localhost: webpack-dev-server (8080) 只綁 IPv4 (0.0.0.0),
-// 瀏覽器解析 localhost 會先試 IPv6 ::1 → 連線失敗 → 回退 IPv4, 每次連線多 ~155ms
-// (Happy-Eyeballs 回退延遲). 直接用 127.0.0.1 跳過 IPv6 解析, 每請求從 ~180ms 降到 ~15ms.
+// e2e 共用 base URL: 一律 127.0.0.1 不用 localhost (webpack-dev-server 只綁 IPv4, localhost 先試 ::1 每連線多 ~155ms)
 //
 let baseUrl = 'http://127.0.0.1:8080'
 let apiUrl = 'http://127.0.0.1:11007'
 
+
+//臨時 settings: 以 ./settings.json (JSON5) 淺合併 overrides 寫出純 JSON 至 test/_tmp/ (gitignore; ./tmp 為 AI 暫存區不可用),
+//供需不同設定啟動 backend 之情境 (如 allowUserRegistration=false); cleanup() 逐檔刪除
+let { genTempSettings, cleanupTempSettings } = createTempSettings({
+    basePath: './settings.json',
+    tmpDir: path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '_tmp'),
+})
+
+
 //
-// e2e 測試自動啟動／關閉前後端 server
+// e2e 自動啟動 / 關閉前後端 (沿用政策 reuse):
+// - startServersOnce(): 11007 / 8080 各自偵測, port 沒人 → spawn; 已被佔用 → 沿用 (不 spawn 也不負責關); 之後之呼叫不再偵測
+// - restartBackend(pathSettings, envOverride): 殺自建 backend 並等 port 釋放; backend 非自建 (沿用中) 而 11007 被佔用 → 殺其監聽者
+//   (11007 專屬本專案, CLAUDE.md 明文例外), 再以 node srv.mjs <pathSettings> 重啟並等 ready.
+//   envOverride: 與 process.env 淺合併後傳 spawn, 只作用於本次. why: backend 最終設定 = settings 檔 overlay g_getSettings(),
+//   後者會把 .env 之 EM_SRC_* 覆寫進去 (連 genTempSettings 都被蓋掉), 但 g_getSettings 之 loadEnv 對「process.env 已有之 key」不從 .env 載入,
+//   故在 spawn env 預先放 EM_SRC_HOST 等即可使 .env 失效 (典型: E2E-021 以 EM_SRC_PORT=1 讓寄信瞬間失敗)
+// - cleanup(): 只殺自己 spawn 的、重置一次性狀態 (中途被誤呼叫後之 startServersOnce 能重新偵測, ADR-057)、刪臨時 settings
+// - 觸發 cleanup: mocha root after (子進程 hold event loop, 不能只靠 exit) + exit / SIGINT / SIGTERM 備援; 直跑 --baseline 由各檔主函式末尾呼叫
 //
-// 行為：
-// - 第一次呼叫 startServersOnce()：對 11007 / 8080 各自檢查，
-//   port 沒人 → spawn；port 已被佔用 → 重用（不 spawn 也不負責關）
-// - 後續呼叫：只認 started 旗標，立即 return（多個 e2e 檔共用同一份 server）
-// - 「只關自己 spawn 的」：cleanup 只殺 backendProc / frontendProc 兩個變數指向的 process，
-//   完全沒 spawn 過 → cleanup 是 no-op
-//
-// 觸發 cleanup 的時機（防卡 mocha exit）：
-// - mocha root after()：主動在 mocha teardown 階段觸發, 子進程死 → event loop 清空 → mocha exit
-//   (不能只靠 process.on('exit', cleanup) — 它要等 event loop 清空才觸發, 但 spawn 的子進程
-//    本身 hold 著 event loop, 形成死結)
-// - SIGINT / SIGTERM：使用者 Ctrl+C 中斷時走這條
-// - process.on('exit') 備援：mocha 沒有 after global (例: 走 --baseline 路徑直接 node 跑) 時
-//
-
-let backendProc = null
-let frontendProc = null
-let started = false
-
-
-async function isPortUp(port) {
-    try {
-        let ctrl = new AbortController()
-        let timer = setTimeout(() => ctrl.abort(), 1500)
-        await fetch(`http://127.0.0.1:${port}/`, { signal: ctrl.signal })
-        clearTimeout(timer)
-        return true
-    }
-    catch (err) {
-        return false
-    }
-}
-
-
-async function waitForPort(port, timeoutMs) {
-    let start = Date.now()
-    while (Date.now() - start < timeoutMs) {
-        if (await isPortUp(port)) {
-            return
-        }
-        await new Promise((r) => setTimeout(r, 500))
-    }
-    throw new Error(`server not ready on port ${port} after ${timeoutMs / 1000}s`)
-}
-
-
-function killProc(proc) {
-    if (!proc || proc.killed) {
-        return
-    }
-    if (process.platform === 'win32') {
-        // Windows: 殺整個 process tree（npm.cmd → node → vue-cli-service 等子孫）
-        try {
-            execSync(`taskkill /F /T /PID ${proc.pid}`, { stdio: 'ignore' })
-        }
-        catch (err) {
-            // already dead or pid invalid, ignore
-        }
-    }
-    else {
-        try {
-            proc.kill('SIGKILL')
-        }
-        catch (err) {
-            // ignore
-        }
-    }
-}
-
+let services = createServiceManager({
+    services: [
+        {
+            name: 'backend',
+            port: 11007,
+            readyTimeoutMs: 30000,
+            spawn: ({ args, env }) => spawn('node', ['srv.mjs', ...args], { stdio: 'ignore', env }),
+        },
+        {
+            name: 'frontend',
+            port: 8080,
+            readyTimeoutMs: 90000, //vue-cli-service serve 首次編譯約 15~30 秒
+            startNote: 'first compile ~15-30s',
+            //單一指令字串: shell:true 帶參數陣列會觸發 Node 24 DEP0190(參數只被串接、不跳脫; 2026-09-30 改, 指令列相同)
+            spawn: () => spawn('npm run serve', { stdio: 'ignore', shell: true }),
+        },
+    ],
+    killForeignOnRestart: true,
+    onCleanup: () => cleanupTempSettings(),
+})
 
 async function startServersOnce() {
-    if (started) {
-        return
-    }
-    started = true
-
-    // backend (port 11007)
-    if (await isPortUp(11007)) {
-        console.log('[e2e-setup] backend already running on 11007, reusing')
-    }
-    else {
-        console.log('[e2e-setup] starting backend (port 11007)...')
-        backendProc = spawn('node', ['srv.mjs'], { stdio: 'ignore' })
-        await waitForPort(11007, 30000)
-        console.log('[e2e-setup] backend ready')
-    }
-
-    // frontend (port 8080) — vue-cli-service serve 首次編譯約 15~30 秒
-    if (await isPortUp(8080)) {
-        console.log('[e2e-setup] frontend already running on 8080, reusing')
-    }
-    else {
-        console.log('[e2e-setup] starting frontend (port 8080), first compile ~15-30s...')
-        frontendProc = spawn('npm', ['run', 'serve'], { stdio: 'ignore', shell: true })
-        await waitForPort(8080, 90000)
-        console.log('[e2e-setup] frontend ready')
-    }
+    await services.startServersOnce()
 }
 
-
-//產生臨時 settings.json: 複製 ./settings.json, 套用 overrides, 寫到 ./tmp/ 回傳路徑.
-//用於 e2e 需要不同設定啟動 backend 的情境 (如 allowUserRegistration=false 測「不允許註冊」).
-//注意: 本專案 ./settings.json 為 JSON5 格式 (無引號鍵 / 單引號字串 / 註解 / 尾逗號),
-//backend 用 JSON5 解析 (server/procSettings.mjs), 故此處讀檔須用 JSON5.parse 不可用 JSON.parse.
-//寫出時用 JSON.stringify 產出純 JSON — JSON5 解析器吃純 JSON 沒問題, backend 啟動可正常讀取.
-//落點 test/_tmp/ (gitignore) 而非專案 ./tmp/: ./tmp/ 為 AI 代理暫存區隨時會被整個清除, 後端讀不到 settings 會啟動失敗; 三專案統一此目錄名.
-//測完即刪: 本進程產生者由 cleanup() 一併刪除 (追蹤路徑逐檔 rm, 目錄空了再 rmdir).
-let tmpSettingsSeq = 0
-let tmpSettingsFiles = []
-function genTempSettings(overrides = {}) {
-    let base = JSON5.parse(fs.readFileSync('./settings.json', 'utf8'))
-    let merged = { ...base, ...overrides }
-    let tmpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '_tmp')
-    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
-    let p = path.join(tmpDir, `settings-e2e-${process.pid}-${tmpSettingsSeq++}.json`)
-    fs.writeFileSync(p, JSON.stringify(merged, null, 2))
-    tmpSettingsFiles.push(p)
-    return p
-}
-function cleanupTempSettings() {
-    for (let p of tmpSettingsFiles) {
-        try {
-            fs.rmSync(p, { force: true })
-        }
-        catch (err) { /* ignore */ }
-    }
-    tmpSettingsFiles = []
-    try {
-        let tmpDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '_tmp')
-        if (fs.existsSync(tmpDir) && fs.readdirSync(tmpDir).length === 0) fs.rmdirSync(tmpDir)
-    }
-    catch (err) { /* ignore */ }
-}
-
-
-//以指定 settings 檔重啟 backend (殺掉現有 backendProc, 用 node srv.mjs <pathSettings> 重啟並等 ready).
-//給「需要特殊 settings 的單一 describe」用: before() restartBackend(genTempSettings({...})), after() restartBackend('./settings.json') 還原.
-//若 port 11007 已被佔用但 backendProc=null (代表「startServersOnce 階段偵測到外部已啟動的 backend 直接 reuse」場景),
-//原本實作 killProc(null) noop → spawn 新 backend 撞 port silent fail → 舊 backend 仍跑舊 settings → E2E-017 之類「settings overide」測試失敗.
-//修法: backendProc=null 時用 OS-level 查 port 11007 之 PID + taskkill, 殺乾淨後才 spawn 新.
-//
-//envOverride: 可選, 注入額外環境變數給新 backend 進程 (與 process.env 淺合併後傳 spawn).
-//why 需要它而非僅靠 genTempSettings 改 settings 檔: backend 最終設定 = settings 檔 overlay g_getSettings()
-//(srv.mjs 把 g_getSettings() 當 optExt 傳入, WWebSso 內 { ...settings檔, ...optExt } → optExt 後蓋勝),
-//而 g_getSettings() 會把 .env 的 EM_SRC_* 等覆寫進 optExt → 真實 SMTP 憑證凌駕 settings 檔之上, 連
-//genTempSettings({emSrcHost:...}) 都被蓋掉. 但 g_getSettings 的 loadEnv 是「process.env 已有該 key 就不從
-//.env 載入」(g_getSettings.mjs:23) → 故在 spawn env 預先放 EM_SRC_HOST 等, 即可使 .env 失效、改用注入值.
-//典型用途: E2E-021 以 EM_SRC_HOST=127.0.0.1 / EM_SRC_PORT=1 (connection-refused) 讓 srEmail.send 瞬間失敗.
 async function restartBackend(pathSettings = './settings.json', envOverride = null) {
-    if (backendProc) {
-        killProc(backendProc)
-    }
-    else {
-        //backendProc=null 但 port 11007 可能被外部 backend 佔用 (startServersOnce reuse 過); OS-level 查 PID 殺乾淨
-        if (await isPortUp(11007)) {
-            if (process.platform === 'win32') {
-                try {
-                    let netstat = execSync('netstat -ano | findstr ":11007"', { encoding: 'utf8' })
-                    let lines = netstat.split(/\r?\n/).filter((l) => /LISTENING/.test(l))
-                    let pids = new Set()
-                    for (let line of lines) {
-                        let m = line.match(/\s(\d+)\s*$/)
-                        if (m) {
-                            pids.add(m[1])
-                        }
-                    }
-                    for (let pid of pids) {
-                        try {
-                            execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' })
-                        }
-                        catch (err) { /* already dead */ }
-                    }
-                }
-                catch (err) { /* netstat 失敗, fallback 不殺 (spawn 可能撞 port 但至少不 throw) */ }
-            }
-            else {
-                try {
-                    let out = execSync('lsof -ti:11007', { encoding: 'utf8' })
-                    let pids = out.trim().split(/\s+/).filter(Boolean)
-                    for (let pid of pids) {
-                        try {
-                            execSync(`kill -9 ${pid}`, { stdio: 'ignore' })
-                        }
-                        catch (err) { /* already dead */ }
-                    }
-                }
-                catch (err) { /* lsof 失敗, fallback */ }
-            }
-            //等舊 port 確實釋放, 避免新 spawn 立即被舊 socket 殘留干擾
-            let waitStart = Date.now()
-            while (Date.now() - waitStart < 5000) {
-                if (!(await isPortUp(11007))) break
-                await new Promise((r) => setTimeout(r, 200))
-            }
-        }
-    }
-    backendProc = null
-    //env: 預設繼承 process.env; 有 envOverride 時淺合併 (override 後蓋), 使注入之 EM_SRC_* 等先於 .env 生效 (詳函式 doc)
-    let spawnEnv = envOverride ? { ...process.env, ...envOverride } : process.env
-    backendProc = spawn('node', ['srv.mjs', pathSettings], { stdio: 'ignore', env: spawnEnv })
-    await waitForPort(11007, 30000)
+    await services.restart('backend', { args: [pathSettings], env: envOverride })
 }
 
-
-// 進程結束時 cleanup（只殺自己 spawn 的）
 function cleanup() {
-    if (frontendProc) {
-        killProc(frontendProc)
-        frontendProc = null
-    }
-    if (backendProc) {
-        killProc(backendProc)
-        backendProc = null
-    }
-    //重置 once 旗標: 若 cleanup 於進程中途被誤呼叫(如檔級 after), 後續檔案之 startServersOnce
-    //才能重新偵測/重啟, 不會拿著已死 port 直接 return (殷鑑: 單一 mocha 併跑 api-* 時
-    //api-autoblock-concurrency 檔級 cleanup 使其後所有檔案 ECONNREFUSED)
-    started = false
-    cleanupTempSettings()
+    services.cleanup()
 }
 
-process.on('exit', cleanup)
-process.on('SIGINT', () => {
-    cleanup()
-    process.exit(130)
-})
-process.on('SIGTERM', () => {
-    cleanup()
-    process.exit(143)
-})
-
-//mocha root after() — 主動在所有 test 跑完後觸發 cleanup, 殺掉自己 spawn 的子進程,
-//event loop 才能清空讓 mocha 順利 exit. 不註冊的話, process.on('exit', cleanup) 永遠等不到,
-//因為子進程 (backend srv.mjs / frontend npm run serve) 本身 hold 住 event loop.
-//走 --baseline 路徑時 (e2e-adduser 等) 不經 mocha, 此時 globalThis.after 未定義, 跳過.
-if (typeof globalThis.after === 'function') {
-    globalThis.after(function() {
-        this.timeout(20000)
-        cleanup()
-    })
-}
+//模組頂層註冊: 本檔被 api-setup.mjs 先 import, root after 因而排在其強制退出 (process.exit) 之前
+registerCleanupHooks(cleanup, { afterTimeoutMs: 20000 })
 
 
-//pixel baseline 截圖統一 helper: retry 至連續兩張一致再回傳, 治 cold-start /
-//CJK glyph lazy rasterization / GPU init / paint timing 等不可預測 pixel drift.
-//策略與 Playwright 內建 expect(page).toHaveScreenshot() 一致 (反覆截圖直到 settled).
-//
-//initialWaitMs 預設 1500ms: 開頭等一段, 因為 retry-until-stable 治不了 setTimeout-based
-//delayed-reveal (如 WDrawer 內 setTimeout 300ms 後才把拖曳分隔條 opacity 0→1).
-//Playwright animations:'disabled' 不 fast-forward setTimeout, 所以 captureStable 若
-//在 300ms 內 settle 會 catch 到「未 reveal」state, 跨 session 與「已 reveal」state
-//byte-mismatch. 1500ms initial wait 涵蓋 300ms × 3-5 連鎖動畫 + 確保 backstage sidebar
-//葉節點已 mount (供其後 drawer-ready 偵測判斷展開到位) → 確定性 catch reveal 後 final state.
-//
-//(詳: 全域 CLAUDE.md §6.3「截圖穩定性」+「setTimeout-based delayed reveal 的限制」)
-//
-//所有 baseline 端 (regen) 與比對端 (mocha) 都應用此 helper, 不要用裸 page.screenshot();
-//兩邊用同款 helper 才能保證 cold/warm browser 都產生一致的「page settled」截圖.
-//主動等 WDrawer drawer 整體「展開到位」(sidebar 導航項目 getBoundingClientRect x>=0) 之共用前置.
-//凡「進後台 (backstage)」之頁面都用 LayoutContent.vue 之 WDrawer 渲染左側 sidebar, 故所有
-//backstage 截圖前都須呼叫此 helper, 避免截到「sidebar 未展開」之 flake。
-//
-//根因 (w-screenctl 實測): backstage mount 後 navVisible (body innerText) 立即 ready, 但
-//WDrawer drawer 初始滑在 viewport 左外 (sidebar 導航項目 x≈-185), @domresize/autoSwitch
-//異步觸發後才滑入展開 (x>=0), 滯後 navDOM-ready ~150ms; 偶發 (CJK 字型光柵化 / 連跑資源
-//累積 / CPU 忙) 超過上游 wait → 截到 sidebar 空白 (flake: adduser-007 / resetpassword-
-//002/003/006 / modifyuser / stainfor-002 等 backstage 截圖, 後者 clip 區含 sidebar)。
-//
-//設計:
-//- 呼叫端須先確保 backstage sidebar 葉節點已 mount (captureStable 之 initialWaitMs=1500 /
-//  stainfor 之 waitStaInforReady/ErrMsg 已足); 此 helper 只負責「等 drawer 展開 x>=0」。
-//- 無 WDrawer 頁 (login / register / user view) 無 sidebar 帶導航葉節點 → items 為空 → 立即放行不卡。
-//- 偵測點用導航文字錨點 (eng + cht 全集) 而非 class (WDrawer 渲染後 DOM 無穩定 class)。
-//  ★ NAV 須與 LayoutContent.vue menus computed (mmStaInfor/mmUserInfor/mmUsersList/mmTokensList/
-//    mmIpsList) + server/procLang.mjs 對應 eng/cht 翻譯逐字同步; 未來新增/改名導航項須一併更新。
-//- 用 x < SIDEBAR_X_MAX 過濾「只看 viewport 左側 sidebar 帶」, 排除 content 區置中標題干擾:
-//  PageUser (user view) 以 $t('mmUserInfor') 置中當頁標題 (x≈viewport 中央); backstage content
-//  頁標題 x>=260; sidebar 導航項目 x: 展開 ~24-45 / flake 滑左外 ~-185, 皆 < 250。
-//- 失敗 (timeout) 不阻塞: .catch 吞掉, 交由呼叫端後續 retry-until-stable 兜底。
-//等 WDrawer 抽屜到達「穩定態」(opened/hidden) 才放行 — 讀 WDrawer 元件 export 的 state 屬性
-//(w-component-vue WDrawer.vue 根節點 :state, 由 drawer 平移 transitionend 決定性標記:
-// hidden / opening / opened / hiding). state='opened' = translateX 動畫真的跑完、定位到最終位置.
-//
-//why 改用 state 而非舊作法 (poll nav x 是否穩定): poll x 在高負載下 (全套長跑尾段 CPU 忙 /
-//setTimeout 階段被 throttle) 會被「減速尾段 / 階段間中間 hold」騙 — 連續兩次讀到相同 x 卻其實
-//還沒到終點 → 誤判停止而截到 mid-slide (殷鑑: rp-002/004 等 backstage 截圖之 ~6000px / 8px drawer
-//位移 flake, 獨立跑負載低恰好 settle 而矇對, 全套尾段才暴露). transitionend 為事件驅動 (compositor
-//完成 transition 才觸發), 不受主執行緒負載影響, 故 state='opened' 是可靠的「真正到位」訊號.
-//
-//非 backstage 頁 (login / register / user view) 無 WDrawer → 無 drawer state 元素 → 立即放行.
-async function waitDrawerReady(page) {
-    await page.waitForFunction(() => {
-        let drawerStates = Array.from(document.querySelectorAll('[state]'))
-            .map((e) => e.getAttribute('state'))
-            .filter((s) => ['hidden', 'opening', 'opened', 'hiding'].includes(s))
-        if (drawerStates.length === 0) {
-            return true //無 WDrawer (非 backstage 頁), 放行
-        }
-        //所有 drawer 須為穩定態 (opened 或 hidden), 不可停在 opening / hiding 過渡中
-        return drawerStates.every((s) => s === 'opened' || s === 'hidden')
-    }, null, { timeout: 10000, polling: 100 }).catch(() => {})
-}
-
-
-//opts.strict: regen 端用 — 重試耗盡仍未 settle 時 throw (拒絕把未穩定畫面寫成 baseline), 測試端預設 false 回最後一張讓比對揭露 flake
+//pixel baseline 截圖統一入口 (retry-until-stable; regen 端 strict). 本專案之 settle 訊號為 WDrawer:
+//拖曳分隔條 overlay 由 setTimeout(300ms) 控 opacity 0→1 (waitColResizeOverlay), 抽屜以根節點 [state] 標記
+//hidden/opening/opened/hiding (waitDrawerReady, transitionend 事件驅動, 不受主執行緒負載影響).
+//strict 未指定時於每次呼叫讀 E2E_STRICT_CAPTURE (各檔 generateBaseline 設為 '1').
+//提示框殘留是缺陷, 不是可接受狀態 (2026-09-29 更正; 原載「按鈕點擊後立即彈 dialog 者, 遮罩擋住 mouseleave, 截圖含 tooltip 視為可接受」不成立):
+//單純出現遮罩時移開游標仍會觸發 mouseleave(最小重現 spec/evidence/2026-09-29-tooltip-mouseleave-repro.mjs); 曾見成因為 w-component-vue ≤2.5.23 之
+//WButtonCircle 以 v-if 換掉游標下之圖示(promiseUnlock 載入圖示)再出現遮罩, 2.5.24 起圖示層與停用遮罩 pointer-events:none 已修正(ADR-077).
+//每次截圖前以 probeStuckTooltip 守門: 再出現即拋錯使該案失敗(不凍結為標準圖).
 async function captureStable(page, opts = {}) {
-    //strict 未指定時, regen 直跑 (各檔 generateBaseline 設 E2E_STRICT_CAPTURE=1) 亦視為 strict
-    let { maxRetries = 8, intervalMs = 200, initialWaitMs = 1500, strict = (process.env.E2E_STRICT_CAPTURE === '1') } = opts
-    //animations: 'disabled' 是 baseline 的標配 (finite 動畫跳完, infinite 動畫 reset),
-    //與 Playwright toHaveScreenshot 預設一致
-    let shotOpts = { fullPage: true, animations: 'disabled' }
-
-    //park mouse 到 (0,0) — 點擊後 mouse 留在被點元素位置, 若該位置在某 hover-active UI 區
-    //(button hover / tooltip / cell hover / drawer 邊緣 hover), 不同次跑 hover state 命中
-    //與否不同 → 截圖 byte 不穩. 強制移到 viewport 左上角消除所有 hover state.
-    //(詳 §6.3「點擊後 capture 前必 park mouse 到 (0,0)」)
-    await page.mouse.move(0, 0)
-
-    //initialWaitMs: 開頭等一段, 確保 setTimeout-based 的 delayed-show effects 已 fire +
-    //hover-leave 動畫 + chain animation 都 settle. 1500ms 涵蓋 300ms × 3-5 連鎖動畫.
-    //殷鑑: WDrawer (w-component-vue) 內有 300ms timer 控制拖曳分隔條 overlay 是否顯示
-    //(showOverlay5DragDrawerBar). 300ms 前後 overlay opacity 從 0→1, 視覺上幾乎一樣但
-    //pixel 差 ~7-8 px (sidebar 右緣). Playwright animations:'disabled' 不 fast-forward
-    //setTimeout, captureStable 若在 300ms 內 settle 會 catch 到「無 overlay」狀態,
-    //跨 session 與「有 overlay」狀態 byte-mismatch.
-    await page.waitForTimeout(initialWaitMs)
-
-    //主動等 WDrawer 拖曳分隔條 overlay (showOverlay5DragDrawerBar) 變 opacity=1.
-    //該 overlay 的 inline style 含 cursor:col-resize, opacity 由 setTimeout(300ms) 控
-    //制 0→1. CPU 忙 / tab unfocused 時 setTimeout 可能被 throttle 到超過 500ms initialWait,
-    //故 polling 直到 opacity 變 1 才繼續. 失敗也不阻塞 (有些頁面沒有 WDrawer).
-    await page.evaluate(async () => {
-        let deadline = Date.now() + 5000
-        while (Date.now() < deadline) {
-            let bars = Array.from(document.querySelectorAll('[style*="cursor:col-resize"], [style*="cursor: col-resize"]'))
-            if (bars.length === 0) return //無 WDrawer, 直接過
-            let allReady = bars.every(b => parseFloat(getComputedStyle(b).opacity) === 1)
-            if (allReady) return
-            await new Promise(r => setTimeout(r, 50))
-        }
-    })
-
-    //主動等 WDrawer drawer 整體「展開到位」(共用 helper, 詳 waitDrawerReady 定義處註解).
-    //凡「進後台 (backstage)」之截圖都會遇 WDrawer sidebar, 都須先 waitDrawerReady 才截圖 —
-    //captureStable 內建涵蓋所有經 captureStable 之 backstage 截圖; 另有 stainfor captureCardsOnly
-    //(裸 clip screenshot 繞過 captureStable) 亦各自呼叫 waitDrawerReady 補上 (見該處).
-    await waitDrawerReady(page)
-
-    //hover tooltip 穩定化策略 (w-component-vue WButtonCircle/WButtonChip 之 :tooltip, 如 saveChanges
-    //雲端儲存 / userAdd / userCopy / delete / showTabCols 等): WTooltip 為 hover 驅動 (mouseenter 顯示
-    /// mouseleave 隱藏), teleport 到 body 為 <div class="WPopperFix">. 點擊按鈕時 mouse 停在按鈕上 →
-    //tooltip 顯示. 上方 mouse.move(0,0) 提供「滑鼠移出」事件讓 tooltip 消失 (淡出 transitionTime 200ms,
-    //由 initialWaitMs 涵蓋), 此即穩定化關鍵.
-    //【可接受例外】若按鈕點擊後「立即彈出 dialog」(WDialog 全屏背景遮蔽層), 遮蔽層會擋住按鈕收到滑鼠
-    //移動訊息 → 該 tooltip 不會因 mouse.move(0,0) 消失, 截圖會含 tooltip. 此為「一致地存在」(baseline
-    //與測試端皆然 → 穩定), 視為可接受狀況, 不另強制移除 (強制等它消失反而會空等到逾時且徒勞).
-
-    //凍結 inline <svg> 的 SMIL animation: pauseAnimations() + setCurrentTime(0) 凍在 t=0
-    //(Playwright animations:'disabled' 只凍 CSS, 不影響 SVG SMIL <animate> 標籤)
-    await page.evaluate(() => {
-        document.querySelectorAll('svg').forEach((svg) => {
-            if (typeof svg.pauseAnimations === 'function') {
-                svg.pauseAnimations()
-                if (typeof svg.setCurrentTime === 'function') {
-                    svg.setCurrentTime(0)
-                }
-            }
-        })
-    })
-
-    //等 web fonts (含 @mdi/font CDN) 載入完成 — 否則 mdi 圖標可能尚未 ready, 截圖時 span.mdi
-    //文字佔位但 glyph 未渲染 → baseline 缺 icon. 對全新 chromium context (例: autoblock 部分
-    //case 重建 browser 帶 X-Forwarded-For) 尤為關鍵, 無 font cache 須等 CDN 載入.
-    await page.evaluate(() => {
-        return document.fonts && typeof document.fonts.ready?.then === 'function' ? document.fonts.ready : Promise.resolve()
-    })
-
-    //找出 <img src="data:image/svg+xml;...含 <animate>"> 的 bounding rect — 該類 SVG 在 <img>
-    //內由 browser image pipeline 渲染, 不暴露為 DOM, pauseAnimations 觸達不了. 改用「截圖後
-    //對該區域填黑」的後製方式: baseline 與 verify 兩端都在相同 bbox 填相同黑色, 動畫 frame 無關.
-    //(用黑色而非白色: 黑色區塊明顯, 一眼看出是「刻意遮蔽動態內容」而非「該處無內容」)
-    //殷鑑: LayoutState.vue img_connection (連線中 ripple spinner, 1.26s infinite SMIL),
-    //使 autoblock ip-block-trigger / ip-blocked-rejected baseline 跨 session 永遠不同.
-    //放在 fonts.ready 之後執行, 此時 layout 已穩定, bbox 不會再變.
-    let animatedRects = await page.evaluate(() => {
-        let rects = []
-        document.querySelectorAll('img').forEach((img) => {
-            let src = img.src || ''
-            if (!src.startsWith('data:image/svg+xml')) return
-            let decoded = ''
-            try {
-                if (src.startsWith('data:image/svg+xml;base64,')) {
-                    decoded = atob(src.slice('data:image/svg+xml;base64,'.length))
-                }
-                else {
-                    decoded = decodeURIComponent(src)
-                }
-            }
-            catch (err) {
-                decoded = ''
-            }
-            if (/<animate/i.test(decoded)) {
-                let r = img.getBoundingClientRect()
-                rects.push({ x: r.left, y: r.top, w: r.width, h: r.height })
-            }
-        })
-        return rects
-    })
-
-    let prev = await page.screenshot(shotOpts)
-    if (animatedRects.length > 0) prev = await maskRegions(prev, animatedRects)
-    for (let i = 0; i < maxRetries; i++) {
-        await page.waitForTimeout(intervalMs)
-        let curr = await page.screenshot(shotOpts)
-        if (animatedRects.length > 0) curr = await maskRegions(curr, animatedRects)
-        if (curr.equals(prev)) {
-            return curr
-        }
-        prev = curr
-    }
-    //未 settle: strict (regen) 拒絕寫入; 否則回傳最後一張, 後續 baseline 之 pixelmatch 容差比對失敗會揭露真實 flake (而非偽裝穩定)
-    if (strict) {
-        throw new Error(`captureStable ${maxRetries} 次仍未 settle (regen 拒絕寫入未穩定畫面)`)
-    }
-    return prev
+    return await pkgCaptureStable(page, { settle: [waitColResizeOverlay, waitDrawerReady], ...opts, beforeShots: [probeStuckTooltip, ...(opts.beforeShots || [])] })
 }
 
-
-//把紅框 (#f26 / 5px / 圓角 4) 以 sharp 疊到截圖 buffer 上 (截圖後合成, 不注入 DOM; 技能 §8.3).
-//box: { left, top, right, bottom } 為 buffer 座標之「目標區」(已含 scroll offset / clip 位移); 外擴 6、四邊夾在 buffer 內 (M=3),
-//stroke 置中於路徑故外緣落在 bl..br / bt..bb, 等效原 DOM 版 border-box 之 5px 內縮框線.
-async function composeBox(buf, box) {
-    let meta = await sharp(buf).metadata()
-    let M = 3
-    let bl = Math.max(M, box.left - 6)
-    let bt = Math.max(M, box.top - 6)
-    let br = Math.min(meta.width - M, box.right + 6)
-    let bb = Math.min(meta.height - M, box.bottom + 6)
-    if (br - bl <= 5 || bb - bt <= 5) {
-        return buf
-    }
-    let svg = `<svg width="${meta.width}" height="${meta.height}" xmlns="http://www.w3.org/2000/svg">` +
-        `<rect x="${bl + 2.5}" y="${bt + 2.5}" width="${br - bl - 5}" height="${bb - bt - 5}" fill="none" stroke="#f26" stroke-width="5" rx="4" ry="4"/>` +
-        `</svg>`
-    return await sharp(buf).composite([{ input: Buffer.from(svg), top: 0, left: 0 }]).png().toBuffer()
+//probeStuckTooltip: 提示框殘留之回歸守門(技能 role-coder-for-test-e2e §10〈提示框／hover 殘留〉; 規則 R-E2E-TIP). captureStable 已將游標移至 (0,0)
+//並等待 ≥1.5 秒, 此時仍顯示之 hover 型提示框(WTooltip mode='tooltip', 文字不限)必為殘留: mouseleave 未送達其觸發區, 拋錯使該案失敗
+//(2026-09-30 起; 元件修正前為只認 saveChanges 之 knownDefect pending). 點開型浮層(mode='popup': WPopup、下拉清單)為刻意開啟, 不在此列.
+//判斷由套件 probeStuckTooltip 執行(1.0.3 起; 原四專案各自手寫之同一實作收斂至套件, 未給 rootSel 時頁內邏輯與原實作相同):
+//以 WTooltip 內部結構辨識($refs.divTrigger/divContent、props.mode、data.valueTrans), 根實例取 window.$vo(App.vue 掛上), 無則取 body 直屬元素之 __vue__.
+//元件改寫會使其找不到提示框而一律通過(靜默失效), 升級 w-component-vue 時依 R-E2E-TIP 以真元件頁複驗. 本檔只注入錯誤訊息(指出成因與先查何處).
+async function probeStuckTooltip(page) {
+    return await pkgProbeStuckTooltip(page, {
+        createError: (texts) => new Error(`游標已移開, 提示框「${texts.join('」「')}」仍顯示(提示框殘留; w-component-vue 2.5.24 已修正 WButtonCircle 之成因, 再現即回歸, 先確認已安裝之 WButtonCircle.vue 圖示層仍帶 pointer-events:none)`),
+    })
 }
 
-
-//整張全頁截圖 + 在「此 e2e 要比對的區塊」外圍畫紅框 (#f26、5px) 標注, 讓報表/審查委員一眼看出本
-//case 驗的是哪一區. 截圖仍為完整畫面、保留 UI 脈絡, 不裁切成小片. (對齊技能[role-code-for-test-e2e]
-//「標注要求」: 顏色 #f26、線寬 5px; 移植自 w-web-api 之 captureStableWithBox.)
-//
-//target: CSS selector 字串 / 字串陣列 / Playwright Locator / 以上混合陣列 (多個取聯集框成一個框).
-//  ——欄位列須依 label 文字定位時用 Locator (如 page.locator('.ag-row').filter({hasText:'帳號'})).
-//fold 以下的目標會先把第一個 scrollIntoView 捲進視窗再框 (同組目標應在同一捲動位置).
-//opts.mask: 要遮黑的非決定性區域陣列 (selector 字串, 或 { sel, fixedWidth } 錨右緣固定寬度往左延伸).
-//
-//紅框與遮罩皆於截圖後以 sharp 合成 (2026-09-01 起, 原為 DOM 注入 <div id="__e2e_box__"> 再移除), baseline 產製端與比對端
-//傳相同 target 即得相同框. 內部仍走 captureStable (沿用 WDrawer 展開等待 / SVG 凍結 / 字型就緒等所有穩定化處理); opts 透傳 (如 strict).
+//全頁穩定截圖 + 紅框 (#f26 / 5px / 圓角 4; 截圖後 sharp 合成, 不注入 DOM; 技能 §8.3) + opts.mask 遮黑.
+//target: CSS selector / Locator / 以上混合陣列 (取聯集框成一個框); 第一個目標先捲入視窗.
+//紅框夾在 buffer 內 (技能 §8.3 規定夾在視窗內; 本專案頁高皆 ≤ 視窗故等價, 映射表登錄為偏離)
 async function captureStableWithBox(page, target, opts = {}) {
-    let { mask = [] } = opts
-    let items = Array.isArray(target) ? target : [target]
-    let isLoc = (x) => x && typeof x === 'object' && typeof x.boundingBox === 'function'
-    //先把第一個目標捲進視窗 (同組目標應在同一捲動位置)
-    let firstLoc = isLoc(items[0]) ? items[0].first() : page.locator(items[0]).first()
-    await firstLoc.scrollIntoViewIfNeeded({ timeout: 8000 }).catch(() => {})
-    await page.waitForTimeout(300)
-    await page.mouse.move(0, 0)
-    //取每個目標的 viewport rect (Locator → boundingBox; CSS 字串 → querySelector)
-    let rects = []
-    for (let it of items) {
-        if (isLoc(it)) {
-            let bb = await it.first().boundingBox()
-            if (bb) {
-                rects.push(bb)
-            }
-        }
-        else {
-            let r = await page.evaluate((s) => {
-                let e = document.querySelector(s)
-                if (!e) {
-                    return null
-                }
-                let rc = e.getBoundingClientRect()
-                return { x: rc.left, y: rc.top, width: rc.width, height: rc.height }
-            }, it)
-            if (r) {
-                rects.push(r)
-            }
-        }
-    }
-    //遮罩區 (viewport 座標; 字串 → 元素 bbox; { sel, fixedWidth } → 錨右緣固定寬往左延伸, 位數變動不致黑塊邊界浮動)
-    let maskRects = await page.evaluate((ms) => {
-        let out = []
-        ms.forEach((s) => {
-            let sel = (typeof s === 'string') ? s : s.sel
-            let e = document.querySelector(sel)
-            if (!e) {
-                return
-            }
-            let r = e.getBoundingClientRect()
-            let left = r.left
-            let width = r.width
-            if (typeof s === 'object' && s.fixedWidth) {
-                width = s.fixedWidth
-                left = (r.left + r.width) - width
-            }
-            out.push({ x: left, y: r.top, w: width, h: r.height })
-        })
-        return out
-    }, mask)
-    //fullPage 截圖座標 = viewport rect + scroll offset (本專案頁高皆 ≤ 視窗, offset 通常為 0)
-    let env = await page.evaluate(() => ({ sx: window.scrollX, sy: window.scrollY }))
-    //先截圖 (含 captureStable 內建之 SMIL 遮罩 / drawer 等待 / 字型就緒), 再以 sharp 後製: 遮罩 → 紅框 (框永遠可見, 疊在遮罩之上).
-    //why 不注入 DOM: 插入後又移除的暫時 DOM 偶發使整頁光柵化偏 1px (w-web-api toast 殷鑑; 技能 §8.3), 量測工具不得改動被測頁
-    let buf = await captureStable(page, opts)
-    if (maskRects.length > 0) {
-        buf = await maskRegions(buf, maskRects.map((r) => ({ x: r.x + env.sx, y: r.y + env.sy, w: r.w, h: r.h })))
-    }
-    if (rects.length > 0) {
-        buf = await composeBox(buf, {
-            left: Math.min(...rects.map((r) => r.x)) + env.sx,
-            top: Math.min(...rects.map((r) => r.y)) + env.sy,
-            right: Math.max(...rects.map((r) => r.x + r.width)) + env.sx,
-            bottom: Math.max(...rects.map((r) => r.y + r.height)) + env.sy,
-        })
-    }
-    return buf
+    return await pkgCaptureStableWithBox(page, target, { ...opts, capture: captureStable })
 }
 
-
-//對截圖 buffer 的指定 viewport 矩形區域填色 (用 sharp composite, 不需 PNG decode/encode 細節).
-//用途: 動態內容 (SVG SMIL 動畫 img / 即時圖表 / 即時數值) 無法在 DOM 層凍結, 改在 PNG 後製把
-//那塊區域填純色 → 跨 session pixel 完全一致, baseline 比對穩定.
-//預設黑色 (而非白色): 黑色區塊明顯, 一眼看出是「刻意遮蔽動態內容」, 不會被誤解為「該處無內容」.
-async function maskRegions(buf, rects, color = { r: 0, g: 0, b: 0 }) {
-    //讀 image 邊界, clamp rect 避免 sharp composite "Image to composite must have same dimensions
-    //or smaller" 錯誤 (rect 部分區域超出 image 時須裁切)
-    let meta = await sharp(buf).metadata()
-    let imgW = meta.width
-    let imgH = meta.height
-    let composite = rects
-        .filter((r) => r.w > 0 && r.h > 0)
-        .map((r) => {
-            let left = Math.max(0, Math.round(r.x))
-            let top = Math.max(0, Math.round(r.y))
-            //clamp width/height 至 image 邊界內
-            let width = Math.min(Math.round(r.w), imgW - left)
-            let height = Math.min(Math.round(r.h), imgH - top)
-            return { left, top, width, height }
-        })
-        .filter((c) => c.width > 0 && c.height > 0 && c.left < imgW && c.top < imgH)
-        .map((c) => ({
-            input: {
-                create: {
-                    width: c.width,
-                    height: c.height,
-                    channels: 3,
-                    background: color,
-                },
-            },
-            left: c.left,
-            top: c.top,
-        }))
-    if (composite.length === 0) return buf
-    return await sharp(buf).composite(composite).png().toBuffer()
-}
-
-
-//把截圖 buffer 的指定矩形區域, 用「參考圖 refBuf 同座標的內容」覆蓋上去 (取代 maskRegions 填黑).
-//用途: 動態圖表 (echarts canvas) 之 GPU warm/cold 跨進程渲染無法 pixel 穩定, 但又不想用突兀黑塊 →
-//改貼一張「預存的真實圖表快照」; baseline 與 runtime 兩端都貼同一張 refBuf → 該區永遠一致 (e2e 穩定),
-//視覺上呈現真實圖表而非黑塊. refBuf 須與 buf 同尺寸 (相同版面/截圖方式), 才能同座標 extract+composite 對齊.
-async function overlayRegions(buf, rects, refBuf) {
-    let meta = await sharp(buf).metadata()
-    let imgW = meta.width
-    let imgH = meta.height
-    let refMeta = await sharp(refBuf).metadata()
-    let composite = []
-    for (let r of rects.filter((r) => r.w > 0 && r.h > 0)) {
-        let left = Math.max(0, Math.round(r.x))
-        let top = Math.max(0, Math.round(r.y))
-        //clamp 至 buf 與 ref 兩者邊界內
-        let width = Math.min(Math.round(r.w), imgW - left, refMeta.width - left)
-        let height = Math.min(Math.round(r.h), imgH - top, refMeta.height - top)
-        if (width <= 0 || height <= 0) continue
-        let crop = await sharp(refBuf).extract({ left, top, width, height }).png().toBuffer()
-        composite.push({ input: crop, left, top })
-    }
-    if (composite.length === 0) return buf
-    return await sharp(buf).composite(composite).png().toBuffer()
-}
-
-
-//把截圖 buffer 從 y 座標 (含) 以下整個寬度填黑. 供「遮住某段落以下的動態內容」用.
-//y 為相對截圖 (fullPage) 頂端的像素值. 自動讀 buffer 實際尺寸, 不需 caller 提供 w/h.
-async function maskBelowY(buf, y) {
-    let meta = await sharp(buf).metadata()
-    let top = Math.max(0, Math.round(y))
-    let h = meta.height - top
-    if (h <= 0) return buf
-    return await maskRegions(buf, [{ x: 0, y: top, w: meta.width, h }])
+//紅框合成 (box 為 buffer 座標之目標區, 外擴 6、夾在 buffer 內留 3)
+async function composeBox(buf, box) {
+    return await composeBoxCore(buf, box)
 }
 
 
@@ -687,162 +172,16 @@ async function deleteNonBaseSeed() {
 }
 
 
-//真實 user 輸入 helper (Pattern D, 對齊全域 CLAUDE.md §6.3「Vue v-model 文字輸入 race」).
-//
-//click → 驗證 activeElement === 該 locator (防 focus 被父元素 @mousedown.prevent 攔截) → Backspace 清空
-//→ keyboard.insertText 整段 → 驗證 inputValue → 不符則 retry 最多 3 次.
-//
-//用 insertText (非 keyboard.type): type 逐字打在 Vue v-model 場景觸發 N 次 input event → N 次 re-render
-//→ focus 中途被吃掉導致漏字 (殷鑑: 11 字密碼只進 1 字). insertText 一次 inject 全段 (1 個 input event).
-//本專案 WText / WTextCore 沒 hook keydown listener, 所以 insertText 跟 type 行為等價.
-//
-//用 Backspace N 次 (非 Ctrl+A / Ctrl+X / 剪貼簿): 避免跟 OS 全域 shortcut / 其他平行 agent 測試衝突.
-//
-//此 helper 為 5 個 e2e 檔 (login / register / changepassword / resetpassword / deleteuser) 共用,
-//避免每檔 ad-hoc typeIntoInput 各自漂移. 對 Vue v-model input 必用此函式, 不准用 keyboard.type.
-async function typeIntoInput(page, locator, value) {
-    await locator.waitFor({ state: 'visible', timeout: 5000 })
-    //editor mount / focus transfer / Vue model binding settle buffer (對 ag-grid cellEditor 之 transient state 有效)
-    await page.waitForTimeout(1000)
-
-    let maxAttempts = 3
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        await locator.click()
-        //驗證 focus 真落在 input (被父元素 @mousedown.prevent 攔截的話這裡就抓到, 不會變成靜默漏字)
-        let handle = await locator.elementHandle()
-        await page.waitForFunction((el) => document.activeElement === el, handle, { timeout: 3000 })
-        //清空既有值 (Backspace N 次)
-        let cur = await locator.inputValue()
-        if (cur) {
-            await page.keyboard.press('End')
-            for (let k = 0; k < cur.length + 2; k++) await page.keyboard.press('Backspace')
-        }
-        //一次性 inject
-        await page.keyboard.insertText(value)
-        await page.waitForTimeout(200)
-        //驗證
-        let got = await locator.inputValue()
-        if (got === value) return
-        console.warn(`typeIntoInput attempt ${attempt}/${maxAttempts}: 預期「${value}」實得「${got}」, 重試`)
-        await page.waitForTimeout(400)
-    }
-    let final = await locator.inputValue()
-    throw new Error(`typeIntoInput ${maxAttempts} 次仍漏字: 預期「${value}」(${value.length} 字), 最終「${final}」(${(final || '').length} 字)`)
+//後台左側選單之可見項目聯集（紅框目標；「已進入後台、選單依身分列出頁籤」之觀看區）：
+//技能 §7.2 清單列「進入頁面 → 當時可見之項目列的聯集」、§7.3-2 不框整欄空白。選單為 WListVertical，項目根元素為 WListItem
+//（inline style 帶 border-top-left-radius，無 class 可用）；範圍為 WDrawer 平移層 [ev-stable]（x≈0、寬≈229px 之 sidebar）。
+//2026-09-28 收斂自 e2e-autologin（原框整個抽屜，非管理者僅 1 項卻框整欄）並套用於 e2e-login E2E-011（原框整個 body；兩案為同一畫面，須對稱）。
+function backstageMenuBox() {
+    return itemsUnionBox('div[style*="border-top-left-radius"]', { within: '[ev-stable]' })
 }
 
 
-//baseline 比對 + fail 時保留證據到 ./testPending (不覆蓋), 供事後 pixel diff 定位 flake/破壞.
-//
-//比對採 pixelmatch (反鋸齒感知) + maxDiffPixels 容差, 取代舊的 buf.equals (byte-exact):
-//- pixelmatch includeAA:false (預設) 會自動偵測並「忽略反鋸齒邊緣像素」(YIQ 感知色差 + AA slope 偵測),
-//  專治 SVG icon / 字型邊緣之次像素 raster 差異 (跨 browser session 不決定性), 不再因此 flake.
-//- maxDiffPixels: 允許之最大「真不同」像素數 (預設 100). 反鋸齒殘留遠低於此 (個位數~數十); 真 regression
-//  (icon 換 / 版面位移 / 顏色變) 動輒數百~數千 px 遠超此 → 仍被抓到. 業界標準, 同 Playwright toHaveScreenshot.
-//- 尺寸不同 = 必為真差異 (版面/裁切變) → 直接 fail.
-//- pixel baseline 為補強層, 每 case 仍須語意斷言為主 (全域規範 §6.2): 容差只放輔助層, 主驗證仍嚴.
-//
-//pass: 靜默通過. fail: 將「當次 capture」「baseline」「diff 標紅圖」存檔 (帶 timestamp 不覆蓋) 後 throw.
-//  (./testPending 帶 timestamp 保留, 任何 fail 當次證據都留存可 diff; 已 gitignore, 不進 repo.)
-//label: 給檔名用之可讀標籤 (如 'adduser-cht-E2E-003-account-duplicate'); 省略則用 baseline 檔名.
-//opts.maxDiffPixels / opts.threshold: 可由呼叫端覆寫 (預設 100 / 0.1), 供個別 case 需更嚴/更鬆時用.
-function assertBaselineMatch(buf, baselinePath, label, opts = {}) {
-    let { maxDiffPixels = 100, threshold = 0.1 } = opts
-
-    if (!fs.existsSync(baselinePath)) {
-        throw new Error(`標準圖不存在: ${baselinePath} (請先執行對應 e2e --baseline 產製)`)
-    }
-    let baselineBuf = fs.readFileSync(baselinePath)
-
-    //解碼 PNG → RGBA (pngjs 同步; 保持本函式同步, 不需動所有 caller 加 await)
-    let capPng = PNG.sync.read(buf)
-    let basePng = PNG.sync.read(baselineBuf)
-
-    //fail: 保留 capture + baseline (+ diff 標紅圖) 到 ./testPending (不覆蓋, 帶 timestamp) 後 throw
-    let dump = (reason, diffPng) => {
-        let dir = './testPending'
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true })
-        }
-        let safe = (label || path.basename(baselinePath, '.png')).replace(/[^\w.-]/g, '_')
-        //ms 精度 timestamp; 同 label 同毫秒撞檔機率近 0, 仍加 -N 後綴保證絕不覆蓋
-        let ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 23)
-        let stem = `${dir}/${safe}__${ts}`
-        let n = 0
-        while (fs.existsSync(`${stem}__capture.png`) || fs.existsSync(`${stem}__baseline.png`)) {
-            n += 1
-            stem = `${dir}/${safe}__${ts}-${n}`
-        }
-        fs.writeFileSync(`${stem}__capture.png`, buf)
-        fs.writeFileSync(`${stem}__baseline.png`, baselineBuf)
-        if (diffPng) {
-            fs.writeFileSync(`${stem}__diff.png`, PNG.sync.write(diffPng))
-        }
-        throw new Error(`截圖與標準圖不一致 (${reason}): ${safe} — capture/baseline${diffPng ? '/diff' : ''} 已存 ${stem}__*.png 供 diff`)
-    }
-
-    //尺寸不同 = 必為真差異 (版面/裁切變); pixelmatch 要求同尺寸, 故直接 fail
-    if (capPng.width !== basePng.width || capPng.height !== basePng.height) {
-        dump(`尺寸不同 cap=${capPng.width}x${capPng.height} base=${basePng.width}x${basePng.height}`)
-    }
-
-    //pixelmatch: 反鋸齒感知比對, 回傳「真不同」像素數 (反鋸齒邊緣已被忽略)
-    let { width, height } = basePng
-    let diffPng = new PNG({ width, height })
-    let numDiff = pixelmatch(capPng.data, basePng.data, diffPng.data, width, height, { threshold, includeAA: false })
-    if (numDiff <= maxDiffPixels) {
-        return //通過: 反鋸齒次像素已忽略, 殘留真差異在容差內
-    }
-    dump(`diff=${numDiff}px > maxDiffPixels=${maxDiffPixels}`, diffPng)
-}
-
-
-//每步驟先偵測對象出現再操作 (預設 10s timeout). 超時拋錯 = 真實異常 (而非 sleep 不夠).
-//arg: 傳給 fn 的參數 (page.waitForFunction 內 fn 序列化跨 process 執行, 不能 closure). 2026-09-01 自各 e2e 檔 (adduser/ips/modifyuser/stainfor/tokens) 收斂至此.
-async function waitUntilExist(page, label, fn, opts = {}) {
-    let { timeout = 10000, arg = null } = opts
-    try {
-        await page.waitForFunction(fn, arg, { timeout })
-    }
-    catch (err) {
-        throw new Error(`waitUntilExist 超過 ${timeout}ms 仍找不到「${label}」 — 此為真實異常 (production race / 元件未渲染)`)
-    }
-}
-
-
-//真鍵盤輸入 nth(idx) 的 input (Pattern D, 與 typeIntoInput 同機制, 以 index 定位供無穩定 selector 之表單).
-//2026-09-01 自各 e2e 檔 (adduser/autoblock/ips/modifyuser/stainfor/tokens 六份重複) 收斂至此.
-async function typeIntoNthInput(page, idx, value) {
-    let inp = page.locator('input').nth(idx)
-    await inp.waitFor({ state: 'visible', timeout: 5000 })
-
-    let maxAttempts = 3
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        await inp.click()
-        await page.waitForFunction((i) => {
-            let inputs = document.querySelectorAll('input')
-            return document.activeElement === inputs[i]
-        }, idx, { timeout: 3000 })
-        //清空 (Backspace N 次, 不用剪貼簿 / Ctrl+A 組合鍵)
-        let cur = await page.evaluate((i) => document.querySelectorAll('input')[i]?.value || '', idx)
-        if (cur) {
-            await page.keyboard.press('End')
-            for (let k = 0; k < cur.length + 2; k++) await page.keyboard.press('Backspace')
-        }
-        await page.keyboard.insertText(value)
-        await page.waitForTimeout(200)
-        let got = await page.evaluate((i) => {
-            let el = document.querySelectorAll('input')[i]
-            return el ? el.value : null
-        }, idx)
-        if (got === value) return
-
-        console.warn(`typeIntoNthInput attempt ${attempt}/${maxAttempts}: 預期「${value}」實得「${got}」, 重試`)
-        await page.waitForTimeout(400)
-    }
-
-    let final = await page.evaluate((i) => document.querySelectorAll('input')[i]?.value, idx)
-    throw new Error(`typeIntoNthInput ${maxAttempts} 次仍漏字: 預期「${value}」(${value.length} 字), 最終「${final}」(${(final || '').length} 字)`)
-}
-
-
-export { startServersOnce, cleanup, launchBrowser, chromiumLaunchArgs, REGEN, captureStable, captureStableWithBox, composeBox, waitDrawerReady, assertBaselineMatch, baseUrl, apiUrl, maskRegions, overlayRegions, maskBelowY, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput, typeIntoNthInput, waitUntilExist }
+//typeIntoInput / typeIntoNthInput: Pattern D 真人輸入 (click → 驗焦點 → Backspace 清空 → insertText → 驗值, 重試 3 次), 對 Vue v-model 必用.
+//assertBaselineMatch: pixelmatch includeAA:false + threshold 0.1 + maxDiffPixels 100, fail 時三聯組存 ./testPending (永不覆蓋).
+//waitUntilExist: 偵測驅動等待 (預設 10000ms), 逾時 = 真實異常.
+export { startServersOnce, cleanup, launchBrowser, chromiumLaunchArgs, REGEN, captureStable, captureStableWithBox, composeBox, waitDrawerReady, assertBaselineMatch, baseUrl, apiUrl, maskRegions, overlayRegions, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput, typeIntoNthInput, waitUntilExist, backstageMenuBox }

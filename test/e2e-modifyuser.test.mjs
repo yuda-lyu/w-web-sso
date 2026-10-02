@@ -6,6 +6,8 @@ import ds from '../src/schema/index.mjs'
 import hashPassword, { verifyPassword } from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
 import { startServersOnce, cleanup, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, launchBrowser, waitUntilExist, typeIntoNthInput } from './tools/e2e-setup.mjs'
+//產製端與比對端同一案例管線 (規格詳 w-package-tools-e2e 之 README.md §2.1-2.2)
+import { runBaselineCase, createBaselineGate, waitGridIdle } from './tools/e2eLib.mjs'
 
 
 //
@@ -16,11 +18,15 @@ import { startServersOnce, cleanup, captureStableWithBox, baseUrl, resetToBaseSe
 // 使用方式：
 //   1. 先產生標準圖：node test/e2e-modifyuser.test.mjs --baseline
 //   2. 跑測試比對：npx mocha test/e2e-modifyuser.test.mjs --timeout 240000
-//   --names <eng-002-account-empty,...> 進行手術式 baseline 重產
+//   手術式重產 (截圖前篩選, 規格詳 w-package-tools-e2e 之 README.md §2.2): --names <項,...> 每項可帶語系前綴 (eng-/cht-), 不帶則兩語系皆產;
+//     階段圖鍵 (如 eng-E2E-002-2-account-empty) 只寫該張, 案例鍵或編號前綴 (如 E2E-002) 寫該案全部階段, 不符任何鍵即報錯;
+//     --langs; --write-mode missing|changed; env E2E_BASELINE_OUT_DIR=<dir> 寫到暫存目錄 (等價驗證用)
+//   產製端與比對端呼叫同一案例管線 (runBaselineCase): 每案 DB 重置 + admin token 復原 + fresh browser → 流程 (成功類於成功 modal
+//     顯示中斷言其文字) → 錯誤類 modal 文字 (semantic) → DB 不變式 (verify) → 寫檔 / 比對
 //
 // 標準圖存放：test/pics/modifyuser/modifyuser-{lang}-{number}-{name}.png
 //
-// 涵蓋 13 個 UI distinct 狀態 (× 2 lang = 26 baselines)。所有 capture 透過真實 UI
+// 涵蓋 15 個案例 (每語系 27 張圖鍵 × 2 lang = 54 baselines)。所有 capture 透過真實 UI
 // 互動推進: 鍵盤滑鼠輸入 / ag-grid cell dblclick + Enter / checkbox click / 按鈕
 // SVG path 點擊 / WTimeminute popup 互動 / ag-grid row drag.
 // setup 階段以 woItems 預置 DB row, 是 e2e setup 例外 (見全域 CLAUDE.md §6.3 setup 階段例外).
@@ -29,27 +35,6 @@ import { startServersOnce, cleanup, captureStableWithBox, baseUrl, resetToBaseSe
 let salt = '{salt}'
 let baselineDir = './test/pics/modifyuser'
 let langs = ['eng', 'cht']
-
-let baselineNamesFilter = null
-{
-    let i = process.argv.indexOf('--names')
-    if (i >= 0 && process.argv[i + 1]) {
-        baselineNamesFilter = new Set(process.argv[i + 1].split(','))
-    }
-}
-function writeBaseline(lang, name, buf) {
-    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`)) {
-        console.log(`  [skip] ${lang}-${name}`)
-        return
-    }
-    fs.writeFileSync(bp(lang, name), buf)
-}
-
-
-//是否需要產生此 case 的標準圖. --names 指定時只有指定 case 回 true → 連「截圖」都跳過 (非僅跳寫檔).
-function shouldGen(lang, name) {
-    return !baselineNamesFilter || baselineNamesFilter.has(`${lang}-${name}`)
-}
 
 
 function bp(lang, name) {
@@ -120,6 +105,23 @@ let expectedSuccessModalText = {
     eng: 'Save users successfully',
     cht: '儲存使用者數據成功',
 }
+
+
+//錯誤類 case (E2E-002~011) 之 modal 文字斷言: 原只在比對端 it 內 (比對標準圖之後) 執行, 今為 runCase 之 semantic 掛鉤,
+//兩端皆於流程結束後、寫檔 / 比對之前執行 (此時錯誤 modal 仍顯示: 各截圖函式截完 modal 即返回, 不關閉)
+async function assertModalText(page, lang, caseName) {
+    let exp = expectedModalText[caseName]
+    if (!exp) {
+        throw new Error(`expectedModalText 未為 case "${caseName}" 定義`)
+    }
+    let needle = exp[lang]
+    let has = await page.evaluate((t) => (document.body.innerText || '').includes(t), needle)
+    assert.strict.equal(has, true, `Modal 應含預期文字「${needle}」 (case: ${caseName})`)
+}
+
+
+//timemsTZ 格式 sanity check helper (YYYY-MM-DDTHH:mm:ss.SSS+HH:MM 或 +HHMM); E2E-012~014 之 verify 使用
+let isTimemsTZ = (s) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:?\d{2}$/.test(s || '')
 
 
 // ===================================================================
@@ -378,7 +380,7 @@ async function clickSave(page) {
 //等 CheckYes modal 出現 + 內部穩定化:
 //  1. window scrollTop=0, ag-grid 水平 scroll=0
 //  2. mouse 移到 (0,0) 角落 (清 hover state)
-//  3. 等 ag-grid 連續 3 次 raf 之間 cell 狀態不變 (idle)
+//  3. 等 ag-grid idle (waitGridIdle: account 標頭已出現、水平捲動量 0、內容＋幾何簽章連續 1s 不變)
 //  4. 等 WDrawer sidebar 寬度連續 ~2s 不變 — 觸發儲存後 ag-grid 重 fetch → layout 變動 →
 //     ResizeObserver 觸發 WDrawer autoSwitchToHide/Show 切換 → 不等則 captureStable 可能
 //     收斂到「收合中」或「展開後」兩個 stable state 之一 (殷鑑: e2e-adduser case 009 同問題).
@@ -391,27 +393,8 @@ async function waitCheckYes(page, lang) {
         if (body) body.scrollLeft = 0
     })
     await page.mouse.move(0, 0)
-    await page.waitForFunction(async () => {
-        let body = document.querySelector('.ag-center-cols-viewport')
-        if (!body) return true
-        if (body.scrollLeft !== 0) return false
-        if (!document.querySelector('.ag-header-cell[col-id="account"]')) return false
-        let snap = () => {
-            let cells = document.querySelectorAll('.ag-cell')
-            let row0Cells = Array.from(document.querySelectorAll('.ag-row[row-index="0"] .ag-cell'))
-            return JSON.stringify({
-                count: cells.length,
-                row0: row0Cells.map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
-            })
-        }
-        let s1 = snap()
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s2 = snap()
-        if (s1 !== s2) return false
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s3 = snap()
-        return s2 === s3
-    }, null, { timeout: 15000 })
+    //呼叫處 (E2E-001~015 儲存後 modal 顯示中) 表格必有列 (成功類已重拉 getUsersList, 錯誤類為本地列), 故 minCells:1
+    await waitGridIdle(page, { requireSelector: '.ag-header-cell[col-id="account"]', requireScrollLeftZero: true, minCells: 1, timeout: 15000 })
 
     //sidebar (WDrawer) 寬度穩定: 連續 10 samples (~2s @ 200ms poll) 同寬度才視為 settle
     await page.waitForFunction(() => {
@@ -460,11 +443,12 @@ async function loginAsAdminAndOpenUsersList(page, lang) {
 
     //login → backstage 跨頁 redirect, 固定 10s buffer + 偵測 Statistics
     await page.waitForTimeout(10000)
-    await waitUntilExist(page, `backstage ${t.statistics} 文字`, (s) => document.body.innerText.includes(s), { arg: t.statistics })
+    await waitUntilExist(page, `backstage ${t.statistics} 文字`, (s) => document.body.innerText.includes(s), { arg: t.statistics, timeout: 60000 })
 
-    await page.locator(`text="${t.usersList}"`).first().waitFor({ state: 'visible', timeout: 15000 })
+    await page.locator(`text="${t.usersList}"`).first().waitFor({ state: 'visible', timeout: 60000 })
     await page.locator(`text="${t.usersList}"`).first().click()
-    await page.waitForTimeout(2500)
+    //等清單頁之「編輯模式」勾選列渲染後再讀其狀態(取代固定 2.5 秒: 未渲染時下方讀到 null 即略過開啟, 2026-09-28; 以下偵測上限同日放寬至 60 秒)
+    await page.locator(`text="${t.editMode}"`).first().waitFor({ state: 'visible', timeout: 60000 })
 
     //確認 Edit mode 是 on (本流程須點 + / 拖 / 編輯, 都要 isEditable)
     let editChecked = await page.evaluate((label) => {
@@ -479,15 +463,9 @@ async function loginAsAdminAndOpenUsersList(page, lang) {
     }
 
     //等 ag-grid 第一列 cell 渲染穩定
-    await waitUntilExist(page, 'ag-grid 第一列', () => document.querySelectorAll('.ag-row').length > 0)
-    await page.waitForFunction(async () => {
-        let cells = document.querySelectorAll('.ag-cell')
-        if (cells.length < 5) return false
-        let s1 = cells.length
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s2 = document.querySelectorAll('.ag-cell').length
-        return s1 === s2
-    }, null, { timeout: 15000 })
+    await waitUntilExist(page, 'ag-grid 第一列', () => document.querySelectorAll('.ag-row').length > 0, { timeout: 60000 })
+    //waitGridIdle: 至少 5 格, 且內容＋幾何簽章連續 1s 不變
+    await waitGridIdle(page, { minCells: 5, timeout: 60000 })
     await page.waitForTimeout(800)
 }
 
@@ -517,27 +495,12 @@ async function dismissModalAndCaptureTargetRow(page, lang, e2eNo, stage2Name) {
     assert.strict.equal(hasSuccess, true, `儲存成功 modal 應含成功訊息文字「${successNeedle}」 (case E2E-${e2eNo})`)
 
     await page.locator(`text="${t.ok}"`).first().click() //關閉 success modal
-    //等表格刷新 (重 fetch getUsersList) 並穩定: 連續三次 raf cell 數量 + row[0] cell 文字不變
+    //等表格刷新 (重 fetch getUsersList) 並穩定 (waitGridIdle: 內容＋幾何簽章連續 1s 不變; 儲存成功後重拉之清單必有列, 故 minCells:1)
     await page.evaluate(() => {
         let body = document.querySelector('.ag-center-cols-viewport')
         if (body) body.scrollLeft = 0
     })
-    await page.waitForFunction(async () => {
-        let snap = () => {
-            let cells = document.querySelectorAll('.ag-cell')
-            return JSON.stringify({
-                count: cells.length,
-                first10: Array.from(cells).slice(0, 10).map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
-            })
-        }
-        let s1 = snap()
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s2 = snap()
-        if (s1 !== s2) return false
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s3 = snap()
-        return s2 === s3
-    }, null, { timeout: 15000 })
+    await waitGridIdle(page, { minCells: 1, timeout: 15000 })
     await page.mouse.move(0, 0)
     await page.waitForTimeout(1500)
 
@@ -928,22 +891,8 @@ async function captureDragReorder(page, lang) {
         let body = document.querySelector('.ag-center-cols-viewport')
         if (body) body.scrollLeft = 0
     })
-    await page.waitForFunction(async () => {
-        let snap = () => {
-            let cells = document.querySelectorAll('.ag-cell')
-            return JSON.stringify({
-                count: cells.length,
-                first10: Array.from(cells).slice(0, 10).map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
-            })
-        }
-        let s1 = snap()
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s2 = snap()
-        if (s1 !== s2) return false
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s3 = snap()
-        return s2 === s3
-    }, null, { timeout: 15000 })
+    //waitGridIdle: 內容＋幾何簽章連續 1s 不變; 儲存成功後重拉之清單必有列 (admin / target 皆在), 故 minCells:1
+    await waitGridIdle(page, { minCells: 1, timeout: 15000 })
     await page.mouse.move(0, 0)
     await page.waitForTimeout(1500)
 
@@ -964,67 +913,243 @@ async function captureDragReorder(page, lang) {
 
 
 // ===================================================================
-// 產生標準圖
+// 案例宣告與案例管線 (產製端與比對端共用)
 // ===================================================================
 
-async function generateBaselineForLang(lang) {
-    console.log(`=== 產生標準圖（${lang}）===`)
+//順序與 mocha it 相同 (產製順序 ≡ 比對順序); title 為 mocha it 標題 (--grep 依之); stages 為該案產出之圖鍵 (與寫檔名、比對名一致; 產出與宣告不符即報錯)
+//verify: DB 不變式 (原只在比對端 it 內、比對標準圖之後; 今兩端皆於寫檔 / 比對之前)
+let cases = [
+    {
+        name: 'E2E-001-after-save-modify-name',
+        title: `E2E-001-after-save-modify-name: dblclick name 改值 → save → success modal → DB audit fields`,
+        run: captureModifyNameSuccess,
+        stages: ['E2E-001-1-save-success-modal', 'E2E-001-2-after-save-modify-name'],
+        verify: async () => {
+            //DB 斷言: name 變更; userIdUpdate=admin.id; timeUpdate 不為空; password hash 保留; userId/timeCreate 保留
+            let updated = await woItems.users.select({ id: testUsers.target.id })
+            assert.strict.equal(updated.length, 1, `target user 應仍存在`)
+            assert.strict.equal(updated[0].name, 'Modified Target', `name 應已變更`)
+            assert.strict.equal(updated[0].userIdUpdate, testUsers.admin.id, `userIdUpdate 應為 admin.id`)
+            assert.strict.notEqual(updated[0].timeUpdate, '', `timeUpdate 應被填入`)
+            assert.strict.equal(verifyPassword(testUsers.target.rawPassword, updated[0].password, salt), true, `password hash 應保留 (仍可由原 rawPassword 驗證通過)`)
+        },
+    },
+    {
+        name: 'E2E-002-account-empty',
+        title: `E2E-002-account-empty: account → 空 → save → 前端 isError 攔下`,
+        run: captureAccountEmpty,
+        stages: ['E2E-002-1-account-empty-cell', 'E2E-002-2-account-empty'],
+        verify: async () => {
+            //DB: account 仍為原值
+            let row = await woItems.users.select({ id: testUsers.target.id })
+            assert.strict.equal(row[0].account, testUsers.target.account, `account 不應被儲存`)
+        },
+    },
+    {
+        name: 'E2E-003-account-duplicate',
+        title: `E2E-003-account-duplicate: account → 同表內重複 → save → 前端 isError 攔下`,
+        run: captureAccountDuplicate,
+        stages: ['E2E-003-1-account-duplicate-cell', 'E2E-003-2-account-duplicate'],
+        verify: async () => {
+            let row = await woItems.users.select({ id: testUsers.target.id })
+            assert.strict.equal(row[0].account, testUsers.target.account, `account 不應被儲存`)
+        },
+    },
+    {
+        name: 'E2E-004-email-empty',
+        title: `E2E-004-email-empty: email → 空 → save → 前端 isError 攔下`,
+        run: captureEmailEmpty,
+        stages: ['E2E-004-1-email-empty-cell', 'E2E-004-2-email-empty'],
+        verify: async () => {
+            let row = await woItems.users.select({ id: testUsers.target.id })
+            assert.strict.equal(row[0].email, testUsers.target.email, `email 不應被儲存`)
+        },
+    },
+    {
+        name: 'E2E-005-email-format',
+        title: `E2E-005-email-format: email → 格式錯 → save → 前端 isError 攔下`,
+        run: captureEmailFormat,
+        stages: ['E2E-005-1-email-format-cell', 'E2E-005-2-email-format'],
+        verify: async () => {
+            let row = await woItems.users.select({ id: testUsers.target.id })
+            assert.strict.equal(row[0].email, testUsers.target.email, `email 不應被儲存`)
+        },
+    },
+    {
+        name: 'E2E-006-email-duplicate',
+        title: `E2E-006-email-duplicate: email → 同表內重複 → save → 前端 isError 攔下`,
+        run: captureEmailDuplicate,
+        stages: ['E2E-006-1-email-duplicate-cell', 'E2E-006-2-email-duplicate'],
+        verify: async () => {
+            let row = await woItems.users.select({ id: testUsers.target.id })
+            assert.strict.equal(row[0].email, testUsers.target.email, `email 不應被儲存`)
+        },
+    },
+    {
+        name: 'E2E-007-redir-empty',
+        title: `E2E-007-redir-empty: redir → 空 → save → 前端 isError 攔下`,
+        run: captureRedirEmpty,
+        stages: ['E2E-007-1-redir-empty-cell', 'E2E-007-2-redir-empty'],
+        verify: async () => {
+            let row = await woItems.users.select({ id: testUsers.target.id })
+            assert.strict.equal(row[0].redir, testUsers.target.redir, `redir 不應被儲存`)
+        },
+    },
+    {
+        name: 'E2E-008-cannot-demote-self',
+        title: `E2E-008-cannot-demote-self: 取消自己 isAdmin → save → cannotDemoteSelf modal → DB 不變`,
+        run: captureCannotDemoteSelf,
+        stages: ['E2E-008-1-isadmin-uncheck-cell', 'E2E-008-2-cannot-demote-self'],
+        verify: async () => {
+            let adminInDb = await woItems.users.select({ id: testUsers.admin.id })
+            assert.strict.equal(adminInDb[0].isAdmin, 'y', `admin isAdmin 應仍為 'y'`)
+        },
+    },
+    {
+        name: 'E2E-009-cannot-disable-self',
+        title: `E2E-009-cannot-disable-self: 取消自己 isActive → save → cannotDisableSelf modal → DB 不變`,
+        run: captureCannotDisableSelf,
+        stages: ['E2E-009-1-isactive-uncheck-cell', 'E2E-009-2-cannot-disable-self'],
+        verify: async () => {
+            let adminInDb = await woItems.users.select({ id: testUsers.admin.id })
+            assert.strict.equal(adminInDb[0].isActive, 'y', `admin isActive 應仍為 'y'`)
+        },
+    },
+    {
+        name: 'E2E-010-email-conflict-backend',
+        title: `E2E-010-email-conflict-backend: email 同表內重複 (與 006 共用 UI 與訊息) — 前後端訊息一致契約`,
+        run: captureEmailConflictBackend,
+        stages: ['E2E-010-email-conflict-backend'],
+        verify: async () => {
+            let row = await woItems.users.select({ id: testUsers.target.id })
+            assert.strict.equal(row[0].email, testUsers.target.email, `email 不應被儲存`)
+        },
+    },
+    {
+        name: 'E2E-011-token-expired-backend',
+        title: `E2E-011-token-expired-backend: token 過期 → save → backend reject (userSaveUsersFail 前綴)`,
+        run: captureTokenExpiredBackend,
+        stages: ['E2E-011-token-expired-backend'],
+        verify: async () => {
+            //DB: name 不應被儲存 (因 token 過期 reject)
+            let row = await woItems.users.select({ id: testUsers.target.id })
+            assert.strict.equal(row[0].name, testUsers.target.name, `name 不應被儲存`)
+        },
+    },
+    {
+        name: 'E2E-012-time-modify-verified',
+        title: `E2E-012-time-modify-verified: WTimeminute 修改 timeVerified → save → DB timemsTZ 寫入`,
+        run: captureTimeModifyVerified,
+        stages: ['E2E-012-1-save-success-modal', 'E2E-012-2-time-modify-verified'],
+        verify: async () => {
+            let row = await woItems.users.select({ id: testUsers.target.id })
+            assert.strict.notEqual(row[0].timeVerified, '2025-01-01T00:00:00.000+08:00', `timeVerified 應已變更, 實際: ${row[0].timeVerified}`)
+            assert.strict.notEqual(row[0].timeVerified, '', `timeVerified 不應為空`)
+            assert.strict.equal(isTimemsTZ(row[0].timeVerified), true, `timeVerified 應為 timemsTZ 格式, 實際: ${row[0].timeVerified}`)
+            //其他 time 欄位不應被本流程動到
+            assert.strict.equal(row[0].timeExpired, '2030-01-01T00:00:00.000+08:00', `timeExpired 不應被本 case 動到`)
+            assert.strict.equal(row[0].timeBlocked, targetInitialTimeBlocked, `timeBlocked 不應被本 case 動到`)
+        },
+    },
+    {
+        name: 'E2E-013-time-modify-expired',
+        title: `E2E-013-time-modify-expired: WTimeminute 修改 timeExpired → save → DB timemsTZ 寫入`,
+        run: captureTimeModifyExpired,
+        stages: ['E2E-013-1-save-success-modal', 'E2E-013-2-time-modify-expired'],
+        verify: async () => {
+            let row = await woItems.users.select({ id: testUsers.target.id })
+            assert.strict.notEqual(row[0].timeExpired, '2030-01-01T00:00:00.000+08:00', `timeExpired 應已變更, 實際: ${row[0].timeExpired}`)
+            assert.strict.notEqual(row[0].timeExpired, '', `timeExpired 不應為空`)
+            assert.strict.equal(isTimemsTZ(row[0].timeExpired), true, `timeExpired 應為 timemsTZ 格式, 實際: ${row[0].timeExpired}`)
+            assert.strict.equal(row[0].timeVerified, '2025-01-01T00:00:00.000+08:00', `timeVerified 不應被本 case 動到`)
+            assert.strict.equal(row[0].timeBlocked, targetInitialTimeBlocked, `timeBlocked 不應被本 case 動到`)
+        },
+    },
+    {
+        name: 'E2E-014-time-modify-blocked',
+        title: `E2E-014-time-modify-blocked: WTimeminute 修改 timeBlocked → save → DB timemsTZ 寫入`,
+        run: captureTimeModifyBlocked,
+        stages: ['E2E-014-1-save-success-modal', 'E2E-014-2-time-modify-blocked'],
+        verify: async () => {
+            let row = await woItems.users.select({ id: testUsers.target.id })
+            assert.strict.notEqual(row[0].timeBlocked, targetInitialTimeBlocked, `timeBlocked 應已變更 (從預設 ${targetInitialTimeBlocked} 改為另一日)`)
+            assert.strict.equal(isTimemsTZ(row[0].timeBlocked), true, `timeBlocked 應為 timemsTZ 格式, 實際: ${row[0].timeBlocked}`)
+            assert.strict.equal(row[0].timeVerified, '2025-01-01T00:00:00.000+08:00', `timeVerified 不應被本 case 動到`)
+            assert.strict.equal(row[0].timeExpired, '2030-01-01T00:00:00.000+08:00', `timeExpired 不應被本 case 動到`)
+        },
+    },
+    {
+        name: 'E2E-015-drag-reorder',
+        title: `E2E-015-drag-reorder: 拖拉 target row 到 admin 之前 → save → DB order 重指派 = k+1`,
+        run: captureDragReorder,
+        stages: ['E2E-015-drag-reorder'],
+        verify: async () => {
+            //DB: target row order 應小於 admin order (target 拖到前面)
+            let adminRow = await woItems.users.select({ id: testUsers.admin.id })
+            let targetRow = await woItems.users.select({ id: testUsers.target.id })
+            assert.strict.equal(targetRow[0].order < adminRow[0].order, true, `target.order (${targetRow[0].order}) 應 < admin.order (${adminRow[0].order})`)
+        },
+    },
+]
 
-    let cases = [
-        ['E2E-001-after-save-modify-name', captureModifyNameSuccess],
-        ['E2E-002-account-empty', captureAccountEmpty],
-        ['E2E-003-account-duplicate', captureAccountDuplicate],
-        ['E2E-004-email-empty', captureEmailEmpty],
-        ['E2E-005-email-format', captureEmailFormat],
-        ['E2E-006-email-duplicate', captureEmailDuplicate],
-        ['E2E-007-redir-empty', captureRedirEmpty],
-        ['E2E-008-cannot-demote-self', captureCannotDemoteSelf],
-        ['E2E-009-cannot-disable-self', captureCannotDisableSelf],
-        ['E2E-010-email-conflict-backend', captureEmailConflictBackend],
-        ['E2E-011-token-expired-backend', captureTokenExpiredBackend],
-        ['E2E-012-time-modify-verified', captureTimeModifyVerified],
-        ['E2E-013-time-modify-expired', captureTimeModifyExpired],
-        ['E2E-014-time-modify-blocked', captureTimeModifyBlocked],
-        ['E2E-015-drag-reorder', captureDragReorder],
-    ]
-
-    for (let [name, fn] of cases) {
-        if (!shouldGen(lang, name)) continue
-        console.log(`  ${name}`)
-
-        //per-case fresh DB + browser, 與 mocha beforeEach 對稱
-        await deleteTestUsersAndTokens()
-        await insertTestUsersAndTokens()
-
-        let browser = await launchBrowser()
-        let context = await browser.newContext()
-        let page = await context.newPage()
-        page.on('dialog', (d) => d.accept())
-
-        let result = await fn(page, lang)
-        //多階段: fn 可回 Buffer (單張) 或 dict { baselineName: buf } (多張); 統一成 dict 寫檔
-        let stages = Buffer.isBuffer(result) ? { [name]: result } : result
-        for (let [bname, b] of Object.entries(stages)) {
-            writeBaseline(lang, bname, b)
-        }
-
-        await browser.close()
-        await deleteTestUsersAndTokens()
-    }
+//單一案例管線: per-case DB 重置 + admin token 復原 + fresh browser (新 context, 自動接受 dialog) → 流程 → 錯誤類 modal 文字 →
+//DB 不變式 → 寫檔 / 比對 → 關瀏覽器 → 清資料
+async function runCase(mode, lang, c, extra = {}) {
+    return await runBaselineCase({
+        mode,
+        lang,
+        name: c.name,
+        run: c.run,
+        stages: c.stages,
+        verify: c.verify,
+        launch: launchBrowser,
+        pathOf: bp,
+        labelOf: (lg, key) => `modifyuser-${lg}-${key}`,
+        match: assertBaselineMatch,
+        prepare: async () => {
+            await deleteTestUsersAndTokens()
+            await insertTestUsersAndTokens()
+            //原只在比對端 beforeEach (DB 重置後、開瀏覽器前) 執行, 今兩端共跑 (順序同原比對端)
+            await resetAdminToken()
+        },
+        //錯誤類 (expectedModalText 有定義者: E2E-002~011) 驗 modal 文字; 成功類 (001 / 012~015) 之成功 modal 文字已在截圖函式內、modal 顯示中斷言
+        semantic: expectedModalText[c.name]
+            ? async (ctx) => {
+                await assertModalText(ctx.page, ctx.lang, c.name)
+            }
+            : null,
+        afterCase: async () => {
+            await deleteTestUsersAndTokens()
+        },
+        ...extra,
+    })
 }
 
 
+// ===================================================================
+// 產生標準圖
+// ===================================================================
+
 async function generateBaseline() {
     process.env.E2E_STRICT_CAPTURE = '1'
+    //截圖前篩選 (--names / --langs / --write-mode / E2E_BASELINE_OUT_DIR); 不符任何鍵即於此報錯
+    let gate = createBaselineGate({ langs, cases })
+    console.log(gate.describe())
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    for (let lang of langs) {
-        await generateBaselineForLang(lang)
+    for (let lang of gate.langs) {
+        console.log(`=== 產生標準圖（${lang}）===`)
+        for (let c of gate.casesFor(lang)) {
+            console.log(`  ${c.name}`)
+            await runCase('regen', lang, c, { gate })
+        }
     }
+    //--names 之任一項未產出即報錯 (不靜默略過)
+    gate.finalize()
 
     await deleteTestUsersAndTokens()
 
@@ -1047,220 +1172,21 @@ else {
 
     for (let lang of langs) {
 
-        let browser
-        let page
-
         describe(`ModifyUser E2E [${lang}] — 後台變更使用者資訊`, function() {
             this.timeout(180000)
 
+            //per-case 獨立 (DB 重置 + admin token 復原 + fresh browser) 由 runCase 負責, 確保單 case --grep 也能跑
             beforeEach(async function() {
                 this.timeout(180000)
                 await startServersOnce()
-
-                await deleteTestUsersAndTokens()
-                await insertTestUsersAndTokens()
-                await resetAdminToken()
-
-                browser = await launchBrowser()
-                let context = await browser.newContext()
-                page = await context.newPage()
-                page.on('dialog', (d) => d.accept())
             })
 
-            afterEach(async function() {
-                if (browser) {
-                    await browser.close()
-                    browser = null
-                }
-                await deleteTestUsersAndTokens()
-            })
-
-
-            //通用斷言: 截圖比對 baseline (語意斷言由各 case 內補)
-            async function assertBaseline(buf, caseName) {
-                let baselinePath = bp(lang, caseName)
-                //fail 時自動保留 capture + baseline 到 ./testPending (不覆蓋, 帶 timestamp) 供 diff
-                assertBaselineMatch(buf, baselinePath, `modifyuser-${lang}-${caseName}`)
+            //語意斷言 (成功 modal 文字於截圖函式內; 錯誤 modal 文字於 semantic)、DB 不變式 (verify) 皆於比對標準圖之前 (pixel baseline 為補強層)
+            for (let c of cases) {
+                it(c.title, async function() {
+                    await runCase('compare', lang, c, { onKnownDefect: () => this.skip() })
+                })
             }
-
-
-            //多階段斷言: capture fn 回 Buffer (單張) 或 dict { baselineName: buf } (多張) → 逐張比對 baseline
-            async function assertBaselineStages(result, singleName) {
-                let stages = Buffer.isBuffer(result) ? { [singleName]: result } : result
-                for (let [bname, b] of Object.entries(stages)) {
-                    assertBaselineMatch(b, bp(lang, bname), `modifyuser-${lang}-${bname}`)
-                }
-            }
-
-
-            async function assertModalText(caseName) {
-                let exp = expectedModalText[caseName]
-                if (!exp) return
-                let needle = exp[lang]
-                let has = await page.evaluate((t) => (document.body.innerText || '').includes(t), needle)
-                assert.strict.equal(has, true, `Modal 應含預期文字「${needle}」 (case: ${caseName})`)
-            }
-
-
-            it(`E2E-001-after-save-modify-name: dblclick name 改值 → save → success modal → DB audit fields`, async function() {
-                let result = await captureModifyNameSuccess(page, lang)
-                //多階段: stage1 成功 modal + stage2 結果列, 逐張比對
-                await assertBaselineStages(result, 'E2E-001-after-save-modify-name')
-
-                //DB 斷言: name 變更; userIdUpdate=admin.id; timeUpdate 不為空; password hash 保留; userId/timeCreate 保留
-                let updated = await woItems.users.select({ id: testUsers.target.id })
-                assert.strict.equal(updated.length, 1, `target user 應仍存在`)
-                assert.strict.equal(updated[0].name, 'Modified Target', `name 應已變更`)
-                assert.strict.equal(updated[0].userIdUpdate, testUsers.admin.id, `userIdUpdate 應為 admin.id`)
-                assert.strict.notEqual(updated[0].timeUpdate, '', `timeUpdate 應被填入`)
-                assert.strict.equal(verifyPassword(testUsers.target.rawPassword, updated[0].password, salt), true, `password hash 應保留 (仍可由原 rawPassword 驗證通過)`)
-            })
-
-
-            it(`E2E-002-account-empty: account → 空 → save → 前端 isError 攔下`, async function() {
-                let result = await captureAccountEmpty(page, lang)
-                //多階段: stage1 觸發 cell + stage2 錯誤 modal, 逐張比對
-                await assertBaselineStages(result, 'E2E-002-account-empty')
-                await assertModalText('E2E-002-account-empty')
-                //DB: account 仍為原值
-                let row = await woItems.users.select({ id: testUsers.target.id })
-                assert.strict.equal(row[0].account, testUsers.target.account, `account 不應被儲存`)
-            })
-
-
-            it(`E2E-003-account-duplicate: account → 同表內重複 → save → 前端 isError 攔下`, async function() {
-                let result = await captureAccountDuplicate(page, lang)
-                await assertBaselineStages(result, 'E2E-003-account-duplicate')
-                await assertModalText('E2E-003-account-duplicate')
-                let row = await woItems.users.select({ id: testUsers.target.id })
-                assert.strict.equal(row[0].account, testUsers.target.account, `account 不應被儲存`)
-            })
-
-
-            it(`E2E-004-email-empty: email → 空 → save → 前端 isError 攔下`, async function() {
-                let result = await captureEmailEmpty(page, lang)
-                await assertBaselineStages(result, 'E2E-004-email-empty')
-                await assertModalText('E2E-004-email-empty')
-                let row = await woItems.users.select({ id: testUsers.target.id })
-                assert.strict.equal(row[0].email, testUsers.target.email, `email 不應被儲存`)
-            })
-
-
-            it(`E2E-005-email-format: email → 格式錯 → save → 前端 isError 攔下`, async function() {
-                let result = await captureEmailFormat(page, lang)
-                await assertBaselineStages(result, 'E2E-005-email-format')
-                await assertModalText('E2E-005-email-format')
-                let row = await woItems.users.select({ id: testUsers.target.id })
-                assert.strict.equal(row[0].email, testUsers.target.email, `email 不應被儲存`)
-            })
-
-
-            it(`E2E-006-email-duplicate: email → 同表內重複 → save → 前端 isError 攔下`, async function() {
-                let result = await captureEmailDuplicate(page, lang)
-                await assertBaselineStages(result, 'E2E-006-email-duplicate')
-                await assertModalText('E2E-006-email-duplicate')
-                let row = await woItems.users.select({ id: testUsers.target.id })
-                assert.strict.equal(row[0].email, testUsers.target.email, `email 不應被儲存`)
-            })
-
-
-            it(`E2E-007-redir-empty: redir → 空 → save → 前端 isError 攔下`, async function() {
-                let result = await captureRedirEmpty(page, lang)
-                await assertBaselineStages(result, 'E2E-007-redir-empty')
-                await assertModalText('E2E-007-redir-empty')
-                let row = await woItems.users.select({ id: testUsers.target.id })
-                assert.strict.equal(row[0].redir, testUsers.target.redir, `redir 不應被儲存`)
-            })
-
-
-            it(`E2E-008-cannot-demote-self: 取消自己 isAdmin → save → cannotDemoteSelf modal → DB 不變`, async function() {
-                let result = await captureCannotDemoteSelf(page, lang)
-                await assertBaselineStages(result, 'E2E-008-cannot-demote-self')
-                await assertModalText('E2E-008-cannot-demote-self')
-                let adminInDb = await woItems.users.select({ id: testUsers.admin.id })
-                assert.strict.equal(adminInDb[0].isAdmin, 'y', `admin isAdmin 應仍為 'y'`)
-            })
-
-
-            it(`E2E-009-cannot-disable-self: 取消自己 isActive → save → cannotDisableSelf modal → DB 不變`, async function() {
-                let result = await captureCannotDisableSelf(page, lang)
-                await assertBaselineStages(result, 'E2E-009-cannot-disable-self')
-                await assertModalText('E2E-009-cannot-disable-self')
-                let adminInDb = await woItems.users.select({ id: testUsers.admin.id })
-                assert.strict.equal(adminInDb[0].isActive, 'y', `admin isActive 應仍為 'y'`)
-            })
-
-
-            it(`E2E-010-email-conflict-backend: email 同表內重複 (與 006 共用 UI 與訊息) — 前後端訊息一致契約`, async function() {
-                let buf = await captureEmailConflictBackend(page, lang)
-                await assertBaseline(buf, 'E2E-010-email-conflict-backend')
-                await assertModalText('E2E-010-email-conflict-backend')
-                let row = await woItems.users.select({ id: testUsers.target.id })
-                assert.strict.equal(row[0].email, testUsers.target.email, `email 不應被儲存`)
-            })
-
-
-            it(`E2E-011-token-expired-backend: token 過期 → save → backend reject (userSaveUsersFail 前綴)`, async function() {
-                let buf = await captureTokenExpiredBackend(page, lang)
-                await assertBaseline(buf, 'E2E-011-token-expired-backend')
-                await assertModalText('E2E-011-token-expired-backend')
-                //DB: name 不應被儲存 (因 token 過期 reject)
-                let row = await woItems.users.select({ id: testUsers.target.id })
-                assert.strict.equal(row[0].name, testUsers.target.name, `name 不應被儲存`)
-            })
-
-
-            //timemsTZ 格式 sanity check helper (YYYY-MM-DDTHH:mm:ss.SSS+HH:MM 或 +HHMM)
-            let isTimemsTZ = (s) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:?\d{2}$/.test(s || '')
-
-
-            it(`E2E-012-time-modify-verified: WTimeminute 修改 timeVerified → save → DB timemsTZ 寫入`, async function() {
-                let result = await captureTimeModifyVerified(page, lang)
-                //多階段: stage1 成功 modal + stage2 結果列, 逐張比對
-                await assertBaselineStages(result, 'E2E-012-time-modify-verified')
-                let row = await woItems.users.select({ id: testUsers.target.id })
-                assert.strict.notEqual(row[0].timeVerified, '2025-01-01T00:00:00.000+08:00', `timeVerified 應已變更, 實際: ${row[0].timeVerified}`)
-                assert.strict.notEqual(row[0].timeVerified, '', `timeVerified 不應為空`)
-                assert.strict.equal(isTimemsTZ(row[0].timeVerified), true, `timeVerified 應為 timemsTZ 格式, 實際: ${row[0].timeVerified}`)
-                //其他 time 欄位不應被本流程動到
-                assert.strict.equal(row[0].timeExpired, '2030-01-01T00:00:00.000+08:00', `timeExpired 不應被本 case 動到`)
-                assert.strict.equal(row[0].timeBlocked, targetInitialTimeBlocked, `timeBlocked 不應被本 case 動到`)
-            })
-
-
-            it(`E2E-013-time-modify-expired: WTimeminute 修改 timeExpired → save → DB timemsTZ 寫入`, async function() {
-                let result = await captureTimeModifyExpired(page, lang)
-                //多階段: stage1 成功 modal + stage2 結果列, 逐張比對
-                await assertBaselineStages(result, 'E2E-013-time-modify-expired')
-                let row = await woItems.users.select({ id: testUsers.target.id })
-                assert.strict.notEqual(row[0].timeExpired, '2030-01-01T00:00:00.000+08:00', `timeExpired 應已變更, 實際: ${row[0].timeExpired}`)
-                assert.strict.notEqual(row[0].timeExpired, '', `timeExpired 不應為空`)
-                assert.strict.equal(isTimemsTZ(row[0].timeExpired), true, `timeExpired 應為 timemsTZ 格式, 實際: ${row[0].timeExpired}`)
-                assert.strict.equal(row[0].timeVerified, '2025-01-01T00:00:00.000+08:00', `timeVerified 不應被本 case 動到`)
-                assert.strict.equal(row[0].timeBlocked, targetInitialTimeBlocked, `timeBlocked 不應被本 case 動到`)
-            })
-
-
-            it(`E2E-014-time-modify-blocked: WTimeminute 修改 timeBlocked → save → DB timemsTZ 寫入`, async function() {
-                let result = await captureTimeModifyBlocked(page, lang)
-                //多階段: stage1 成功 modal + stage2 結果列, 逐張比對
-                await assertBaselineStages(result, 'E2E-014-time-modify-blocked')
-                let row = await woItems.users.select({ id: testUsers.target.id })
-                assert.strict.notEqual(row[0].timeBlocked, targetInitialTimeBlocked, `timeBlocked 應已變更 (從預設 ${targetInitialTimeBlocked} 改為另一日)`)
-                assert.strict.equal(isTimemsTZ(row[0].timeBlocked), true, `timeBlocked 應為 timemsTZ 格式, 實際: ${row[0].timeBlocked}`)
-                assert.strict.equal(row[0].timeVerified, '2025-01-01T00:00:00.000+08:00', `timeVerified 不應被本 case 動到`)
-                assert.strict.equal(row[0].timeExpired, '2030-01-01T00:00:00.000+08:00', `timeExpired 不應被本 case 動到`)
-            })
-
-
-            it(`E2E-015-drag-reorder: 拖拉 target row 到 admin 之前 → save → DB order 重指派 = k+1`, async function() {
-                let buf = await captureDragReorder(page, lang)
-                await assertBaseline(buf, 'E2E-015-drag-reorder')
-                //DB: target row order 應小於 admin order (target 拖到前面)
-                let adminRow = await woItems.users.select({ id: testUsers.admin.id })
-                let targetRow = await woItems.users.select({ id: testUsers.target.id })
-                assert.strict.equal(targetRow[0].order < adminRow[0].order, true, `target.order (${targetRow[0].order}) 應 < admin.order (${adminRow[0].order})`)
-            })
 
         })
 

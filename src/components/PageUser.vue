@@ -164,7 +164,8 @@
                                 :backgroundColor="'rgba(255,255,255,0.5)'"
                                 :backgroundColorHover="'rgba(255,255,255,0.7)'"
                                 _shadow="false"
-                                @click="logout"
+                                :promiseUnlock="true"
+                                @click="onClickLogoutBtn"
                             ></WButtonChip>
                         </div>
 
@@ -423,7 +424,7 @@ export default {
             vo.chPwConfirmError = ''
         },
 
-        submitChangePassword: function() {
+        submitChangePassword: function(opt = {}) {
             let vo = this
 
             let core = async () => {
@@ -516,48 +517,56 @@ export default {
                 return 'ok'
             }
 
-            //core
-            core()
-                .catch((err) => {
-                    console.log('catch', err)
-                    vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
-                })
-                .finally(() => {
+            //runSubmit: 送出中(至結果訊息框關閉)再觸發即略過, 送出鈕之滑鼠與鍵盤 Enter 同一狀態;
+            //opt.pm 為送出鈕之 promiseUnlock 鎖, 於請求結束(updateLoading(false))時釋放 (ADR-074)
+            return vo.$ui.runSubmit('changeUserPassword', () => {
+                return core()
+                    .catch((err) => {
+                        console.log('catch', err)
+                        vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
+                    })
+                    .finally(() => {
 
-                    //hide loading
-                    vo.$ui.updateLoading(false)
+                        //hide loading
+                        vo.$ui.updateLoading(false)
 
-                })
+                    })
+            }, opt)
 
         },
 
         onClickSubmitChangePasswordBtn: function(msg) {
-            //pm.resolve 立即釋放 button 視覺鎖 (對齊 w-component-vue 設計意圖: 「需使用promise解鎖」=釋放鎖,
-            //不該 gate 在下游 modal 關閉). 同步雙擊已被 WButtonChip clickBtn 之 `if (loadingTrans) return` 擋住,
-            //非同步雙擊由 submitChangePassword 內部 updateLoading(true) 全頁 overlay 接管, 不需 button 持續鎖.
-            //若 gate 在 await fn(), fn 內部 await showCheckYes 會把 button 鎖到使用者點 OK → e2e 截圖卡 loading 微差.
+            //promiseUnlock 之鎖交由 submitChangePassword 之 runSubmit 於請求結束時釋放, 不於此解鎖: 請求期間按鈕之滑鼠與鍵盤 Enter 皆擋,
+            //結果訊息框出現時按鈕已恢復(不重演 ADR-033 鎖到訊息框關閉之截圖差異) (ADR-074; 原第一行即 pm.resolve, 鍵盤連按照樣送出)
             let vo = this
-            msg.pm.resolve()
-            vo.submitChangePassword()
+            vo.submitChangePassword({ pm: msg.pm })
         },
 
-        logout: function() {
+        onClickLogoutBtn: function(msg) {
+            //同 onClickSubmitChangePasswordBtn: 鎖交由 logout 之 runSubmit 於登出結束時釋放 (ADR-074)
+            let vo = this
+            vo.logout({ pm: msg.pm })
+        },
+
+        logout: function(opt = {}) {
             // console.log('methods logout')
 
             let vo = this
 
-            //logout
-            vo.$ui.logout()
-                .then(() => {
+            //runSubmit: 登出中再觸發即略過; 與標題列兩處登出(Layout.logout)共用 'logout' 狀態 (ADR-074; 原本頁無任何重入防護, 滑鼠雙擊送出 2 次)
+            return vo.$ui.runSubmit('logout', () => {
+                return vo.$ui.logout()
+                    .then(() => {
 
-                    //登出時提交變更viewState返回登入頁
-                    vo.$ui.updateViewState('login')
-                    console.log(`logout, goto view['login'] page`)
+                        //登出時提交變更viewState返回登入頁
+                        vo.$ui.updateViewState('login')
+                        console.log(`logout, goto view['login'] page`)
 
-                })
-                .catch((err) => {
-                    console.log(`logout err[${err}]`)
-                })
+                    })
+                    .catch((err) => {
+                        console.log(`logout err[${err}]`)
+                    })
+            }, opt)
 
         },
 

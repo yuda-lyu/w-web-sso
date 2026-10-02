@@ -54,7 +54,7 @@
                                     :bottomLineBorderColorHover="'#ccc'"
                                     :bottomLineBorderColorFocus="'#ddd'"
                                     v-model="account"
-                                    @enter="login"
+                                    @enter="onEnterSubmit"
                                 ></WText>
 
                             </div>
@@ -93,7 +93,7 @@
                                     :password="!showPassword"
                                     v-model="password"
                                     @click-right="showPassword=!showPassword"
-                                    @enter="login"
+                                    @enter="onEnterSubmit"
                                 ></WText>
 
                             </div>
@@ -134,6 +134,7 @@
                                         :password="!showPassword"
                                         v-model="regConfirmPassword"
                                         @click-right="showPassword=!showPassword"
+                                        @enter="onEnterSubmit"
                                     ></WText>
                                 </div>
                             </div>
@@ -163,6 +164,7 @@
                                         :bottomLineBorderColorHover="'#ccc'"
                                         :bottomLineBorderColorFocus="'#ddd'"
                                         v-model="regName"
+                                        @enter="onEnterSubmit"
                                     ></WText>
                                 </div>
                             </div>
@@ -186,6 +188,7 @@
                                         :bottomLineBorderColorHover="'#ccc'"
                                         :bottomLineBorderColorFocus="'#ddd'"
                                         v-model="regEmail"
+                                        @enter="onEnterSubmit"
                                     ></WText>
                                 </div>
                             </div>
@@ -275,6 +278,7 @@
                                         :bottomLineBorderColorHover="'#ccc'"
                                         :bottomLineBorderColorFocus="'#ddd'"
                                         v-model="resendEmail"
+                                        @enter="onEnterSubmit"
                                     ></WText>
                                 </div>
                             </div>
@@ -593,7 +597,7 @@ export default {
 
         },
 
-        register: function() {
+        register: function(opt = {}) {
             let vo = this
             let lang = get(vo, '$store.state.lang', 'eng')
 
@@ -643,31 +647,32 @@ export default {
                 return 'ok'
             }
 
-            //core
-            return core()
-                .catch((err) => {
-                    console.log('catch', err)
-                    vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
-                })
-                .finally(() => {
+            //runSubmit: 送出中(至結果訊息框關閉)再觸發即略過, 送出鈕之滑鼠 / 鍵盤 Enter 與各欄 Enter 同一狀態;
+            //opt.pm 為送出鈕之 promiseUnlock 鎖, 於請求結束(updateLoading(false))時釋放 (ADR-074)
+            return vo.$ui.runSubmit('register', () => {
+                return core()
+                    .catch((err) => {
+                        console.log('catch', err)
+                        vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
+                    })
+                    .finally(() => {
 
-                    //hide loading
-                    vo.$ui.updateLoading(false)
+                        //hide loading
+                        vo.$ui.updateLoading(false)
 
-                })
+                    })
+            }, opt)
 
         },
 
         onClickRegisterBtn: function(msg) {
-            //pm.resolve 立即釋放 button 視覺鎖 (對齊 w-component-vue「需使用promise解鎖」設計意圖).
-            //同步雙擊由 WButtonChip clickBtn `if (loadingTrans) return` 擋, 非同步雙擊由 register 內部
-            //updateLoading 全頁 overlay 接管. 詳見 PageUser.onClickSubmitChangePasswordBtn 註解.
+            //promiseUnlock 之鎖交由 register 之 runSubmit 於請求結束時釋放, 不於此解鎖: 請求期間按鈕之滑鼠與鍵盤 Enter 皆擋,
+            //結果訊息框出現時按鈕已恢復 (ADR-074; 原第一行即 pm.resolve, 鍵盤連按照樣送出)
             let vo = this
-            msg.pm.resolve()
-            vo.register()
+            vo.register({ pm: msg.pm })
         },
 
-        resendVerify: function() {
+        resendVerify: function(opt = {}) {
             let vo = this
             let lang = get(vo, '$store.state.lang', 'eng')
 
@@ -711,39 +716,67 @@ export default {
                 return 'ok'
             }
 
-            //core
-            return core()
-                .catch((err) => {
-                    console.log('catch', err)
-                    vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
-                })
-                .finally(() => {
+            //runSubmit: 同 register (ADR-074)
+            return vo.$ui.runSubmit('resendVerifyEmail', () => {
+                return core()
+                    .catch((err) => {
+                        console.log('catch', err)
+                        vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
+                    })
+                    .finally(() => {
 
-                    //hide loading
-                    vo.$ui.updateLoading(false)
+                        //hide loading
+                        vo.$ui.updateLoading(false)
 
-                })
+                    })
+            }, opt)
 
         },
 
         onClickResendVerifyBtn: function(msg) {
-            //同 onClickRegisterBtn: handler 立刻 pm.resolve, fire-and-forget resendVerify.
+            //同 onClickRegisterBtn: 鎖交由 resendVerify 之 runSubmit 於請求結束時釋放 (ADR-074)
             let vo = this
-            msg.pm.resolve()
-            vo.resendVerify()
+            vo.resendVerify({ pm: msg.pm })
         },
 
         onClickLoginBtn: function(msg) {
-            //同 onClickRegisterBtn: handler 第一行立即 pm.resolve 釋放 button 視覺鎖, fire-and-forget login.
-            //同步雙擊由 WButtonChip clickBtn `if (loadingTrans) return` 擋, 非同步雙擊由 mUI.login 內部
-            //updateLoading 全頁 overlay 接管 (登入特例: 成功轉址路徑不關 loading, 見 mUI.login hideLoadingForEnd).
+            //同 onClickRegisterBtn: 鎖交由 login 之 runSubmit 於請求結束時釋放; 成功轉址時保持鎖定至頁面離開 (ADR-074)
             let vo = this
-            msg.pm.resolve()
-            vo.login()
+            vo.login({ pm: msg.pm })
         },
 
-        login: function() {
+        onEnterSubmit: function() {
+            //各欄按 Enter: 依目前畫面送出該畫面之表單, 條件與該畫面送出鈕之可按條件相同.
+            //原帳號、密碼欄一律呼叫 login, 於申請帳號 / 重寄驗證信畫面按 Enter 會送出登入且畫面無任何反應 (ADR-074)
+            let vo = this
+            if (vo.viewMode === 'login') {
+                if (vo.hasAcPw) {
+                    vo.login()
+                }
+            }
+            else if (vo.viewMode === 'register') {
+                if (vo.hasRegFields) {
+                    vo.register()
+                }
+            }
+            else if (vo.viewMode === 'resend') {
+                vo.resendVerify()
+            }
+        },
+
+        login: function(opt = {}) {
             // console.log('methods login')
+
+            let vo = this
+
+            //runSubmit: 登入中再觸發(登入鈕之滑鼠 / 鍵盤、帳號密碼欄 Enter)即略過; 成功轉址(mUI.login 回 'redir')時保持占位與按鈕鎖至頁面離開 (ADR-074)
+            return vo.$ui.runSubmit('login', () => {
+                return vo._login()
+            }, { ...opt, hold: (r) => r === 'redir' })
+
+        },
+
+        _login: function() {
 
             let vo = this
 
@@ -757,8 +790,8 @@ export default {
             //login
             //強制變更密碼模式: 若 userSelf.isForceChangePw === 'y', 不走 useRedir,
             //而是登入後 showCheckYes 提示再進 user view (見 .then 內部讀最新 userSelf 處理)
-            vo.$ui.login(vo.account, vo.password, { useRedir: view === 'login' })
-                .then(async () => {
+            return vo.$ui.login(vo.account, vo.password, { useRedir: view === 'login' })
+                .then(async (r) => {
 
                     //login 成功後 store.userSelf 已被 mUI updateUserSelf 寫入
                     let userSelf = get(vo, '$store.state.userSelf', {})
@@ -776,6 +809,8 @@ export default {
                         console.log(`login, goto view[${view}] page`)
                     }
 
+                    //r: mUI.login 之結果('redir' 轉址中 / 'done'), 供 login 之 runSubmit 判斷是否保持占位
+                    return r
                 })
                 .catch((err) => {
 

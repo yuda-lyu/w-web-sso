@@ -5,7 +5,9 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, launchBrowser, waitUntilExist, typeIntoNthInput } from './tools/e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, launchBrowser, waitUntilExist, typeIntoNthInput } from './tools/e2e-setup.mjs'
+//產製端與比對端同一案例管線 (規格詳 w-package-tools-e2e 之 README.md §2.1-2.2); 頁面文字走訪與 text 斷言取自 w-package-tools-e2e (原檔內手寫 pageHasText / collectVisibleText, 內容相同)
+import { runBaselineCase, createBaselineGate, assertTextSpec, pageHasText, collectDomText, waitGridIdle, gridContentBox } from './tools/e2eLib.mjs'
 
 
 //
@@ -16,7 +18,11 @@ import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl
 // 使用方式：
 //   1. 先產生標準圖：node test/e2e-ips.test.mjs --baseline
 //   2. 跑測試比對：npx mocha test/e2e-ips.test.mjs --timeout 240000
-//   --names <eng-E2E-001-list-loaded,...> 進行手術式 baseline 重產
+//   手術式重產 (截圖前篩選, 規格詳 w-package-tools-e2e 之 README.md §2.2): --names <項,...> 每項可帶語系前綴 (eng-/cht-), 不帶則兩語系皆產;
+//     階段圖鍵 (如 eng-E2E-002-2-save-success-modal) 只寫該張, 案例鍵或編號前綴 (如 E2E-002) 寫該案全部階段, 不符任何鍵即報錯;
+//     --langs; --write-mode missing|changed; env E2E_BASELINE_OUT_DIR=<dir> 寫到暫存目錄 (等價驗證用)
+//   產製端與比對端呼叫同一案例管線 (runBaselineCase): 每案 fresh browser + DB 重置 → 復原 admin token 與 ips seed →
+//     流程中每階段截圖後當場語意斷言 → DB 不變式 → 寫檔 / 比對
 //
 // 標準圖存放：test/pics/ips/ips-{lang}-{number}-{name}.png
 //
@@ -38,28 +44,6 @@ let baselineDir = './test/pics/ips'
 let langs = ['eng', 'cht']
 
 
-let baselineNamesFilter = null
-{
-    let i = process.argv.indexOf('--names')
-    if (i >= 0 && process.argv[i + 1]) {
-        baselineNamesFilter = new Set(process.argv[i + 1].split(','))
-    }
-}
-function writeBaseline(lang, name, buf) {
-    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`)) {
-        console.log(`  [skip] ${lang}-${name}`)
-        return
-    }
-    fs.writeFileSync(bp(lang, name), buf)
-}
-
-
-//是否需要產生此 case 的標準圖. --names 指定時只有指定 case 回 true → 連「截圖」都跳過 (非僅跳寫檔).
-function shouldGen(lang, name) {
-    return !baselineNamesFilter || baselineNamesFilter.has(`${lang}-${name}`)
-}
-
-
 function bp(lang, name) {
     return path.join(baselineDir, `ips-${lang}-${name}.png`)
 }
@@ -67,7 +51,8 @@ function bp(lang, name) {
 
 // ===================================================================
 // 預期語意斷言 (從 spec/流程_後台IP清單.md + procLang.mjs 衍生, 非現狀指紋)
-// 每個 case 對應的可觀察文字; 不含 → 修系統或修 spec, 不改 baseline.
+// 每張 baseline (圖鍵) 對應的可觀察文字, 於截圖函式內「該階段截圖當場」斷言 (產製端與比對端皆跑, 寫檔 / 比對之前);
+// 不含 → 修系統或修 spec, 不改 baseline.
 // ===================================================================
 
 let expectedSpecText = {
@@ -81,7 +66,7 @@ let expectedSpecText = {
         eng: { mode: 'text', value: '10.0.0.99' },
         cht: { mode: 'text', value: '10.0.0.99' },
     },
-    //E2E-002 stage2: 儲存成功 modal 應出現 ipSaveIpsSuccess 文字 (modal 仍顯示時在 capture fn 內斷言, mocha 端跳過)
+    //E2E-002 stage2: 儲存成功 modal 應出現 ipSaveIpsSuccess 文字 (modal 仍顯示時在 capture fn 內、截圖前斷言)
     'E2E-002-2-save-success-modal': {
         eng: { mode: 'text', value: 'Save IPs successfully' },
         cht: { mode: 'text', value: '儲存IP數據成功' },
@@ -96,7 +81,7 @@ let expectedSpecText = {
         eng: { mode: 'text', value: '10.0.0.2' },
         cht: { mode: 'text', value: '10.0.0.2' },
     },
-    //E2E-003 stage2: 刪除 + save 成功 modal (同 E2E-002, 共用 ipSaveIpsSuccess; modal 仍顯示時在 capture fn 內斷言, mocha 端跳過)
+    //E2E-003 stage2: 刪除 + save 成功 modal (同 E2E-002, 共用 ipSaveIpsSuccess; modal 仍顯示時在 capture fn 內、截圖前斷言)
     'E2E-003-2-delete-row-save-success': {
         eng: { mode: 'text', value: 'Save IPs successfully' },
         cht: { mode: 'text', value: '儲存IP數據成功' },
@@ -377,12 +362,13 @@ async function loginAsAdminAndOpenIpsList(page, lang) {
     await page.waitForTimeout(10000)
 
     //偵測: 等 backstage Statistics 文字 (login 成功 + redirect 完成)
-    await waitUntilExist(page, `backstage ${t.statistics} 文字`, (s) => document.body.innerText.includes(s), { arg: t.statistics })
+    await waitUntilExist(page, `backstage ${t.statistics} 文字`, (s) => document.body.innerText.includes(s), { arg: t.statistics, timeout: 60000 })
 
     //點 Ips list
-    await page.locator(`text="${t.ipsList}"`).first().waitFor({ state: 'visible', timeout: 15000 })
+    await page.locator(`text="${t.ipsList}"`).first().waitFor({ state: 'visible', timeout: 60000 })
     await page.locator(`text="${t.ipsList}"`).first().click()
-    await page.waitForTimeout(2500)
+    //等清單頁之「編輯模式」勾選列渲染後再讀其狀態(取代固定 2.5 秒: 未渲染時下方讀到 null 即略過開啟, 2026-09-28; 以下偵測上限同日放寬至 60 秒)
+    await page.locator(`text="${t.editMode}"`).first().waitFor({ state: 'visible', timeout: 60000 })
 
     //確認 Edit mode 是 on; 否則點一下
     let editChecked = await page.evaluate((label) => {
@@ -396,23 +382,8 @@ async function loginAsAdminAndOpenIpsList(page, lang) {
         await page.waitForTimeout(500)
     }
 
-    //等 ag-grid 初始載入後 cell 完全 hydrate
-    await page.waitForFunction(async () => {
-        let snap = () => {
-            let cells = document.querySelectorAll('.ag-cell')
-            return JSON.stringify({
-                count: cells.length,
-                first10: Array.from(cells).slice(0, 10).map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 20)),
-            })
-        }
-        let s1 = snap()
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s2 = snap()
-        if (s1 !== s2) return false
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s3 = snap()
-        return s2 === s3
-    }, null, { timeout: 15000 })
+    //等 ag-grid 初始載入後 cell 完全 hydrate (waitGridIdle: 內容＋幾何簽章連續 1s 不變; 清單必有 5 列 ips seed, 故 minCells:1 不把尚未出現之表格當靜止)
+    await waitGridIdle(page, { minCells: 1, timeout: 60000 })
     await page.waitForTimeout(1000)
 }
 
@@ -437,35 +408,15 @@ async function clickTrash(page) {
 async function waitCheckYes(page, lang) {
     let t = kpUiText[lang]
     await page.locator(`text="${t.ok}"`).first().waitFor({ state: 'visible', timeout: 30000 })
-    //modal 出現後穩定化: 1) 捲軸歸位 2) hover state 清除 3) 等 ag-grid idle (連續三 raf 不變)
+    //modal 出現後穩定化: 1) 捲軸歸位 2) hover state 清除 3) 等 ag-grid idle (waitGridIdle: 內容＋幾何簽章連續 1s 不變)
     await page.evaluate(() => {
         window.scrollTo(0, 0)
         let body = document.querySelector('.ag-center-cols-viewport')
         if (body) body.scrollLeft = 0
     })
     await page.mouse.move(0, 0)
-    await page.waitForFunction(async () => {
-        let body = document.querySelector('.ag-center-cols-viewport')
-        if (!body) return true //無 grid, 直接 ok
-        if (body.scrollLeft !== 0) return false
-        //ip header 必須出現
-        if (!document.querySelector('.ag-header-cell[col-id="ip"]')) return false
-        let snap = () => {
-            let cells = document.querySelectorAll('.ag-cell')
-            let row0Cells = Array.from(document.querySelectorAll('.ag-row[row-index="0"] .ag-cell'))
-            return JSON.stringify({
-                count: cells.length,
-                row0: row0Cells.map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
-            })
-        }
-        let s1 = snap()
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s2 = snap()
-        if (s1 !== s2) return false
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s3 = snap()
-        return s2 === s3
-    }, null, { timeout: 15000 })
+    //ip 標頭須出現、水平捲動量須為 0; 呼叫處 (E2E-002/003/004 儲存後 modal 顯示中) 表格必有列 (003 刪 1 列仍餘 4 列), 故 minCells:1
+    await waitGridIdle(page, { requireSelector: '.ag-header-cell[col-id="ip"]', requireScrollLeftZero: true, minCells: 1, timeout: 15000 })
     await page.waitForTimeout(1500)
 }
 
@@ -474,70 +425,19 @@ async function waitCheckYes(page, lang) {
 // 共用語意斷言 helpers
 // ===================================================================
 
-async function pageHasText(page, text) {
-    return await page.evaluate((t) => {
-        let walk = (el) => {
-            if (!el) return false
-            if (el.nodeType === 3) return (el.nodeValue || '').includes(t)
-            if (el.nodeType !== 1) return false
-            let tag = el.tagName
-            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return false
-            for (let c of el.childNodes) {
-                if (walk(c)) return true
-            }
-            return false
-        }
-        return walk(document.body)
-    }, text)
-}
-
-
-async function collectVisibleText(page) {
-    return await page.evaluate(() => {
-        let parts = []
-        let walk = (el) => {
-            if (!el) return
-            if (el.nodeType === 3) {
-                let t = (el.nodeValue || '').trim()
-                if (t) parts.push(t)
-                return
-            }
-            if (el.nodeType !== 1) return
-            let tag = el.tagName
-            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return
-            for (let c of el.childNodes) walk(c)
-        }
-        walk(document.body)
-        return parts.join(' | ').slice(0, 2000)
-    })
-}
-
-
+//頁面文字之走訪 (pageHasText / collectDomText) 與 text / absentText 斷言 (assertTextSpec) 取自 w-package-tools-e2e (原本檔內手寫, 內容相同)
 async function assertSpecForCase(page, lang, name) {
     let expected = expectedSpecText[name]
     if (!expected || !expected[lang]) {
         throw new Error(`expectedSpecText 未為 case "${name}" / lang "${lang}" 定義`)
     }
-    let e = expected[lang]
-    if (e.mode === 'text') {
-        let found = await pageHasText(page, e.value)
-        if (!found) {
-            let dump = await collectVisibleText(page)
-            assert.fail(`預期含 "${e.value}" (${name}), 實際: ${dump}`)
-        }
-    }
-    else if (e.mode === 'absentText') {
-        let stillHas = await pageHasText(page, e.value)
-        if (stillHas) {
-            let dump = await collectVisibleText(page)
-            assert.fail(`預期不含 "${e.value}" (${name}), 但見到. 可見文字: ${dump}`)
-        }
-    }
+    await assertTextSpec(page, expected[lang], { label: name })
 }
 
 
 // ===================================================================
 // 4 個 capture (全 UI 互動, 不走 vm.method / state mutation)
+// 產製端與比對端共用; 每階段截圖後當場對 spec 做語意斷言 (狀態仍在畫面上), DB 不變式於 cases 之 verify
 // ===================================================================
 
 //E2E-001 初始檢視態: 進 Ips list, 表格顯示 seed 列, 截圖
@@ -545,8 +445,11 @@ async function captureListLoaded(page, lang) {
     await loginAsAdminAndOpenIpsList(page, lang)
     //等 seed ip (10.0.0.1) 在 table 內可見
     await waitUntilExist(page, 'first seed ip 10.0.0.1', () => document.body.innerText.includes('10.0.0.1'))
-    //框 ag-grid 表格區域 (觀看區: IP 清單表格全體)
-    return await captureStableWithBox(page, '.ag-theme-balham')
+    //框 IP 清單表格之標頭與各列 (gridContentBox; 2026-09-28 改: 原框整個表格外框, 列下方空白一併框入, 技能 §7.2 表格列)
+    let buf = await captureStableWithBox(page, gridContentBox('.ag-theme-balham'))
+    //語意斷言 (截圖後當場): 表格顯示 seed ip
+    await assertSpecForCase(page, lang, 'E2E-001-list-loaded')
+    return buf
 }
 
 
@@ -587,6 +490,8 @@ async function captureModifyIpSaveSuccess(page, lang) {
     await page.mouse.move(0, 0)
     await page.waitForTimeout(800)
     let bufEdited = await captureStableWithBox(page, `.ag-row[row-index="${rowIdx}"] .ag-cell[col-id="ip"]`)
+    //[stage1 語意斷言] 截圖後當場 (save 前): ip cell 已顯示新值 (原比對端於流程結束後才驗, 屆時驗到的是 stage3 之畫面)
+    await assertSpecForCase(page, lang, 'E2E-002-1-ip-edited-before-save')
 
     await clickSave(page)
     await waitCheckYes(page, lang)
@@ -597,7 +502,7 @@ async function captureModifyIpSaveSuccess(page, lang) {
         let exp = expectedSpecText['E2E-002-2-save-success-modal'][lang].value
         let found = await pageHasText(page, exp)
         if (!found) {
-            let dump = await collectVisibleText(page)
+            let dump = await collectDomText(page)
             assert.fail(`預期成功 modal 含 "${exp}" (E2E-002-2-save-success-modal), 實際: ${dump}`)
         }
     }
@@ -611,27 +516,12 @@ async function captureModifyIpSaveSuccess(page, lang) {
     //等 grid 重 fetch 並顯示修改後 ip (10.0.0.99)
     await page.locator('text="10.0.0.99"').first().waitFor({ state: 'visible', timeout: 15000 })
 
-    //等 ag-grid 重 fetch 後重畫穩定 (連續三 raf cell 不變)
+    //等 ag-grid 重 fetch 後重畫穩定 (waitGridIdle: 內容＋幾何簽章連續 1s 不變; 前一步已見 10.0.0.99, 表格必有列, 故 minCells:1)
     await page.evaluate(() => {
         let body = document.querySelector('.ag-center-cols-viewport')
         if (body) body.scrollLeft = 0
     })
-    await page.waitForFunction(async () => {
-        let snap = () => {
-            let cells = document.querySelectorAll('.ag-cell')
-            return JSON.stringify({
-                count: cells.length,
-                first10: Array.from(cells).slice(0, 10).map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
-            })
-        }
-        let s1 = snap()
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s2 = snap()
-        if (s1 !== s2) return false
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s3 = snap()
-        return s2 === s3
-    }, null, { timeout: 15000 })
+    await waitGridIdle(page, { minCells: 1, timeout: 15000 })
     await page.mouse.move(0, 0)
     await page.waitForTimeout(1500)
 
@@ -653,6 +543,8 @@ async function captureModifyIpSaveSuccess(page, lang) {
         `.ag-pinned-left-cols-container .ag-row[row-index="${updatedRowIdx}"]`,
         `.ag-center-cols-container .ag-row[row-index="${updatedRowIdx}"]`,
     ])
+    //[stage3 語意斷言] 截圖後當場: modal 關閉後表格顯示修改後的 ip 值
+    await assertSpecForCase(page, lang, 'E2E-002-3-modify-ip-result-row')
 
     //多階段回傳 dict (baselineName → buf); 數字前綴使檔名排序 ≡ 流程階段順序:
     //  1 觸發圖 (ip cell 已改未存) → 2 成功 modal → 3 表格中已更新的 ip 列
@@ -692,6 +584,9 @@ async function captureDeleteRowSaveSuccess(page, lang) {
         `.ag-pinned-left-cols-container .ag-row[row-index="${rowIdx}"]`,
         `.ag-center-cols-container .ag-row[row-index="${rowIdx}"]`,
     ])
+    //[stage1 語意斷言] 截圖後當場 (trash / save 前): 目標 ip 仍在表格
+    //(原比對端於流程結束後才驗, 屆時該列已刪, 故當時略過未驗; 改為當場驗後即可執行)
+    await assertSpecForCase(page, lang, 'E2E-003-1-row-selected-before-save')
 
     await clickTrash(page)
     await clickSave(page)
@@ -702,7 +597,7 @@ async function captureDeleteRowSaveSuccess(page, lang) {
         let exp = expectedSpecText['E2E-003-2-delete-row-save-success'][lang].value
         let found = await pageHasText(page, exp)
         if (!found) {
-            let dump = await collectVisibleText(page)
+            let dump = await collectDomText(page)
             assert.fail(`預期成功 modal 含 "${exp}" (E2E-003-2-delete-row-save-success), 實際: ${dump}`)
         }
     }
@@ -743,7 +638,95 @@ async function captureTokenExpiredSaveFail(page, lang) {
     await clickSave(page)
     await waitCheckYes(page, lang)
     //框 CheckYes 失敗 modal (觀看區: System message 持久 modal 訊息區)
-    return await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
+    let buf = await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
+    //語意斷言 (截圖後當場, modal 仍顯示): 後端 reject 之失敗訊息前綴
+    await assertSpecForCase(page, lang, 'E2E-004-token-expired-save-fail')
+    return buf
+}
+
+
+// ===================================================================
+// 案例宣告與案例管線 (產製端與比對端共用)
+// ===================================================================
+
+//順序與 mocha it 相同 (產製順序 ≡ 比對順序); it 標題即案例鍵 (--grep 依之); stages 為該案產出之圖鍵 (與寫檔名、比對名一致; 產出與宣告不符即報錯)
+//verify: DB 副作用不變式 (原只在比對端 it 末尾、比對標準圖之後; 今兩端皆於寫檔 / 比對之前)
+let cases = [
+    {
+        name: 'E2E-001-list-loaded',
+        run: captureListLoaded,
+        stages: ['E2E-001-list-loaded'],
+    },
+    {
+        name: 'E2E-002-modify-ip-save-success',
+        run: captureModifyIpSaveSuccess,
+        stages: ['E2E-002-1-ip-edited-before-save', 'E2E-002-2-save-success-modal', 'E2E-002-3-modify-ip-result-row'],
+        verify: async () => {
+            //修改後 DB 該列 ip 應變為新值
+            let rs = await woItems.ips.select({ id: 'id-test-ip-1' }).catch(() => [])
+            assert.strict.equal(rs.length, 1, `id-test-ip-1 應存在`)
+            assert.strict.equal(rs[0].ip, '10.0.0.99', `id-test-ip-1 之 ip 應已更新為 10.0.0.99, 實際: ${rs[0].ip}`)
+        },
+    },
+    {
+        name: 'E2E-003-delete-row-save-success',
+        run: captureDeleteRowSaveSuccess,
+        stages: ['E2E-003-1-row-selected-before-save', 'E2E-003-2-delete-row-save-success'],
+        verify: async () => {
+            //刪除後 DB 該列應不存在
+            let rs = await woItems.ips.select({ id: 'id-test-ip-2' }).catch(() => [])
+            assert.strict.equal(rs.length, 0, `id-test-ip-2 應已被刪除, 實際: ${rs.length} 筆`)
+            //其他 seed 列應仍在 (只篩 id-test-ip-* 前綴, 避開系統自動追蹤之非 seed IP 殘留)
+            let all = await woItems.ips.select().catch(() => [])
+            let seedRows = all.filter(r => (r.id || '').startsWith('id-test-ip-'))
+            assert.strict.equal(seedRows.length, testIps.length - 1, `其他 seed ips 列應仍在, 實際: ${seedRows.length} 筆 (預期 ${testIps.length - 1})`)
+        },
+    },
+    {
+        name: 'E2E-004-token-expired-save-fail',
+        run: captureTokenExpiredSaveFail,
+        stages: ['E2E-004-token-expired-save-fail'],
+        verify: async () => {
+            //token 過期 reject → DB 不應變動 (id-test-ip-3 之 ip 仍為原值)
+            let rs = await woItems.ips.select({ id: 'id-test-ip-3' }).catch(() => [])
+            assert.strict.equal(rs.length, 1, `id-test-ip-3 應仍存在`)
+            assert.strict.equal(rs[0].ip, '10.0.0.3', `token 過期 reject 後 id-test-ip-3 之 ip 不應變動 (預期 10.0.0.3, 實際: ${rs[0].ip})`)
+            //seed ips 數量不變 (同上, 只篩 id-test-ip-* 前綴)
+            let all = await woItems.ips.select().catch(() => [])
+            let seedRows = all.filter(r => (r.id || '').startsWith('id-test-ip-'))
+            assert.strict.equal(seedRows.length, testIps.length, `token 過期 reject 後 seed ips 總數不應變動 (預期 ${testIps.length}, 實際: ${seedRows.length})`)
+        },
+    },
+]
+
+//單一案例管線: per-case DB 重置 + fresh browser (新 context, 自動接受 dialog) → 復原 admin token 與 ips seed →
+//流程 (每階段截圖後語意斷言) → DB 不變式 → 寫檔 / 比對 → 關瀏覽器 → 清資料
+async function runCase(mode, lang, c, extra = {}) {
+    return await runBaselineCase({
+        mode,
+        lang,
+        name: c.name,
+        run: c.run,
+        stages: c.stages,
+        verify: c.verify || null,
+        launch: launchBrowser,
+        pathOf: bp,
+        labelOf: (lg, key) => `ips-${lg}-${key}`,
+        match: assertBaselineMatch,
+        prepare: async () => {
+            await deleteTestUsersAndTokensAndIps()
+            await insertTestUsersAndTokensAndIps()
+        },
+        beforeRun: async () => {
+            //原只在比對端 it 開頭 (開頁後、流程前) 執行, 今兩端共跑 (順序同原比對端)
+            await resetAdminToken()
+            await resetIpsSeed()
+        },
+        afterCase: async () => {
+            await deleteTestUsersAndTokensAndIps()
+        },
+        ...extra,
+    })
 }
 
 
@@ -751,53 +734,26 @@ async function captureTokenExpiredSaveFail(page, lang) {
 // 產生標準圖
 // ===================================================================
 
-async function generateBaselineForLang(lang) {
-    console.log(`=== 產生標準圖（${lang}）===`)
-
-    let cases = [
-        ['E2E-001-list-loaded', captureListLoaded],
-        ['E2E-002-modify-ip-save-success', captureModifyIpSaveSuccess],
-        ['E2E-003-delete-row-save-success', captureDeleteRowSaveSuccess],
-        ['E2E-004-token-expired-save-fail', captureTokenExpiredSaveFail],
-    ]
-
-    //per-case fresh browser + DB setup, 與 mocha test 端 beforeEach/afterEach 對稱.
-    //保證 marathon mode 與 single-case run 收斂到同一 stable state.
-    for (let [name, fn] of cases) {
-        if (!shouldGen(lang, name)) continue
-        console.log(`  ${name}`)
-
-        await deleteTestUsersAndTokensAndIps()
-        await insertTestUsersAndTokensAndIps()
-
-        let browser = await launchBrowser()
-        let page = await browser.newPage()
-        page.on('dialog', async (dialog) => { await dialog.accept() })
-
-        let result = await fn(page, lang)
-        //多階段: fn 可回 Buffer (單張) 或 dict { baselineName: buf } (多張); 統一成 dict 寫檔
-        let stages = Buffer.isBuffer(result) ? { [name]: result } : result
-        for (let [bname, b] of Object.entries(stages)) {
-            writeBaseline(lang, bname, b)
-        }
-
-        await browser.close()
-        await deleteTestUsersAndTokensAndIps()
-    }
-}
-
-
 async function generateBaseline() {
     process.env.E2E_STRICT_CAPTURE = '1'
+    //截圖前篩選 (--names / --langs / --write-mode / E2E_BASELINE_OUT_DIR); 不符任何鍵即於此報錯
+    let gate = createBaselineGate({ langs, cases })
+    console.log(gate.describe())
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    for (let lang of langs) {
-        await generateBaselineForLang(lang)
+    for (let lang of gate.langs) {
+        console.log(`=== 產生標準圖（${lang}）===`)
+        for (let c of gate.casesFor(lang)) {
+            console.log(`  ${c.name}`)
+            await runCase('regen', lang, c, { gate })
+        }
     }
+    //--names 之任一項未產出即報錯 (不靜默略過)
+    gate.finalize()
 
     await deleteTestUsersAndTokensAndIps()
 
@@ -820,114 +776,21 @@ if (process.argv.includes('--baseline')) {
 }
 else {
 
-    //=== baseline 比對 helper (內含: 檔存在 / pixelmatch 反鋸齒容差 / spec 語意斷言) ===
-    async function verifyBaseline(page, lang, name, buf, skipSpec = false) {
-        if (!skipSpec) {
-            await assertSpecForCase(page, lang, name)
-        }
-        let baselinePath = bp(lang, name)
-        //fail 時自動保留 capture + baseline 到 ./testPending (不覆蓋, 帶 timestamp) 供 diff
-        assertBaselineMatch(buf, baselinePath, `ips-${lang}-${name}`)
-    }
-
-
     for (let lang of langs) {
 
         describe(`Ips E2E [${lang}] — UI baseline 比對`, function() {
             this.timeout(240000)
 
-            let browser
-            let page
-
-            //per-case 獨立: 每個 it 都 fresh browser + DB setup, 確保單 case --grep 也能跑.
+            //per-case 獨立 (fresh browser + DB 重置) 由 runCase 負責, 確保單 case --grep 也能跑
             beforeEach(async function() {
                 this.timeout(240000)
                 await startServersOnce()
-
-                await deleteTestUsersAndTokensAndIps()
-                await insertTestUsersAndTokensAndIps()
-
-                browser = await launchBrowser()
-                let context = await browser.newContext()
-                page = await context.newPage()
-
-                page.on('dialog', async (dialog) => {
-                    await dialog.accept()
-                })
             })
 
-            afterEach(async function() {
-                if (browser) {
-                    await browser.close()
-                    browser = null
-                }
-                await deleteTestUsersAndTokensAndIps()
-            })
-
-            let cases = [
-                ['E2E-001-list-loaded', captureListLoaded],
-                ['E2E-002-modify-ip-save-success', captureModifyIpSaveSuccess],
-                ['E2E-003-delete-row-save-success', captureDeleteRowSaveSuccess],
-                ['E2E-004-token-expired-save-fail', captureTokenExpiredSaveFail],
-            ]
-
-            for (let [name, fn] of cases) {
-                it(`${name}`, async function() {
-                    await resetAdminToken()
-                    await resetIpsSeed()
-                    let result = await fn(page, lang)
-
-                    //語意斷言 (主): 多階段 fn 回 dict → 逐 stage 各驗其 expectedSpecText
-                    //單張 fn 回 Buffer → 沿用 verifyBaseline (skipSpec=false)
-                    if (Buffer.isBuffer(result)) {
-                        await verifyBaseline(page, lang, name, result)
-                    }
-                    else {
-                        //dict 模式: 各 stage pixel 斷言; 語意斷言只驗 post-capture 仍可觀察之最終態.
-                        //以下 key 的 modal 語意已在 capture 函式內 (modal 仍顯示時) 斷言,
-                        //此處 modal 已 dismiss → 不可再對 modal 文字做 post-capture pageHasText, 故略過.
-                        let skipSpecKeys = new Set([
-                            'E2E-002-2-save-success-modal',
-                            //E2E-003 觸發圖 (列已勾選未刪): 觸發狀態已由 pixel baseline 驗證 (該列被勾選且 10.0.0.2 在表).
-                            //save 流程刪除該列後, post-capture 時 grid 已無 10.0.0.2 → 不可再對其做 post-capture pageHasText, 故略過.
-                            'E2E-003-1-row-selected-before-save',
-                            'E2E-003-2-delete-row-save-success',
-                        ])
-                        for (let [bname, b] of Object.entries(result)) {
-                            if (expectedSpecText[bname] && !skipSpecKeys.has(bname)) {
-                                //最終態語意 (如 E2E-002-1 之 '10.0.0.99' cell 顯示、E2E-002-3 之 grid 改後 IP)
-                                await assertSpecForCase(page, lang, bname)
-                            }
-                            assertBaselineMatch(b, bp(lang, bname), `ips-${lang}-${bname}`)
-                        }
-                    }
-
-                    //DB 副作用斷言
-                    if (name === 'E2E-002-modify-ip-save-success') {
-                        //修改後 DB 該列 ip 應變為新值
-                        let rs = await woItems.ips.select({ id: 'id-test-ip-1' }).catch(() => [])
-                        assert.strict.equal(rs.length, 1, `id-test-ip-1 應存在`)
-                        assert.strict.equal(rs[0].ip, '10.0.0.99', `id-test-ip-1 之 ip 應已更新為 10.0.0.99, 實際: ${rs[0].ip}`)
-                    }
-                    else if (name === 'E2E-003-delete-row-save-success') {
-                        //刪除後 DB 該列應不存在
-                        let rs = await woItems.ips.select({ id: 'id-test-ip-2' }).catch(() => [])
-                        assert.strict.equal(rs.length, 0, `id-test-ip-2 應已被刪除, 實際: ${rs.length} 筆`)
-                        //其他 seed 列應仍在 (只篩 id-test-ip-* 前綴, 避開系統自動追蹤之非 seed IP 殘留)
-                        let all = await woItems.ips.select().catch(() => [])
-                        let seedRows = all.filter(r => (r.id || '').startsWith('id-test-ip-'))
-                        assert.strict.equal(seedRows.length, testIps.length - 1, `其他 seed ips 列應仍在, 實際: ${seedRows.length} 筆 (預期 ${testIps.length - 1})`)
-                    }
-                    else if (name === 'E2E-004-token-expired-save-fail') {
-                        //token 過期 reject → DB 不應變動 (id-test-ip-3 之 ip 仍為原值)
-                        let rs = await woItems.ips.select({ id: 'id-test-ip-3' }).catch(() => [])
-                        assert.strict.equal(rs.length, 1, `id-test-ip-3 應仍存在`)
-                        assert.strict.equal(rs[0].ip, '10.0.0.3', `token 過期 reject 後 id-test-ip-3 之 ip 不應變動 (預期 10.0.0.3, 實際: ${rs[0].ip})`)
-                        //seed ips 數量不變 (同上, 只篩 id-test-ip-* 前綴)
-                        let all = await woItems.ips.select().catch(() => [])
-                        let seedRows = all.filter(r => (r.id || '').startsWith('id-test-ip-'))
-                        assert.strict.equal(seedRows.length, testIps.length, `token 過期 reject 後 seed ips 總數不應變動 (預期 ${testIps.length}, 實際: ${seedRows.length})`)
-                    }
+            //每階段截圖後當場語意斷言、DB 不變式皆於比對標準圖之前 (pixel baseline 為補強層)
+            for (let c of cases) {
+                it(`${c.name}`, async function() {
+                    await runCase('compare', lang, c, { onKnownDefect: () => this.skip() })
                 })
             }
 

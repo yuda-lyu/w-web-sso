@@ -332,9 +332,6 @@ export default {
 
             t: null,
 
-            loggingOut: false, //登出 in-flight 重入鎖: 登出觸發點為原生 popup 選單 div (非 WButton, 無 promiseUnlock),
-            //且 mUI.logout 無 updateLoading 全頁 overlay, 故以此旗標擋雙擊重入 (避免重複 logoutByToken / 清 LS / 切 viewState)
-
             firstSetting: true,
 
             showLangSelect: false,
@@ -688,29 +685,21 @@ export default {
             //關閉漢堡選單, 使其於轉跳登入頁(本組件銷毀)前正常隱藏
             vo.menuOpen = false
 
-            //雙擊重入防護: 登出觸發點為原生 popup 選單 div (無 promiseUnlock), 且 mUI.logout 無全頁 loading,
-            //in-flight 期間擋住第二次點擊, 避免重複 logoutByToken / 清 LS / 切 viewState. 成功會轉跳登入頁
-            //(updateViewState('login')) 自然重置; 失敗 (如 webKey 缺失 reject) 於 catch 解鎖供使用者重試.
-            if (vo.loggingOut) {
-                return
-            }
-            vo.loggingOut = true
+            //runSubmit: 登出中再觸發即略過(觸發點為原生選單 div, 無 promiseUnlock; mUI.logout 無全頁 loading);
+            //與使用者頁登出鈕(PageUser.logout)共用 'logout' 狀態, 失敗(如 webKey 缺失 reject)結束後即可重試 (ADR-074; 原本頁以 loggingOut 旗標自行擋)
+            return vo.$ui.runSubmit('logout', () => {
+                return vo.$ui.logout()
+                    .then(() => {
 
-            //logout
-            vo.$ui.logout()
-                .then(() => {
+                        //登出時提交變更viewState返回登入頁
+                        vo.$ui.updateViewState('login')
+                        console.log(`logout, goto view['login'] page`)
 
-                    //登出時提交變更viewState返回登入頁
-                    vo.$ui.updateViewState('login')
-                    console.log(`logout, goto view['login'] page`)
-
-                })
-                .catch((err) => {
-                    console.log(`logout err[${err}]`)
-                })
-                .finally(() => {
-                    vo.loggingOut = false
-                })
+                    })
+                    .catch((err) => {
+                        console.log(`logout err[${err}]`)
+                    })
+            })
 
         },
 

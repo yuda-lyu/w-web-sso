@@ -47,6 +47,12 @@ import { startServersOnce, cleanup, apiUrl, resetToBaseSeed, deleteNonBaseSeed }
 //                                     reject 'incorrect old password'
 //                                     DB user.password 與第 1 次新值一致 (只改一次, 防 lost update)
 //
+// 另 4 個 case (清單儲存, ADR-074; 後端以「操作:操作者 id」原子占位 server/lockSave.mjs + 使用者新增列標記):
+//   E2E-DC-05-update-users-new-row-double: 並行 2 次同一包含新增使用者 → 1 成功 1 拒絕(saveInProgress / saveNewRowExists), 新使用者未被覆寫
+//   E2E-DC-06-update-users-new-row-resend: 依序 2 次同一包 → 第 2 次 saveNewRowExists, 新使用者未被覆寫
+//   E2E-DC-07-update-tokens-double:        並行 2 次同一包 updateTokensList → 拒絕者只能是 saveInProgress, 權杖表不變
+//   E2E-DC-08-update-ips-double:           並行 2 次同一包含新列 → 拒絕者只能是 saveInProgress, 新列只 1 筆
+//
 
 let salt = '{salt}'
 
@@ -413,6 +419,134 @@ describe('doubleclick API E2E — backend mutex 並行序列化回歸', function
         let usAfter = await woItems.users.select({ id: dc04Target.id })
         let pwAfter = usAfter[0].password
         assert.strict.equal(verifyPassword(dc04Target.newPassword, pwAfter, salt), true, `預期 password 已改為 newPassword hash, 實際: pwAfter ${pwAfter === pwBefore ? '== pwBefore (未改)' : '!= 預期'}`)
+    })
+
+
+    // ===================================================================
+    // DC-05～08: 清單儲存之雙擊防護 (ADR-074)
+    //   後端以「操作:操作者 id」原子占位(server/lockSave.mjs): 同一操作者之同一儲存處理中再送出 → reject 'saveInProgress';
+    //   使用者清單另以新增列標記(_isNew)擋依序重送 → reject 'saveNewRowExists'.
+    //   兩次請求是否重疊取決於時序, 故以下只斷言與時序無關之不變式(占位機制本身由 unit-lockSave 以受控 deferred 驗).
+    // ===================================================================
+
+    //newUserRow: 模擬後台「新增使用者」送出之新列 (前端佔位字 + 空 timeVerified + _isNew, 對齊 LayoutContentUsers.addItem)
+    function newUserRow(id, account) {
+        let nu = ds.users.funNew({
+            order: 0,
+            account,
+            password: 'Pw@xkRb91!', //不含 account 任何連續 2 字, 通過 noConsecutiveCharsFromAccount=2
+            name: `${account} name`,
+            email: `${account}@test.com`,
+            description: '',
+            from: '',
+            redir: '',
+            isAdmin: 'n',
+            timeVerified: '',
+            timeExpired: '',
+            timeBlocked: '',
+            isActive: 'y',
+        })
+        nu.id = id
+        nu.userId = '{New}'
+        nu.timeCreate = '{New}'
+        nu.userIdUpdate = '{New}'
+        nu.timeUpdate = '{New}'
+        nu._isNew = true
+        return nu
+    }
+
+    //usersPayload: 目前 DB 之使用者清單(剝除 password, 對齊 getUsersList 回傳) + 新列
+    async function usersPayload(nu) {
+        let base = (await woItems.users.select()).map((r) => {
+            let c = { ...r }
+            delete c.password
+            return c
+        })
+        return [nu, ...base]
+    }
+
+    //assertNewUserIntact: 新使用者只 1 筆, 且伺服器於新增時填入之欄位未被第 2 次送出之空值 / 佔位字覆寫
+    async function assertNewUserIntact(id) {
+        let us = await woItems.users.select({ id })
+        assert.strict.equal(us.length, 1, `新使用者應只 1 筆, 實際 ${us.length}`)
+        let u = us[0]
+        assert.strict.equal(typeof u.timeVerified === 'string' && u.timeVerified !== '', true, `timeVerified 應為新增時自動填入之時間, 實際「${u.timeVerified}」(被清空即無法登入)`)
+        assert.strict.equal(u.userId, dc01Admin.id, `建立者應為操作之管理者, 實際「${u.userId}」`)
+        assert.strict.equal(u.timeCreate !== '{New}' && u.timeCreate !== '', true, `建立時間不得為前端佔位字, 實際「${u.timeCreate}」`)
+    }
+
+
+    it('E2E-DC-05-update-users-new-row-double: 並行 2 次同一包「含新增使用者」之 updateUsersList → 1 成功 1 拒絕, 新使用者未被覆寫', async function() {
+        let nid = 'id-dc05-new'
+        let rows = await usersPayload(newUserRow(nid, 'dc05-new'))
+
+        let results = await Promise.allSettled([
+            callRpc('updateUsersList', [dc01AdminToken, 'eng', rows], dc01AdminToken),
+            callRpc('updateUsersList', [dc01AdminToken, 'eng', rows], dc01AdminToken),
+        ])
+        let { successCount, errorCount, msgs } = summarize(results)
+
+        //驗證 1: 一成功一拒絕; 拒絕為「處理中」(兩次重疊) 或「新增列已存在」(第 2 次於第 1 次完成後才處理), 視時序而定
+        assert.strict.equal(successCount, 1, `預期 1 次成功, 實際 ${successCount}, msgs=${JSON.stringify(msgs)}`)
+        assert.strict.equal(errorCount, 1, `預期 1 次拒絕, 實際 ${errorCount}, msgs=${JSON.stringify(msgs)}`)
+        let errMsg = results.map((r) => r.value).find((v) => !v.ok).msg
+        assert.strict.equal(['saveInProgress', 'saveNewRowExists'].includes(errMsg), true, `拒絕之 key 應為 saveInProgress 或 saveNewRowExists, 實際: ${errMsg}`)
+
+        //驗證 2: 新使用者未被第 2 次覆寫 (未修前實測: timeVerified 清空、建立者 / 建立時間寫成佔位字)
+        await assertNewUserIntact(nid)
+    })
+
+
+    it('E2E-DC-06-update-users-new-row-resend: 依序 2 次同一包「含新增使用者」之 updateUsersList → 第 2 次 saveNewRowExists, 新使用者未被覆寫', async function() {
+        let nid = 'id-dc06-new'
+        let rows = await usersPayload(newUserRow(nid, 'dc06-new'))
+
+        let r1 = await callRpc('updateUsersList', [dc01AdminToken, 'eng', rows], dc01AdminToken)
+        let r2 = await callRpc('updateUsersList', [dc01AdminToken, 'eng', rows], dc01AdminToken)
+
+        assert.strict.equal(r1.ok, true, `第 1 次應成功, 實際 ${JSON.stringify(r1)}`)
+        assert.strict.equal(r2.ok, false, `第 2 次應被拒絕, 實際 ${JSON.stringify(r2)}`)
+        assert.strict.equal(r2.msg, 'saveNewRowExists', `第 2 次之 key 應為 saveNewRowExists, 實際: ${r2.msg}`)
+        await assertNewUserIntact(nid)
+    })
+
+
+    it('E2E-DC-07-update-tokens-double: 並行 2 次同一包 updateTokensList → 拒絕者只能是 saveInProgress, 權杖表不變', async function() {
+        let tsBefore = await woItems.tokens.select()
+        let rows = tsBefore.map((t) => ({ ...t }))
+
+        let results = await Promise.allSettled([
+            callRpc('updateTokensList', [dc01AdminToken, 'eng', rows], dc01AdminToken),
+            callRpc('updateTokensList', [dc01AdminToken, 'eng', rows], dc01AdminToken),
+        ])
+        let vs = results.map((r) => r.value)
+        assert.strict.equal(vs.filter((v) => v.ok).length >= 1, true, `至少 1 次成功, 實際 ${JSON.stringify(vs)}`)
+        for (let v of vs.filter((v) => !v.ok)) {
+            assert.strict.equal(v.msg, 'saveInProgress', `拒絕之 key 應為 saveInProgress, 實際: ${v.msg}`)
+        }
+
+        let tsAfter = await woItems.tokens.select()
+        assert.strict.deepEqual(tsAfter.map((t) => t.id).sort(), tsBefore.map((t) => t.id).sort(), '權杖表之列不變(無重複、無遺失)')
+    })
+
+
+    it('E2E-DC-08-update-ips-double: 並行 2 次同一包「含新列」之 updateIpsList → 拒絕者只能是 saveInProgress, 新列只 1 筆', async function() {
+        let o = ds.ips.funNew({ ip: '10.9.9.9', timeBlocked: '' })
+        o.id = 'id-dc08-ip'
+        let rows = [o]
+
+        let results = await Promise.allSettled([
+            callRpc('updateIpsList', [dc01AdminToken, 'eng', rows], dc01AdminToken),
+            callRpc('updateIpsList', [dc01AdminToken, 'eng', rows], dc01AdminToken),
+        ])
+        let vs = results.map((r) => r.value)
+        assert.strict.equal(vs.filter((v) => v.ok).length >= 1, true, `至少 1 次成功, 實際 ${JSON.stringify(vs)}`)
+        for (let v of vs.filter((v) => !v.ok)) {
+            assert.strict.equal(v.msg, 'saveInProgress', `拒絕之 key 應為 saveInProgress, 實際: ${v.msg}`)
+        }
+
+        let ips = await woItems.ips.select({ id: o.id })
+        assert.strict.equal(ips.length, 1, `新列應只 1 筆, 實際 ${ips.length}`)
     })
 
 })

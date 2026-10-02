@@ -139,7 +139,8 @@
                         :iconColorHover="'#fff'"
                         :iconColorFocus="'#fff'"
                         :shadow="false"
-                        @click="saveIps"
+                        :promiseUnlock="true"
+                        @click="onClickSaveIpsBtn"
                     ></WButtonCircle>
 
                     <div style="padding-left:4px;"></div>
@@ -151,7 +152,7 @@
         </div>
 
         <template
-            v-if="!firstLoading"
+            v-if="!firstLoading && !errMsg"
         >
 
             <template v-if="items">
@@ -198,6 +199,14 @@
             </template>
 
         </template>
+
+        <!-- 清單載入失敗: 顯示 getDataError, 不顯示空表格(否則「No Rows To Show」被誤認為無資料; 同 LayoutContentStaInfor / LayoutContentUserInfor) -->
+        <div
+            style="padding:10px 15px; font-size:0.8rem;"
+            v-else-if="errMsg"
+        >
+            {{errMsg}}
+        </div>
 
         <div
             style="padding:10px 15px; font-size:0.8rem;"
@@ -260,6 +269,7 @@ export default {
             headHeight: 100,
 
             firstLoading: true,
+            errMsg: '', //清單載入失敗之訊息(getDataError), 有值時以訊息取代表格
             firstSetting: true,
             systemProcing: false, //程式端載入/重載清單資料期間為true, 用於排除非使用者操作之rowsChange
             showIsEditable: false,
@@ -354,8 +364,9 @@ export default {
 
             let vo = this
 
-            //trigger
+            //trigger: isEditable; firstLoading 亦為相依(載入請求結束時轉 false 須重算, 清單為空時 genOpt 才產得出有效 opt)
             let isEditable = vo.isEditable
+            let firstLoading = vo.firstLoading
 
             //items
             let items = cloneDeep(vo.ips)
@@ -364,10 +375,10 @@ export default {
             vo.items = items
 
             //genOpt
-            vo.genOpt({ isEditable })
+            vo.genOpt({ isEditable, firstLoading })
 
-            //firstLoading
-            vo.firstLoading = false
+            //firstLoading 只由載入請求結束(mounted 之 getIpsList .finally)設為 false; 原於此處即設 false, 使載入中(含請求失敗之重試期間)
+            //表格以空資料呈現「No Rows To Show」而被誤認為無資料, 等待訊息(waitingData)從未顯示 (2026-09-29)
 
             return ''
         },
@@ -710,7 +721,14 @@ export default {
 
         },
 
-        saveIps: function() {
+        onClickSaveIpsBtn: function(msg) {
+            //promiseUnlock 之鎖交由 saveIps 之 runSubmit 於請求結束時釋放, 不於此解鎖: 請求期間儲存鈕之滑鼠與鍵盤 Enter 皆擋 (ADR-074;
+            //原無 promiseUnlock, 焦點在儲存鈕連按 Enter 可送出 2 次)
+            let vo = this
+            vo.saveIps({ pm: msg.pm })
+        },
+
+        saveIps: function(opt = {}) {
             // console.log('method saveIps')
 
             let vo = this
@@ -771,21 +789,23 @@ export default {
 
             }
 
-            //core
-            core()
-                // .then((res) => {
-                //     console.log('then', res)
-                // })
-                .catch((err) => {
-                    console.log('catch', err)
-                    vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
-                })
-                .finally(() => {
+            //runSubmit: 儲存流程(至結果訊息框關閉)進行中再觸發即略過; opt.pm 為儲存鈕之 promiseUnlock 鎖, 於請求結束(updateLoading(false))時釋放 (ADR-074)
+            return vo.$ui.runSubmit('saveIps', () => {
+                return core()
+                    // .then((res) => {
+                    //     console.log('then', res)
+                    // })
+                    .catch((err) => {
+                        console.log('catch', err)
+                        vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
+                    })
+                    .finally(() => {
 
-                    //hide loading
-                    vo.$ui.updateLoading(false)
+                        //hide loading
+                        vo.$ui.updateLoading(false)
 
-                })
+                    })
+            }, opt)
 
         },
 

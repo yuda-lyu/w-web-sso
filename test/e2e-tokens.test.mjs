@@ -8,6 +8,8 @@ import { woItems } from '../g_mOrm.mjs'
 import procLang from '../server/procLang.mjs'
 import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, launchBrowser, waitUntilExist } from './tools/e2e-setup.mjs'
 import { callFapi } from './tools/api-setup.mjs' //僅 mocha 端之端到端不變式(app token 實際可否呼叫)使用; regen 端不呼叫, 不建立連線
+//產製端與比對端同一案例管線 (2026-09-27 起, 規格詳 w-package-tools-e2e 之 README.md §2.1-2.2)
+import { runBaselineCase, createBaselineGate, assertTextSpec, pageHasText, collectDomText, waitGridIdle, gridContentBox, itemsUnionBox } from './tools/e2eLib.mjs'
 
 
 //
@@ -18,8 +20,14 @@ import { callFapi } from './tools/api-setup.mjs' //僅 mocha 端之端到端不�
 // 使用方式：
 //   1. 先產生標準圖：node test/e2e-tokens.test.mjs --baseline
 //   2. 跑測試比對：npx mocha test/e2e-tokens.test.mjs --timeout 240000
-//   --names <eng-E2E-001-list-loaded,...> 進行手術式 baseline 重產: 給 case 名 (如 eng-E2E-005-grant-perms-save-success)
-//   產該 case 全部階段, 給階段圖鍵 (如 eng-E2E-005-3-check-read-tokens) 只寫該張
+//   手術式重產 (截圖前篩選, 規格詳 w-package-tools-e2e 之 README.md §2.2):
+//     --names <項,...>  每項可帶語系前綴 (eng-/cht-), 不帶則兩語系皆產. 階段圖鍵 (如 eng-E2E-005-3-check-read-tokens) 只寫該張;
+//                       案例鍵或其編號前綴 (如 eng-E2E-005-grant-perms-save-success、E2E-005) 寫該案全部階段; 不符任何鍵即報錯
+//     --langs <eng,cht> 限語系;  --write-mode missing|changed  只寫缺少者 / 只寫與現行標準圖差異超過容差者 (預設 all)
+//     env E2E_BASELINE_OUT_DIR=<dir>  寫到暫存目錄 (等價驗證用, 不動 test/pics)
+//   產製端與比對端呼叫同一案例管線 (runBaselineCase): 前置 → 截圖 → 語意斷言 → DB 不變式 → 寫檔 / 比對; 斷言不過一張都不寫.
+//   例外: 應用系統權限案例之 API client 端到端檢查 (callFapi) 只在比對端執行 — WServHapiClient 無法關閉, 直跑產製若建立連線將不退出,
+//   而產製端不得以 process.exit 繞過 (技能 §9.1; 強制退出之明文例外只在 api-setup 之 root after)
 //
 // 標準圖存放：test/pics/tokens/tokens-{lang}-{number}-{name}.png
 //
@@ -44,39 +52,9 @@ let baselineDir = './test/pics/tokens'
 let langs = ['eng', 'cht']
 
 // captureStableWithBox target selectors
+//表格一律經 gridContentBox 框標頭＋可見資料列：技能 §7.2 表格列、§7.3-2；2026-09-28 改：原直接框表格外框，列下方空白一併框入
 let SEL_GRID = '.ag-root-wrapper'                                    // ag-grid 主體（金鑰清單表格區）
 let SEL_MODAL = 'div[style*="overscroll-behavior"] div[tabindex="0"] > div'  // WDialog 內層 panel（modal 框體, 非全螢幕 shield）
-
-
-let baselineNamesFilter = null
-{
-    let i = process.argv.indexOf('--names')
-    if (i >= 0 && process.argv[i + 1]) {
-        baselineNamesFilter = new Set(process.argv[i + 1].split(','))
-    }
-}
-//--names 指定時: filter 含階段圖鍵 (${lang}-${name}) 只寫該張; 含 case 名 (${lang}-${caseName}) 則寫該 case 全部階段
-function writeBaseline(lang, caseName, name, buf) {
-    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`) && !baselineNamesFilter.has(`${lang}-${caseName}`)) {
-        console.log(`  [skip] ${lang}-${name}`)
-        return
-    }
-    fs.writeFileSync(bp(lang, name), buf)
-}
-
-
-//是否需要產生此 case 的標準圖. --names 指定時只有指定 case 回 true → 連「截圖」都跳過 (非僅跳寫檔).
-//多階段 dict case (E2E-002/003/005/006/007) 之階段圖鍵為 E2E-NNN-<序>-<名>, 不含 case 名 (如 case E2E-005-grant-perms-save-success
-//之階段 eng-E2E-005-3-check-read-tokens), 故以 case 編號前綴 ${lang}-E2E-NNN- 比對: filter 內有該前綴之鍵 (case 名或任一階段圖鍵)
-//即執行此 case, 再由 writeBaseline 只寫指定者. (2026-09-27 前以 ${lang}-${name}- 比對, 階段圖鍵永不命中而整案靜默略過)
-function shouldGen(lang, name) {
-    if (!baselineNamesFilter) return true
-    let prefix = `${lang}-${name.slice(0, 7)}-` //'eng-E2E-005-'
-    for (let k of baselineNamesFilter) {
-        if (k.startsWith(prefix)) return true
-    }
-    return false
-}
 
 
 function bp(lang, name) {
@@ -468,12 +446,13 @@ async function loginAsAdminAndOpenTokensList(page, lang) {
     await page.waitForTimeout(3000)
 
     //偵測: 等 backstage Statistics 文字 (autoLogin 成功 + render 完成)
-    await waitUntilExist(page, `backstage ${t.statistics} 文字`, (s) => document.body.innerText.includes(s), { arg: t.statistics })
+    await waitUntilExist(page, `backstage ${t.statistics} 文字`, (s) => document.body.innerText.includes(s), { arg: t.statistics, timeout: 60000 })
 
     //點 Tokens list
-    await page.locator(`text="${t.tokensList}"`).first().waitFor({ state: 'visible', timeout: 15000 })
+    await page.locator(`text="${t.tokensList}"`).first().waitFor({ state: 'visible', timeout: 60000 })
     await page.locator(`text="${t.tokensList}"`).first().click()
-    await page.waitForTimeout(2500)
+    //等清單頁之「編輯模式」勾選列渲染後再讀其狀態(取代固定 2.5 秒: 未渲染時下方讀到 null 即略過開啟, 2026-09-28; 以下偵測上限同日放寬至 60 秒)
+    await page.locator(`text="${t.editMode}"`).first().waitFor({ state: 'visible', timeout: 60000 })
 
     //確認 Edit mode 是 on; 否則點一下
     let editChecked = await page.evaluate((label) => {
@@ -487,23 +466,8 @@ async function loginAsAdminAndOpenTokensList(page, lang) {
         await page.waitForTimeout(500)
     }
 
-    //等 ag-grid 初始載入後 cell 完全 hydrate
-    await page.waitForFunction(async () => {
-        let snap = () => {
-            let cells = document.querySelectorAll('.ag-cell')
-            return JSON.stringify({
-                count: cells.length,
-                first10: Array.from(cells).slice(0, 10).map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 20)),
-            })
-        }
-        let s1 = snap()
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s2 = snap()
-        if (s1 !== s2) return false
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s3 = snap()
-        return s2 === s3
-    }, null, { timeout: 15000 })
+    //等 ag-grid 初始載入後 cell 完全 hydrate (waitGridIdle: 內容＋幾何簽章連續 1s 不變; 清單必有 seed 金鑰列, 故 minCells:1 不把尚未出現之表格當靜止)
+    await waitGridIdle(page, { minCells: 1, timeout: 60000 })
     await page.waitForTimeout(1000)
 }
 
@@ -528,41 +492,21 @@ async function clickTrash(page) {
 async function waitCheckYes(page, lang) {
     let t = kpUiText[lang]
     await page.locator(`text="${t.ok}"`).first().waitFor({ state: 'visible', timeout: 30000 })
-    //modal 出現後穩定化: 1) 捲軸歸位 2) hover state 清除 3) 等 ag-grid idle (連續三 raf 不變)
+    //modal 出現後穩定化: 1) 捲軸歸位 2) hover state 清除 3) 等 ag-grid idle (waitGridIdle: 內容＋幾何簽章連續 1s 不變)
     await page.evaluate(() => {
         window.scrollTo(0, 0)
         let body = document.querySelector('.ag-center-cols-viewport')
         if (body) body.scrollLeft = 0
     })
     await page.mouse.move(0, 0)
-    await page.waitForFunction(async () => {
-        let body = document.querySelector('.ag-center-cols-viewport')
-        if (!body) return true //無 grid, 直接 ok
-        if (body.scrollLeft !== 0) return false
-        //token header 必須出現
-        if (!document.querySelector('.ag-header-cell[col-id="token"]')) return false
-        let snap = () => {
-            let cells = document.querySelectorAll('.ag-cell')
-            let row0Cells = Array.from(document.querySelectorAll('.ag-row[row-index="0"] .ag-cell'))
-            return JSON.stringify({
-                count: cells.length,
-                row0: row0Cells.map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
-            })
-        }
-        let s1 = snap()
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s2 = snap()
-        if (s1 !== s2) return false
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s3 = snap()
-        return s2 === s3
-    }, null, { timeout: 15000 })
+    //token 標頭須出現、水平捲動量須為 0; 呼叫處 (E2E-002~006 儲存後 modal 顯示中) 表格必有列 (003 刪 1 列仍有他列), 故 minCells:1
+    await waitGridIdle(page, { requireSelector: '.ag-header-cell[col-id="token"]', requireScrollLeftZero: true, minCells: 1, timeout: 15000 })
     await page.waitForTimeout(1500)
 }
 
 
 //點 OK 關閉 System message modal → 等 modal 消失 → 捲軸歸位 → 等 ag-grid idle
-//(連續三 raf 之間 cell 數量與首列 cell 內容全等, 與 waitCheckYes 內部同款偵測; E2E-002 / E2E-005 / E2E-006 共用)
+//(waitGridIdle: token 標頭已出現、水平捲動量 0、內容＋幾何簽章連續 1s 不變, 與 waitCheckYes 同款選項; E2E-002 / E2E-005 / E2E-006 共用)
 async function closeCheckYesAndWaitGridIdle(page, lang) {
     let t = kpUiText[lang]
     await page.locator(`text="${t.ok}"`).first().click()
@@ -575,27 +519,8 @@ async function closeCheckYesAndWaitGridIdle(page, lang) {
         let body = document.querySelector('.ag-center-cols-viewport')
         if (body) body.scrollLeft = 0
     })
-    await page.waitForFunction(async () => {
-        let body = document.querySelector('.ag-center-cols-viewport')
-        if (!body) return true
-        if (body.scrollLeft !== 0) return false
-        if (!document.querySelector('.ag-header-cell[col-id="token"]')) return false
-        let snap = () => {
-            let cells = document.querySelectorAll('.ag-cell')
-            let row0Cells = Array.from(document.querySelectorAll('.ag-row[row-index="0"] .ag-cell'))
-            return JSON.stringify({
-                count: cells.length,
-                row0: row0Cells.map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
-            })
-        }
-        let s1 = snap()
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-        let s2 = snap()
-        if (s1 !== s2) return false
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-        let s3 = snap()
-        return s2 === s3
-    }, null, { timeout: 15000 })
+    //呼叫處 (E2E-002 / 005 / 006 儲存成功點 OK 後) 表格必有列, 故 minCells:1
+    await waitGridIdle(page, { requireSelector: '.ag-header-cell[col-id="token"]', requireScrollLeftZero: true, minCells: 1, timeout: 15000 })
     await page.mouse.move(0, 0)
     await page.waitForTimeout(1500)
 }
@@ -611,6 +536,7 @@ function permsTriggerSel(rowIdx) {
 }
 
 //展開之權限清單浮層 (teleport 至 body 之 WPopperFix 內層面板, 以清單標頭文字識別)
+//框此浮層一律經 itemsUnionBox fit: 浮層(position:fixed)框線置於浮層內容與背後內容之間隙正中(背後有表格之晶片與文字處退入浮層內距, 四周空白處照常外擴), 不蓋背後內容也不貼浮層內之字 (2026-09-28, 業主: 亂框亂壓遮蔽有效資訊即缺陷)
 function permsPopupLoc(page, lang) {
     return page.locator('.WPopperFix').filter({ hasText: kpUiText[lang].permsHead }).locator(':scope > div').first()
 }
@@ -655,65 +581,13 @@ async function waitSaveButton(page) {
 // 共用語意斷言 helpers
 // ===================================================================
 
-async function pageHasText(page, text) {
-    return await page.evaluate((t) => {
-        let walk = (el) => {
-            if (!el) return false
-            if (el.nodeType === 3) return (el.nodeValue || '').includes(t)
-            if (el.nodeType !== 1) return false
-            let tag = el.tagName
-            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return false
-            for (let c of el.childNodes) {
-                if (walk(c)) return true
-            }
-            return false
-        }
-        return walk(document.body)
-    }, text)
-}
-
-
-async function collectVisibleText(page) {
-    return await page.evaluate(() => {
-        let parts = []
-        let walk = (el) => {
-            if (!el) return
-            if (el.nodeType === 3) {
-                let t = (el.nodeValue || '').trim()
-                if (t) parts.push(t)
-                return
-            }
-            if (el.nodeType !== 1) return
-            let tag = el.tagName
-            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return
-            for (let c of el.childNodes) walk(c)
-        }
-        walk(document.body)
-        return parts.join(' | ').slice(0, 2000)
-    })
-}
-
-
+//頁面文字之走訪 (pageHasText / collectDomText) 與 text / absentText 斷言 (assertTextSpec) 取自 w-package-tools-e2e (原本檔內手寫, 內容相同)
 async function assertSpecForCase(page, lang, name) {
     let expected = expectedSpecText[name]
     if (!expected || !expected[lang]) {
         throw new Error(`expectedSpecText 未為 case "${name}" / lang "${lang}" 定義`)
     }
-    let e = expected[lang]
-    if (e.mode === 'text') {
-        let found = await pageHasText(page, e.value)
-        if (!found) {
-            let dump = await collectVisibleText(page)
-            assert.fail(`預期含 "${e.value}" (${name}), 實際: ${dump}`)
-        }
-    }
-    else if (e.mode === 'absentText') {
-        let stillHas = await pageHasText(page, e.value)
-        if (stillHas) {
-            let dump = await collectVisibleText(page)
-            assert.fail(`預期不含 "${e.value}" (${name}), 但見到. 可見文字: ${dump}`)
-        }
-    }
+    await assertTextSpec(page, expected[lang], { label: name })
 }
 
 
@@ -743,7 +617,7 @@ async function captureListLoaded(page, lang) {
     //等 seed token (test-token-1) 在 table 內可見
     await waitUntilExist(page, 'first seed token test-token-1', () => document.body.innerText.includes('test-token-1'))
     //框 ag-grid 表格區標注金鑰清單初始檢視態
-    return await captureStableWithBox(page, SEL_GRID)
+    return await captureStableWithBox(page, gridContentBox(SEL_GRID))
 }
 
 
@@ -780,7 +654,7 @@ async function captureToggleIsappSaveSuccess(page, lang) {
         let exp = expectedSpecText['E2E-002-toggle-isapp-save-success'][lang].value
         let found = await pageHasText(page, exp)
         if (!found) {
-            let dump = await collectVisibleText(page)
+            let dump = await collectDomText(page)
             assert.fail(`預期成功 modal 含 "${exp}" (E2E-002-2-save-success-modal), 實際: ${dump}`)
         }
     }
@@ -873,7 +747,7 @@ async function assertSuccessModalText(page, lang, name) {
     let exp = expectedSpecText[name][lang].value
     let found = await pageHasText(page, exp)
     if (!found) {
-        let dump = await collectVisibleText(page)
+        let dump = await collectDomText(page)
         assert.fail(`預期成功 modal 含 "${exp}" (${name}), 實際: ${dump}`)
     }
 }
@@ -902,17 +776,17 @@ async function capturePermsChangeSave(page, lang, o) {
     await permsPopupLoc(page, lang).waitFor({ state: 'visible', timeout: 5000 })
 
     //2 點擊後: 框清單浮層
-    let buf2 = await captureStableWithBox(page, permsPopupLoc(page, lang))
+    let buf2 = await captureStableWithBox(page, itemsUnionBox(permsPopupLoc(page, lang), { fit: true }))
 
-    //3 點擊前: 框該權限整列
-    let buf3 = await captureStableWithBox(page, permsItemRowLoc(page, lang, permText))
+    //3 點擊前: 框該權限整列 (勾選框∪名稱∪說明; 該列無可見邊界且緊貼說明文字, 經 itemsUnionBox fit 外擴文字墨跡, 免紅框壓字, 2026-09-28)
+    let buf3 = await captureStableWithBox(page, itemsUnionBox(permsItemRowLoc(page, lang, permText), { fit: true }))
     await permsItemLoc(page, lang, permText).click()
 
     //勾選即標記已修改: 清單未關閉即出現儲存鈕
     await waitSaveButton(page)
 
     //4 點擊後: 框清單浮層
-    let buf4 = await captureStableWithBox(page, permsPopupLoc(page, lang))
+    let buf4 = await captureStableWithBox(page, itemsUnionBox(permsPopupLoc(page, lang), { fit: true }))
 
     //5 點擊前: 框儲存鈕 (清單仍開啟; 點儲存時清單關閉並寫回勾選)
     let buf5 = await captureStableWithBox(page, saveBtnLoc(page))
@@ -978,16 +852,16 @@ async function captureRevokePermsSaveSuccess(page, lang) {
 async function captureViewPermsReadonly(page, lang) {
     await loginAsAdminAndOpenTokensList(page, lang)
 
-    //1 點擊前: 框編輯模式開關 (loginAsAdminAndOpenTokensList 已確保編輯模式為開)
-    let buf1 = await captureStableWithBox(page, editSwitchLoc(page, lang))
+    //1 點擊前: 框編輯模式開關 (loginAsAdminAndOpenTokensList 已確保編輯模式為開; 開關列無可見邊界且緊貼標籤, 經 itemsUnionBox fit 外擴文字墨跡, 免紅框壓字)
+    let buf1 = await captureStableWithBox(page, itemsUnionBox(editSwitchLoc(page, lang), { fit: true }))
     await editSwitchLoc(page, lang).click()
     //偵測: 表格重建為非編輯模式 (列選取框消失)
     await waitUntilExist(page, 'grid rebuilt without selection checkbox', () => {
         return !!document.querySelector('.ag-header-cell[col-id="token"]') && document.querySelectorAll('.ag-selection-checkbox').length === 0
     })
 
-    //2 點擊後: 框表格整個
-    let buf2 = await captureStableWithBox(page, SEL_GRID)
+    //2 點擊後: 框表格之標頭與資料列（非編輯模式重建後之表格）
+    let buf2 = await captureStableWithBox(page, gridContentBox(SEL_GRID))
 
     let rowIdx = await findRowIdxByTokenValue(page, 'test-token-6')
     if (rowIdx === null) throw new Error(`seed token row not found: test-token-6`)
@@ -1007,7 +881,7 @@ async function captureViewPermsReadonly(page, lang) {
     assert.deepStrictEqual(st, { n: 7, checked: 7, disabled: 7 }, `非編輯模式之權限清單應 7 項皆勾選且不可勾選, 實際: ${JSON.stringify(st)}`)
 
     //4 點擊後: 框清單浮層
-    let buf4 = await captureStableWithBox(page, permsPopupLoc(page, lang))
+    let buf4 = await captureStableWithBox(page, itemsUnionBox(permsPopupLoc(page, lang), { fit: true }))
 
     //點選「讀統計」不改變勾選, 亦不出現儲存鈕
     await permsItemLoc(page, lang, kpUiText[lang].permReadStats).click()
@@ -1026,59 +900,180 @@ async function captureViewPermsReadonly(page, lang) {
 
 
 // ===================================================================
-// 產生標準圖
+// 案例宣告與案例管線 (產製端與比對端共用)
 // ===================================================================
 
-async function generateBaselineForLang(lang) {
-    console.log(`=== 產生標準圖（${lang}）===`)
+//stages: 多階段案例之圖鍵 (與 spec 視覺項、寫檔名、比對名一致; 產出與宣告不符即報錯). 單張案例之圖鍵即案例鍵.
+let cases = [
+    { name: 'E2E-001-list-loaded', run: captureListLoaded },
+    {
+        name: 'E2E-002-toggle-isapp-save-success',
+        run: captureToggleIsappSaveSuccess,
+        stages: ['E2E-002-1-isapp-toggled-before-save', 'E2E-002-2-save-success-modal', 'E2E-002-3-toggle-isapp-result-row'],
+    },
+    {
+        name: 'E2E-003-delete-row-save-success',
+        run: captureDeleteRowSaveSuccess,
+        stages: ['E2E-003-1-row-selected-before-save', 'E2E-003-2-delete-row-save-success'],
+    },
+    { name: 'E2E-004-token-expired-save-fail', run: captureTokenExpiredSaveFail },
+    {
+        name: 'E2E-005-grant-perms-save-success',
+        run: captureGrantPermsSaveSuccess,
+        stages: ['E2E-005-1-click-perms', 'E2E-005-2-perms-list', 'E2E-005-3-check-read-tokens', 'E2E-005-4-read-tokens-checked', 'E2E-005-5-click-save', 'E2E-005-6-save-success-modal', 'E2E-005-7-perms-result'],
+    },
+    {
+        name: 'E2E-006-revoke-perms-save-success',
+        run: captureRevokePermsSaveSuccess,
+        stages: ['E2E-006-1-click-perms', 'E2E-006-2-perms-list', 'E2E-006-3-uncheck-read-stats', 'E2E-006-4-read-stats-unchecked', 'E2E-006-5-click-save', 'E2E-006-6-save-success-modal', 'E2E-006-7-perms-result'],
+    },
+    {
+        name: 'E2E-007-view-perms-readonly',
+        run: captureViewPermsReadonly,
+        stages: ['E2E-007-1-click-edit-mode', 'E2E-007-2-view-mode', 'E2E-007-3-click-perms', 'E2E-007-4-perms-list-readonly'],
+    },
+]
 
-    let cases = [
-        ['E2E-001-list-loaded', captureListLoaded],
-        ['E2E-002-toggle-isapp-save-success', captureToggleIsappSaveSuccess],
-        ['E2E-003-delete-row-save-success', captureDeleteRowSaveSuccess],
-        ['E2E-004-token-expired-save-fail', captureTokenExpiredSaveFail],
-        ['E2E-005-grant-perms-save-success', captureGrantPermsSaveSuccess],
-        ['E2E-006-revoke-perms-save-success', captureRevokePermsSaveSuccess],
-        ['E2E-007-view-perms-readonly', captureViewPermsReadonly],
-    ]
+//語意斷言已在截圖函式內 (成功 modal 仍顯示時) 完成之案例: 截圖後 modal 已關閉, 不再對已消失之文字做斷言, 最終態由 DB 不變式驗
+let semanticInCapture = ['E2E-002-toggle-isapp-save-success', 'E2E-005-grant-perms-save-success', 'E2E-006-revoke-perms-save-success']
 
-    //per-case fresh browser + DB setup, 與 mocha test 端 beforeEach/afterEach 對稱.
-    //保證 marathon mode 與 single-case run 收斂到同一 stable state.
-    for (let [name, fn] of cases) {
-        if (!shouldGen(lang, name)) continue
-        console.log(`  ${name}`)
+//應用系統權限案例 (ADR-069) 之前後檢查: pre 於操作前確認 app token 之起始能力, post 於寫檔 / 比對標準圖之前驗 DB 與端到端不變式
+//(app token 實際呼叫後台功能之成敗), 使標準圖缺漏或不符時仍先驗得流程本身. callFapi 部分只在比對端 (見檔頭說明).
+let permsChecks = {
+    'E2E-005-grant-perms-save-success': {
+        pre: async () => {
+            let r = await callFapi('getTokensList', ['test-token-4'])
+            assert.strict.equal(r.ok, false, `授予前 test-token-4 (僅基本權限) 不應可讀金鑰清單, 實際: ${JSON.stringify(r).slice(0, 200)}`)
+        },
+        post: async (ctx) => {
+            let rs = await woItems.tokens.select({ id: 'id-test-token-4' })
+            assert.deepStrictEqual(rs[0].perms, ['readTokens'], `id-test-token-4 之 perms 應為 ['readTokens'], 實際: ${JSON.stringify(rs[0].perms)}`)
+            if (ctx.mode !== 'compare') return
+            let r = await callFapi('getTokensList', ['test-token-4'])
+            assert.strict.equal(r.ok, true, `授予後 test-token-4 應立即可讀金鑰清單, 實際: ${JSON.stringify(r).slice(0, 200)}`)
+        },
+    },
+    'E2E-006-revoke-perms-save-success': {
+        pre: async () => {
+            let r = await callFapi('getStaIp', ['test-token-5'])
+            assert.strict.equal(r.ok, true, `撤銷前 test-token-5 應可讀統計, 實際: ${JSON.stringify(r).slice(0, 200)}`)
+        },
+        post: async (ctx) => {
+            let rs = await woItems.tokens.select({ id: 'id-test-token-5' })
+            assert.deepStrictEqual(rs[0].perms, ['readTokens'], `id-test-token-5 之 perms 應為 ['readTokens'], 實際: ${JSON.stringify(rs[0].perms)}`)
+            if (ctx.mode !== 'compare') return
+            let r1 = await callFapi('getStaIp', ['test-token-5'])
+            assert.strict.equal(r1.ok, false, '撤銷後 test-token-5 應立即不可讀統計')
+            assert.strict.equal(r1.err, 'tokenExpired', `撤銷後讀統計之對外 key 應為 tokenExpired, 實際: ${r1.err}`)
+            let r2 = await callFapi('getTokensList', ['test-token-5'])
+            assert.strict.equal(r2.ok, true, '未撤銷之讀金鑰應仍可用')
+        },
+    },
+    'E2E-007-view-perms-readonly': {
+        pre: null,
+        post: async () => {
+            let rs = await woItems.tokens.select({ id: 'id-test-token-6' })
+            assert.deepStrictEqual(rs[0].perms, permsAll, `非編輯模式之操作不得改變 id-test-token-6 之 perms, 實際: ${JSON.stringify(rs[0].perms)}`)
+        },
+    },
+}
 
-        await deleteTestUsersAndTokens()
-        await insertTestUsersAndTokensAndTestTokens()
-
-        let browser = await launchBrowser()
-        let page = await browser.newPage()
-        page.on('dialog', async (dialog) => { await dialog.accept() })
-
-        let result = await fn(page, lang)
-        //多階段: fn 可回 Buffer (單張) 或 dict { baselineName: buf } (多張); 統一成 dict 寫檔
-        let stages = Buffer.isBuffer(result) ? { [name]: result } : result
-        for (let [bname, b] of Object.entries(stages)) {
-            writeBaseline(lang, name, bname, b)
-        }
-
-        await browser.close()
-        await deleteTestUsersAndTokens()
+//DB 副作用斷言 (寫檔 / 比對之前)
+async function assertDbSideEffects(name) {
+    if (name === 'E2E-002-toggle-isapp-save-success') {
+        //toggle 後 DB 該列 isApp 應從 'n' 變 'y'
+        let rs = await woItems.tokens.select({ id: 'id-test-token-1' }).catch(() => [])
+        assert.strict.equal(rs.length, 1, `id-test-token-1 應存在`)
+        assert.strict.equal(rs[0].isApp, 'y', `id-test-token-1 之 isApp 應已 toggle 為 'y', 實際: ${rs[0].isApp}`)
+    }
+    else if (name === 'E2E-003-delete-row-save-success') {
+        //刪除後 DB 該列應不存在
+        let rs = await woItems.tokens.select({ id: 'id-test-token-2' }).catch(() => [])
+        assert.strict.equal(rs.length, 0, `id-test-token-2 應已被刪除, 實際: ${rs.length} 筆`)
+        //其他 seed 列應仍在 (只篩 id-test-token-* 前綴, 避開 base seed tokens / admin token)
+        let all = await woItems.tokens.select().catch(() => [])
+        let seedRows = all.filter(r => (r.id || '').startsWith('id-test-token-'))
+        assert.strict.equal(seedRows.length, testTokens.length - 1, `其他 seed tokens 列應仍在, 實際: ${seedRows.length} 筆 (預期 ${testTokens.length - 1})`)
+    }
+    else if (name === 'E2E-004-token-expired-save-fail') {
+        //token 過期 reject → DB 不應變動 (id-test-token-3 之 isApp 仍為原值 'n')
+        let rs = await woItems.tokens.select({ id: 'id-test-token-3' }).catch(() => [])
+        assert.strict.equal(rs.length, 1, `id-test-token-3 應仍存在`)
+        assert.strict.equal(rs[0].isApp, 'n', `token 過期 reject 後 id-test-token-3 之 isApp 不應變動 (預期 'n', 實際: ${rs[0].isApp})`)
+        //seed tokens 數量不變 (同上, 只篩 id-test-token-* 前綴)
+        let all = await woItems.tokens.select().catch(() => [])
+        let seedRows = all.filter(r => (r.id || '').startsWith('id-test-token-'))
+        assert.strict.equal(seedRows.length, testTokens.length, `token 過期 reject 後 seed tokens 總數不應變動 (預期 ${testTokens.length}, 實際: ${seedRows.length})`)
     }
 }
 
+//單一案例管線: per-case DB 重置 + fresh browser (新 context, 自動接受 dialog) → 前置 → 截圖 → 語意斷言 → DB 不變式 → 寫檔 / 比對 → 關瀏覽器 → 清資料
+async function runCase(mode, lang, c, extra = {}) {
+    return await runBaselineCase({
+        mode,
+        lang,
+        name: c.name,
+        run: c.run,
+        stages: c.stages || null,
+        launch: launchBrowser,
+        pathOf: bp,
+        labelOf: (lg, key) => `tokens-${lg}-${key}`,
+        match: assertBaselineMatch,
+        prepare: async () => {
+            await deleteTestUsersAndTokens()
+            await insertTestUsersAndTokensAndTestTokens()
+        },
+        beforeRun: async (ctx) => {
+            await resetAdminToken()
+            await resetTestTokensSeed()
+            let pc = permsChecks[c.name]
+            if (ctx.mode === 'compare' && pc && pc.pre) {
+                await pc.pre()
+            }
+        },
+        semantic: async (ctx) => {
+            if (!semanticInCapture.includes(c.name)) {
+                await assertSpecForCase(ctx.page, ctx.lang, c.name)
+            }
+        },
+        verify: async (ctx) => {
+            if (permsChecks[c.name]) {
+                await permsChecks[c.name].post(ctx)
+            }
+            await assertDbSideEffects(c.name)
+        },
+        afterCase: async () => {
+            await deleteTestUsersAndTokens()
+        },
+        ...extra,
+    })
+}
+
+
+// ===================================================================
+// 產生標準圖
+// ===================================================================
 
 async function generateBaseline() {
     process.env.E2E_STRICT_CAPTURE = '1'
+    //截圖前篩選 (--names / --langs / --write-mode / E2E_BASELINE_OUT_DIR); 不符任何鍵即於此報錯
+    let gate = createBaselineGate({ langs, cases })
+    console.log(gate.describe())
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    for (let lang of langs) {
-        await generateBaselineForLang(lang)
+    for (let lang of gate.langs) {
+        console.log(`=== 產生標準圖（${lang}）===`)
+        for (let c of gate.casesFor(lang)) {
+            console.log(`  ${c.name}`)
+            await runCase('regen', lang, c, { gate })
+        }
     }
+    //--names 之任一項未產出即報錯 (不靜默略過)
+    gate.finalize()
 
     await deleteTestUsersAndTokens()
 
@@ -1101,153 +1096,21 @@ if (process.argv.includes('--baseline')) {
 }
 else {
 
-    //=== baseline 比對 helper (內含: 檔存在 / pixelmatch 反鋸齒容差 / spec 語意斷言) ===
-    async function verifyBaseline(page, lang, name, buf, skipSpec = false) {
-        if (!skipSpec) {
-            await assertSpecForCase(page, lang, name)
-        }
-        let baselinePath = bp(lang, name)
-        //fail 時自動保留 capture + baseline 到 ./testPending (不覆蓋, 帶 timestamp) 供 diff
-        assertBaselineMatch(buf, baselinePath, `tokens-${lang}-${name}`)
-    }
-
-
     for (let lang of langs) {
 
         describe(`Tokens E2E [${lang}] — UI baseline 比對`, function() {
             this.timeout(240000)
 
-            let browser
-            let page
-
-            //per-case 獨立: 每個 it 都 fresh browser + DB setup, 確保單 case --grep 也能跑.
+            //per-case 獨立 (fresh browser + DB 重置) 由 runCase 負責, 確保單 case --grep 也能跑
             beforeEach(async function() {
                 this.timeout(240000)
                 await startServersOnce()
-
-                await deleteTestUsersAndTokens()
-                await insertTestUsersAndTokensAndTestTokens()
-
-                browser = await launchBrowser()
-                let context = await browser.newContext()
-                page = await context.newPage()
-
-                page.on('dialog', async (dialog) => {
-                    await dialog.accept()
-                })
             })
 
-            afterEach(async function() {
-                if (browser) {
-                    await browser.close()
-                    browser = null
-                }
-                await deleteTestUsersAndTokens()
-            })
-
-            let cases = [
-                ['E2E-001-list-loaded', captureListLoaded],
-                ['E2E-002-toggle-isapp-save-success', captureToggleIsappSaveSuccess],
-                ['E2E-003-delete-row-save-success', captureDeleteRowSaveSuccess],
-                ['E2E-004-token-expired-save-fail', captureTokenExpiredSaveFail],
-                ['E2E-005-grant-perms-save-success', captureGrantPermsSaveSuccess],
-                ['E2E-006-revoke-perms-save-success', captureRevokePermsSaveSuccess],
-                ['E2E-007-view-perms-readonly', captureViewPermsReadonly],
-            ]
-
-            //應用系統權限案例 (ADR-069) 之前後斷言: pre 於操作前確認 app token 之起始能力, post 於比對標準圖之前驗 DB 與端到端不變式
-            //(app token 實際呼叫後台功能之成敗), 使標準圖缺漏或不符時仍先驗得流程本身
-            let permsChecks = {
-                'E2E-005-grant-perms-save-success': {
-                    pre: async () => {
-                        let r = await callFapi('getTokensList', ['test-token-4'])
-                        assert.strict.equal(r.ok, false, `授予前 test-token-4 (僅基本權限) 不應可讀金鑰清單, 實際: ${JSON.stringify(r).slice(0, 200)}`)
-                    },
-                    post: async () => {
-                        let rs = await woItems.tokens.select({ id: 'id-test-token-4' })
-                        assert.deepStrictEqual(rs[0].perms, ['readTokens'], `id-test-token-4 之 perms 應為 ['readTokens'], 實際: ${JSON.stringify(rs[0].perms)}`)
-                        let r = await callFapi('getTokensList', ['test-token-4'])
-                        assert.strict.equal(r.ok, true, `授予後 test-token-4 應立即可讀金鑰清單, 實際: ${JSON.stringify(r).slice(0, 200)}`)
-                    },
-                },
-                'E2E-006-revoke-perms-save-success': {
-                    pre: async () => {
-                        let r = await callFapi('getStaIp', ['test-token-5'])
-                        assert.strict.equal(r.ok, true, `撤銷前 test-token-5 應可讀統計, 實際: ${JSON.stringify(r).slice(0, 200)}`)
-                    },
-                    post: async () => {
-                        let rs = await woItems.tokens.select({ id: 'id-test-token-5' })
-                        assert.deepStrictEqual(rs[0].perms, ['readTokens'], `id-test-token-5 之 perms 應為 ['readTokens'], 實際: ${JSON.stringify(rs[0].perms)}`)
-                        let r1 = await callFapi('getStaIp', ['test-token-5'])
-                        assert.strict.equal(r1.ok, false, '撤銷後 test-token-5 應立即不可讀統計')
-                        assert.strict.equal(r1.err, 'tokenExpired', `撤銷後讀統計之對外 key 應為 tokenExpired, 實際: ${r1.err}`)
-                        let r2 = await callFapi('getTokensList', ['test-token-5'])
-                        assert.strict.equal(r2.ok, true, '未撤銷之讀金鑰應仍可用')
-                    },
-                },
-                'E2E-007-view-perms-readonly': {
-                    pre: async () => {},
-                    post: async () => {
-                        let rs = await woItems.tokens.select({ id: 'id-test-token-6' })
-                        assert.deepStrictEqual(rs[0].perms, permsAll, `非編輯模式之操作不得改變 id-test-token-6 之 perms, 實際: ${JSON.stringify(rs[0].perms)}`)
-                    },
-                },
-            }
-
-            for (let [name, fn] of cases) {
-                it(`${name}`, async function() {
-                    await resetAdminToken()
-                    await resetTestTokensSeed()
-                    if (permsChecks[name]) {
-                        await permsChecks[name].pre()
-                    }
-                    let result = await fn(page, lang)
-
-                    //語意斷言 (主): 以 case name 查 expectedSpecText, 每個 case 執行一次.
-                    //E2E-002 (toggle isApp) 例外: 其成功 modal 文字已在 capture 函式內 (modal 仍顯示時) 斷言,
-                    //post-capture 時 modal 已 dismiss + toggle 結果無唯一可觀察文字 → 改以下方 DB 狀態斷言驗最終態,
-                    //不在此處對已消失的 modal 文字做 pageHasText. E2E-005 / E2E-006 同理 (capture 內斷言成功 modal 文字).
-                    if (!['E2E-002-toggle-isapp-save-success', 'E2E-005-grant-perms-save-success', 'E2E-006-revoke-perms-save-success'].includes(name)) {
-                        await assertSpecForCase(page, lang, name)
-                    }
-
-                    //應用系統權限案例: 先驗 DB 與端到端不變式, 再比對標準圖
-                    if (permsChecks[name]) {
-                        await permsChecks[name].post()
-                    }
-
-                    //pixel baseline (補強): 多階段 fn 可回 Buffer (單張) 或 dict { baselineName: buf } (多張); 統一成 dict 逐張比對
-                    let stages = Buffer.isBuffer(result) ? { [name]: result } : result
-                    for (let [bname, b] of Object.entries(stages)) {
-                        assertBaselineMatch(b, bp(lang, bname), `tokens-${lang}-${bname}`)
-                    }
-
-                    //DB 副作用斷言
-                    if (name === 'E2E-002-toggle-isapp-save-success') {
-                        //toggle 後 DB 該列 isApp 應從 'n' 變 'y'
-                        let rs = await woItems.tokens.select({ id: 'id-test-token-1' }).catch(() => [])
-                        assert.strict.equal(rs.length, 1, `id-test-token-1 應存在`)
-                        assert.strict.equal(rs[0].isApp, 'y', `id-test-token-1 之 isApp 應已 toggle 為 'y', 實際: ${rs[0].isApp}`)
-                    }
-                    else if (name === 'E2E-003-delete-row-save-success') {
-                        //刪除後 DB 該列應不存在
-                        let rs = await woItems.tokens.select({ id: 'id-test-token-2' }).catch(() => [])
-                        assert.strict.equal(rs.length, 0, `id-test-token-2 應已被刪除, 實際: ${rs.length} 筆`)
-                        //其他 seed 列應仍在 (只篩 id-test-token-* 前綴, 避開 base seed tokens / admin token)
-                        let all = await woItems.tokens.select().catch(() => [])
-                        let seedRows = all.filter(r => (r.id || '').startsWith('id-test-token-'))
-                        assert.strict.equal(seedRows.length, testTokens.length - 1, `其他 seed tokens 列應仍在, 實際: ${seedRows.length} 筆 (預期 ${testTokens.length - 1})`)
-                    }
-                    else if (name === 'E2E-004-token-expired-save-fail') {
-                        //token 過期 reject → DB 不應變動 (id-test-token-3 之 isApp 仍為原值 'n')
-                        let rs = await woItems.tokens.select({ id: 'id-test-token-3' }).catch(() => [])
-                        assert.strict.equal(rs.length, 1, `id-test-token-3 應仍存在`)
-                        assert.strict.equal(rs[0].isApp, 'n', `token 過期 reject 後 id-test-token-3 之 isApp 不應變動 (預期 'n', 實際: ${rs[0].isApp})`)
-                        //seed tokens 數量不變 (同上, 只篩 id-test-token-* 前綴)
-                        let all = await woItems.tokens.select().catch(() => [])
-                        let seedRows = all.filter(r => (r.id || '').startsWith('id-test-token-'))
-                        assert.strict.equal(seedRows.length, testTokens.length, `token 過期 reject 後 seed tokens 總數不應變動 (預期 ${testTokens.length}, 實際: ${seedRows.length})`)
-                    }
+            //語意斷言與 DB / 端到端不變式皆於比對標準圖之前 (pixel baseline 為補強層)
+            for (let c of cases) {
+                it(`${c.name}`, async function() {
+                    await runCase('compare', lang, c, { onKnownDefect: () => this.skip() })
                 })
             }
 

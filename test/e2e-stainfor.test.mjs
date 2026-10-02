@@ -5,7 +5,9 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed, waitDrawerReady, assertBaselineMatch, captureStableWithBox, overlayRegions, composeBox, launchBrowser, REGEN, waitUntilExist, typeIntoNthInput } from './tools/e2e-setup.mjs'
+import { startServersOnce, cleanup, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed, waitDrawerReady, assertBaselineMatch, captureStable, captureStableWithBox, overlayRegions, composeBox, launchBrowser, REGEN, waitUntilExist, typeIntoNthInput } from './tools/e2e-setup.mjs'
+//產製端與比對端同一案例管線 (規格詳 w-package-tools-e2e 之 README.md §2.1-2.2)
+import { runBaselineCase, createBaselineGate, itemsUnionBox } from './tools/e2eLib.mjs'
 
 
 //
@@ -16,7 +18,13 @@ import { startServersOnce, cleanup, baseUrl, apiUrl, resetToBaseSeed, deleteNonB
 // 使用方式：
 //   1. 先產生標準圖：node test/e2e-stainfor.test.mjs --baseline
 //   2. 跑測試比對：npx mocha test/e2e-stainfor.test.mjs --timeout 240000
-//   --names <eng-E2E-001-page-loaded,...> 進行手術式 baseline 重產
+//   手術式重產 (截圖前篩選, 規格詳 w-package-tools-e2e 之 README.md §2.2): --names <項,...> 每項可帶語系前綴 (eng-/cht-), 不帶則兩語系皆產;
+//     階段圖鍵只寫該張, 案例鍵或編號前綴 (如 E2E-005) 寫該案全部階段 (本檔每案單張, 案例鍵即圖鍵), 不符任何鍵即報錯;
+//     --langs; --write-mode missing|changed; env E2E_BASELINE_OUT_DIR=<dir> 寫到暫存目錄 (等價驗證用)
+//     注意: E2E_BASELINE_OUT_DIR 只涵蓋經案例管線之標準圖寫檔; per-item ref (_staref-*) 缺檔時之自舉 (captureActivityItem /
+//     captureFocusedItem) 仍直接寫入 test/pics/stainfor, 不受其影響 — 以暫存目錄做等價驗證前須確認 10 張 _staref 皆在
+//   產製端與比對端呼叫同一案例管線 (runBaselineCase): 每案 DB 重置 + fixture log → fresh browser → 復原 admin token
+//     → 流程截圖 (含 overlay 貼 ref) → 語意斷言 (產製端寫檔前亦必過) → 寫檔 / 比對 → 關瀏覽器 → 清資料 + fixture log
 //
 // 標準圖存放：test/pics/stainfor/stainfor-{lang}-{number}-{name}.png
 //
@@ -52,27 +60,6 @@ import { startServersOnce, cleanup, baseUrl, apiUrl, resetToBaseSeed, deleteNonB
 let salt = '{salt}'
 let baselineDir = './test/pics/stainfor'
 let langs = ['eng', 'cht']
-
-
-let baselineNamesFilter = null
-{
-    let i = process.argv.indexOf('--names')
-    if (i >= 0 && process.argv[i + 1]) {
-        baselineNamesFilter = new Set(process.argv[i + 1].split(','))
-    }
-}
-function writeBaseline(lang, name, buf) {
-    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`)) {
-        console.log(`  [skip] ${lang}-${name}`)
-        return
-    }
-    fs.writeFileSync(bp(lang, name), buf)
-}
-
-
-function shouldGen(lang, name) {
-    return !baselineNamesFilter || baselineNamesFilter.has(`${lang}-${name}`)
-}
 
 
 function bp(lang, name) {
@@ -374,15 +361,16 @@ async function waitStaInforErrMsg(page, lang) {
 //僅依賴 DB seed 計數 (與 wall-clock 無關), 取此區段做 pixel 確定性穩定.
 //等價 retry-until-stable: 連續兩張截到一致才回傳 (對齊 captureStable 思路).
 //
-//target: CSS selector 字串, 指定本 case 要標注的區域元素. 紅框改為截圖後以 composeBox (sharp 合成)
-//疊上 (2026-09-01 起, 不再注入暫時 DOM 紅框元素 — 技能 §8.3「截圖後合成, 不注入 DOM」).
-//null 時不疊框 (fallback). clip 原點 (0,0) 與 viewport 左上角重合 (呼叫時頁面未捲動), 故
-//getBoundingClientRect 座標可直接當 clip buffer 座標傳給 composeBox, 不需另加 scrollX/Y.
+//target: 本 case 要標注之區域——CSS selector 字串, 或 { textInk: 文字 }(找 textContent 恰為該文字之最內層元素, 以 Range 量文字墨跡;
+//技能 §7.2「提示訊息 → 訊息本體」、§7.3-2 不框整列空白). 紅框於截圖後以 composeBox (sharp 合成) 疊上 (技能 §8.3, 不注入 DOM).
+//目標找不到或過小一律拋錯 (2026-09-28; 原「找不到即回無框圖」使 E2E-002 兩張標準圖無框而比對永遠通過——
+//其選擇器 div[style*="padding:10px 15px"] 因瀏覽器把 style 序列化為 "padding: 10px 15px;" 而從未命中).
+//clip 原點 (0,0) 與 viewport 左上角重合 (呼叫時頁面未捲動), 故 getBoundingClientRect 座標可直接當 clip buffer 座標傳給 composeBox.
 //
 //  E2E-001-page-loaded:                 '.space-y-8 > div:first-child'
 //    ↑ 使用者資訊區 wrapper (標籤行 + 4 張 user 卡片), y 落在 0..330 內.
-//  E2E-002-admin-token-expired-page-empty: 'div[style*="padding:10px 15px"]'
-//    ↑ v-else 內 errMsg div (E2E-002 時 firstLoading=false, 只有 errMsg div 渲染, 唯一匹配).
+//  E2E-002-admin-token-expired-page-empty: { textInk: 取得數據失敗之訊息原文 }
+//    ↑ v-else 內 errMsg 文字本體 (E2E-002 時主內容 v-if 為 false, 只有 errMsg 渲染).
 async function captureCardsOnly(page, target = null) {
     await page.mouse.move(0, 0)
     await page.waitForTimeout(500)
@@ -392,30 +380,41 @@ async function captureCardsOnly(page, target = null) {
     //E2E-002-admin-token-expired-page-empty 偶發 sidebar 空白). 對齊「進後台截圖皆先 waitDrawerReady」.
     await waitDrawerReady(page)
 
-    //取 target 元素之 clip buffer 座標框 (截圖前量, 版面於截圖過程不變動)
+    //取 target 之 clip buffer 座標框 (截圖前量, 版面於截圖過程不變動); 找不到即拋錯
     let box = null
-    if (target) {
-        let rc = await page.evaluate((sel) => {
-            let el = document.querySelector(sel)
-            if (!el) return null
-            let r = el.getBoundingClientRect()
+    if (target && target.textInk) {
+        //訊息文字墨跡: 經 w-package-tools-e2e itemsUnionBox fit(文字墨跡外擴 inkPad, 免紅框壓字; 2026-09-28 前此處自寫 Range 量法、框內僅剩約 1px)
+        let m = await itemsUnionBox(page.getByText(target.textInk, { exact: true }).first(), { fit: true }).measure(page)
+        box = m ? { left: m.x, top: m.y, right: m.x + m.width, bottom: m.y + m.height } : null
+    }
+    else if (typeof target === 'string') {
+        box = await page.evaluate((tg) => {
+            let el = document.querySelector(tg)
+            let r = el ? el.getBoundingClientRect() : null
+            if (!r || r.width <= 0 || r.height <= 0) {
+                return null
+            }
             return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
         }, target)
-        if (rc) box = rc
+    }
+    if (!box) {
+        throw new Error(`captureCardsOnly: 紅框目標找不到或尺寸為 0 (${JSON.stringify(target)}); 標準圖每張皆須有框 (技能 §7.1)`)
     }
 
-    let opts = { animations: 'disabled', clip: { x: 0, y: 0, width: 1280, height: 330 } }
-    let prev = await page.screenshot(opts)
-    for (let i = 0; i < 8; i++) {
-        await page.waitForTimeout(200)
-        let curr = await page.screenshot(opts)
-        if (curr.equals(prev)) {
-            return box ? await composeBox(curr, box) : curr
-        }
-        prev = curr
+    //截圖一律經 captureStable (技能 C6「所有 pixel 截圖唯一入口」; 2026-09-28 前為自製 8×200ms 連拍, 無 strict、無 SVG 凍結與字型等待):
+    //park mouse → 初始等待 → WDrawer settle → 凍結 SVG SMIL → 字型 → 連拍至相鄰兩張相同; regen 端 strict 未 settle 即拋錯.
+    //以 shotOpts.clip 只拍 cards 區 (視窗截圖, clip 原點即視窗左上角); 紅框於截圖後以 composeBox 疊上
+    let buf = await captureStable(page, { shotOpts: { fullPage: false, clip: { x: 0, y: 0, width: 1280, height: 330 } } })
+    let skipped = null
+    let out = await composeBox(buf, box, {
+        onSkip: (reason) => {
+            skipped = reason
+        },
+    })
+    if (skipped) {
+        throw new Error(`captureCardsOnly: 紅框未畫出——${skipped}`)
     }
-    //未 settle 仍回傳最後一張 (視需要疊框)
-    return box ? await composeBox(prev, box) : prev
+    return out
 }
 
 
@@ -538,7 +537,8 @@ async function captureAdminTokenExpiredPageEmpty(page, lang) {
     //切去 Users list (Stainfor unmount)
     await page.locator(`text="${t.usersList}"`).first().waitFor({ state: 'visible', timeout: 15000 })
     await page.locator(`text="${t.usersList}"`).first().click()
-    await page.waitForTimeout(3000)
+    //偵測使用者清單頁已渲染(其表格出現即統計頁已卸載; 內容區同時只掛一頁)再讓權杖過期, 取代固定 3 秒(2026-09-28)
+    await waitUntilExist(page, 'Users list 頁已渲染(統計頁已卸載)', () => !!document.querySelector('.ag-root-wrapper'), { timeout: 60000 })
 
     //過期 admin token
     await forceExpireAdminToken()
@@ -549,10 +549,9 @@ async function captureAdminTokenExpiredPageEmpty(page, lang) {
     await page.waitForTimeout(3000)
     await waitStaInforErrMsg(page, lang)
 
-    //target: v-else 內 errMsg div. E2E-002 時 firstLoading=false, 主內容 v-if 為 false →
-    //firstLoading div 亦不渲染, 只有 errMsg div 存在 → div[style*="padding:10px 15px"] 唯一匹配.
-    //errMsg div y 位置約 60-80 (page header 之下), 落在 clip y:0..330 範圍內.
-    return await captureCardsOnly(page, 'div[style*="padding:10px 15px"]')
+    //結果: 錯誤訊息出現 (框住錯誤訊息文字本體; 技能 §7.2「提示訊息 → 訊息本體」).
+    //E2E-002 時主內容 v-if 為 false, 只有 v-else 之 errMsg 渲染; 其 y 約 60-80 (page header 之下), 落在 clip y:0..330 範圍內.
+    return await captureCardsOnly(page, { textInk: t.errMsgGetData })
 }
 
 
@@ -756,19 +755,10 @@ async function captureFocusedItem(page, lang, itemTitle, kind, refName) {
     //等左側 WDrawer sidebar 展開到位 (此 clip 不含 sidebar, 但維持與其他 backstage 截圖一致前置)
     await waitDrawerReady(page)
 
-    //3) clip 截圖, retry-until-stable (連兩張一致). 紅框改截圖後以 composeBox (sharp 合成) 疊上
+    //3) clip 截圖經 captureStable (2026-09-28 前為自製連拍, 無 strict、無 SVG 凍結與字型等待; 技能 C6): 視窗截圖 + clip,
+    //retry-until-stable, regen 端 strict. 紅框改截圖後以 composeBox (sharp 合成) 疊上
     //(2026-09-01 起, 不再注入暫時 DOM 紅框元素 — 技能 §8.3), 故此處不再插入/移除任何 DOM.
-    let shotOpts = { animations: 'disabled', clip }
-    let buf = await page.screenshot(shotOpts)
-    for (let i = 0; i < 8; i++) {
-        await page.waitForTimeout(200)
-        let curr = await page.screenshot(shotOpts)
-        if (curr.equals(buf)) {
-            buf = curr
-            break
-        }
-        buf = curr
-    }
+    let buf = await captureStable(page, { shotOpts: { fullPage: false, clip } })
 
     //4) overlay 貼 per-item ref: 動態區 viewport rect 轉 clip-relative (clip 後 buffer 原點 = clip 左上角)
     let rects = geo.overlays.map((o) => ({
@@ -852,53 +842,76 @@ async function captureIpUsageTable(page, lang) {
 
 
 // ===================================================================
-// 產生標準圖
+// 案例宣告與案例管線 (產製端與比對端共用)
 // ===================================================================
 
-async function generateBaselineForLang(lang) {
-    console.log(`=== 產生標準圖（${lang}）===`)
+//順序與 mocha it 相同 (產製順序 ≡ 比對順序); it 標題即案例鍵 (--grep 依之); 每案單張, stages 即案例鍵 (與寫檔名、比對名一致)
+let cases = [
+    { name: 'E2E-001-page-loaded', run: capturePageLoaded, stages: ['E2E-001-page-loaded'] },
+    { name: 'E2E-002-admin-token-expired-page-empty', run: captureAdminTokenExpiredPageEmpty, stages: ['E2E-002-admin-token-expired-page-empty'] },
+    { name: 'E2E-003-user-login-frequency-chart', run: captureUserLoginFrequencyChart, stages: ['E2E-003-user-login-frequency-chart'] },
+    { name: 'E2E-004-token-usage-frequency-chart', run: captureTokenUsageFrequencyChart, stages: ['E2E-004-token-usage-frequency-chart'] },
+    { name: 'E2E-005-token-user-usage-table', run: captureTokenUserUsageTable, stages: ['E2E-005-token-user-usage-table'] },
+    { name: 'E2E-006-ip-connection-frequency-chart', run: captureIpConnectionFrequencyChart, stages: ['E2E-006-ip-connection-frequency-chart'] },
+    { name: 'E2E-007-ip-usage-table', run: captureIpUsageTable, stages: ['E2E-007-ip-usage-table'] },
+]
 
-    let cases = [
-        ['E2E-001-page-loaded', capturePageLoaded],
-        ['E2E-002-admin-token-expired-page-empty', captureAdminTokenExpiredPageEmpty],
-        ['E2E-003-user-login-frequency-chart', captureUserLoginFrequencyChart],
-        ['E2E-004-token-usage-frequency-chart', captureTokenUsageFrequencyChart],
-        ['E2E-005-token-user-usage-table', captureTokenUserUsageTable],
-        ['E2E-006-ip-connection-frequency-chart', captureIpConnectionFrequencyChart],
-        ['E2E-007-ip-usage-table', captureIpUsageTable],
-    ]
-
-    for (let [name, fn] of cases) {
-        if (!shouldGen(lang, name)) continue
-        console.log(`  ${name}`)
-
-        await deleteTestUsersAndTokens()
-        await insertTestUsersAndTokens()
-
-        let browser = await launchBrowser()
-        let page = await browser.newPage()
-        page.on('dialog', async (dialog) => { await dialog.accept() })
-
-        let buf = await fn(page, lang)
-        fs.writeFileSync(bp(lang, name), buf)
-
-        await browser.close()
-        await deleteTestUsersAndTokens()
-    }
+//單一案例管線: per-case DB 重置 (含 fixture log) + fresh browser (新 context, 自動接受 dialog) → 復原 admin token → 流程 (截圖)
+//→ 語意斷言 (live DOM, 不受 overlay 貼圖影響) → 寫檔 / 比對 → 關瀏覽器 → 清資料 (含 fixture log)
+async function runCase(mode, lang, c, extra = {}) {
+    return await runBaselineCase({
+        mode,
+        lang,
+        name: c.name,
+        run: c.run,
+        stages: c.stages,
+        launch: launchBrowser,
+        pathOf: bp,
+        labelOf: (lg, key) => `stainfor-${lg}-${key}`,
+        match: assertBaselineMatch,
+        prepare: async () => {
+            await deleteTestUsersAndTokens()
+            await insertTestUsersAndTokens()
+        },
+        beforeRun: async () => {
+            //原僅比對端 it 開頭呼叫; 合一後兩端皆於開頁後、流程前呼叫 (同 tokens 遷移之作法)
+            await resetAdminToken()
+        },
+        semantic: async (ctx) => {
+            await assertSpecForCase(ctx.page, ctx.lang, c.name)
+        },
+        afterCase: async () => {
+            await deleteTestUsersAndTokens()
+        },
+        ...extra,
+    })
 }
 
 
+// ===================================================================
+// 產生標準圖
+// ===================================================================
+
 async function generateBaseline() {
     process.env.E2E_STRICT_CAPTURE = '1'
+    //截圖前篩選 (--names / --langs / --write-mode / E2E_BASELINE_OUT_DIR); 不符任何鍵即於此報錯 (先於啟動服務)
+    let gate = createBaselineGate({ langs, cases })
+    console.log(gate.describe())
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    for (let lang of langs) {
-        await generateBaselineForLang(lang)
+    for (let lang of gate.langs) {
+        console.log(`=== 產生標準圖（${lang}）===`)
+        for (let c of gate.casesFor(lang)) {
+            console.log(`  ${c.name}`)
+            await runCase('regen', lang, c, { gate })
+        }
     }
+    //--names 之任一項未產出即報錯 (不靜默略過)
+    gate.finalize()
 
     await deleteTestUsersAndTokens()
 
@@ -921,65 +934,21 @@ if (process.argv.includes('--baseline')) {
 }
 else {
 
-    async function verifyBaseline(page, lang, name, buf, skipSpec = false) {
-        if (!skipSpec) {
-            await assertSpecForCase(page, lang, name)
-        }
-        let baselinePath = bp(lang, name)
-        //fail 時自動保留 capture + baseline 到 ./testPending (不覆蓋, 帶 timestamp) 供 diff
-        assertBaselineMatch(buf, baselinePath, `stainfor-${lang}-${name}`)
-    }
-
-
     for (let lang of langs) {
 
         describe(`Stainfor E2E [${lang}] — UI baseline 比對`, function() {
             this.timeout(240000)
 
-            let browser
-            let page
-
+            //per-case 獨立 (DB 重置 + fixture log + fresh browser + 復原 admin token) 由 runCase 負責, 確保單 case --grep 也能跑
             beforeEach(async function() {
                 this.timeout(240000)
                 await startServersOnce()
-
-                await deleteTestUsersAndTokens()
-                await insertTestUsersAndTokens()
-
-                browser = await launchBrowser()
-                let context = await browser.newContext()
-                page = await context.newPage()
-
-                page.on('dialog', async (dialog) => {
-                    await dialog.accept()
-                })
             })
 
-            afterEach(async function() {
-                if (browser) {
-                    await browser.close()
-                    browser = null
-                }
-                await deleteTestUsersAndTokens()
-            })
-
-            let cases = [
-                ['E2E-001-page-loaded', capturePageLoaded],
-                ['E2E-002-admin-token-expired-page-empty', captureAdminTokenExpiredPageEmpty],
-                ['E2E-003-user-login-frequency-chart', captureUserLoginFrequencyChart],
-                ['E2E-004-token-usage-frequency-chart', captureTokenUsageFrequencyChart],
-                ['E2E-005-token-user-usage-table', captureTokenUserUsageTable],
-                ['E2E-006-ip-connection-frequency-chart', captureIpConnectionFrequencyChart],
-                ['E2E-007-ip-usage-table', captureIpUsageTable],
-            ]
-
-            for (let [name, fn] of cases) {
-                it(`${name}`, async function() {
-                    await resetAdminToken()
-                    let buf = await fn(page, lang)
-
-                    //語意斷言 (主) + pixel baseline (補)
-                    await verifyBaseline(page, lang, name, buf)
+            //語意斷言 (主) 於比對標準圖 (補強層) 之前, 與產製端同一案例管線
+            for (let c of cases) {
+                it(`${c.name}`, async function() {
+                    await runCase('compare', lang, c, { onKnownDefect: () => this.skip() })
                 })
             }
 

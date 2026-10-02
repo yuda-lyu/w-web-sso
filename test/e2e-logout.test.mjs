@@ -6,14 +6,17 @@ import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
 import { startServersOnce, cleanup, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, launchBrowser } from './tools/e2e-setup.mjs'
+import { runBaselineCase, createBaselineGate, itemsUnionBox } from './tools/e2eLib.mjs'
 
 
 //
-// E2E logout test — 驗證登出流程 (eng + cht 各 3 case)
+// E2E logout test — 驗證登出流程 (eng + cht 各 5 case)
 //
 // 對應規格 (spec/流程_使用者登出.md / Layout.vue / PageUser.vue 行為衍生):
 //   - logout-from-backstage: admin autoLogin backstage → 點 user popup → 點 Log out → token 清空 + 回 login 頁
 //   - logout-from-user-view: user autoLogin user view → 點 Log out chip → token 清空 + 回 login 頁
+//   - logout-backend-reject: 後端 logoutByToken reject → 前端仍清空 LS + 回 login 頁
+//   - logout-webkey-missing: webKey 缺失 → alert 且 LS token 不清
 //   - logout-then-reload: logout 後 reload → 應停在 login (不可 autoLogin 復原)
 //
 // 流程驗證重點 (語意斷言):
@@ -22,7 +25,16 @@ import { startServersOnce, cleanup, captureStableWithBox, assertBaselineMatch, b
 //   3. reload 後不會被 autoLogin 拉回 (token 已被清空, 落到 login 頁)
 //
 // 視覺斷言 (補強):
-//   logout 後 login 頁 pixel baseline 比對 (3 case × 2 lang = 6 張)
+//   pixel baseline 比對 (每語系 7 張: E2E-001 兩階段、E2E-004 兩階段、其餘各 1 張; × 2 lang = 14 張)
+//
+// 使用方式：
+//   1. 先產生標準圖：node test/e2e-logout.test.mjs --baseline
+//   2. 跑測試比對：npx mocha test/e2e-logout.test.mjs --timeout 180000
+//   手術式重產 (截圖前篩選, 規格詳 w-package-tools-e2e 之 README.md §2.2): --names <項,...> 每項可帶語系前綴 (eng-/cht-), 不帶則兩語系皆產;
+//     階段圖鍵只寫該張 (E2E-001 之案例鍵即首張階段圖鍵 E2E-001-1-logout-popup-open, 給它只寫該張), 案例鍵或編號前綴 (如 E2E-004) 寫該案全部階段,
+//     不符任何鍵即報錯; --langs; --write-mode missing|changed; env E2E_BASELINE_OUT_DIR=<dir> 寫到暫存目錄 (等價驗證用)
+//   產製端與比對端呼叫同一案例管線 (runBaselineCase): 每案 fresh browser + DB 重置 → 流程 (截圖前之語意斷言於流程原位置) →
+//     截圖後之語意斷言 (semantic) → DB 副作用 (verify) → 寫檔 / 比對; 斷言不過一張都不寫
 //
 
 let salt = '{salt}'
@@ -62,28 +74,6 @@ let userTokens = {}
 
 let baselineDir = './test/pics/logout'
 let bp = (lang, name) => path.join(baselineDir, `logout-${lang}-${name}.png`)
-
-// --names <eng-logout-from-backstage,cht-logout-then-reload,...> 進行手術式 baseline 重產
-let baselineNamesFilter = null
-{
-    let i = process.argv.indexOf('--names')
-    if (i >= 0 && process.argv[i + 1]) {
-        baselineNamesFilter = new Set(process.argv[i + 1].split(','))
-    }
-}
-function writeBaseline(lang, name, buf) {
-    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`)) {
-        console.log(`  [skip] ${lang}-${name}`)
-        return
-    }
-    fs.writeFileSync(bp(lang, name), buf)
-}
-
-
-//是否需要產生此 case 的標準圖. --names 指定時只有指定 case 回 true → 連「截圖」都跳過 (非僅跳寫檔).
-function shouldGen(lang, name) {
-    return !baselineNamesFilter || baselineNamesFilter.has(`${lang}-${name}`)
-}
 
 
 async function insertTestUsersAndTokens() {
@@ -152,7 +142,7 @@ async function loginViaAutoLogin(page, user, view, lang) {
     await page.waitForTimeout(10000)
     //偵測 target 出現 (backstage: statistics 文字; user view: user.name)
     let marker = view === 'backstage' ? t.statistics : user.name
-    await page.waitForFunction((m) => document.body.innerText.includes(m), marker, { timeout: 15000 })
+    await page.waitForFunction((m) => document.body.innerText.includes(m), marker, { timeout: 60000 }) //偵測上限放寬(原 15 秒; 含 autoLogin 伺服器往返, 2026-09-28)
 }
 
 
@@ -193,15 +183,28 @@ async function waitForLoginPage(page, lang) {
             return false
         }
         return walk(document.body)
-    }, t.login, { timeout: 15000 })
+    }, t.login, { timeout: 60000 }) //偵測上限放寬(原 15 秒; 含登出伺服器往返, 2026-09-28)
 }
 
 
-// --- capture helpers (3 case per lang) ---
+// ===================================================================
+// 案例流程 (產製端與比對端共用). 流程以原產製端為準 (標準圖由它產出); 原比對端另寫之流程已合一,
+// 其「截圖前」之語意斷言 (登入後畫面 marker、LS token 存在) 併入流程原位置 (皆為唯讀檢查),
+// 「截圖後」之語意斷言與 DB 副作用改由 cases 之 semantic / verify 執行 (寫檔 / 比對之前).
+// 回傳單張 buf 或 dict { 圖鍵 → buf }
+// ===================================================================
 
-async function captureLogoutFromBackstage(page, lang) {
+//E2E-001 後台 user popup 點 Log out (兩階段: popup 展開 → 登出後登入頁)
+async function runLogoutFromBackstage(page, lang) {
     let t = kpUiText[lang]
     await loginViaAutoLogin(page, testUsers.admin, 'backstage', lang)
+
+    //語意斷言 1: 已進 backstage (原比對端)
+    await waitForTextVisible(page, t.statistics, 10000)
+
+    //語意斷言 2: token 存在 (原比對端)
+    let tokenBefore = await getLsToken(page)
+    assert.strict.equal(tokenBefore, userTokens[testUsers.admin.id], `登入後 token 應存在 LS`)
 
     //切至「使用者資訊」頁再開 popup: backstage 落地頁(統計資訊)含隨 log 內容變動之活圖表
     //(2026-07-10 fdLog 修復後統計面板由恆掛 Waiting data 轉為真實載入), 非本案例主題,
@@ -214,13 +217,16 @@ async function captureLogoutFromBackstage(page, lang) {
     await page.locator(`text="${testUsers.admin.name}"`).first().click()
     await page.waitForTimeout(500)
 
-    //popup 浮出後 — [stage1] 截「popup 展開 + logout 按鈕可見」畫面, 框 logout 按鈕本身
+    //popup 浮出後 — [stage1] 截「popup 展開 + logout 按鈕可見」畫面, 框整個「登出」選單項(圖示與文字)
     let logoutLoc = page.locator(`text="${t.logout}"`).first()
     await logoutLoc.waitFor({ state: 'visible', timeout: 5000 })
+    //選單項＝可點層(Layout.vue: cursor:pointer 之 flex 列, 內含登出圖示與文字); 2026-09-28 前只框文字元素, 圖示落在框外且字尾貼框(技能 §7.3-3 框整顆)。
+    //該列無可見邊界(透明、無內距) → itemsUnionBox fit 量內容(圖示框 ∪ 文字墨跡外擴 inkPad), 免紅框壓字
+    let logoutItemLoc = logoutLoc.locator('xpath=ancestor::div[contains(@style,"cursor: pointer")][1]')
     //park 滑鼠避免 hover 殘留在 user name trigger 上
     await page.mouse.move(0, 0)
     await page.waitForTimeout(300)
-    let bufPopup = await captureStableWithBox(page, logoutLoc)
+    let bufPopup = await captureStableWithBox(page, itemsUnionBox(logoutItemLoc, { fit: true }))
 
     //點 logout
     await logoutLoc.click()
@@ -228,7 +234,7 @@ async function captureLogoutFromBackstage(page, lang) {
     //等回 login 頁
     await waitForLoginPage(page, lang)
 
-    //[stage2] 截登出後登入頁 (與原 baseline 相同)
+    //[stage2] 截登出後登入頁 (框登入卡 .sb)
     let bufLoginPage = await captureStableWithBox(page, '.sb')
 
     //多階段回傳 dict: stage1 = popup 展開畫面, stage2 = 登出後登入頁
@@ -239,9 +245,15 @@ async function captureLogoutFromBackstage(page, lang) {
 }
 
 
-async function captureLogoutFromUserView(page, lang) {
+//E2E-002 使用者資訊頁點 Log out chip
+async function runLogoutFromUserView(page, lang) {
     let t = kpUiText[lang]
     await loginViaAutoLogin(page, testUsers.user, 'user', lang)
+
+    //語意斷言: 已進 user view、token 存在 (原比對端)
+    await waitForTextVisible(page, testUsers.user.name, 10000)
+    let tokenBefore = await getLsToken(page)
+    assert.strict.equal(tokenBefore, userTokens[testUsers.user.id], `登入後 token 應存在 LS`)
 
     //點 Log out chip (PageUser.vue 直接顯示, 不需 popup)
     await page.locator(`text="${t.logout}"`).first().waitFor({ state: 'visible', timeout: 5000 })
@@ -249,34 +261,21 @@ async function captureLogoutFromUserView(page, lang) {
 
     await waitForLoginPage(page, lang)
 
+    //框登入卡 .sb
     return await captureStableWithBox(page, '.sb')
 }
 
 
-async function captureLogoutThenReload(page, lang) {
-    let t = kpUiText[lang]
-    await loginViaAutoLogin(page, testUsers.user, 'user', lang)
-
-    //logout
-    await page.locator(`text="${t.logout}"`).first().waitFor({ state: 'visible', timeout: 5000 })
-    await page.locator(`text="${t.logout}"`).first().click()
-    await waitForLoginPage(page, lang)
-
-    //reload — 確保仍在 login 頁 (不可 autoLogin 復原)
-    await page.reload({ waitUntil: 'networkidle', timeout: 15000 })
-    await page.waitForTimeout(3000)
-    await waitForLoginPage(page, lang)
-
-    return await captureStableWithBox(page, '.sb')
-}
-
-
-//Item 4 (重要流程 bullet 4): 後端 logoutByToken reject → 前端屏蔽錯誤訊息仍續走清空 LS + 回登入頁
+//E2E-003 (重要流程 bullet 3): 後端 logoutByToken reject → 前端屏蔽錯誤訊息仍續走清空 LS + 回登入頁
 //設計: page.route 攔截 /api/logoutByToken 並 abort, mUI.logout core() 內 .catch(() => {})
-//吃掉 reject, 仍續走 localStorage.setItem(key, '') + updateViewState('login'), 終態與 Item 2 同 (login 頁)
-async function captureBackendRejectLogout(page, lang) {
+//吃掉 reject, 仍續走 localStorage.setItem(key, '') + updateViewState('login'), 終態與 E2E-002 同 (login 頁)
+async function runBackendRejectLogout(page, lang) {
     let t = kpUiText[lang]
     await loginViaAutoLogin(page, testUsers.user, 'user', lang)
+
+    //語意斷言: token 存在 (原比對端)
+    let tokenBefore = await getLsToken(page)
+    assert.strict.equal(tokenBefore, userTokens[testUsers.user.id], `登入後 token 應存在 LS`)
 
     //攔截 logoutByToken — 模擬網路 / 後端 reject
     await page.route('**/api/logoutByToken*', (route) => route.abort('failed'))
@@ -285,14 +284,15 @@ async function captureBackendRejectLogout(page, lang) {
     await page.locator(`text="${t.logout}"`).first().waitFor({ state: 'visible', timeout: 5000 })
     await page.locator(`text="${t.logout}"`).first().click()
 
-    //預期: 即使後端 reject, 前端仍切回 login 頁
+    //預期: 即使後端 reject, 前端仍切回 login 頁 (mUI.logout core() 內 .catch(() => {}) 屏蔽 reject)
     await waitForLoginPage(page, lang)
 
+    //像素 (補強) — 終態 login 頁應與 E2E-002 視覺一致, 但獨立 baseline 留住規格意圖 (框登入卡 .sb)
     return await captureStableWithBox(page, '.sb')
 }
 
 
-//Item 5 (重要流程 bullet 5): webKey 尚未取得時呼叫登出 → alert webKey 取得失敗 + LS token 不清
+//E2E-004 (重要流程 bullet 4): webKey 尚未取得時呼叫登出 → alert webKey 取得失敗 + LS token 不清
 //設計: 走 user view 入口 (PageUser.vue 的 Log out chip), 進 user view autoLogin 完成後,
 //經 store.commit(UpdateWebInfor, {webKey: '', ...}) 抹掉 webKey, 再點 logout.
 //mUI.logout 在 core() 第 683 行讀 $keyLS 為空字串 → reject('invalid $keyLS') →
@@ -303,10 +303,14 @@ async function captureBackendRejectLogout(page, lang) {
 //chart 區). user view 無此類動態統計, capture 穩定.
 //
 //spec 容許: spec/流程_使用者登出.md:5-10 兩入口 (backstage popup / user view chip) 共用同一條
-//vo.$ui.logout() 邏輯, Item 5 的 webKey 驗證失敗發生在共用邏輯內, 兩入口行為一致.
-async function captureWebKeyMissingLogout(page, lang) {
+//vo.$ui.logout() 邏輯, E2E-004 的 webKey 驗證失敗發生在共用邏輯內, 兩入口行為一致.
+async function runWebKeyMissingLogout(page, lang) {
     let t = kpUiText[lang]
     await loginViaAutoLogin(page, testUsers.user, 'user', lang)
+
+    //語意斷言: token 存在 (原比對端)
+    let tokenBefore = await getLsToken(page)
+    assert.strict.equal(tokenBefore, userTokens[testUsers.user.id], `登入後 token 應存在 LS`)
 
     //抹掉 store 內 webKey, 觸發 logout 前置驗證失敗
     //(App.vue 的 root 不掛 id="app", Vue 2 mount 後原 #app 已被替換, 用 __vue__ tree-walk 找 root 實例)
@@ -332,7 +336,8 @@ async function captureWebKeyMissingLogout(page, lang) {
     await page.locator(`text="${t.logout}"`).first().waitFor({ state: 'visible', timeout: 5000 })
     await page.locator(`text="${t.logout}"`).first().click()
 
-    //$alert 為自訂 DOM 元素 (wsemi domAlert) 非 native dialog, 等 alert 浮出 → 截 stage1 → 等 alert 移除
+    //$alert 為自訂 DOM 元素 (wsemi domAlert) 非 native dialog, page.on('dialog') 不會 fire.
+    //等 body 內出現含 noWebKey 文字的 DOM (alert 浮出後即可見) → 截 stage1 → 等 alert 移除
     //domAlert id 格式: alt-{genID()}, 可用 div[id^="alt-"] 定位 alert 容器
     await page.waitForFunction((needle) => document.body.innerText.includes(needle), t.noWebKey, { timeout: 10000 })
 
@@ -348,7 +353,7 @@ async function captureWebKeyMissingLogout(page, lang) {
     await page.waitForFunction((needle) => !document.body.innerText.includes(needle), t.noWebKey, { timeout: 10000 })
     await page.waitForTimeout(1000)
 
-    //[stage2] 截「alert 淡出後的 user view 終態」(原 baseline)
+    //[stage2] 截「alert 淡出後的 user view 終態」(框 .sb)
     let bufUserView = await captureStableWithBox(page, '.sb')
 
     //多階段回傳 dict: stage1 = alert 顯示中, stage2 = alert 淡出後的 user view 終態
@@ -359,65 +364,166 @@ async function captureWebKeyMissingLogout(page, lang) {
 }
 
 
+//E2E-005 登出後 reload 不被自動登入拉回
+async function runLogoutThenReload(page, lang) {
+    let t = kpUiText[lang]
+    await loginViaAutoLogin(page, testUsers.user, 'user', lang)
+
+    //logout
+    await page.locator(`text="${t.logout}"`).first().waitFor({ state: 'visible', timeout: 5000 })
+    await page.locator(`text="${t.logout}"`).first().click()
+    await waitForLoginPage(page, lang)
+
+    //reload — 確保仍在 login 頁 (不可 autoLogin 復原)
+    await page.reload({ waitUntil: 'networkidle', timeout: 15000 })
+    await page.waitForTimeout(3000)
+    await waitForLoginPage(page, lang)
+
+    //框登入卡 .sb
+    return await captureStableWithBox(page, '.sb')
+}
+
+
+// ===================================================================
+// 案例宣告與案例管線 (產製端與比對端共用)
+// ===================================================================
+
+//順序與 mocha it 相同 (產製順序 ≡ 比對順序); title 為 mocha it 標題 (--grep 依之); stages 為該案產出之圖鍵 (與寫檔名、比對名一致).
+//案例鍵沿用原產製端: E2E-001 / E2E-004 以首張階段圖鍵為案例鍵.
+let cases = [
+    {
+        name: 'E2E-001-1-logout-popup-open',
+        title: `logout-from-backstage: admin autoLogin backstage → 點 user popup → 點 Log out → token 清空 + 回 login 頁`,
+        run: runLogoutFromBackstage,
+        stages: ['E2E-001-1-logout-popup-open', 'E2E-001-2-logout-from-backstage'],
+        semantic: async (ctx) => {
+            let t = kpUiText[ctx.lang]
+            //語意斷言 3: token 清空 (mUI.logout 用 setItem('', '') 不 removeItem)
+            let tokenAfter = await getLsToken(ctx.page)
+            assert.strict.equal(tokenAfter, '', `logout 後 LS token 應為空字串, 實際: ${JSON.stringify(tokenAfter)}`)
+            //語意斷言 5: backstage nav 已消失
+            await assertTextNotVisible(ctx.page, t.statistics, `logout 後不應再見 backstage nav (${t.statistics})`)
+        },
+        verify: async () => {
+            //語意斷言 4 (DB 副作用): 後端 logoutByToken 已自 DB 刪除該 admin token.
+            //對應 spec/流程_使用者登出.md 執行流程「015 刪除該 token 列」與契約 line 157
+            //「後端 logoutByToken 成功刪除 token 後寫 srLog」. 查該 user 之 token 列應已不存在 (count 0).
+            let adminTokensInDb = await woItems.tokens.select({ userId: testUsers.admin.id }).catch(() => [])
+            assert.strict.equal(adminTokensInDb.length, 0, `logout 後 DB 中 admin token 應已被刪除, 實際殘留 ${adminTokensInDb.length} 筆`)
+        },
+    },
+    {
+        name: 'E2E-002-logout-from-user-view',
+        title: `logout-from-user-view: user autoLogin user view → 點 Log out chip → token 清空 + 回 login 頁`,
+        run: runLogoutFromUserView,
+        stages: ['E2E-002-logout-from-user-view'],
+        semantic: async (ctx) => {
+            let tokenAfter = await getLsToken(ctx.page)
+            assert.strict.equal(tokenAfter, '', `logout 後 LS token 應為空字串, 實際: ${JSON.stringify(tokenAfter)}`)
+        },
+        verify: async () => {
+            //語意斷言 (DB 副作用): 後端 logoutByToken 已自 DB 刪除該 user token.
+            //對應 spec/流程_使用者登出.md 執行流程「015 刪除該 token 列」與契約 line 157.
+            let userTokensInDb = await woItems.tokens.select({ userId: testUsers.user.id }).catch(() => [])
+            assert.strict.equal(userTokensInDb.length, 0, `logout 後 DB 中 user token 應已被刪除, 實際殘留 ${userTokensInDb.length} 筆`)
+        },
+    },
+    {
+        name: 'E2E-003-logout-backend-reject',
+        title: `logout-backend-reject: 後端 logoutByToken reject → 前端屏蔽錯誤訊息仍續走清空 LS + 回登入頁`,
+        run: runBackendRejectLogout,
+        stages: ['E2E-003-logout-backend-reject'],
+        semantic: async (ctx) => {
+            //語意斷言: token 已被清空 (後端 reject 不阻擋前端 LS 清空)
+            let tokenAfter = await getLsToken(ctx.page)
+            assert.strict.equal(tokenAfter, '', `後端 reject 後 LS token 仍應被前端清空, 實際: ${JSON.stringify(tokenAfter)}`)
+        },
+    },
+    {
+        name: 'E2E-004-1-alert-showing',
+        title: `logout-webkey-missing: webKey 尚未取得時呼叫登出 → alert webKey 取得失敗 + LS token 不清`,
+        run: runWebKeyMissingLogout,
+        stages: ['E2E-004-1-alert-showing', 'E2E-004-2-logout-webkey-missing'],
+        semantic: async (ctx) => {
+            //語意斷言: LS token 仍存在 (未被清空, 因 logout 前置 reject)
+            let tokenAfter = await getLsToken(ctx.page)
+            assert.strict.equal(tokenAfter, userTokens[testUsers.user.id], `webKey 缺失時 LS token 應仍保留, 實際: ${JSON.stringify(tokenAfter)}`)
+            //語意斷言: 仍在 user view (viewState 未切 login, 仍見 user name)
+            await waitForTextVisible(ctx.page, testUsers.user.name, 10000)
+        },
+    },
+    {
+        name: 'E2E-005-logout-then-reload',
+        title: `logout-then-reload: logout 後 reload → 應停在 login (不可 autoLogin 復原)`,
+        run: runLogoutThenReload,
+        stages: ['E2E-005-logout-then-reload'],
+        semantic: async (ctx) => {
+            let t = kpUiText[ctx.lang]
+            //語意斷言: 仍在 login 頁
+            await waitForTextVisible(ctx.page, t.login, 10000)
+            //語意斷言: 不在 user view (不應見 user name)
+            await assertTextNotVisible(ctx.page, testUsers.user.name, `reload 不應 autoLogin 回 user view, 但見 user name`)
+            //語意斷言: token 仍為空
+            let tokenAfter = await getLsToken(ctx.page)
+            assert.strict.equal(tokenAfter, '', `reload 後 LS token 仍應為空, 實際: ${JSON.stringify(tokenAfter)}`)
+        },
+    },
+]
+
+//單一案例管線: per-case DB 重置 (logout 會 invalidate server-side token, 須每案重產) + fresh browser (新 context, 自動接受 dialog)
+//→ 流程 → 語意斷言 → DB 副作用 → 寫檔 / 比對 → 關瀏覽器 → 清資料
+async function runCase(mode, lang, c, extra = {}) {
+    return await runBaselineCase({
+        mode,
+        lang,
+        name: c.name,
+        run: c.run,
+        stages: c.stages,
+        semantic: c.semantic,
+        verify: c.verify,
+        launch: launchBrowser,
+        pathOf: bp,
+        labelOf: (lg, key) => `logout-${lg}-${key}`,
+        match: assertBaselineMatch,
+        prepare: async () => {
+            //先重置為 canonical base seed (wipe users/tokens/ips + 插 3 users/4 tokens),
+            //再清自己特化資料殘留 + 插入本測試 own-data (lo-admin / lo-user + tokens).
+            await resetToBaseSeed()
+            await deleteTestUsersAndTokens()
+            await insertTestUsersAndTokens()
+        },
+        afterCase: async () => {
+            await deleteTestUsersAndTokens()
+        },
+        ...extra,
+    })
+}
+
+
 // ===================================================================
 // Baseline 產製模式
 // ===================================================================
 
-async function generateBaselineForLang(lang) {
-    //順序須與下面 mocha it() 順序完全一致 (§6.3「baseline 產製順序必須與 mocha 全跑順序一致」)
-    //不一致時, 第 N case 在 regen 與 mocha 中的 chromium 進程級 GPU/glyph atlas 狀態不同 →
-    //captureStable 雖能 settle 但收斂到不同 stable state → pixel mismatch
-    //
-    //name: 作為 shouldGen / --names 過濾的 case key (多階段 case 用「首張」名稱作代表).
-    //fn 可回傳 Buffer (單張) 或 dict { baselineName: buf } (多張); 統一成 dict 寫檔.
-    let cases = [
-        { name: 'E2E-001-1-logout-popup-open', fn: captureLogoutFromBackstage },
-        { name: 'E2E-002-logout-from-user-view', fn: captureLogoutFromUserView },
-        { name: 'E2E-003-logout-backend-reject', fn: captureBackendRejectLogout },
-        { name: 'E2E-004-1-alert-showing', fn: captureWebKeyMissingLogout },
-        { name: 'E2E-005-logout-then-reload', fn: captureLogoutThenReload },
-    ]
-
-    for (let { name, fn } of cases) {
-        if (!shouldGen(lang, name)) continue
-        console.log(`  ${name}`)
-
-        //per-case fresh DB + browser — 與 mocha beforeEach 對稱, 避免 cold/warm GPU/glyph
-        //atlas 差異 (§6.3 截圖穩定性已知限制)
-        //先重置為 base seed, 再插本測試 own-data, 與 mocha beforeEach 對稱
-        await resetToBaseSeed()
-        await deleteTestUsersAndTokens()
-        await insertTestUsersAndTokens()
-
-        let browser = await launchBrowser()
-        let context = await browser.newContext()
-        let page = await context.newPage()
-        page.on('dialog', (d) => d.accept())
-
-        let result = await fn(page, lang)
-        //多階段: fn 可回 Buffer (單張) 或 dict { baselineName: buf } (多張); 統一成 dict 寫檔
-        let stages = Buffer.isBuffer(result) ? { [name]: result } : result
-        for (let [bname, b] of Object.entries(stages)) {
-            writeBaseline(lang, bname, b)
-        }
-
-        await browser.close()
-    }
-}
-
-
 async function generateBaseline() {
     process.env.E2E_STRICT_CAPTURE = '1'
+    //截圖前篩選 (--names / --langs / --write-mode / E2E_BASELINE_OUT_DIR); 不符任何鍵即於此報錯
+    let gate = createBaselineGate({ langs, cases })
+    console.log(gate.describe())
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    for (let lang of langs) {
+    for (let lang of gate.langs) {
         console.log(`=== 產生標準圖（${lang}）===`)
-        await generateBaselineForLang(lang)
+        for (let c of gate.casesFor(lang)) {
+            console.log(`  ${c.name}`)
+            await runCase('regen', lang, c, { gate })
+        }
     }
+    //--names 之任一項未產出即報錯 (不靜默略過)
+    gate.finalize()
 
     await deleteTestUsersAndTokens()
 
@@ -440,243 +546,21 @@ else {
 
     for (let lang of langs) {
 
-        let browser
-        let page
-
         describe(`Logout E2E [${lang}]`, function() {
             this.timeout(120000)
 
-            //per-case 獨立: fresh browser + fresh DB tokens (logout 會 invalidate server-side token, 須每 case 重產)
+            //per-case 獨立 (fresh browser + DB 重置) 由 runCase 負責, 確保單 case --grep 也能跑
             beforeEach(async function() {
                 this.timeout(180000)
                 await startServersOnce()
-
-                //先重置為 canonical base seed (wipe users/tokens/ips + 插 3 users/4 tokens),
-                //再清自己特化資料殘留 + 插入本測試 own-data (lo-admin / lo-user + tokens).
-                await resetToBaseSeed()
-                await deleteTestUsersAndTokens()
-                await insertTestUsersAndTokens()
-
-                browser = await launchBrowser()
-                let context = await browser.newContext()
-                page = await context.newPage()
-                page.on('dialog', (d) => d.accept())
             })
 
-            afterEach(async function() {
-                if (browser) {
-                    await browser.close()
-                    browser = null
-                }
-                await deleteTestUsersAndTokens()
-            })
-
-
-            it(`logout-from-backstage: admin autoLogin backstage → 點 user popup → 點 Log out → token 清空 + 回 login 頁`, async function() {
-                let t = kpUiText[lang]
-                await loginViaAutoLogin(page, testUsers.admin, 'backstage', lang)
-
-                //語意斷言 1: 已進 backstage
-                await waitForTextVisible(page, t.statistics, 10000)
-
-                //語意斷言 2: token 存在
-                let tokenBefore = await getLsToken(page)
-                assert.strict.equal(tokenBefore, userTokens[testUsers.admin.id], `登入後 token 應存在 LS`)
-
-                //切至「使用者資訊」頁再開 popup(與 captureLogoutFromBackstage 同步:
-                //統計落地頁含活圖表非本案例主題, 不可作 baseline 背景;使用者資訊頁由固定 seed 導出, 決定性)
-                await page.locator(`text="${t.userInfor}"`).first().click()
-                await page.locator(`text="${t.userStatus}"`).first().waitFor({ state: 'visible', timeout: 10000 })
-                await page.waitForTimeout(500)
-
-                //點 user popup trigger
-                await page.locator(`text="${testUsers.admin.name}"`).first().click()
-                await page.waitForTimeout(500)
-
-                //等 logout 按鈕可見 (popup 已展開)
-                let logoutLoc = page.locator(`text="${t.logout}"`).first()
-                await logoutLoc.waitFor({ state: 'visible', timeout: 5000 })
-
-                //像素斷言 stage1: popup 展開中、點 Log out 前的畫面 (讓讀者看到登出操作位置)
-                await page.mouse.move(0, 0)
-                await page.waitForTimeout(300)
-                let bufPopup = await captureStableWithBox(page, logoutLoc)
-                let baselinePopupPath = bp(lang, 'E2E-001-1-logout-popup-open')
-                assertBaselineMatch(bufPopup, baselinePopupPath, `logout-${lang}-001-1-logout-popup-open`)
-
-                //點 logout
-                await logoutLoc.click()
-
-                await waitForLoginPage(page, lang)
-
-                //像素斷言 stage2: 登出後回到登入頁 (補強)
-                let bufLoginPage = await captureStableWithBox(page, '.sb')
-                let baselineLoginPath = bp(lang, 'E2E-001-2-logout-from-backstage')
-                assertBaselineMatch(bufLoginPage, baselineLoginPath, `logout-${lang}-001-2-logout-from-backstage`)
-
-                //語意斷言 3: token 清空 (mUI.logout 用 setItem('', '') 不 removeItem)
-                let tokenAfter = await getLsToken(page)
-                assert.strict.equal(tokenAfter, '', `logout 後 LS token 應為空字串, 實際: ${JSON.stringify(tokenAfter)}`)
-
-                //語意斷言 4 (DB 副作用): 後端 logoutByToken 已自 DB 刪除該 admin token.
-                //對應 spec/流程_使用者登出.md 執行流程「015 刪除該 token 列」與契約 line 157
-                //「後端 logoutByToken 成功刪除 token 後寫 srLog」. 查該 user 之 token 列應已不存在 (count 0).
-                let adminTokensInDb = await woItems.tokens.select({ userId: testUsers.admin.id }).catch(() => [])
-                assert.strict.equal(adminTokensInDb.length, 0, `logout 後 DB 中 admin token 應已被刪除, 實際殘留 ${adminTokensInDb.length} 筆`)
-
-                //語意斷言 5: backstage nav 已消失
-                await assertTextNotVisible(page, t.statistics, `logout 後不應再見 backstage nav (${t.statistics})`)
-            })
-
-
-            it(`logout-from-user-view: user autoLogin user view → 點 Log out chip → token 清空 + 回 login 頁`, async function() {
-                let t = kpUiText[lang]
-                await loginViaAutoLogin(page, testUsers.user, 'user', lang)
-
-                await waitForTextVisible(page, testUsers.user.name, 10000)
-
-                let tokenBefore = await getLsToken(page)
-                assert.strict.equal(tokenBefore, userTokens[testUsers.user.id], `登入後 token 應存在 LS`)
-
-                await page.locator(`text="${t.logout}"`).first().waitFor({ state: 'visible', timeout: 5000 })
-                await page.locator(`text="${t.logout}"`).first().click()
-
-                await waitForLoginPage(page, lang)
-
-                let buf = await captureStableWithBox(page, '.sb')
-                let baselinePath = bp(lang, 'E2E-002-logout-from-user-view')
-                assertBaselineMatch(buf, baselinePath, `logout-${lang}-002-logout-from-user-view`)
-
-                let tokenAfter = await getLsToken(page)
-                assert.strict.equal(tokenAfter, '', `logout 後 LS token 應為空字串, 實際: ${JSON.stringify(tokenAfter)}`)
-
-                //語意斷言 (DB 副作用): 後端 logoutByToken 已自 DB 刪除該 user token.
-                //對應 spec/流程_使用者登出.md 執行流程「015 刪除該 token 列」與契約 line 157.
-                let userTokensInDb = await woItems.tokens.select({ userId: testUsers.user.id }).catch(() => [])
-                assert.strict.equal(userTokensInDb.length, 0, `logout 後 DB 中 user token 應已被刪除, 實際殘留 ${userTokensInDb.length} 筆`)
-            })
-
-
-            it(`logout-backend-reject: 後端 logoutByToken reject → 前端屏蔽錯誤訊息仍續走清空 LS + 回登入頁`, async function() {
-                let t = kpUiText[lang]
-                await loginViaAutoLogin(page, testUsers.user, 'user', lang)
-
-                let tokenBefore = await getLsToken(page)
-                assert.strict.equal(tokenBefore, userTokens[testUsers.user.id], `登入後 token 應存在 LS`)
-
-                //攔截 logoutByToken — 模擬網路 / 後端 reject
-                await page.route('**/api/logoutByToken*', (route) => route.abort('failed'))
-
-                await page.locator(`text="${t.logout}"`).first().waitFor({ state: 'visible', timeout: 5000 })
-                await page.locator(`text="${t.logout}"`).first().click()
-
-                //預期: 即使後端 reject, 前端仍切回 login 頁 (mUI.logout core() 內 .catch(() => {}) 屏蔽 reject)
-                await waitForLoginPage(page, lang)
-
-                //像素斷言 (補強) — 終態 login 頁應與 Item 2 (logout-from-user-view) 視覺一致, 但獨立 baseline 留住規格意圖
-                let buf = await captureStableWithBox(page, '.sb')
-                let baselinePath = bp(lang, 'E2E-003-logout-backend-reject')
-                assertBaselineMatch(buf, baselinePath, `logout-${lang}-003-logout-backend-reject`)
-
-                //語意斷言: token 已被清空 (後端 reject 不阻擋前端 LS 清空)
-                let tokenAfter = await getLsToken(page)
-                assert.strict.equal(tokenAfter, '', `後端 reject 後 LS token 仍應被前端清空, 實際: ${JSON.stringify(tokenAfter)}`)
-            })
-
-
-            it(`logout-webkey-missing: webKey 尚未取得時呼叫登出 → alert webKey 取得失敗 + LS token 不清`, async function() {
-                let t = kpUiText[lang]
-                //走 user view 入口 (詳 captureWebKeyMissingLogout 註解: backstage 動態 chart 會撞 baseline drift)
-                await loginViaAutoLogin(page, testUsers.user, 'user', lang)
-
-                let tokenBefore = await getLsToken(page)
-                assert.strict.equal(tokenBefore, userTokens[testUsers.user.id], `登入後 token 應存在 LS`)
-
-                //抹掉 store 內 webKey, 觸發 logout 前置驗證失敗
-                //(App.vue 的 root 不掛 id="app", Vue 2 mount 後原 #app 已被替換, 用 __vue__ tree-walk 找 root 實例)
-                await page.evaluate(() => {
-                    let walk = (el) => {
-                        if (!el) return null
-                        if (el.__vue__) return el.__vue__
-                        for (let c of el.children) {
-                            let r = walk(c)
-                            if (r) return r
-                        }
-                        return null
-                    }
-                    let app = walk(document.body)
-                    if (!app) throw new Error('cannot find Vue root via __vue__ walk')
-                    let store = app.$store
-                    let current = JSON.parse(JSON.stringify(store.state.webInfor || {}))
-                    current.webKey = ''
-                    store.commit(store.types.UpdateWebInfor, current)
+            //語意斷言與 DB 副作用皆於比對標準圖之前 (pixel baseline 為補強層)
+            for (let c of cases) {
+                it(c.title, async function() {
+                    await runCase('compare', lang, c, { onKnownDefect: () => this.skip() })
                 })
-
-                //點 Log out chip (PageUser.vue 直接顯示, 不需 popup)
-                await page.locator(`text="${t.logout}"`).first().waitFor({ state: 'visible', timeout: 5000 })
-                await page.locator(`text="${t.logout}"`).first().click()
-
-                //$alert 為自訂 DOM 元素 (wsemi domAlert), 非 native window.alert, page.on('dialog') 不會 fire.
-                //偵測方式: 等 body 內出現含 noWebKey 文字的 DOM (alert 浮出後即可見)
-                await page.waitForFunction((needle) => document.body.innerText.includes(needle), t.noWebKey, { timeout: 10000 })
-
-                //像素斷言 stage1: $alert 顯示中的畫面 (讓讀者看到實際的錯誤警示彈窗)
-                //domAlert id 格式: alt-{genID()}, 框 div[id^="alt-"] 定位 alert 容器
-                await page.mouse.move(0, 0)
-                await page.waitForTimeout(300)
-                let bufAlert = await captureStableWithBox(page, page.locator('div[id^="alt-"]').first())
-                let baselineAlertPath = bp(lang, 'E2E-004-1-alert-showing')
-                assertBaselineMatch(bufAlert, baselineAlertPath, `logout-${lang}-004-1-alert-showing`)
-
-                //等 alert auto fade-out 後 (domAlert 預設 timer 約 3s) 終態仍在 user view
-                await page.waitForFunction((m) => document.body.innerText.includes(m), testUsers.user.name, { timeout: 10000 })
-                //等 alert 從 DOM 移除 (fade-out 完成, removeItemByID)
-                await page.waitForFunction((needle) => !document.body.innerText.includes(needle), t.noWebKey, { timeout: 10000 })
-                await page.waitForTimeout(1000)
-
-                //像素斷言 stage2: alert 淡出後的 user view 終態 (補強)
-                let bufUserView = await captureStableWithBox(page, '.sb')
-                let baselineUserViewPath = bp(lang, 'E2E-004-2-logout-webkey-missing')
-                assertBaselineMatch(bufUserView, baselineUserViewPath, `logout-${lang}-004-2-logout-webkey-missing`)
-
-                //語意斷言: LS token 仍存在 (未被清空, 因 logout 前置 reject)
-                let tokenAfter = await getLsToken(page)
-                assert.strict.equal(tokenAfter, userTokens[testUsers.user.id], `webKey 缺失時 LS token 應仍保留, 實際: ${JSON.stringify(tokenAfter)}`)
-
-                //語意斷言: 仍在 user view (viewState 未切 login, 仍見 user name)
-                await waitForTextVisible(page, testUsers.user.name, 10000)
-            })
-
-
-            it(`logout-then-reload: logout 後 reload → 應停在 login (不可 autoLogin 復原)`, async function() {
-                let t = kpUiText[lang]
-                await loginViaAutoLogin(page, testUsers.user, 'user', lang)
-
-                //logout
-                await page.locator(`text="${t.logout}"`).first().waitFor({ state: 'visible', timeout: 5000 })
-                await page.locator(`text="${t.logout}"`).first().click()
-                await waitForLoginPage(page, lang)
-
-                //reload
-                await page.reload({ waitUntil: 'networkidle', timeout: 15000 })
-                await page.waitForTimeout(3000)
-                await waitForLoginPage(page, lang)
-
-                //像素斷言
-                let buf = await captureStableWithBox(page, '.sb')
-                let baselinePath = bp(lang, 'E2E-005-logout-then-reload')
-                assertBaselineMatch(buf, baselinePath, `logout-${lang}-005-logout-then-reload`)
-
-                //語意斷言: 仍在 login 頁
-                await waitForTextVisible(page, t.login, 10000)
-
-                //語意斷言: 不在 user view (不應見 user name)
-                await assertTextNotVisible(page, testUsers.user.name, `reload 不應 autoLogin 回 user view, 但見 user name`)
-
-                //語意斷言: token 仍為空
-                let tokenAfter = await getLsToken(page)
-                assert.strict.equal(tokenAfter, '', `reload 後 LS token 仍應為空, 實際: ${JSON.stringify(tokenAfter)}`)
-            })
+            }
 
         })
 

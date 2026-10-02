@@ -1,5 +1,6 @@
 import assert from 'assert'
 import ot from 'dayjs'
+import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword, { verifyPassword } from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
@@ -207,8 +208,34 @@ describe('AddUser API — updateUsersList 拒絕情境與副作用', function() 
         assert.strict.equal(u.isForceChangePw, 'n')
         assert.strict.equal(u.userId, testUsers.admin.id, `userId 應為 admin id`)
         assert.strict.equal(u.userIdUpdate, testUsers.admin.id)
-        assert.strict.equal(typeof u.timeVerified === 'string' && u.timeVerified.length > 0, true)
+        //spec「後台建帳自動填 timeVerified」: 須為 timemsTZ 格式(共用判斷 getIsVerified 以 istimemsTZ 認定已驗證);
+        //原只驗非空, 秒級格式(now2str)亦通過, 致新建帳號顯示未驗證之缺陷未被抓到 (2026-09-29)
+        assert.strict.equal(istimemsTZ(u.timeVerified), true, `timeVerified 應為 timemsTZ 格式, 實際「${u.timeVerified}」`)
 
+        await woItems.users.del({ id: u.id }).catch(() => {})
+    })
+
+    it('API-010-new-admin-passes-admin-gate: admin 新建之管理者帳號可通過管理權限閘(funCheckAdmin)', async function() {
+        //對應 spec 規則: 後台建帳即視為已驗證; 設為管理者者應可使用後台管理 API.
+        //修正前 timeVerified 為秒級格式, s.checkUserAdmin → getIsVerified(istimemsTZ) 為 false → 管理 API 一律拒絕
+        let newAccount = 'ap-au-newadmin'
+        let rawPw = 'Pw@KLMN5678'
+        let newRow = buildNewRowPlain(newAccount, rawPw, { email: 'ap-au-newadmin@test.com', isAdmin: 'y' })
+        let rows = await buildAllRowsWithNew(newRow)
+        let r = await callFapi('updateUsersList', [userTokens[testUsers.admin.id], 'eng', rows])
+        assert.strict.equal(r.ok, true, `預期 resolve, 實際 reject: ${r.err}`)
+
+        let u = (await woItems.users.select({ account: newAccount }))[0]
+        assert.strict.equal(!!u, true, '新管理者應已建立')
+
+        //為新管理者建權杖, 以其權杖呼叫需管理者之 getUsersList
+        let t = ds.tokens.funNew({ userId: u.id })
+        t.timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+        await woItems.tokens.insert([t])
+        let r2 = await callFapi('getUsersList', [t.token])
+        assert.strict.equal(r2.ok, true, `新管理者應可呼叫管理 API, 實際 reject: ${r2.err}`)
+
+        await woItems.tokens.del({ id: t.id }).catch(() => {})
         await woItems.users.del({ id: u.id }).catch(() => {})
     })
 

@@ -2,6 +2,8 @@ import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
 import { cleanup, captureStableWithBox, apiUrl, genTempSettings, restartBackend, assertBaselineMatch, launchBrowser } from './tools/e2e-setup.mjs'
+//產製端與比對端同一案例管線 (規格詳 w-package-tools-e2e 之 README.md §2.1-2.2)
+import { runBaselineCase, createBaselineGate, openCasePage, itemsUnionBox } from './tools/e2eLib.mjs'
 
 
 //
@@ -33,7 +35,13 @@ import { cleanup, captureStableWithBox, apiUrl, genTempSettings, restartBackend,
 //   1. 先 npm run build 產 dist.
 //   2. 產標準圖: node test/e2e-init.test.mjs --baseline
 //   3. 跑測試:   npx mocha test/e2e-init.test.mjs --timeout 120000 --reporter list
-//   --names <eng-E2E-001-connecting-screen,...> 手術式重產.
+//   手術式重產 (截圖前篩選, 規格詳 w-package-tools-e2e 之 README.md §2.2): --names <項,...> 每項可帶語系前綴 (eng-/cht-), 不帶則兩語系皆產;
+//     階段圖鍵只寫該張, 案例鍵或編號前綴 (如 E2E-004) 寫該案全部階段 (本檔每案單張, 案例鍵即圖鍵), 不符任何鍵即報錯
+//     (於還原 dist/index.tmp 與重啟後端之前); --langs; --write-mode missing|changed;
+//     env E2E_BASELINE_OUT_DIR=<dir> 寫到暫存目錄 (等價驗證用; 本檔之標準圖寫檔皆經案例管線, 無參考片段自舉)
+//   產製端與比對端呼叫同一案例管線 (runBaselineCase): 每案以該語系臨時設定重啟後端 → fresh browser → 懸置 /api 或強制連線狀態 → 截圖
+//     → 語意斷言 (注入語系 + 畫面文字, 產製端寫檔前亦必過) → 寫檔 / 比對; 兩端皆於全部案例前還原 dist/index.tmp 模板、
+//     全部案例後以 ./settings.json 重啟後端還原預設語系
 //
 // 標準圖: test/pics/init/init-{lang}-{NNN-name}.png
 //
@@ -42,16 +50,6 @@ let baselineDir = './test/pics/init'
 let langs = ['eng', 'cht']
 
 
-let baselineNamesFilter = null
-{
-    let i = process.argv.indexOf('--names')
-    if (i >= 0 && process.argv[i + 1]) {
-        baselineNamesFilter = new Set(process.argv[i + 1].split(','))
-    }
-}
-function shouldGen(lang, name) {
-    return !baselineNamesFilter || baselineNamesFilter.has(`${lang}-${name}`)
-}
 function bp(lang, name) {
     return path.join(baselineDir, `init-${lang}-${name}.png`)
 }
@@ -82,68 +80,52 @@ function ensureIndexTmpl() {
 }
 
 
-//共用: 開新瀏覽器打後端 dist 初始畫面. 不帶 ?lang= (陷阱 3); 清 localStorage 避免 autoLogin.
-//routeHang=true 時攔截 converhp 主連線使其懸而不答 → connState 卡 'csIng' → 穩定呈現「連線中」畫面.
-async function withFreshPage(routeHang, fn) {
-    let browser = await launchBrowser()
-    try {
-        let page = await (await browser.newContext()).newPage()
-        if (routeHang) {
-            //converhp 主連線 (apiName='api' → /api/main 等) 懸置 → 卡連線中
-            await page.route('**/api/main', () => {})
-            await page.route('**/api/ulctr', () => {})
-            await page.route('**/api/slc', () => {})
-        }
-        return await fn(page)
-    }
-    finally {
-        await browser.close()
-    }
-}
+//各案例流程 (產製端與比對端共用, 由 runCase 以 run(page, lang, ctx) 呼叫): 瀏覽器與頁面由案例管線開 (每案 fresh browser + 新 context,
+//不掛 dialog 處理器, 與遷移前相同), 後端已於 prepare 以該語系臨時設定重啟. 打後端 dist 初始畫面, 不帶 ?lang= (陷阱 3).
+//截圖前取之注入語系與畫面文字存 ctx.info, 由 runCase 之 semantic 於寫檔 / 比對前斷言 (assertLang).
 
 
 //E2E-001: 連線建立後的登入畫面 (csLogin)
-async function captureLoginScreen(lang) {
-    await restartBackend(genTempSettings({ language: lang }))
-    return await withFreshPage(false, async (page) => {
-        await page.goto(`${apiUrl}/`, { waitUntil: 'networkidle', timeout: 20000 })
-        await page.evaluate(() => localStorage.clear())
-        await page.goto(`${apiUrl}/`, { waitUntil: 'networkidle', timeout: 20000 })
-        await page.waitForTimeout(3000)
-        await page.mouse.move(0, 0)
-        let info = await page.evaluate(() => ({
-            winLang: (window.___pmwsso___ || {}).language,
-            body: (document.body.innerText || '').replace(/\s+/g, ' '),
-        }))
-        //觀看區 = 登入卡 (.sb): 含標題 / 帳密欄 / 登入按鈕 / 申請帳號, 整片語系皆在此呈現
-        let buf = await captureStableWithBox(page, '.sb')
-        return { buf, info }
-    })
+async function captureLoginScreen(page, lang, ctx) {
+    //清 localStorage 避免 autoLogin
+    await page.goto(`${apiUrl}/`, { waitUntil: 'networkidle', timeout: 20000 })
+    await page.evaluate(() => localStorage.clear())
+    await page.goto(`${apiUrl}/`, { waitUntil: 'networkidle', timeout: 20000 })
+    await page.waitForTimeout(3000)
+    await page.mouse.move(0, 0)
+    ctx.info = await page.evaluate(() => ({
+        winLang: (window.___pmwsso___ || {}).language,
+        body: (document.body.innerText || '').replace(/\s+/g, ' '),
+    }))
+    //觀看區 = 登入卡 (.sb): 含標題 / 帳密欄 / 登入按鈕 / 申請帳號, 整片語系皆在此呈現
+    return await captureStableWithBox(page, '.sb')
 }
 
 
 //E2E-002: 連線建立中的「連線中」畫面 (csIng) — converhp 主連線懸置以穩定呈現
-async function captureConnectingScreen(lang) {
-    await restartBackend(genTempSettings({ language: lang }))
-    return await withFreshPage(true, async (page) => {
-        await page.goto(`${apiUrl}/`, { waitUntil: 'domcontentloaded', timeout: 20000 })
-        //等「連線中」文字渲染 (connState 卡 csIng)
-        await page.waitForFunction(
-            (t) => (document.body.innerText || '').includes(t),
-            expectedText[lang].connecting,
-            { timeout: 15000 }
-        )
-        await page.mouse.move(0, 0)
-        let info = await page.evaluate(() => ({
-            winLang: (window.___pmwsso___ || {}).language,
-            body: (document.body.innerText || '').replace(/\s+/g, ' '),
-        }))
-        //觀看區 = connecting spinner SVG + 連線中文字 (聯集); SVG <animate> 由 captureStable animatedRects
-        //自動填黑遮蔽 (同 autoblock connecting, 不需額外 mask). 文字用 getByText 定位 (inline style
-        //`margin-left:10px` 渲染後變 `margin-left: 10px` 冒號後加空格, CSS attr selector 不命中, 故改文字定位).
-        let buf = await captureStableWithBox(page, ['img[src^="data:image/svg+xml"]', page.getByText(expectedText[lang].connecting).first()])
-        return { buf, info }
-    })
+async function captureConnectingScreen(page, lang, ctx) {
+    //攔截 converhp 主連線使其懸而不答 → connState 卡 'csIng' → 穩定呈現「連線中」畫面 (開頁後、導覽前掛上, 與遷移前相同)
+    //converhp 主連線 (apiName='api' → /api/main 等) 懸置 → 卡連線中
+    await page.route('**/api/main', () => {})
+    await page.route('**/api/ulctr', () => {})
+    await page.route('**/api/slc', () => {})
+    await page.goto(`${apiUrl}/`, { waitUntil: 'domcontentloaded', timeout: 20000 })
+    //等「連線中」文字渲染 (connState 卡 csIng)
+    await page.waitForFunction(
+        (t) => (document.body.innerText || '').includes(t),
+        expectedText[lang].connecting,
+        { timeout: 15000 }
+    )
+    await page.mouse.move(0, 0)
+    ctx.info = await page.evaluate(() => ({
+        winLang: (window.___pmwsso___ || {}).language,
+        body: (document.body.innerText || '').replace(/\s+/g, ' '),
+    }))
+    //觀看區 = connecting spinner SVG + 連線中文字 (聯集); SVG <animate> 由 w-package-tools-e2e captureStable 於截圖後貼
+    //「去動畫之靜態影格」(2026-09-28 起; 原填黑方塊, 同 autoblock connecting, 不需額外 mask). 文字用 getByText 定位 (inline style
+    //`margin-left:10px` 渲染後變 `margin-left: 10px` 冒號後加空格, CSS attr selector 不命中, 故改文字定位); 文字元素緊貼文字寬,
+    //經 itemsUnionBox fit 量墨跡並外擴 inkPad, 免紅框壓字 (2026-09-28).
+    return await captureStableWithBox(page, ['img[src^="data:image/svg+xml"]', itemsUnionBox(page.getByText(expectedText[lang].connecting).first(), { fit: true })])
 }
 
 
@@ -153,65 +135,91 @@ async function captureConnectingScreen(lang) {
 //保持 true → LayoutState 顯示) → 等 window.$vo (App mounted, App.vue:91) → 強制 $ui.updateConnState(目標態)
 //→ 該態文字走 mUI kpFallback 依「server 注入語系」(window.___pmwsso___.language) 顯示 → 等文字渲染 → 截圖.
 //imgPrefix: 錯誤態用靜態 PNG (img_dissconnection, 免遮蔽); csLogin 用 SVG spinner (img_connection, 動畫 →
-//captureStable animatedRects 自動填黑遮蔽, 同 connecting).
-async function captureForcedState(lang, connState, key, imgPrefix) {
-    await restartBackend(genTempSettings({ language: lang }))
-    let browser = await launchBrowser()
-    try {
-        let page = await (await browser.newContext()).newPage()
-        await page.route('**/api/**', () => {}) //全部 /api 懸置 → 連線不 resolve, connState 可被強制保持
-        await page.goto(`${apiUrl}/`, { waitUntil: 'domcontentloaded', timeout: 20000 })
-        await page.waitForFunction(() => !!window.$vo, null, { timeout: 60000 }) //等 App mounted
-        await page.evaluate((cs) => { window.$vo.$ui.updateConnState(cs) }, connState) //強制連線狀態
-        await page.waitForFunction(
-            (t) => (document.body.innerText || '').includes(t),
-            expectedText[lang][key],
-            { timeout: 15000 }
-        )
-        await page.mouse.move(0, 0)
-        let info = await page.evaluate(() => ({
-            winLang: (window.___pmwsso___ || {}).language,
-            body: (document.body.innerText || '').replace(/\s+/g, ' '),
-        }))
-        //觀看區 = 狀態圖示 + 狀態文字 (聯集); 文字用 getByText 定位 (避 inline style 正規化不命中)
-        let buf = await captureStableWithBox(page, [`img[src^="${imgPrefix}"]`, page.getByText(expectedText[lang][key]).first()])
-        return { buf, info }
-    }
-    finally {
-        await browser.close()
-    }
+//captureStable 貼去動畫之靜態影格, 同 connecting).
+async function captureForcedState(page, lang, ctx, connState, key, imgPrefix) {
+    await page.route('**/api/**', () => {}) //全部 /api 懸置 → 連線不 resolve, connState 可被強制保持
+    await page.goto(`${apiUrl}/`, { waitUntil: 'domcontentloaded', timeout: 20000 })
+    await page.waitForFunction(() => !!window.$vo, null, { timeout: 60000 }) //等 App mounted
+    await page.evaluate((cs) => { window.$vo.$ui.updateConnState(cs) }, connState) //強制連線狀態
+    await page.waitForFunction(
+        (t) => (document.body.innerText || '').includes(t),
+        expectedText[lang][key],
+        { timeout: 15000 }
+    )
+    await page.mouse.move(0, 0)
+    ctx.info = await page.evaluate(() => ({
+        winLang: (window.___pmwsso___ || {}).language,
+        body: (document.body.innerText || '').replace(/\s+/g, ' '),
+    }))
+    //觀看區 = 狀態圖示 + 狀態文字 (聯集); 文字用 getByText 定位 (避 inline style 正規化不命中), 經 itemsUnionBox fit 外擴墨跡(同上)
+    return await captureStableWithBox(page, [`img[src^="${imgPrefix}"]`, itemsUnionBox(page.getByText(expectedText[lang][key]).first(), { fit: true })])
 }
-async function captureErrLogin(lang) { return await captureForcedState(lang, 'csErrLogin', 'errLogin', 'data:image/png') }
-async function captureErrConn(lang) { return await captureForcedState(lang, 'csErrConn', 'errConn', 'data:image/png') }
-async function captureLoggedIn(lang) { return await captureForcedState(lang, 'csLogin', 'loggedIn', 'data:image/svg+xml') }
+async function captureErrLogin(page, lang, ctx) {
+    return await captureForcedState(page, lang, ctx, 'csErrLogin', 'errLogin', 'data:image/png')
+}
+async function captureErrConn(page, lang, ctx) {
+    return await captureForcedState(page, lang, ctx, 'csErrConn', 'errConn', 'data:image/png')
+}
+async function captureLoggedIn(page, lang, ctx) {
+    return await captureForcedState(page, lang, ctx, 'csLogin', 'loggedIn', 'data:image/svg+xml')
+}
 
 
 //依連線生命週期順序: 連線中(001) → 已登入過場(002) → 登入表單(003); 另涵蓋錯誤態: 拒絕登入(004)/無法連線(005)
+//順序與 mocha it 相同 (產製順序 ≡ 比對順序: 語系外層、案例內層); 每案單張, stages 即案例鍵 (與寫檔名、比對名一致)
+//kind / key / label: 語意斷言之種類與 it 標題用字
 let cases = [
-    { name: 'E2E-001-connecting-screen', kind: 'connecting', capture: captureConnectingScreen },
-    { name: 'E2E-002-loggedin-screen', kind: 'connstate', key: 'loggedIn', label: '已登入', capture: captureLoggedIn },
-    { name: 'E2E-003-login-screen', kind: 'login', capture: captureLoginScreen },
-    { name: 'E2E-004-err-login-screen', kind: 'connstate', key: 'errLogin', label: '拒絕登入', capture: captureErrLogin },
-    { name: 'E2E-005-err-conn-screen', kind: 'connstate', key: 'errConn', label: '無法連線', capture: captureErrConn },
+    { name: 'E2E-001-connecting-screen', kind: 'connecting', run: captureConnectingScreen, stages: ['E2E-001-connecting-screen'] },
+    { name: 'E2E-002-loggedin-screen', kind: 'connstate', key: 'loggedIn', label: '已登入', run: captureLoggedIn, stages: ['E2E-002-loggedin-screen'] },
+    { name: 'E2E-003-login-screen', kind: 'login', run: captureLoginScreen, stages: ['E2E-003-login-screen'] },
+    { name: 'E2E-004-err-login-screen', kind: 'connstate', key: 'errLogin', label: '拒絕登入', run: captureErrLogin, stages: ['E2E-004-err-login-screen'] },
+    { name: 'E2E-005-err-conn-screen', kind: 'connstate', key: 'errConn', label: '無法連線', run: captureErrConn, stages: ['E2E-005-err-conn-screen'] },
 ]
+
+
+//單一案例管線: 以該語系臨時設定重啟後端 (server 注入語系; 開瀏覽器前) → fresh browser (新 context, 不掛 dialog 處理器, 同原碼)
+//→ 流程 (懸置 /api 或強制連線狀態 → 截圖) → 語意斷言 (注入語系 + 畫面文字) → 寫檔 / 比對 → 關瀏覽器
+async function runCase(mode, lang, c, extra = {}) {
+    return await runBaselineCase({
+        mode,
+        lang,
+        name: c.name,
+        run: c.run,
+        stages: c.stages,
+        launch: launchBrowser,
+        openPage: (browser) => openCasePage(browser, { onDialog: null }),
+        pathOf: bp,
+        labelOf: (lg, key) => `init-${lg}-${key}`,
+        match: assertBaselineMatch,
+        prepare: async () => {
+            await restartBackend(genTempSettings({ language: lang }))
+        },
+        semantic: async (ctx) => {
+            assertLang(c.kind, ctx.lang, ctx.info, c.key)
+        },
+        ...extra,
+    })
+}
 
 
 async function generateBaseline() {
     process.env.E2E_STRICT_CAPTURE = '1'
+    //截圖前篩選 (--names / --langs / --write-mode / E2E_BASELINE_OUT_DIR); 不符任何鍵即於此報錯 (先於還原模板與重啟後端)
+    let gate = createBaselineGate({ langs, cases })
+    console.log(gate.describe())
     if (!fs.existsSync(baselineDir)) {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
     ensureIndexTmpl()
-    for (let lang of langs) {
-        for (let { name, capture } of cases) {
-            if (!shouldGen(lang, name)) {
-                continue
-            }
-            let { buf } = await capture(lang)
-            fs.writeFileSync(bp(lang, name), buf)
-            console.log(`  ✔ ${lang}/${name} (${buf.length} bytes)`)
+    for (let lang of gate.langs) {
+        for (let c of gate.casesFor(lang)) {
+            console.log(`  ${lang}/${c.name}`)
+            let r = await runCase('regen', lang, c, { gate })
+            console.log(`  ✔ ${lang}/${c.name} (寫出 ${r.written.length} 張, 略過 ${r.skipped.length}, 保留 ${r.kept.length})`)
         }
     }
+    //--names 之任一項未產出即報錯 (不靜默略過)
+    gate.finalize()
     await restartBackend('./settings.json') //還原預設語系
     console.log('=== 標準圖產生完成 ===')
     cleanup() //←【必】非 mocha 環境須顯式呼叫, 否則 process 不退
@@ -242,6 +250,10 @@ function assertLang(kind, lang, info, key) {
 
 if (process.argv.includes('--baseline')) {
     generateBaseline()
+        .catch((err) => {
+            console.error(err)
+            process.exit(1)
+        })
 }
 else {
     describe('Init E2E — 初始畫面語系 (server 注入)', function() {
@@ -256,13 +268,12 @@ else {
             await restartBackend('./settings.json') //還原預設語系給後續測試
         })
 
+        //每案之語系設定重啟、fresh browser、語意斷言 (主) 與像素比對 (補) 皆由 runCase 負責 (與產製端同一管線)
         let kindLabel = { login: '登入', connecting: '連線中' }
         for (let lang of langs) {
-            for (let { name, kind, capture, key, label } of cases) {
-                it(`${name} [${lang}]: 設定語系=${lang} → ${label || kindLabel[kind]}畫面呈現 ${lang}`, async function() {
-                    let { buf, info } = await capture(lang)
-                    assertLang(kind, lang, info, key) //語意斷言
-                    assertBaselineMatch(buf, bp(lang, name), `init-${lang}-${name}`) //像素斷言
+            for (let c of cases) {
+                it(`${c.name} [${lang}]: 設定語系=${lang} → ${c.label || kindLabel[c.kind]}畫面呈現 ${lang}`, async function() {
+                    await runCase('compare', lang, c, { onKnownDefect: () => this.skip() })
                 })
             }
         }

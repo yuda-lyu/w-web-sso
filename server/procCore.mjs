@@ -34,12 +34,13 @@ import cache from 'wsemi/src/cache.mjs'
 import cacheSt from 'wsemi/src/cacheSt.mjs'
 import waitFun from 'wsemi/src/waitFun.mjs'
 import delay from 'wsemi/src/delay.mjs'
-import now2str from 'wsemi/src/now2str.mjs'
+import nowms2str from 'wsemi/src/nowms2str.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
 import hashPassword, { verifyPassword } from './hashPassword.mjs'
 import genRandomPassword from './genRandomPassword.mjs'
+import createLockSave from './lockSave.mjs'
 import { maskToken, maskKv } from './srLog.mjs'
 import { hasAppPerm, isAppPermsValue, normAppPerms } from '../src/appPerms.mjs'
 
@@ -87,6 +88,10 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //`account:email` 不同組合走不同鎖完全不互斥, 改用 cst.setWithFree 兩段獨立 key 原子占位
     //(`createUser:account:<a>` 與 `createUser:email:<e>` 任一衝突即 reject), 避免繞鎖雙重 insert.
     let cst = cacheSt()
+
+    //lockSave: 清單儲存類(updateUsersList / updateTokensList / updateIpsList)之雙擊防護(後端, 見 lockSave.mjs, ADR-074):
+    //同一操作者之同一儲存處理中再送出即 reject 'saveInProgress'
+    let lockSave = createLockSave(cst)
 
     //throttle 紀錄: key → timestamp(ms), 用於 resendVerifyEmail / adminResetUserPassword
     //之 30s 內第二次重複觸發判定. 與 mutex 配合: mutex 確保同 key 序列化,
@@ -921,10 +926,11 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             return Promise.reject('verifyEmailAlreadyVerified')
         }
 
-        //update timeVerified
+        //update timeVerified: timemsTZ 格式(同其他時間欄與後台編輯之寫入). 原 now2str 為秒級, 共用判斷 getIsVerified(istimemsTZ)
+        //判為未驗證 → 後台清單顯示「未驗證」, 且該帳號設為管理者後過不了管理權限閘 funCheckAdmin (2026-09-29 修正)
         await woItems.users.save({
             id: user.id,
-            timeVerified: now2str(),
+            timeVerified: nowms2str(),
             //F-053 fix (lazy clear): 不主動清 tokenVerify, 避免並發 resendVerifyEmail 寫的新 token
             //被此處 race window 覆蓋. token 重用風險由 line ~818 之 isestr(timeVerified) → reject
             //'verifyEmailAlreadyVerified' 擋住, 已驗證 user 點舊連結會得友善訊息.
@@ -1331,6 +1337,15 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             lang = 'eng'
         }
 
+        //idsNew: 前端標為新增(transient 欄位 _isNew === true)之列 id, 供下方比對既有列 (ADR-074);
+        //_isNew 不在 schema keys 內, 下方 ltdtmapping 取欄時即剝除不入庫
+        let idsNew = []
+        each(rows, (r) => {
+            if (get(r, '_isNew') === true) {
+                idsNew.push(get(r, 'id', ''))
+            }
+        })
+
         //ltdtmapping
         rows = ltdtmapping(rows, ds[woName].keys)
         // console.log('ltdtmapping rows', rows)
@@ -1392,6 +1407,18 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //ltdtDiffByKey
         let ltdtOld = await woItems[woName].select()
         //console.log(`...woName[${woName}].select`)
+
+        //新增列已存在即拒絕 (ADR-074): 同一包重送且第 2 次於第 1 次完成後才處理時, 第 1 次已建立之列會被當「修改」,
+        //以前端之空值 / 佔位字覆寫伺服器於新增時填入之欄位(實測: 新使用者 timeVerified 被清空、建立者 / 建立時間寫成佔位字而無法登入)
+        if (size(idsNew) > 0) {
+            let kpIdOld = {}
+            each(ltdtOld, (r) => {
+                kpIdOld[get(r, 'id', '')] = true
+            })
+            if (idsNew.some((id) => kpIdOld[id] === true)) {
+                return Promise.reject('saveNewRowExists')
+            }
+        }
 
         //users 路徑: account 唯一性 + 非空驗證 (補 id/email 之外的 account; 防直打 API 寫入空/重複帳號).
         //(a) 空值 → reject 'accountRequired'; (b) 本批內重複 或 與既有其他 user 之 account 衝突 → reject 'accountDuplicate'.
@@ -1489,11 +1516,11 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                     }
                     row.password = hashPassword(pw, salt)
                 }
-                //後台建帳自動填 timeVerified
+                //後台建帳自動填 timeVerified: timemsTZ 格式(見 verifyEmail 同處說明; 原 now2str 秒級使新建帳號顯示未驗證、設為管理者後過不了 funCheckAdmin, 2026-09-29 修正)
                 each(r.add, (row) => {
                     let tv = get(row, 'timeVerified', '')
                     if (!isestr(tv)) {
-                        row.timeVerified = now2str()
+                        row.timeVerified = nowms2str()
                     }
                 })
             }
@@ -1850,36 +1877,40 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
         }
 
-        //updateUsersList (帶 lang/operatorId 給下層用於 add 群組密碼策略檢查與 audit)
-        rows = await updateUsersList(rows, { lang, operatorId })
+        //雙擊防護(後端): 同一操作者之使用者清單儲存處理中再送出即拒絕 (見 lockSave, ADR-074)
+        return await lockSave('updateUsersList', operatorId, async () => {
 
-        //停用使用者即時撤銷其全部 token: 本批中 isActive==='n' 之 user, 於儲存成功後刪除其名下所有 token
-        //(使用者設計上不持有 isApp='y' token, 故一併撤). 作法比照 procProtect.blockAccount:
-        //woItems.tokens.select({ userId }) 取陣列後逐筆 del. 冪等 (該 user 已無 token 時刪 0 筆無害).
-        //撤 token 為附帶副作用, 失敗僅記 srLog.error 不阻斷主流程.
-        for (let row of rows) {
-            if (get(row, 'isActive', '') !== 'n') {
-                continue
-            }
-            let userId = get(row, 'id', '')
-            if (!isestr(userId)) {
-                continue
-            }
-            try {
-                let ts = await woItems.tokens.select({ userId })
-                for (let t of ts) {
-                    await woItems.tokens.del({ id: t.id })
+            //updateUsersList (帶 lang/operatorId 給下層用於 add 群組密碼策略檢查與 audit)
+            rows = await updateUsersList(rows, { lang, operatorId })
+
+            //停用使用者即時撤銷其全部 token: 本批中 isActive==='n' 之 user, 於儲存成功後刪除其名下所有 token
+            //(使用者設計上不持有 isApp='y' token, 故一併撤). 作法比照 procProtect.blockAccount:
+            //woItems.tokens.select({ userId }) 取陣列後逐筆 del. 冪等 (該 user 已無 token 時刪 0 筆無害).
+            //撤 token 為附帶副作用, 失敗僅記 srLog.error 不阻斷主流程.
+            for (let row of rows) {
+                if (get(row, 'isActive', '') !== 'n') {
+                    continue
+                }
+                let userId = get(row, 'id', '')
+                if (!isestr(userId)) {
+                    continue
+                }
+                try {
+                    let ts = await woItems.tokens.select({ userId })
+                    for (let t of ts) {
+                        await woItems.tokens.del({ id: t.id })
+                    }
+                }
+                catch (err) {
+                    srLog.error({ event: 'fun-updateUsersList-revokeToken', userId, err: getErrorMessage(err) })
                 }
             }
-            catch (err) {
-                srLog.error({ event: 'fun-updateUsersList-revokeToken', userId, err: getErrorMessage(err) })
-            }
-        }
 
-        //寫入後立即 invalidate 30s cache, 避免 admin 改完之 dashboard 顯示舊資料 (audit F-050)
-        ocGetUsersList.clear('fun')
+            //寫入後立即 invalidate 30s cache, 避免 admin 改完之 dashboard 顯示舊資料 (audit F-050)
+            ocGetUsersList.clear('fun')
 
-        return rows
+            return rows
+        })
     }
 
 
@@ -1957,13 +1988,21 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //checkToken
         await checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
-        //updateTokensList
-        rows = await updateTokensList(rows)
+        //操作者 id (雙擊防護之占位 key)
+        let uOperator = await getUserByToken(token)
+        let operatorId = get(uOperator, 'id', '')
 
-        //寫入後立即 invalidate 30s cache, 避免 admin 改完之 dashboard 顯示舊資料 (audit F-050)
-        ocGetTokensList.clear('fun')
+        //雙擊防護(後端): 同一操作者之權杖清單儲存處理中再送出即拒絕 (見 lockSave, ADR-074)
+        return await lockSave('updateTokensList', operatorId, async () => {
 
-        return rows
+            //updateTokensList
+            rows = await updateTokensList(rows)
+
+            //寫入後立即 invalidate 30s cache, 避免 admin 改完之 dashboard 顯示舊資料 (audit F-050)
+            ocGetTokensList.clear('fun')
+
+            return rows
+        })
     }
 
 
@@ -2015,13 +2054,21 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //checkToken
         await checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
-        //updateIpsList
-        rows = await updateIpsList(rows)
+        //操作者 id (雙擊防護之占位 key)
+        let uOperator = await getUserByToken(token)
+        let operatorId = get(uOperator, 'id', '')
 
-        //寫入後立即 invalidate 30s cache, 避免 admin 改完之 dashboard 顯示舊資料 (audit F-050)
-        ocGetIpsList.clear('fun')
+        //雙擊防護(後端): 同一操作者之 IP 清單儲存處理中再送出即拒絕 (見 lockSave, ADR-074)
+        return await lockSave('updateIpsList', operatorId, async () => {
 
-        return rows
+            //updateIpsList
+            rows = await updateIpsList(rows)
+
+            //寫入後立即 invalidate 30s cache, 避免 admin 改完之 dashboard 顯示舊資料 (audit F-050)
+            ocGetIpsList.clear('fun')
+
+            return rows
+        })
     }
 
 

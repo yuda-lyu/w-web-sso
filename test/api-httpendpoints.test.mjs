@@ -1,7 +1,10 @@
 import assert from 'assert'
 import ot from 'dayjs'
+import get from 'lodash-es/get.js'
+import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
 import { woItems } from '../g_mOrm.mjs'
 import ds from '../src/schema/index.mjs'
+import { getIsVerified } from '../src/plugins/mShare.mjs'
 import { startServersOnce, apiUrl, callFapi } from './tools/api-setup.mjs'
 import { resetToBaseSeed, deleteNonBaseSeed, restartBackend, genTempSettings } from './tools/e2e-setup.mjs'
 
@@ -274,6 +277,24 @@ describe('對外 HTTP 端點 API — getSsoUsersList / refreshToken (D14)', func
         assert.strict.equal(body.state, 'error', `預期 state=error (token 已過期不可延長), 實際: ${JSON.stringify(body)}`)
         let msgStr = typeof body.msg === 'string' ? body.msg : JSON.stringify(body.msg)
         assert.strict.equal(msgStr.includes('tokenExpired'), true, `預期 msg = key "tokenExpired" (tn>=timeEnd 過期分支), 實際: ${msgStr}`)
+    })
+
+
+    // ---------------------------------------------------------------
+    // GET /api/verifyEmail (有效 tokenVerify)
+    // ---------------------------------------------------------------
+
+    it('verifyEmail: 有效 tokenVerify → 驗證成功, DB timeVerified 以 timemsTZ 格式寫入且共用判斷認定已驗證 (2026-09-29)', async function() {
+        //spec 流程_使用者創建帳密「驗證信」: 驗證成功寫入 timeVerified; 須為 timemsTZ 格式(同其他時間欄),
+        //共用判斷 getIsVerified(istimemsTZ) 方認定已驗證 → 後台清單顯示已驗證、設為管理者後可過 funCheckAdmin.
+        //修正前寫入秒級格式(now2str), 本案之格式斷言失敗
+        await insertPendingUser()
+        let res = await fetch(`${apiUrl}/api/verifyEmail?token=${encodeURIComponent(pendingTokenVerify)}&lang=eng`)
+        assert.strict.equal(res.status, 200, `預期 HTTP 200, 實際: ${res.status}`)
+
+        let u = (await woItems.users.select({ id: 'id-pending-tv' }))[0]
+        assert.strict.equal(istimemsTZ(get(u, 'timeVerified', '')), true, `timeVerified 應為 timemsTZ 格式, 實際「${get(u, 'timeVerified', '')}」`)
+        assert.strict.equal(getIsVerified(u), true, '共用判斷 getIsVerified 應認定已驗證')
     })
 
 })

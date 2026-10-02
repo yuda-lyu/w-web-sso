@@ -6,8 +6,12 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, maskRegions, overlayRegions, resetToBaseSeed, deleteNonBaseSeed, launchBrowser, REGEN } from './tools/e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, maskRegions, overlayRegions, resetToBaseSeed, deleteNonBaseSeed, launchBrowser, REGEN, backstageMenuBox, waitUntilExist } from './tools/e2e-setup.mjs'
+import { runBaselineCase, createBaselineGate, pageHasText, collectDomText } from './tools/e2eLib.mjs'
 import { mdiChartBoxOutline } from '@mdi/js/mdi.js'
+
+//後台之紅框框左側選單可見項目之聯集（backstageMenuBox，見 e2e-setup；2026-09-28 改：原框整個抽屜，非管理者只有 1 項卻框整欄）
+const menuItemsBox = backstageMenuBox
 
 
 //
@@ -18,6 +22,11 @@ import { mdiChartBoxOutline } from '@mdi/js/mdi.js'
 // 使用方式：
 //   1. 先產生標準圖：node test/e2e-autologin.test.mjs --baseline
 //   2. 跑測試比對：npx mocha test/e2e-autologin.test.mjs --timeout 120000
+//   手術式重產 (截圖前篩選, 規格詳 w-package-tools-e2e 之 README.md §2.2): --names <項,...> 每項可帶語系前綴 (eng-/cht-), 不帶則兩語系皆產;
+//     案例鍵或編號前綴 (如 E2E-002) 寫該案之圖 (本檔每案 1 張, 案例鍵即圖鍵), 不符任何鍵即報錯;
+//     E2E-006 / E2E-007 / E2E-008 為只比對之案例 (共用 E2E-004-no-token 標準圖), 點名即報錯; --langs; --write-mode missing|changed;
+//     env E2E_BASELINE_OUT_DIR=<dir> 寫到暫存目錄 (等價驗證用; 不涵蓋 E2E-002 之 _chartref-{lang}.png 自舉, 見 autoLoginBackstageMasked)
+//   產製端與比對端呼叫同一案例管線 (runBaselineCase): 每案 fresh browser + DB 重置 → 截圖 → 語意斷言 → 寫檔 / 比對; 斷言不過一張都不寫
 //
 // 標準圖存放：test/pics/autologin/autologin-{lang}-{number}-{name}.png
 // 測試當次截圖不落地，直接以 buffer 與標準圖做像素級比對
@@ -26,26 +35,6 @@ import { mdiChartBoxOutline } from '@mdi/js/mdi.js'
 let salt = '{salt}'
 let baselineDir = './test/pics/autologin'
 let langs = ['eng', 'cht']
-
-// 可選 --names <eng-001-ok-redir,cht-003-ok-user,...> 進行手術式 baseline 重產
-let baselineNamesFilter = null
-{
-    let i = process.argv.indexOf('--names')
-    if (i >= 0 && process.argv[i + 1]) {
-        baselineNamesFilter = new Set(process.argv[i + 1].split(','))
-    }
-}
-function writeBaseline(lang, name, buf) {
-    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`)) {
-        console.log(`  [skip] ${lang}-${name}`)
-        return
-    }
-    fs.writeFileSync(bp(lang, name), buf)
-}
-//是否需要產生此 case 的標準圖. --names 指定時只有指定 case 回 true → 連「截圖」都跳過 (非僅跳寫檔).
-function shouldGen(lang, name) {
-    return !baselineNamesFilter || baselineNamesFilter.has(`${lang}-${name}`)
-}
 
 // 由 settings.json webKey 組成的 localStorage key
 let webKey = 'ksso'
@@ -109,43 +98,7 @@ let expectedSpecText = {
 }
 
 
-async function collectVisibleText(page) {
-    return await page.evaluate(() => {
-        let parts = []
-        let walk = (el) => {
-            if (!el) return
-            if (el.nodeType === 3) {
-                let t = (el.nodeValue || '').trim()
-                if (t) parts.push(t)
-                return
-            }
-            if (el.nodeType !== 1) return
-            let tag = el.tagName
-            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return
-            for (let c of el.childNodes) walk(c)
-        }
-        walk(document.body)
-        return parts.join(' | ').slice(0, 2000)
-    })
-}
-
-async function pageHasText(page, text) {
-    return await page.evaluate((t) => {
-        let walk = (el) => {
-            if (!el) return false
-            if (el.nodeType === 3) return (el.nodeValue || '').includes(t)
-            if (el.nodeType !== 1) return false
-            let tag = el.tagName
-            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return false
-            for (let c of el.childNodes) {
-                if (walk(c)) return true
-            }
-            return false
-        }
-        return walk(document.body)
-    }, text)
-}
-
+//頁面文字之走訪 (pageHasText / collectDomText) 取自 e2eLib (原本檔內手寫 collectVisibleText / pageHasText, 內容相同)
 async function assertSpecForCase(page, lang, name) {
     let expected = expectedSpecText[name]
     if (!expected || !expected[lang]) {
@@ -163,7 +116,7 @@ async function assertSpecForCase(page, lang, name) {
     else if (e.mode === 'text') {
         let found = await pageHasText(page, e.value)
         if (!found) {
-            let dump = await collectVisibleText(page)
+            let dump = await collectDomText(page)
             assert.fail(`預期含 "${e.value}" (${name}), 實際: ${dump}`)
         }
     }
@@ -252,7 +205,7 @@ async function insertTestUsersAndTokens() {
 
     //先重設為 base seed (清空 users/tokens/ips + 插入 3 canonical users + 4 tokens),
     //再插入本測試自己的 testUsers + tokens. hermetic: 每次 setup 都從乾淨 base seed 起跳.
-    //此函式為 mocha beforeEach 與 generateBaselineForLang 共用唯一進入點, 故置於首行覆蓋兩條路徑.
+    //此函式為案例管線 (runCase 之 prepare) 之唯一進入點, 產製端與比對端共用.
     await resetToBaseSeed()
 
     // users
@@ -316,18 +269,20 @@ async function deleteTestUsersAndTokens() {
 //   1. 先 navigate 到 baseUrl 取得乾淨頁面
 //   2. 設定 localStorage[lsKey] = token (或清空)
 //   3. 重新 navigate 到目標 URL（含 view 與 lang 參數），觸發 SPA mount → autoLogin
-//   4. 等 autoLogin 完成（含可能的 redirect），截圖
+//   4. 偵測 autoLogin 已走完且畫面到達該案 spec 終態（waitAutoLoginSettled，含可能的 redirect），截圖
 //
 async function autoLoginScreenshot(page, lang, opt = {}) {
 
     let viewParam = opt.viewParam || ''
     let token = opt.token || ''
-    // waitMs 預設 8000；含 redirect 場景用 8s，需截 WAlert 顯示中的場景需 < 4000（WAlert 預設 4s 自動消失）
-    let waitMs = opt.waitMs || 8000
+    // name: 案例鍵（expectedSpecText 之鍵），決定偵測之終態。2026-09-28 起取代固定 waitMs（原預設 8 秒、E2E-005 為 3.5 秒：
+    // 負載高時 autoLogin 之 checkToken → getUserByToken → 轉址未走完即截圖；E2E-005 之提示浮窗約 4 秒自動消失，固定 3.5 秒兩頭都可能落空）
+    let name = opt.name
     // boxTarget: captureStableWithBox 的 target。
     //   - 登入頁 / user view → '.sb'（PageLogin.vue 與 PageUser.vue 的主卡片 class 皆為 sb）
-    //   - backstage → page.locator('[state]').first()（WDrawer 根元素，包含 sidebar 導航與右側內容）
-    // 預設 '.sb'（兩種頁面都有 .sb）；backstage case 由 caller 傳入 Locator。
+    //   - backstage → menuItemsBox()（左側選單可見項目之聯集，見檔頭）
+    //   - 提示浮窗 → 浮窗本體（E2E-005）
+    // 預設 '.sb'（兩種頁面都有 .sb）；其餘由 caller 傳入。
     let boxTarget = opt.boxTarget || '.sb'
 
     // 構造目標 URL（含 view 與 lang query）
@@ -351,9 +306,45 @@ async function autoLoginScreenshot(page, lang, opt = {}) {
 
     // Step 2: 真正觸發 autoLogin 的 navigate
     await page.goto(url, { waitUntil: 'networkidle', timeout: 15000 })
-    await page.waitForTimeout(waitMs)
+    await waitAutoLoginSettled(page, lang, name)
+    //停滑鼠避免 hover 殘留; 提示浮窗於此期間滑入定位(同 logout E2E-004-1 之作法)
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(300)
 
     return await captureStableWithBox(page, boxTarget)
+}
+
+
+//偵測 autoLogin 已走完且畫面到達該案 spec 終態(依 expectedSpecText; 2026-09-28 取代固定秒數):
+//autoLogin 進行中 App 只渲染連線狀態, 結束後才依結果渲染登入頁 / 使用者頁 / 後台(src/App.vue:7、:17、:102-117);
+//成功且轉址者(E2E-001)舊頁先切回登入頁(有密碼欄)再導頁(src/plugins/mUI.mjs:661、App.vue:105), 下列條件於舊頁不成立.
+async function waitAutoLoginSettled(page, lang, name, timeout = 60000) {
+    let expected = expectedSpecText[name]
+    if (!expected || !expected[lang]) {
+        throw new Error(`waitAutoLoginSettled: expectedSpecText 未為 case "${name}" / lang "${lang}" 定義`)
+    }
+    let e = expected[lang]
+    if (e.mode === 'absentLoginButton') {
+        //使用者頁: 主卡片 .sb 且無密碼欄(登入頁亦有 .sb, 但有密碼欄)
+        await waitUntilExist(page, `${name}: 使用者頁`, () => document.querySelectorAll('input[type="password"]').length === 0 && !!document.querySelector('.sb'), { timeout })
+    }
+    else if (name === 'E2E-005-no-redir') {
+        //登入表單與「無有效轉址」提示浮窗(wsemi domAlert, id 以 alt- 開頭)皆已出現; 浮窗約 4 秒後自動消失, spec: 於其顯示中截圖
+        await waitUntilExist(page, `${name}: 登入表單與提示浮窗`, (s) => document.querySelectorAll('input').length >= 2 && Array.from(document.querySelectorAll('[id^="alt-"]')).some((el) => (el.innerText || '').includes(s)), { arg: e.value, timeout })
+    }
+    else if (name === 'E2E-009-ok-backstage-nonadmin') {
+        //後台選單項與內容區之使用者資訊皆已載入: 內容區載入前顯示「等待數據中」(src/components/LayoutContentUserInfor.vue:232,
+        //鍵 waitingData, server/procLang.mjs:101), 使用者名稱亦可能先見於他處, 故兩者並判
+        let userName = testUsers.find((u) => u.id === 'id-autologin-ok').name
+        await waitUntilExist(page, `${name}: 後台選單與使用者資訊`, ({ menu, user }) => {
+            let t = document.body.innerText || ''
+            return t.includes(menu) && t.includes(user) && !t.includes('Waiting data...') && !t.includes('等待數據中...') && document.querySelectorAll('input[type="password"]').length === 0
+        }, { arg: { menu: e.value, user: userName }, timeout })
+    }
+    else {
+        //回登入頁(E2E-004 / 006 / 007 / 008): 登入表單出現即 autoLogin 已 reject
+        await waitUntilExist(page, `${name}: 回登入頁`, (s) => document.querySelectorAll('input').length >= 2 && (document.body.innerText || '').includes(s), { arg: e.value, timeout })
+    }
 }
 
 
@@ -388,13 +379,18 @@ async function autoLoginBackstageMasked(page, lang, opt = {}) {
         return Array.from(document.querySelectorAll('svg path')).some((p) => p.getAttribute('d') === iconPath)
     }, mdiChartBoxOutline, { timeout: 60000 })
 
-    //Step 4: echarts 動畫 settle buffer
+    //Step 4: 等統計頁三張圖表皆已渲染（無「等待數據中」佔位、echarts canvas ≥ 3）; 其後才是 echarts 動畫 settle buffer。
+    //2026-09-28 補：原只固定等 3 秒，_chartref 參考片自舉時把「載入中」凍了進去（技能 §7.5 壞畫面不得凍結），參考片已刪除重產
+    await page.waitForFunction(() => {
+        let t = document.body.innerText || ''
+        return document.querySelectorAll('canvas').length >= 3 && !t.includes('Waiting data...') && !t.includes('等待數據中...')
+    }, null, { timeout: 60000 })
     await page.waitForTimeout(3000)
 
-    //框左側 sidebar 導航本體：divDrawer（WDrawer 內部 ref="divDrawer"）由 v-domstable directive 綁定時
-    //呼叫 el.setAttribute('ev-stable', id)，x≈0、寬≈229px，即左側抽屜 sidebar 實體，
-    //比 [state]（WDrawer 根、全屏）更聚焦「已進入 backstage（sidebar 出現）」這個驗證標的。
-    let buf = await captureStableWithBox(page, page.locator('[ev-stable]').first())
+    //框左側選單之項目（已進入 backstage、選單依身分列出之頁籤）：範圍為 divDrawer（WDrawer 內部 ref="divDrawer"，
+    //由 v-domstable directive 綁定時呼叫 el.setAttribute('ev-stable', id)，x≈0、寬≈229px，即左側抽屜 sidebar 實體），
+    //框其內可見選單項目之聯集而非整個抽屜（抽屜下方空白不框）。
+    let buf = await captureStableWithBox(page, menuItemsBox())
 
     //取「存取活動監測」區塊及其後所有 sibling 區塊的 rect (fullPage 座標 = viewport rect + scroll)
     let rects = await page.evaluate((iconPath) => {
@@ -421,6 +417,7 @@ async function autoLoginBackstageMasked(page, lang, opt = {}) {
     //(e2e 穩定), 視覺呈現真實頻率圖而非突兀黑塊 (緣由: echarts canvas GPU 跨進程漂移無法 pixel 穩定).
     //ref 不存在時僅 REGEN (--baseline / E2E_REGEN=1) 允許以當次真實截圖建立 (bootstrap), 之後固定沿用;
     //要更新快照: 刪 _chartref-{lang}.png 再重產. 正常測試模式缺檔即 fail, 不得靜默自舉.
+    //(此自舉寫檔不經 runBaselineCase, 故不受 --names / --write-mode / E2E_BASELINE_OUT_DIR 管控; 僅於 ref 缺檔時發生)
     let refPath = `./test/pics/autologin/_chartref-${lang}.png`
     if (!fs.existsSync(refPath)) {
         if (!REGEN) {
@@ -433,73 +430,169 @@ async function autoLoginBackstageMasked(page, lang, opt = {}) {
 }
 
 
-// --- 產生標準圖模式 ---
+// ===================================================================
+// 案例宣告與案例管線 (產製端與比對端共用)
+// ===================================================================
 
-//001~009 每個 case 各自 { name, fn(page) }；fn 內用當次 DB 重建後的 userTokens (見下方迴圈).
-function buildAutoLoginCases(lang) {
-    return [
+//語意斷言 (截圖後、寫檔 / 比對前): 依案例鍵查 expectedSpecText (原本只在比對端執行)
+async function specSemantic(ctx) {
+    await assertSpecForCase(ctx.page, ctx.lang, ctx.name)
+}
+
+//共用 E2E-004 標準圖之只比對案例 (spec: 視覺終態統一回登入頁, 防洩露停用狀態 / token 真偽)
+let sharedNoToken = 'E2E-004-no-token'
+
+//順序與 mocha it 相同 (產製順序 ≡ 比對順序; 只比對之案例於產製端不執行); title 為 mocha it 標題 (--grep 依之).
+//單張案例之圖鍵即案例鍵 (stages 宣告同名一張). 只比對之案例 (compareOnly) 直接宣告其比對之共用圖鍵為 stages, run 回傳 { 共用圖鍵: buf };
+//篩選器之 --names 解析只由產圖案例負責寫檔 (--names E2E-004-no-token 只選到 E2E-004). 2026-09-28 移除原為閃避舊篩選器缺陷之 sharedKey 包裝.
+let cases = [
+    {
         // 001: token 有效 + view=login → autoLogin 成功 → redirect 到 user view
-        { name: 'E2E-001-ok-redir', fn: (page) => autoLoginScreenshot(page, lang, { token: userTokens['id-autologin-ok'] }) },
+        name: 'E2E-001-ok-redir',
+        title: 'E2E-001-ok-redir: token 有效 + view=login → redirect 至 user view',
+        run: (page, lang) => autoLoginScreenshot(page, lang, { name: 'E2E-001-ok-redir', token: userTokens['id-autologin-ok'] }),
+        stages: ['E2E-001-ok-redir'],
+        semantic: specSemantic,
+    },
+    {
         // 002: token 有效 (admin) + view=backstage → autoLogin 成功 → 停留 backstage 看 full dashboard
-        // (「存取活動監測」以下即時圖表填黑遮蔽, 穩定 pixel baseline)
+        // (「存取活動監測」以下即時圖表以 _chartref 快照覆蓋, 穩定 pixel baseline)
         // admin user: view=backstage 須由 admin 觸發, 否則 LayoutContent isAdmin filter 只能看 mmUserInfor.
-        { name: 'E2E-002-ok-backstage', fn: (page) => autoLoginBackstageMasked(page, lang, { token: userTokens['id-autologin-ok-admin'] }) },
+        name: 'E2E-002-ok-backstage',
+        title: 'E2E-002-ok-backstage: token 有效 + view=backstage → 停留 backstage',
+        run: (page, lang) => autoLoginBackstageMasked(page, lang, { token: userTokens['id-autologin-ok-admin'] }),
+        stages: ['E2E-002-ok-backstage'],
+        semantic: specSemantic,
+    },
+    {
         // 003: token 有效 + view=user → autoLogin 成功 → 停留 user view
-        { name: 'E2E-003-ok-user', fn: (page) => autoLoginScreenshot(page, lang, { token: userTokens['id-autologin-ok'], viewParam: 'user' }) },
+        name: 'E2E-003-ok-user',
+        title: 'E2E-003-ok-user: token 有效 + view=user → 停留 user view',
+        run: (page, lang) => autoLoginScreenshot(page, lang, { name: 'E2E-003-ok-user', token: userTokens['id-autologin-ok'], viewParam: 'user' }),
+        stages: ['E2E-003-ok-user'],
+        semantic: specSemantic,
+    },
+    {
         // 004: 無 token → autoLogin 'no token' reject → 回登入頁
-        { name: 'E2E-004-no-token', fn: (page) => autoLoginScreenshot(page, lang, { token: '' }) },
+        name: 'E2E-004-no-token',
+        title: 'E2E-004-no-token: 無 token → 回登入頁',
+        run: (page, lang) => autoLoginScreenshot(page, lang, { name: 'E2E-004-no-token', token: '' }),
+        stages: ['E2E-004-no-token'],
+        semantic: specSemantic,
+    },
+    {
         // 005: token 有效但 user.redir 為空 → 顯示 'failedLoginForNoRedir' alert + 回登入頁
-        // 須等 autoLogin 完成 (~2s) 但仍在 WAlert 4s 自動消失前截圖；3.5s 為兩端窗口
-        { name: 'E2E-005-no-redir', fn: (page) => autoLoginScreenshot(page, lang, { token: userTokens['id-autologin-no-redir'], waitMs: 3500 }) },
+        // 偵測提示浮窗與登入表單皆出現即截圖(浮窗約 4 秒自動消失); 反應為提示訊息, 框浮窗本體(技能 §7.2;
+        // 原框登入卡片而關鍵訊息未框, 且以固定 3.5 秒卡浮窗時窗, 2026-09-28 改)
+        name: 'E2E-005-no-redir',
+        title: 'E2E-005-no-redir: token 有效但 user.redir 為空 → alert + 回登入頁',
+        run: (page, lang) => autoLoginScreenshot(page, lang, { name: 'E2E-005-no-redir', token: userTokens['id-autologin-no-redir'], boxTarget: page.locator('div[id^="alt-"]').first() }),
+        stages: ['E2E-005-no-redir'],
+        semantic: specSemantic,
+    },
+    // 以下情境視覺結果與 E2E-004-no-token 相同（autoLogin reject 後 App.vue catch 統一回登入頁，無顯示錯誤）
+    // 為驗證每條程式碼路徑都能達到正確最終狀態，分別測試但共用 E2E-004 baseline (合法 gap ①: 共用他案標準圖)
+    {
+        name: 'E2E-006-inactive-user',
+        title: 'E2E-006-inactive-user: token 有效但 user.isActive=n → 共用 E2E-004 baseline',
+        run: async (page, lang) => ({ [sharedNoToken]: await autoLoginScreenshot(page, lang, { name: 'E2E-006-inactive-user', token: userTokens['id-autologin-inactive'] }) }),
+        compareOnly: true,
+        stages: [sharedNoToken],
+        semantic: specSemantic,
+    },
+    {
+        name: 'E2E-007-stale-token',
+        title: 'E2E-007-stale-token: LS 有 token 但 DB 查無 → 共用 E2E-004 baseline',
+        run: async (page, lang) => ({ [sharedNoToken]: await autoLoginScreenshot(page, lang, { name: 'E2E-007-stale-token', token: 'fake-token-not-in-db' }) }),
+        compareOnly: true,
+        stages: [sharedNoToken],
+        semantic: specSemantic,
+    },
+    {
+        name: 'E2E-008-expired-token',
+        title: 'E2E-008-expired-token: token 在 DB 但 timeEnd 已過 → 共用 E2E-004 baseline',
+        run: async (page, lang) => ({ [sharedNoToken]: await autoLoginScreenshot(page, lang, { name: 'E2E-008-expired-token', token: expiredToken }) }),
+        compareOnly: true,
+        stages: [sharedNoToken],
+        semantic: specSemantic,
+    },
+    {
         // 009: token 有效 (非 admin) + view=backstage → autoLogin 成功 → 停留 backstage 但僅
         // mmUserInfor menu (LayoutContent isAdmin filter 阻擋 admin-only menu 與 admin-only API).
         // 對應 LayoutContent.vue: isAdmin computed + menus.adminOnly flag 過濾 + mounted hook
         // 設 menuKey='mmUserInfor'. 議題 1 fix 驗 (commit 5006ac0).
-        // 框左側 sidebar 導航本體（[ev-stable]，即 WDrawer 內 ref="divDrawer" + v-domstable，x≈0 寬≈229px），
-        // 比 [state]（WDrawer 根、全屏）更聚焦「sidebar 導航項目（確認無 admin-only 項目）」這個驗證標的。
-        { name: 'E2E-009-ok-backstage-nonadmin', fn: (page) => autoLoginScreenshot(page, lang, { token: userTokens['id-autologin-ok'], viewParam: 'backstage', boxTarget: page.locator('[ev-stable]').first() }) },
-    ]
+        // 框左側選單可見項目之聯集（非管理者僅「使用者資訊」一項；確認無 admin-only 項目），範圍為 sidebar 抽屜 [ev-stable]。
+        name: 'E2E-009-ok-backstage-nonadmin',
+        title: 'E2E-009-ok-backstage-nonadmin: 非 admin token + view=backstage → 停留 backstage 但僅 UserInfor (LayoutContent isAdmin filter)',
+        run: (page, lang) => autoLoginScreenshot(page, lang, { name: 'E2E-009-ok-backstage-nonadmin', token: userTokens['id-autologin-ok'], viewParam: 'backstage', boxTarget: menuItemsBox() }),
+        stages: ['E2E-009-ok-backstage-nonadmin'],
+        semantic: async (ctx) => {
+            //語意斷言: 顯示 User information sidebar text (mmUserInfor menu 可見)
+            await specSemantic(ctx)
+            //語意斷言補強: 不顯示 Statistics Information sidebar text (admin-only mmStaInfor 被過濾)
+            let bodyText = await ctx.page.evaluate(() => document.body.innerText)
+            let staTitle = ctx.lang === 'eng' ? 'Statistics information' : '統計資訊'
+            assert.strict.equal(
+                bodyText.includes(staTitle),
+                false,
+                `非 admin 進 view=backstage 不應顯示 "${staTitle}" sidebar item (admin-only menu 須被 LayoutContent isAdmin filter 阻擋), 但實際有顯示`
+            )
+        },
+    },
+]
+
+//單一案例管線: per-case DB 重置 + fresh browser (新 context, 自動接受 dialog) → 截圖 → 語意斷言 → 寫檔 / 比對 → 關瀏覽器 → 清資料
+//只比對之案例 (compareOnly): 以宣告之共用圖鍵比對, 產製端不寫; fail-dump 標籤帶案例名 (多案比對同一張圖時可分辨)
+async function runCase(mode, lang, c, extra = {}) {
+    return await runBaselineCase({
+        mode,
+        lang,
+        name: c.name,
+        run: c.run,
+        stages: c.stages,
+        compareOnly: !!c.compareOnly,
+        semantic: c.semantic,
+        launch: launchBrowser,
+        pathOf: bp,
+        labelOf: (lg, key) => (c.compareOnly ? `autologin-${lg}-${c.name}-shared-${key}` : `autologin-${lg}-${key}`),
+        match: assertBaselineMatch,
+        prepare: async () => {
+            await deleteTestUsersAndTokens()
+            await insertTestUsersAndTokens()
+        },
+        afterCase: async () => {
+            await deleteTestUsersAndTokens()
+        },
+        ...extra,
+    })
 }
 
 
-async function generateBaselineForLang(lang) {
-    console.log(`=== 產生標準圖（${lang}）===`)
-
-    for (let { name, fn } of buildAutoLoginCases(lang)) {
-        if (!shouldGen(lang, name)) continue
-        console.log(`  ${name}`)
-
-        //per-case fresh DB + browser, 與 mocha beforeEach/afterEach 對稱 (技能 §6 隔離/ §7.5 產製端測試端同管線)
-        await deleteTestUsersAndTokens()
-        await insertTestUsersAndTokens()
-
-        let browser = await launchBrowser()
-        let page = await browser.newPage()
-        page.on('dialog', async (dialog) => {
-            await dialog.accept()
-        })
-
-        let buf = await fn(page)
-        writeBaseline(lang, name, buf)
-
-        await browser.close()
-    }
-
-    await deleteTestUsersAndTokens()
-}
-
+// --- 產生標準圖模式 ---
 
 async function generateBaseline() {
     process.env.E2E_STRICT_CAPTURE = '1'
+    //截圖前篩選 (--names / --langs / --write-mode / E2E_BASELINE_OUT_DIR); 不符任何鍵或點名只比對之案例即於此報錯
+    let gate = createBaselineGate({ langs, cases })
+    console.log(gate.describe())
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    for (let lang of langs) {
-        await generateBaselineForLang(lang)
+    for (let lang of gate.langs) {
+        console.log(`=== 產生標準圖（${lang}）===`)
+        //gate.casesFor 不含只比對之案例 (E2E-006 / 007 / 008 共用 E2E-004 標準圖, 產製端不執行)
+        for (let c of gate.casesFor(lang)) {
+            console.log(`  ${c.name}`)
+            await runCase('regen', lang, c, { gate })
+        }
     }
+    //--names 之任一項未產出即報錯 (不靜默略過)
+    gate.finalize()
+
+    await deleteTestUsersAndTokens()
 
     console.log('=== 標準圖產生完成 ===')
 
@@ -520,120 +613,21 @@ else {
 
     for (let lang of langs) {
 
-        let browser
-        let page
-
         describe(`AutoLogin E2E [${lang}] — 自動登入各情境`, function() {
             this.timeout(120000)
 
-            //per-case 獨立: fresh browser + DB tokens (對齊 e2e-adduser 標準)
+            //per-case 獨立 (fresh browser + DB 重置) 由 runCase 負責, 確保單 case --grep 也能跑
             beforeEach(async function() {
                 this.timeout(180000) // 第一次須等前端首次編譯（~15-30s），給寬鬆 timeout
                 await startServersOnce()
+            })
 
-                await deleteTestUsersAndTokens()
-                await insertTestUsersAndTokens()
-
-                browser = await launchBrowser()
-                let context = await browser.newContext()
-                page = await context.newPage()
-
-                page.on('dialog', async (dialog) => {
-                    await dialog.accept()
+            //語意斷言皆於比對標準圖之前 (pixel baseline 為補強層; pixelmatch 反鋸齒感知 + maxDiffPixels 容差)
+            for (let c of cases) {
+                it(c.title, async function() {
+                    await runCase('compare', lang, c, { onKnownDefect: () => this.skip() })
                 })
-            })
-
-            afterEach(async function() {
-                if (browser) {
-                    await browser.close()
-                    browser = null
-                }
-                await deleteTestUsersAndTokens()
-            })
-
-            it('E2E-001-ok-redir: token 有效 + view=login → redirect 至 user view', async function() {
-                let okToken = userTokens['id-autologin-ok']
-                let buf = await autoLoginScreenshot(page, lang, { token: okToken })
-                await assertSpecForCase(page, lang, 'E2E-001-ok-redir')
-                let baselinePath = bp(lang, 'E2E-001-ok-redir')
-                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-001-ok-redir`)
-            })
-
-            it('E2E-002-ok-backstage: token 有效 + view=backstage → 停留 backstage', async function() {
-                let okToken = userTokens['id-autologin-ok-admin']
-                let buf = await autoLoginBackstageMasked(page, lang, { token: okToken })
-                await assertSpecForCase(page, lang, 'E2E-002-ok-backstage')
-                let baselinePath = bp(lang, 'E2E-002-ok-backstage')
-                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-002-ok-backstage`)
-            })
-
-            it('E2E-003-ok-user: token 有效 + view=user → 停留 user view', async function() {
-                let okToken = userTokens['id-autologin-ok']
-                let buf = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'user' })
-                await assertSpecForCase(page, lang, 'E2E-003-ok-user')
-                let baselinePath = bp(lang, 'E2E-003-ok-user')
-                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-003-ok-user`)
-            })
-
-            it('E2E-004-no-token: 無 token → 回登入頁', async function() {
-                let buf = await autoLoginScreenshot(page, lang, { token: '' })
-                await assertSpecForCase(page, lang, 'E2E-004-no-token')
-                let baselinePath = bp(lang, 'E2E-004-no-token')
-                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-004-no-token`)
-            })
-
-            it('E2E-005-no-redir: token 有效但 user.redir 為空 → alert + 回登入頁', async function() {
-                let noRedirToken = userTokens['id-autologin-no-redir']
-                let buf = await autoLoginScreenshot(page, lang, { token: noRedirToken, waitMs: 3500 })
-                await assertSpecForCase(page, lang, 'E2E-005-no-redir')
-                let baselinePath = bp(lang, 'E2E-005-no-redir')
-                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-005-no-redir`)
-            })
-
-            // 以下情境視覺結果與 E2E-004-no-token 相同（autoLogin reject 後 App.vue catch 統一回登入頁，無顯示錯誤）
-            // 為驗證每條程式碼路徑都能達到正確最終狀態，分別測試但共用 E2E-004 baseline (Gap 場景 1)
-
-            it('E2E-006-inactive-user: token 有效但 user.isActive=n → 共用 E2E-004 baseline', async function() {
-                let inactiveToken = userTokens['id-autologin-inactive']
-                let buf = await autoLoginScreenshot(page, lang, { token: inactiveToken })
-                await assertSpecForCase(page, lang, 'E2E-006-inactive-user')
-                let baselinePath = bp(lang, 'E2E-004-no-token')
-                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-006-inactive-user-shared-E2E-004`)
-            })
-
-            it('E2E-007-stale-token: LS 有 token 但 DB 查無 → 共用 E2E-004 baseline', async function() {
-                let buf = await autoLoginScreenshot(page, lang, { token: 'fake-token-not-in-db' })
-                await assertSpecForCase(page, lang, 'E2E-007-stale-token')
-                let baselinePath = bp(lang, 'E2E-004-no-token')
-                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-007-stale-token-shared-E2E-004`)
-            })
-
-            it('E2E-008-expired-token: token 在 DB 但 timeEnd 已過 → 共用 E2E-004 baseline', async function() {
-                let buf = await autoLoginScreenshot(page, lang, { token: expiredToken })
-                await assertSpecForCase(page, lang, 'E2E-008-expired-token')
-                let baselinePath = bp(lang, 'E2E-004-no-token')
-                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-008-expired-token-shared-E2E-004`)
-            })
-
-            it('E2E-009-ok-backstage-nonadmin: 非 admin token + view=backstage → 停留 backstage 但僅 UserInfor (LayoutContent isAdmin filter)', async function() {
-                let okToken = userTokens['id-autologin-ok']
-                //框左側 sidebar 導航本體（[ev-stable]，即 WDrawer 內 ref="divDrawer" + v-domstable，x≈0 寬≈229px），
-                //比 [state]（WDrawer 根、全屏）更聚焦「sidebar 無 admin-only 項目」這個驗證標的。
-                let buf = await autoLoginScreenshot(page, lang, { token: okToken, viewParam: 'backstage', boxTarget: page.locator('[ev-stable]').first() })
-                //語意斷言: 顯示 User information sidebar text (mmUserInfor menu 可見)
-                await assertSpecForCase(page, lang, 'E2E-009-ok-backstage-nonadmin')
-                //語意斷言補強: 不顯示 Statistics Information sidebar text (admin-only mmStaInfor 被過濾)
-                let bodyText = await page.evaluate(() => document.body.innerText)
-                let staTitle = lang === 'eng' ? 'Statistics information' : '統計資訊'
-                assert.strict.equal(
-                    bodyText.includes(staTitle),
-                    false,
-                    `非 admin 進 view=backstage 不應顯示 "${staTitle}" sidebar item (admin-only menu 須被 LayoutContent isAdmin filter 阻擋), 但實際有顯示`
-                )
-                //視覺斷言: pixel baseline (pixelmatch 反鋸齒感知 + maxDiffPixels 容差)
-                let baselinePath = bp(lang, 'E2E-009-ok-backstage-nonadmin')
-                assertBaselineMatch(buf, baselinePath, `autologin-${lang}-E2E-009-ok-backstage-nonadmin`)
-            })
+            }
 
         })
 

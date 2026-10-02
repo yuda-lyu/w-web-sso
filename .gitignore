@@ -1,17 +1,20 @@
 node_modules
 .agents
-AGENTS*.md
 .opencode
 .claude
+AGENTS*.md
 CLAUDE*.md
+zAI*.md
 .env
 
 logs
 db
 uploadTemp
-testPending
 user_data
 
 tmp
 test/_tmp
+testPending
 
+dist/index.html
+tableTags-web-sso.json

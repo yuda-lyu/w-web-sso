@@ -1291,6 +1291,16 @@ let kpLang = {
         cht: `管理員不得刪除自己`,
     },
 
+    //雙擊防護(後端)之第 2 次回應 (ADR-074)
+    saveInProgress: { //同一操作者之同一清單儲存處理中再送出
+        eng: `The previous save is still in progress. Please do not submit again.`,
+        cht: `上一次儲存仍在處理中，請勿重複送出`,
+    },
+    saveNewRowExists: { //標為新增之列已存在(同一包資料重送)
+        eng: `The newly added data has already been saved. Please reload the page before making changes.`,
+        cht: `新增之資料已儲存過，請重新整理頁面後再操作`,
+    },
+
 }
 
 

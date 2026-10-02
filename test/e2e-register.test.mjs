@@ -7,6 +7,8 @@ import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
 import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, assertBaselineMatch, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput, launchBrowser } from './tools/e2e-setup.mjs'
+//產製端與比對端同一案例管線 (2026-09-28 起, 規格詳 w-package-tools-e2e 之 README.md §2.1-2.2)
+import { runBaselineCase, createBaselineGate, assertTextSpec, itemsUnionBox } from './tools/e2eLib.mjs'
 
 
 //
@@ -17,6 +19,12 @@ import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl
 // 使用方式：
 //   1. 先產生標準圖：node test/e2e-register.test.mjs --baseline
 //   2. 跑測試比對：npx mocha test/e2e-register.test.mjs --timeout 120000
+//   手術式重產 (截圖前篩選, 規格詳 w-package-tools-e2e 之 README.md §2.2): --names <項,...> 每項可帶語系前綴 (eng-/cht-), 不帶則兩語系皆產;
+//     階段圖鍵只寫該張, 案例鍵或編號前綴 (如 E2E-017) 寫該案全部階段 (本檔各案皆單張), 不符任何鍵即報錯; --langs; --write-mode missing|changed;
+//     env E2E_BASELINE_OUT_DIR=<dir> 寫到暫存目錄 (等價驗證用)
+//   產製端與比對端呼叫同一案例管線 (runBaselineCase): 每案 fresh browser + DB 重置 → 截圖後當場語意斷言 (spec 文字 / 畫面不變式) → 寫檔 / 比對
+//   設定切換兩端同序: E2E-021 於流程內以 EM_SRC_* envOverride 重啟 backend 並於 finally 還原 (captureResendSmtpFail);
+//   E2E-017 於兩語系一般案例之後, 以 allowUserRegistration=false 重啟 backend 一次、兩語系跑完再還原 (比對端為其 describe 之 before / after)
 //
 // 標準圖存放：test/pics/register/register-{lang}-{number}-{name}.png
 //
@@ -153,87 +161,14 @@ let expectedSpecText = {
 }
 
 
-async function collectVisibleText(page) {
-    return await page.evaluate(() => {
-        let parts = []
-        let walk = (el) => {
-            if (!el) return
-            if (el.nodeType === 3) {
-                let t = (el.nodeValue || '').trim()
-                if (t) parts.push(t)
-                return
-            }
-            if (el.nodeType !== 1) return
-            let tag = el.tagName
-            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return
-            for (let c of el.childNodes) walk(c)
-        }
-        walk(document.body)
-        return parts.join(' | ').slice(0, 2000)
-    })
-}
-
-async function pageHasText(page, text) {
-    return await page.evaluate((t) => {
-        let walk = (el) => {
-            if (!el) return false
-            if (el.nodeType === 3) return (el.nodeValue || '').includes(t)
-            if (el.nodeType !== 1) return false
-            let tag = el.tagName
-            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return false
-            for (let c of el.childNodes) {
-                if (walk(c)) return true
-            }
-            return false
-        }
-        return walk(document.body)
-    }, text)
-}
-
+//頁面文字之走訪與 text / absentText 斷言 (assertTextSpec; 未知 mode 亦拋錯) 取自 w-package-tools-e2e
+//(原本檔內手寫 pageHasText / collectVisibleText, 走訪內容相同; 失敗訊息「預期含 spec 文字」「但仍見到」之措辭改為 w-package-tools-e2e 版)
 async function assertSpecForCase(page, lang, name) {
     let expected = expectedSpecText[name]
     if (!expected || !expected[lang]) {
         throw new Error(`expectedSpecText 未為 case "${name}" / lang "${lang}" 定義`)
     }
-    let e = expected[lang]
-    if (e.mode === 'text') {
-        let found = await pageHasText(page, e.value)
-        if (!found) {
-            let dump = await collectVisibleText(page)
-            assert.fail(`預期含 spec 文字 "${e.value}" (${name}), 實際: ${dump}`)
-        }
-    }
-    else if (e.mode === 'absentText') {
-        let stillHas = await pageHasText(page, e.value)
-        if (stillHas) {
-            let dump = await collectVisibleText(page)
-            assert.fail(`預期不含 "${e.value}" (${name}), 但仍見到. 可見文字: ${dump}`)
-        }
-    }
-    else {
-        throw new Error(`未知 mode: ${e.mode}`)
-    }
-}
-
-
-// 可選 --names <eng-001-form-initial,cht-002-pw-too-short,...> 進行手術式 baseline 重產
-let baselineNamesFilter = null
-{
-    let i = process.argv.indexOf('--names')
-    if (i >= 0 && process.argv[i + 1]) {
-        baselineNamesFilter = new Set(process.argv[i + 1].split(','))
-    }
-}
-function writeBaseline(lang, name, buf) {
-    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`)) {
-        console.log(`  [skip] ${lang}-${name}`)
-        return
-    }
-    fs.writeFileSync(bp(lang, name), buf)
-}
-//是否需要產生此 case 的標準圖. --names 指定時只有指定 case 回 true → 連「截圖」都跳過 (非僅跳寫檔).
-function shouldGen(lang, name) {
-    return !baselineNamesFilter || baselineNamesFilter.has(`${lang}-${name}`)
+    await assertTextSpec(page, expected[lang], { label: name })
 }
 
 
@@ -326,8 +261,7 @@ function makeVerifyAlreadyUser(lang, tokenVerify) {
 async function insertVerifyTestUsers() {
     //先重設為 base seed (清空 users/tokens/ips + 插入 3 canonical users + 4 tokens),
     //再插入本測試自己的 verify-test users. hermetic: 每次 setup 都從乾淨 base seed 起跳.
-    //此函式為兩個 mocha beforeEach (主 describe + alert 拒絕 describe) 與 generateBaselineForLang
-    //共用唯一進入點, 故置於首行覆蓋三條路徑.
+    //此函式為 runCase 之 prepare (產製端與比對端每案共用; E2E-017 除外) 唯一進入點, 故置於首行覆蓋所有路徑.
     await resetToBaseSeed()
     let users = []
     for (let lang of langs) {
@@ -509,16 +443,19 @@ async function captureSuccess(page, lang) {
     await page.waitForFunction((t) => (document.body.innerText || '').includes(t), needle, { timeout: 60000 })
     await page.waitForTimeout(1000)
     await page.mouse.move(0, 0)
-    //CheckYes modal 為 fixed overlay 蓋在 .sb 上；框 .sb 給背景登入卡脈絡，modal 顯示在上層
-    return await captureStableWithBox(page, '.sb')
+    //結果: 申請成功之 CheckYes modal（框住 modal 面板）。modal 為 fixed overlay 蓋在登入卡 .sb 上，依技能 §7.3-4「被蓋住就框蓋在上面的」
+    //（2026-09-28 改：原框被遮罩蓋住之 .sb、modal 在框外；w-package-tools-e2e 被蓋住檢查即拋此類）
+    return await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
 }
 
 async function captureVerifyResult(page, lang, token) {
     let url = `${backendUrl}/api/verifyEmail?token=${token}&lang=${lang}`
     await page.goto(url, { waitUntil: 'networkidle', timeout: 15000 })
-    await page.waitForTimeout(2000)
-    //server-rendered 靜態結果頁：訊息在 <body><p>...</p></body> 的唯一 <p> 元素 (verifyEmailResult.html)
-    return await captureStableWithBox(page, 'p')
+    //偵測結果訊息已渲染(取代固定 2 秒, 2026-09-28)
+    await page.locator('p').first().waitFor({ state: 'visible', timeout: 60000 })
+    //server-rendered 靜態結果頁：訊息在 <body><p>...</p></body> 的唯一 <p> 元素 (verifyEmailResult.html)；
+    //<p> 為撐滿整寬之 block，框其文字墨跡（技能 §7.2 提示訊息→訊息本體；2026-09-28 改：原框 <p> 元素，一行字右側約 900px 空白一併框入）
+    return await captureStableWithBox(page, itemsUnionBox('p', { fit: true }))
 }
 
 
@@ -693,7 +630,7 @@ async function captureResendSmtpFail(page, lang) {
 
 
 //E2E-017: 系統不允許自助註冊 (settings.json allowUserRegistration=false).
-//backend 須已以 allowUserRegistration=false 重啟 (由 describe before() 的 restartBackend 完成).
+//backend 須已以 allowUserRegistration=false 重啟 (由 startNoRegBackend 完成: 比對端為 E2E-017 describe 之 before(), 產製端為 generateBaseline 之 E2E-017 段).
 //fresh navigate 登入頁 → 前端 fetch webInfor 取得 allowUserRegistration=false →
 //PageLogin computed allowUserRegistration=false → Register link 區塊 v-if 不成立 → link 不顯示.
 //終態 = 純登入頁 (2 inputs), 無 Register / 申請帳號 link, 使用者無從進入 register mode.
@@ -792,134 +729,333 @@ async function getRegErrorText(page) {
 }
 
 
-// --- 產生標準圖模式 ---
+// ===================================================================
+// 截圖後步驟 (舊比對端於截圖後之畫面斷言 / 收尾; 2026-09-28 起兩端同跑, 皆在寫檔 / 比對之前)
+// ===================================================================
 
-async function generateBaselineForLang(lang) {
-    console.log(`=== 產生標準圖（${lang}）===`)
+//001-004: register form 高度應觸發 .sb 內捲軸
+async function checkSbOverflows(page, lang, c) {
+    await assertSbOverflows(page, `register-${lang}-${c.name}`)
+}
 
-    let cases = [
-        { name: 'E2E-001-form-initial', fn: captureFormInitial },
-        { name: 'E2E-002-pw-too-short', fn: capturePwTooShort },
-        { name: 'E2E-003-pw-mismatch', fn: capturePwMismatch },
-        { name: 'E2E-004-pw-multi-errors', fn: capturePwMultiErrors },
-        {
-            name: 'E2E-005-success',
-            fn: captureSuccess,
-            prep: async () => deleteUserByAccount(`qauser-${lang}`),
-        },
-        { name: 'E2E-006-verify-success', fn: (page, lang) => captureVerifyResult(page, lang, verifyTokens.success[lang]) },
-        { name: 'E2E-007-verify-invalid', fn: (page, lang) => captureVerifyResult(page, lang, 'fake-token-not-in-db') },
-        { name: 'E2E-008-verify-already', fn: (page, lang) => captureVerifyResult(page, lang, verifyTokens.already[lang]) },
-        { name: 'E2E-009-back-to-login', fn: captureBackToLogin },
-        { name: 'E2E-010-account-empty', fn: (page, lang) => captureFieldEmpty(page, lang, 'account') },
-        { name: 'E2E-011-password-empty', fn: (page, lang) => captureFieldEmpty(page, lang, 'password') },
-        { name: 'E2E-012-email-empty', fn: (page, lang) => captureFieldEmpty(page, lang, 'email') },
-        { name: 'E2E-013-name-empty', fn: (page, lang) => captureFieldEmpty(page, lang, 'name') },
-        {
-            name: 'E2E-014-email-format-invalid',
-            fn: (page, lang) => captureRegBackendError(page, lang, {
-                account: `qareg-bad-email-${lang}`,
-                password: 'Pw@RegFill123',
-                confirmPassword: 'Pw@RegFill123',
-                name: 'Reg Filler',
-                email: 'not-an-email-format',
-            }, 'E2E-014-email-format-invalid'),
-        },
-        {
-            name: 'E2E-015-account-duplicate',
-            //account 用 'jb-oldusr-{lang}' 規避與密碼字元的 2-char 重疊
-            //(後端 checkUserPassword 在帳號唯一性檢查前, 密碼撞 noConsecutiveCharsFromAccount 會先 reject)
-            prep: async () => insertExistUser(`jb-oldusr-${lang}`, `jb-oldusr-${lang}@test.com`),
-            fn: (page, lang) => captureRegBackendError(page, lang, {
-                account: `jb-oldusr-${lang}`,  //撞 account
-                password: 'Cd@9876bklm',
-                confirmPassword: 'Cd@9876bklm',
-                name: 'Reg Filler',
-                email: `jb-fresh-${lang}@test.com`,
-            }, 'E2E-015-account-duplicate'),
-        },
-        {
-            name: 'E2E-016-email-duplicate',
-            prep: async () => insertExistUser(`jb-mailusr-${lang}`, `jb-mailusr-${lang}@test.com`),
-            fn: (page, lang) => captureRegBackendError(page, lang, {
-                account: `jb-newusr-${lang}`,
-                password: 'Cd@9876bklm',
-                confirmPassword: 'Cd@9876bklm',
-                name: 'Reg Filler',
-                email: `jb-mailusr-${lang}@test.com`,  //撞 email
-            }, 'E2E-016-email-duplicate'),
-        },
-        { name: 'E2E-020-resend-email-mismatch', fn: captureResendEmailMismatch },
-        { name: 'E2E-021-resend-smtp-fail', fn: captureResendSmtpFail },
-    ]
+//005: captureSuccess 留下持久 showCheckYes modal, 截圖與語意斷言後點 OK 收掉 (舊產製端寫檔後、舊比對端比對後皆有此步; 在截圖之後, 不影響圖)
+async function dismissSuccessModal(page, lang) {
+    let okText = lang === 'eng' ? 'OK' : '確認'
+    await page.locator(`text="${okText}"`).first().click().catch(() => {})
+    await page.waitForTimeout(500)
+}
 
-    for (let { name, fn, prep } of cases) {
-        if (!shouldGen(lang, name)) continue
-        console.log(`  ${name}`)
-        //per-case 重整 DB + fresh browser, 與 mocha beforeEach 一致, 避免 cold/warm
-        //GPU/glyph atlas 差異導致跨模式 pixel drift (§6.3 截圖穩定性已知限制)
-        await deleteAllRegisterTestUsers()
-        await insertVerifyTestUsers()
-        if (prep) await prep()
+//009: 驗證 input 數 = 2 (代表確實回到 login mode)
+async function checkBackToLogin(page) {
+    let inpCount = await page.locator('input').count()
+    assert.strict.equal(inpCount, 2, `Back to login 後應有 2 個 input, 實際 ${inpCount}`)
+}
 
-        let browser = await launchBrowser()
-        let context = await browser.newContext()
-        let page = await context.newPage()
-        page.on('dialog', async (dialog) => {
-            await dialog.accept()
-        })
-
-        let buf = await fn(page, lang)
-        writeBaseline(lang, name, buf)
-
-        if (name === 'E2E-005-success') {
-            //captureSuccess 留下持久 showCheckYes modal, 截完後點 OK 收掉 (不影響 fresh-per-case browser, 但保持對稱)
-            let okText = lang === 'eng' ? 'OK' : '確認'
-            await page.locator(`text="${okText}"`).first().click().catch(() => {})
-            await page.waitForTimeout(500)
-        }
-
-        await browser.close()
+//010-013: 驗證 register form 仍有 5 input (未送出, viewMode 仍為 register)
+function checkFieldEmpty(field) {
+    return async (page) => {
+        let inpCount = await page.locator('input').count()
+        assert.strict.equal(inpCount, 5, `${field} 空 + Submit 灰態, form 仍應 5 input, 實際 ${inpCount}`)
     }
 }
 
+//014-016: 語意: inline regError div 含對應文字; viewMode 維持 register (5 inputs, 未送出成功)
+async function checkRegBackendError(page, lang, c) {
+    let regErr = await getRegErrorText(page)
+    let expected = expectedSpecText[c.name][lang].value
+    assert.strict.notEqual(regErr, null, `應出現 inline regError 紅字 div, 實際找不到`)
+    assert.strict.equal(regErr.includes(expected), true, `regError 應含 "${expected}", 實際 "${regErr}"`)
+    let inpCount = await page.locator('input').count()
+    assert.strict.equal(inpCount, 5, `後端 reject 後 form 仍應為 register mode (5 input), 實際 ${inpCount}`)
+}
+
+//017: 語意: Register / 申請帳號 link 不存在 (使用者無從進入 register mode); 仍是純登入頁 (2 inputs)
+async function checkRegistrationNotAllowed(page, lang) {
+    let linkText = kpLangText[lang].registerLink
+    let nLink = await countRegisterLink(page, linkText)
+    assert.strict.equal(nLink, 0, `不允許註冊時, Register link "${linkText}" 應不存在, 實際出現 ${nLink} 個`)
+    let inpCount = await page.locator('input').count()
+    assert.strict.equal(inpCount, 2, `登入頁應為 2 input, 實際 ${inpCount}`)
+}
+
+
+// ===================================================================
+// 案例宣告與案例管線 (產製端與比對端共用)
+// ===================================================================
+
+//順序與 mocha it 相同 (產製順序 ≡ 比對順序): 每語系一般案例 (group main, 語系 describe) 之後, 兩語系之 E2E-017 (group noreg, 獨立 describe);
+//title 為 mocha it 標題 (--grep 依之; E2E-017 標題含語系故為函數); stages 為該案產出之圖鍵 (與寫檔名、比對名一致);
+//capture 為截圖流程 (回傳單張 buf); prep 為 DB 重置後、開瀏覽器前之案例前置; afterShot 為截圖與語意斷言後之畫面斷言 / 收尾
+let cases = [
+    {
+        name: 'E2E-001-form-initial',
+        group: 'main',
+        title: 'E2E-001-form-initial: 進入 register 模式，表單空白',
+        stages: ['E2E-001-form-initial'],
+        capture: captureFormInitial,
+        afterShot: checkSbOverflows,
+    },
+    {
+        name: 'E2E-002-pw-too-short',
+        group: 'main',
+        title: 'E2E-002-pw-too-short: 密碼長度不足 → inline 紅字',
+        stages: ['E2E-002-pw-too-short'],
+        capture: capturePwTooShort,
+        afterShot: checkSbOverflows,
+    },
+    {
+        name: 'E2E-003-pw-mismatch',
+        group: 'main',
+        title: 'E2E-003-pw-mismatch: 密碼≠確認密碼 → inline 紅字',
+        stages: ['E2E-003-pw-mismatch'],
+        capture: capturePwMismatch,
+        afterShot: checkSbOverflows,
+    },
+    {
+        name: 'E2E-004-pw-multi-errors',
+        group: 'main',
+        title: 'E2E-004-pw-multi-errors: 密碼觸發多項策略違反 → 多條紅字',
+        stages: ['E2E-004-pw-multi-errors'],
+        capture: capturePwMultiErrors,
+        afterShot: checkSbOverflows,
+    },
+    {
+        name: 'E2E-005-success',
+        group: 'main',
+        title: 'E2E-005-success: 註冊成功 → form 清空回 login mode',
+        stages: ['E2E-005-success'],
+        prep: (lang) => deleteUserByAccount(`qauser-${lang}`),
+        capture: captureSuccess,
+        afterShot: dismissSuccessModal,
+    },
+    {
+        name: 'E2E-006-verify-success',
+        group: 'main',
+        title: 'E2E-006-verify-success: 驗證連結 token 正確 → server-rendered 成功頁',
+        stages: ['E2E-006-verify-success'],
+        capture: (page, lang) => captureVerifyResult(page, lang, verifyTokens.success[lang]),
+    },
+    {
+        name: 'E2E-007-verify-invalid',
+        group: 'main',
+        title: 'E2E-007-verify-invalid: 驗證連結 token 無效 → server-rendered 失敗頁',
+        stages: ['E2E-007-verify-invalid'],
+        capture: (page, lang) => captureVerifyResult(page, lang, 'fake-token-not-in-db'),
+    },
+    {
+        name: 'E2E-008-verify-already',
+        group: 'main',
+        title: 'E2E-008-verify-already: 驗證連結 token 已驗證 → server-rendered 已驗證頁',
+        stages: ['E2E-008-verify-already'],
+        capture: (page, lang) => captureVerifyResult(page, lang, verifyTokens.already[lang]),
+    },
+    {
+        name: 'E2E-009-back-to-login',
+        group: 'main',
+        title: 'E2E-009-back-to-login: 點 Back to login link → input 從 5 回到 2 (登入頁)',
+        stages: ['E2E-009-back-to-login'],
+        capture: captureBackToLogin,
+        afterShot: checkBackToLogin,
+    },
+    {
+        name: 'E2E-010-account-empty',
+        group: 'main',
+        title: 'E2E-010-account-empty: register 缺帳號 → Submit 灰態無法觸發',
+        stages: ['E2E-010-account-empty'],
+        capture: (page, lang) => captureFieldEmpty(page, lang, 'account'),
+        afterShot: checkFieldEmpty('account'),
+    },
+    {
+        name: 'E2E-011-password-empty',
+        group: 'main',
+        title: 'E2E-011-password-empty: register 缺密碼 → Submit 灰態無法觸發',
+        stages: ['E2E-011-password-empty'],
+        capture: (page, lang) => captureFieldEmpty(page, lang, 'password'),
+        afterShot: checkFieldEmpty('password'),
+    },
+    {
+        name: 'E2E-012-email-empty',
+        group: 'main',
+        title: 'E2E-012-email-empty: register 缺 email → Submit 灰態無法觸發',
+        stages: ['E2E-012-email-empty'],
+        capture: (page, lang) => captureFieldEmpty(page, lang, 'email'),
+        afterShot: checkFieldEmpty('email'),
+    },
+    {
+        name: 'E2E-013-name-empty',
+        group: 'main',
+        title: 'E2E-013-name-empty: register 缺姓名 → Submit 灰態無法觸發',
+        stages: ['E2E-013-name-empty'],
+        capture: (page, lang) => captureFieldEmpty(page, lang, 'name'),
+        afterShot: checkFieldEmpty('name'),
+    },
+    {
+        name: 'E2E-014-email-format-invalid',
+        group: 'main',
+        title: 'E2E-014-email-format-invalid: email 格式不合 → 後端 reject → inline regError 紅字',
+        stages: ['E2E-014-email-format-invalid'],
+        capture: (page, lang) => captureRegBackendError(page, lang, {
+            account: `qareg-bad-email-${lang}`,
+            password: 'Pw@RegFill123',
+            confirmPassword: 'Pw@RegFill123',
+            name: 'Reg Filler',
+            email: 'not-an-email-format',
+        }, 'E2E-014-email-format-invalid'),
+        afterShot: checkRegBackendError,
+    },
+    {
+        name: 'E2E-015-account-duplicate',
+        group: 'main',
+        title: 'E2E-015-account-duplicate: 帳號已被註冊 → 後端 reject → inline regError 紅字',
+        stages: ['E2E-015-account-duplicate'],
+        //account 用 'jb-oldusr-{lang}' 規避與密碼字元的 2-char 重疊
+        //(後端 checkUserPassword 在帳號唯一性檢查前, 密碼撞 noConsecutiveCharsFromAccount 會先 reject)
+        prep: (lang) => insertExistUser(`jb-oldusr-${lang}`, `jb-oldusr-${lang}@test.com`),
+        capture: (page, lang) => captureRegBackendError(page, lang, {
+            account: `jb-oldusr-${lang}`, //撞 account
+            password: 'Cd@9876bklm',
+            confirmPassword: 'Cd@9876bklm',
+            name: 'Reg Filler',
+            email: `jb-fresh-${lang}@test.com`,
+        }, 'E2E-015-account-duplicate'),
+        afterShot: checkRegBackendError,
+    },
+    {
+        name: 'E2E-016-email-duplicate',
+        group: 'main',
+        title: 'E2E-016-email-duplicate: email 已被註冊 → 後端 reject → inline regError 紅字',
+        stages: ['E2E-016-email-duplicate'],
+        prep: (lang) => insertExistUser(`jb-mailusr-${lang}`, `jb-mailusr-${lang}@test.com`),
+        capture: (page, lang) => captureRegBackendError(page, lang, {
+            account: `jb-newusr-${lang}`,
+            password: 'Cd@9876bklm',
+            confirmPassword: 'Cd@9876bklm',
+            name: 'Reg Filler',
+            email: `jb-mailusr-${lang}@test.com`, //撞 email
+        }, 'E2E-016-email-duplicate'),
+        afterShot: checkRegBackendError,
+    },
+    {
+        name: 'E2E-020-resend-email-mismatch',
+        group: 'main',
+        title: 'E2E-020-resend-email-mismatch: 未驗證 login → resend UI → 錯 email → resendError inline 紅字',
+        stages: ['E2E-020-resend-email-mismatch'],
+        capture: captureResendEmailMismatch,
+    },
+    {
+        //act: 真實 UI — 登入未驗證帳號 → 點重寄 link → 填「相符」email → 點寄送按鈕, 後端 resendVerifyEmail 通過 email 一致性 + 未驗證檢查, 實際呼叫 srEmail.send.
+        //確定性 SMTP 失敗 (不依賴 .env / 真實網路) 由 captureResendSmtpFail 內部負責: resend 前以 EM_SRC_* envOverride 重啟 backend (127.0.0.1:1 → 瞬間 ECONNREFUSED),
+        //finally 還原預設 backend; 此 restart / 還原收斂在 helper 內, 產製端與比對端同一份、同順序. 語意斷言在 helper 返回 (已還原 backend) 之後, 與舊比對端同.
+        //語意: inline resendError 含 userRegistrationResendFailed 文字 (此 key 唯有後端走到 srEmail.send 並寄信失敗才會產生); 視覺: 獨立標準圖 (訊息與 E2E-020 不同, 不共用)
+        name: 'E2E-021-resend-smtp-fail',
+        group: 'main',
+        title: 'E2E-021-resend-smtp-fail: 未驗證 login → resend UI → 相符 email → 後端走到寄信 SMTP 失敗 → resendError inline 紅字',
+        stages: ['E2E-021-resend-smtp-fail'],
+        capture: captureResendSmtpFail,
+    },
+    {
+        //須以 allowUserRegistration=false 重啟之 backend (startNoRegBackend, 群組級, 兩語系共用一次); 舊兩端皆不重置 DB (畫面不依賴 DB), 沿用
+        name: 'E2E-017-registration-not-allowed',
+        group: 'noreg',
+        title: (lang) => `E2E-017-registration-not-allowed [${lang}]: 不允許自助註冊 → 登入頁不顯示 Register link`,
+        stages: ['E2E-017-registration-not-allowed'],
+        noSeed: true,
+        capture: captureRegistrationNotAllowed,
+        afterShot: checkRegistrationNotAllowed,
+    },
+]
+
+//單張案例之流程 (產製端與比對端共用): 截圖 → 當場語意斷言 (spec 文字) → 截圖後步驟 (畫面斷言 / 收尾) → { 圖鍵: buf }
+async function runShot(c, page, lang) {
+    let buf = await c.capture(page, lang)
+    await assertSpecForCase(page, lang, c.name)
+    if (c.afterShot) {
+        await c.afterShot(page, lang, c)
+    }
+    return { [c.stages[0]]: buf }
+}
+
+//單一案例管線: per-case DB 重置 (E2E-017 除外) + 案例前置 + fresh browser (新 context, 自動接受 dialog) → 流程 (截圖後當場語意斷言) → 寫檔 / 比對 → 關瀏覽器 → 清資料
+async function runCase(mode, lang, c, extra = {}) {
+    return await runBaselineCase({
+        mode,
+        lang,
+        name: c.name,
+        run: (page, lg) => runShot(c, page, lg),
+        stages: c.stages,
+        launch: launchBrowser,
+        pathOf: bp,
+        labelOf: (lg, key) => `register-${lg}-${key}`,
+        match: assertBaselineMatch,
+        prepare: async () => {
+            if (!c.noSeed) {
+                await deleteAllRegisterTestUsers()
+                await insertVerifyTestUsers()
+            }
+            if (c.prep) {
+                await c.prep(lang)
+            }
+        },
+        afterCase: async () => {
+            if (!c.noSeed) {
+                await deleteAllRegisterTestUsers()
+            }
+        },
+        ...extra,
+    })
+}
+
+//E2E-017 之群組級設定切換 (比對端 describe 之 before / after 與產製端 E2E-017 段呼叫同一組, 同順序: 兩語系一般案例之後)
+async function startNoRegBackend() {
+    await restartBackend(genTempSettings({ allowUserRegistration: false }))
+}
+async function restoreDefaultBackend() {
+    await restartBackend('./settings.json')
+}
+
+
+// --- 產生標準圖模式 ---
 
 async function generateBaseline() {
     process.env.E2E_STRICT_CAPTURE = '1'
+    //截圖前篩選 (--names / --langs / --write-mode / E2E_BASELINE_OUT_DIR); 不符任何鍵即於此報錯
+    let gate = createBaselineGate({ langs, cases })
+    console.log(gate.describe())
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    for (let lang of langs) {
-        await generateBaselineForLang(lang)
+    //一般案例: 每語系依序, 每案 fresh browser + DB 重置 (runCase), 與比對端之語系 describe 同序
+    for (let lang of gate.langs) {
+        console.log(`=== 產生標準圖（${lang}）===`)
+        for (let c of gate.casesFor(lang).filter((x) => x.group === 'main')) {
+            console.log(`  ${c.name}`)
+            await runCase('regen', lang, c, { gate })
+        }
     }
 
     await deleteAllRegisterTestUsers()
 
     //E2E-017: 須以 allowUserRegistration=false 重啟 backend 才能截 (登入頁無 Register link).
-    //與其他 case 分開, 因須改動共享 backend; 產完務必還原預設 backend (finally).
-    if (shouldGen('eng', 'E2E-017-registration-not-allowed') || shouldGen('cht', 'E2E-017-registration-not-allowed')) {
+    //與其他 case 分開, 因須改動共享 backend; 兩語系跑完 (或中途拋錯) 務必還原預設 backend (finally) — 與比對端 E2E-017 describe 之 before / after 同一組呼叫、同順序.
+    let noRegRuns = gate.langs.flatMap((lang) => gate.casesFor(lang).filter((x) => x.group === 'noreg').map((c) => ({ lang, c })))
+    if (noRegRuns.length > 0) {
         console.log('=== 產生標準圖（E2E-017, allowUserRegistration=false）===')
         try {
-            await restartBackend(genTempSettings({ allowUserRegistration: false }))
-            for (let lang of langs) {
-                if (!shouldGen(lang, 'E2E-017-registration-not-allowed')) continue
-                console.log(`  E2E-017-registration-not-allowed (${lang})`)
-                let browser = await launchBrowser()
-                let context = await browser.newContext()
-                let page = await context.newPage()
-                page.on('dialog', async (dialog) => { await dialog.accept() })
-                let buf = await captureRegistrationNotAllowed(page, lang)
-                writeBaseline(lang, 'E2E-017-registration-not-allowed', buf)
-                await browser.close()
+            await startNoRegBackend()
+            for (let { lang, c } of noRegRuns) {
+                console.log(`  ${c.name} (${lang})`)
+                await runCase('regen', lang, c, { gate })
             }
         }
         finally {
-            await restartBackend('./settings.json')
+            await restoreDefaultBackend()
         }
     }
+    //--names 之任一項未產出即報錯 (不靜默略過)
+    gate.finalize()
 
     console.log('=== 標準圖產生完成 ===')
 
@@ -940,232 +1076,21 @@ else {
 
     for (let lang of langs) {
 
-        let browser
-        let page
-
         describe(`Register E2E [${lang}] — 註冊與驗證信流程`, function() {
             this.timeout(120000)
 
-            //per-case 獨立: fresh browser + DB (對齊 e2e-adduser 標準)
+            //per-case 獨立 (fresh browser + DB 重置) 由 runCase 負責, 確保單 case --grep 也能跑
             beforeEach(async function() {
                 this.timeout(180000) // 第一次須等前端首次編譯（~15-30s），給寬鬆 timeout
                 await startServersOnce()
+            })
 
-                await deleteAllRegisterTestUsers()
-                await insertVerifyTestUsers()
-
-                browser = await launchBrowser()
-                let context = await browser.newContext()
-                page = await context.newPage()
-
-                page.on('dialog', async (dialog) => {
-                    await dialog.accept()
+            //截圖後當場語意斷言與畫面不變式皆於比對標準圖之前 (pixel baseline 為補強層)
+            for (let c of cases.filter((x) => x.group === 'main')) {
+                it(c.title, async function() {
+                    await runCase('compare', lang, c, { onKnownDefect: () => this.skip() })
                 })
-            })
-
-            afterEach(async function() {
-                if (browser) {
-                    await browser.close()
-                    browser = null
-                }
-                await deleteAllRegisterTestUsers()
-            })
-
-            it('E2E-001-form-initial: 進入 register 模式，表單空白', async function() {
-                let buf = await captureFormInitial(page, lang)
-                await assertSpecForCase(page, lang, 'E2E-001-form-initial')
-                let baselinePath = bp(lang, 'E2E-001-form-initial')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-001-form-initial`)
-                await assertSbOverflows(page, `register-${lang}-001-form-initial`)
-            })
-
-            it('E2E-002-pw-too-short: 密碼長度不足 → inline 紅字', async function() {
-                let buf = await capturePwTooShort(page, lang)
-                await assertSpecForCase(page, lang, 'E2E-002-pw-too-short')
-                let baselinePath = bp(lang, 'E2E-002-pw-too-short')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-002-pw-too-short`)
-                await assertSbOverflows(page, `register-${lang}-002-pw-too-short`)
-            })
-
-            it('E2E-003-pw-mismatch: 密碼≠確認密碼 → inline 紅字', async function() {
-                let buf = await capturePwMismatch(page, lang)
-                await assertSpecForCase(page, lang, 'E2E-003-pw-mismatch')
-                let baselinePath = bp(lang, 'E2E-003-pw-mismatch')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-003-pw-mismatch`)
-                await assertSbOverflows(page, `register-${lang}-003-pw-mismatch`)
-            })
-
-            it('E2E-004-pw-multi-errors: 密碼觸發多項策略違反 → 多條紅字', async function() {
-                let buf = await capturePwMultiErrors(page, lang)
-                await assertSpecForCase(page, lang, 'E2E-004-pw-multi-errors')
-                let baselinePath = bp(lang, 'E2E-004-pw-multi-errors')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-004-pw-multi-errors`)
-                await assertSbOverflows(page, `register-${lang}-004-pw-multi-errors`)
-            })
-
-            it('E2E-005-success: 註冊成功 → form 清空回 login mode', async function() {
-                await deleteUserByAccount(`qauser-${lang}`)
-                let buf = await captureSuccess(page, lang)
-                await assertSpecForCase(page, lang, 'E2E-005-success')
-                let baselinePath = bp(lang, 'E2E-005-success')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-005-success`)
-                let okText = lang === 'eng' ? 'OK' : '確認'
-                await page.locator(`text="${okText}"`).first().click().catch(() => {})
-                await page.waitForTimeout(500)
-            })
-
-            it('E2E-006-verify-success: 驗證連結 token 正確 → server-rendered 成功頁', async function() {
-                let buf = await captureVerifyResult(page, lang, verifyTokens.success[lang])
-                await assertSpecForCase(page, lang, 'E2E-006-verify-success')
-                let baselinePath = bp(lang, 'E2E-006-verify-success')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-006-verify-success`)
-            })
-
-            it('E2E-007-verify-invalid: 驗證連結 token 無效 → server-rendered 失敗頁', async function() {
-                let buf = await captureVerifyResult(page, lang, 'fake-token-not-in-db')
-                await assertSpecForCase(page, lang, 'E2E-007-verify-invalid')
-                let baselinePath = bp(lang, 'E2E-007-verify-invalid')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-007-verify-invalid`)
-            })
-
-            it('E2E-008-verify-already: 驗證連結 token 已驗證 → server-rendered 已驗證頁', async function() {
-                let buf = await captureVerifyResult(page, lang, verifyTokens.already[lang])
-                await assertSpecForCase(page, lang, 'E2E-008-verify-already')
-                let baselinePath = bp(lang, 'E2E-008-verify-already')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-008-verify-already`)
-            })
-
-            it('E2E-009-back-to-login: 點 Back to login link → input 從 5 回到 2 (登入頁)', async function() {
-                let buf = await captureBackToLogin(page, lang)
-                await assertSpecForCase(page, lang, 'E2E-009-back-to-login')
-                let baselinePath = bp(lang, 'E2E-009-back-to-login')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-009-back-to-login`)
-                //驗證 input 數 = 2 (代表確實回到 login mode)
-                let inpCount = await page.locator('input').count()
-                assert.strict.equal(inpCount, 2, `Back to login 後應有 2 個 input, 實際 ${inpCount}`)
-            })
-
-            it('E2E-010-account-empty: register 缺帳號 → Submit 灰態無法觸發', async function() {
-                let buf = await captureFieldEmpty(page, lang, 'account')
-                await assertSpecForCase(page, lang, 'E2E-010-account-empty')
-                let baselinePath = bp(lang, 'E2E-010-account-empty')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-010-account-empty`)
-                //驗證 register form 仍有 5 input (未送出, viewMode 仍為 register)
-                let inpCount = await page.locator('input').count()
-                assert.strict.equal(inpCount, 5, `account 空 + Submit 灰態, form 仍應 5 input, 實際 ${inpCount}`)
-            })
-
-            it('E2E-011-password-empty: register 缺密碼 → Submit 灰態無法觸發', async function() {
-                let buf = await captureFieldEmpty(page, lang, 'password')
-                await assertSpecForCase(page, lang, 'E2E-011-password-empty')
-                let baselinePath = bp(lang, 'E2E-011-password-empty')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-011-password-empty`)
-                let inpCount = await page.locator('input').count()
-                assert.strict.equal(inpCount, 5, `password 空 + Submit 灰態, form 仍應 5 input, 實際 ${inpCount}`)
-            })
-
-            it('E2E-012-email-empty: register 缺 email → Submit 灰態無法觸發', async function() {
-                let buf = await captureFieldEmpty(page, lang, 'email')
-                await assertSpecForCase(page, lang, 'E2E-012-email-empty')
-                let baselinePath = bp(lang, 'E2E-012-email-empty')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-012-email-empty`)
-                let inpCount = await page.locator('input').count()
-                assert.strict.equal(inpCount, 5, `email 空 + Submit 灰態, form 仍應 5 input, 實際 ${inpCount}`)
-            })
-
-            it('E2E-013-name-empty: register 缺姓名 → Submit 灰態無法觸發', async function() {
-                let buf = await captureFieldEmpty(page, lang, 'name')
-                await assertSpecForCase(page, lang, 'E2E-013-name-empty')
-                let baselinePath = bp(lang, 'E2E-013-name-empty')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-013-name-empty`)
-                let inpCount = await page.locator('input').count()
-                assert.strict.equal(inpCount, 5, `name 空 + Submit 灰態, form 仍應 5 input, 實際 ${inpCount}`)
-            })
-
-            it('E2E-014-email-format-invalid: email 格式不合 → 後端 reject → inline regError 紅字', async function() {
-                let buf = await captureRegBackendError(page, lang, {
-                    account: `qareg-bad-email-${lang}`,
-                    password: 'Pw@RegFill123',
-                    confirmPassword: 'Pw@RegFill123',
-                    name: 'Reg Filler',
-                    email: 'not-an-email-format',
-                }, 'E2E-014-email-format-invalid')
-                //語意: inline regError div 含 userRegistrationEmailFormatInvalid 文字
-                await assertSpecForCase(page, lang, 'E2E-014-email-format-invalid')
-                let regErr = await getRegErrorText(page)
-                let expected = expectedSpecText['E2E-014-email-format-invalid'][lang].value
-                assert.strict.notEqual(regErr, null, `應出現 inline regError 紅字 div, 實際找不到`)
-                assert.strict.equal(regErr.includes(expected), true, `regError 應含 "${expected}", 實際 "${regErr}"`)
-                //viewMode 維持 register (5 inputs, 未送出成功)
-                let inpCount = await page.locator('input').count()
-                assert.strict.equal(inpCount, 5, `後端 reject 後 form 仍應為 register mode (5 input), 實際 ${inpCount}`)
-                //pixel baseline
-                let baselinePath = bp(lang, 'E2E-014-email-format-invalid')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-E2E-014-email-format-invalid`)
-            })
-
-            it('E2E-015-account-duplicate: 帳號已被註冊 → 後端 reject → inline regError 紅字', async function() {
-                await insertExistUser(`jb-oldusr-${lang}`, `jb-oldusr-${lang}@test.com`)
-                let buf = await captureRegBackendError(page, lang, {
-                    account: `jb-oldusr-${lang}`,  //撞 account
-                    password: 'Cd@9876bklm',
-                    confirmPassword: 'Cd@9876bklm',
-                    name: 'Reg Filler',
-                    email: `jb-fresh-${lang}@test.com`,
-                }, 'E2E-015-account-duplicate')
-                await assertSpecForCase(page, lang, 'E2E-015-account-duplicate')
-                let regErr = await getRegErrorText(page)
-                let expected = expectedSpecText['E2E-015-account-duplicate'][lang].value
-                assert.strict.notEqual(regErr, null, `應出現 inline regError 紅字 div, 實際找不到`)
-                assert.strict.equal(regErr.includes(expected), true, `regError 應含 "${expected}", 實際 "${regErr}"`)
-                let inpCount = await page.locator('input').count()
-                assert.strict.equal(inpCount, 5, `後端 reject 後 form 仍應為 register mode (5 input), 實際 ${inpCount}`)
-                let baselinePath = bp(lang, 'E2E-015-account-duplicate')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-E2E-015-account-duplicate`)
-            })
-
-            it('E2E-016-email-duplicate: email 已被註冊 → 後端 reject → inline regError 紅字', async function() {
-                await insertExistUser(`jb-mailusr-${lang}`, `jb-mailusr-${lang}@test.com`)
-                let buf = await captureRegBackendError(page, lang, {
-                    account: `jb-newusr-${lang}`,
-                    password: 'Cd@9876bklm',
-                    confirmPassword: 'Cd@9876bklm',
-                    name: 'Reg Filler',
-                    email: `jb-mailusr-${lang}@test.com`,  //撞 email
-                }, 'E2E-016-email-duplicate')
-                await assertSpecForCase(page, lang, 'E2E-016-email-duplicate')
-                let regErr = await getRegErrorText(page)
-                let expected = expectedSpecText['E2E-016-email-duplicate'][lang].value
-                assert.strict.notEqual(regErr, null, `應出現 inline regError 紅字 div, 實際找不到`)
-                assert.strict.equal(regErr.includes(expected), true, `regError 應含 "${expected}", 實際 "${regErr}"`)
-                let inpCount = await page.locator('input').count()
-                assert.strict.equal(inpCount, 5, `後端 reject 後 form 仍應為 register mode (5 input), 實際 ${inpCount}`)
-                let baselinePath = bp(lang, 'E2E-016-email-duplicate')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-E2E-016-email-duplicate`)
-            })
-
-            it('E2E-020-resend-email-mismatch: 未驗證 login → resend UI → 錯 email → resendError inline 紅字', async function() {
-                let buf = await captureResendEmailMismatch(page, lang)
-                await assertSpecForCase(page, lang, 'E2E-020-resend-email-mismatch')
-                let baselinePath = bp(lang, 'E2E-020-resend-email-mismatch')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-020-resend-email-mismatch`)
-            })
-
-            it('E2E-021-resend-smtp-fail: 未驗證 login → resend UI → 相符 email → 後端走到寄信 SMTP 失敗 → resendError inline 紅字', async function() {
-                //act: 真實 UI — 登入未驗證帳號 → 點重寄 link → 填「相符」email → 點寄送按鈕。
-                //此路徑會讓後端 resendVerifyEmail 通過 email 一致性 + 未驗證檢查, 實際呼叫 srEmail.send。
-                //確定性 SMTP 失敗 (不依賴 .env / 真實網路) 由 captureResendSmtpFail 內部負責:
-                //它在 resend 前把 backend SMTP 指向 connection-refused 位址 (127.0.0.1:1) → srEmail.send 瞬間
-                //ECONNREFUSED → 後端 reject('userRegistrationResendFailed'), 並在 finally 還原預設 backend。
-                //此 restart/還原收斂在 helper 內 (mocha 與 --baseline 兩路徑共用同一份, 不分處維護)。
-                let buf = await captureResendSmtpFail(page, lang)
-                //語意: inline resendError 含 userRegistrationResendFailed 文字
-                //(此 key 唯有後端走到 srEmail.send 並寄信失敗才會產生 → 證明 resend 寄信路徑被觸發)
-                await assertSpecForCase(page, lang, 'E2E-021-resend-smtp-fail')
-                //視覺: 獨立 baseline (顯示訊息與 E2E-020 不同, 不共用)
-                let baselinePath = bp(lang, 'E2E-021-resend-smtp-fail')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-021-resend-smtp-fail`)
-            })
+            }
 
         })
 
@@ -1186,50 +1111,25 @@ else {
     describe('Register E2E — E2E-017 系統不允許自助註冊 (allowUserRegistration=false)', function() {
         this.timeout(120000)
 
-        let browser017
-        let page017
-
         before(async function() {
             this.timeout(60000)
             await startServersOnce()
-            await restartBackend(genTempSettings({ allowUserRegistration: false }))
+            await startNoRegBackend()
         })
 
         after(async function() {
             this.timeout(60000)
             //還原預設 backend, 即使前面 it 失敗也要還原 (after 永遠執行)
-            await restartBackend('./settings.json')
+            await restoreDefaultBackend()
         })
 
-        afterEach(async function() {
-            if (browser017) {
-                await browser017.close()
-                browser017 = null
-            }
-        })
-
+        //每語系一案: fresh browser (runCase), 不重置 DB (與產製端同)
         for (let lang of langs) {
-            it(`E2E-017-registration-not-allowed [${lang}]: 不允許自助註冊 → 登入頁不顯示 Register link`, async function() {
-                browser017 = await launchBrowser()
-                let context = await browser017.newContext()
-                page017 = await context.newPage()
-                page017.on('dialog', async (dialog) => { await dialog.accept() })
-
-                let buf = await captureRegistrationNotAllowed(page017, lang)
-
-                //語意: Register / 申請帳號 link 不存在 (使用者無從進入 register mode)
-                let linkText = kpLangText[lang].registerLink
-                let nLink = await countRegisterLink(page017, linkText)
-                assert.strict.equal(nLink, 0, `不允許註冊時, Register link "${linkText}" 應不存在, 實際出現 ${nLink} 個`)
-                await assertSpecForCase(page017, lang, 'E2E-017-registration-not-allowed')
-                //仍是純登入頁 (2 inputs, 無從進入 register mode)
-                let inpCount = await page017.locator('input').count()
-                assert.strict.equal(inpCount, 2, `登入頁應為 2 input, 實際 ${inpCount}`)
-
-                //pixel baseline
-                let baselinePath = bp(lang, 'E2E-017-registration-not-allowed')
-                assertBaselineMatch(buf, baselinePath, `register-${lang}-E2E-017-registration-not-allowed`)
-            })
+            for (let c of cases.filter((x) => x.group === 'noreg')) {
+                it(c.title(lang), async function() {
+                    await runCase('compare', lang, c, { onKnownDefect: () => this.skip() })
+                })
+            }
         }
 
     })

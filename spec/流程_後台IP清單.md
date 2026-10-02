@@ -16,7 +16,7 @@
     - 操作：開乾淨登入頁 → 輸入 admin 帳號密碼 → 點「Log in」/「登入」→ 轉址後台 → 點側欄「Ips list」/「IP清單」→ 確認進入編輯模式。
     - 驗證（等 ag-grid 載入穩定後）：
       1. 語意：表格可見 seed 之 IP 列（含其一之 IP 字串）。
-      2. 視覺：與 baseline `test/pics/ips/ips-{eng,cht}-E2E-001-list-loaded.png` 視覺一致（pixelmatch 容差）。
+      2. 視覺：框住表格之標頭與各 IP 列，與 baseline `test/pics/ips/ips-{eng,cht}-E2E-001-list-loaded.png` 視覺一致（pixelmatch 容差；2026-09-28 補框住對象，原框表格外框、列下方空白一併框入，依技能 §7.2 表格列改框內容）。
     - 雙語：eng / cht 各一輪。
     - 清理：移除本檔特化 admin user / token / 全部 IP 記錄，保留 base seed。
 
@@ -117,3 +117,12 @@
 - **粒度**：操作結果（成功 / 失敗）一律 `showCheckYes` 持久 modal（須確認讀過、可做 e2e pixel + 語意斷言）；非預期例外才用 `$alert` toast。
 - **邊界**：`isError` 恆為 `''`，前端驗證攔截分支為死碼；無「手動新增」列。
 - **契約**：Save 前開 loading、`finally` 一處關 loading；每個 `await showCheckYes(...)` 前先關 loading（modal 阻斷，避免 loading 疊著）。
+- **送出入口與連按**（ADR-074）：「儲存」鈕（WButtonCircle，`:promiseUnlock="true"`）之按鈕鎖交給 `runSubmit('saveIps')`，於請求結束時釋放；流程自觸發至結果訊息框關閉，期間再觸發即略過。後端以「updateIpsList:操作者 id」占位，同一操作者處理中再送出回 `saveInProgress`、不寫入。
+- **載入狀態**（ADR-076）：清單載入中顯示等待訊息；載入失敗顯示「取得數據失敗，請稍後再試」（`getDataError`），不顯示空表格。
+
+## 已知落差
+
+每條帶分類標籤（缺陷（待修）／設計事實（記錄備查）／待裁示（業主決定）／已修復（附修復紀錄））；修復後不刪、改標已修復。
+
+- **已修復（附修復紀錄）** 2026-09-29（ADR-076）：載入 IP 清單失敗時畫面只剩空表格（「No Rows To Show」）而無任何訊息，載入中亦先顯示空表格——與金鑰清單同一成因與修法，見 `spec/流程_後台金鑰清單.md` 之同日條目（真瀏覽器驗證修正前後）。
+- **已修復（附修復紀錄）** 2026-09-29 發現、2026-09-30 修復（上游 w-component-vue）：按「儲存」後出現失敗訊息框時，儲存鈕之提示框殘留並蓋住表格標頭、移開游標亦不消失（成因見 `spec/流程_後台新增使用者.md` 之同日條目）。當時測試處置：`probeStuckTooltip` 偵測徵狀即拋 knownDefect，E2E-004 兩語系 pending。**修復紀錄**：業主依轉交之建議修正並發布 w-component-vue 2.5.24（建議檔已由業主刪除）——`WButtonCircle.vue` 圖示層與停用遮罩不接收指標事件；本專案升為 `^2.5.24`（ADR-077）。2026-09-30 E2E-004 兩語系恢復比對並通過，與既有標準圖相符、未重產（本頁儲存鈕原已設焦點色，不受同日 R-UI-03 修正影響）。偵測改為回歸守門：任何提示框殘留直接判失敗（`CLAUDE_rulebook.md` R-E2E-TIP）。

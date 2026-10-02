@@ -5,7 +5,9 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword, { verifyPassword } from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, launchBrowser, waitUntilExist, typeIntoNthInput } from './tools/e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, launchBrowser, waitUntilExist, typeIntoNthInput } from './tools/e2e-setup.mjs'
+//產製端與比對端同一案例管線 (規格詳 w-package-tools-e2e 之 README.md §2.1-2.2); 頁面文字走訪取自 w-package-tools-e2e (原比對端 it 內手寫 pageHasText / collectVisibleText, 內容相同)
+import { runBaselineCase, createBaselineGate, pageHasText, collectDomText, openCasePage, waitGridIdle, gridContentBox } from './tools/e2eLib.mjs'
 
 
 //
@@ -16,11 +18,16 @@ import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertB
 // 使用方式：
 //   1. 先產生標準圖：node test/e2e-adduser.test.mjs --baseline
 //   2. 跑測試比對：npx mocha test/e2e-adduser.test.mjs --timeout 240000
-//   --names <eng-002-account-empty,...> 進行手術式 baseline 重產
+//   手術式重產 (截圖前篩選, 規格詳 w-package-tools-e2e 之 README.md §2.2): --names <項,...> 每項可帶語系前綴 (eng-/cht-), 不帶則兩語系皆產;
+//     階段圖鍵 (如 eng-E2E-002-2-account-empty) 只寫該張, 案例鍵或編號前綴 (如 E2E-002) 寫該案全部階段, 不符任何鍵即報錯;
+//     --langs; --write-mode missing|changed; env E2E_BASELINE_OUT_DIR=<dir> 寫到暫存目錄 (等價驗證用)
+//   產製端與比對端呼叫同一案例管線 (runBaselineCase): 每案 DB 重置 + fresh browser → 復原 admin token → 流程 (E2E-001 於成功 modal
+//     顯示中斷言其文字) → 流程結束畫面之語意斷言 (semantic) → DB 不變式 (verify) → 寫檔 / 比對
+//   不產標準圖之 it (copy-clone-then-save、new-user-can-login) 只在 mocha 執行, 各自 fresh browser + DB 重置.
 //
 // 標準圖存放：test/pics/adduser/adduser-{lang}-{number}-{name}.png
 //
-// 涵蓋 14 個 UI distinct 狀態 (× 2 lang = 28 baselines)。所有 capture 透過真實 UI
+// 涵蓋 15 個案例 (每語系 31 張圖鍵 × 2 lang = 62 baselines)。所有 capture 透過真實 UI
 // 互動推進: 鍵盤滑鼠輸入 / WText input fill / ag-grid cell dblclick + Enter /
 // 按鈕 SVG path 點擊。不使用 vm.method() / page.evaluate state mutation 抄捷徑。
 //
@@ -31,28 +38,6 @@ let langs = ['eng', 'cht']
 
 let webKey = 'ksso'
 let lsKey = `${webKey}:userToken`
-
-
-let baselineNamesFilter = null
-{
-    let i = process.argv.indexOf('--names')
-    if (i >= 0 && process.argv[i + 1]) {
-        baselineNamesFilter = new Set(process.argv[i + 1].split(','))
-    }
-}
-function writeBaseline(lang, name, buf) {
-    if (baselineNamesFilter && !baselineNamesFilter.has(`${lang}-${name}`)) {
-        console.log(`  [skip] ${lang}-${name}`)
-        return
-    }
-    fs.writeFileSync(bp(lang, name), buf)
-}
-
-
-//是否需要產生此 case 的標準圖. --names 指定時只有指定 case 回 true → 連「截圖」都跳過 (非僅跳寫檔).
-function shouldGen(lang, name) {
-    return !baselineNamesFilter || baselineNamesFilter.has(`${lang}-${name}`)
-}
 
 
 function bp(lang, name) {
@@ -137,6 +122,33 @@ let expectedModalText = {
 let expectedSuccessModalText = {
     eng: 'Save users successfully',
     cht: '儲存使用者數據成功',
+}
+
+
+//流程結束畫面之語意斷言 (主) — 從 spec 衍生的預期文字必須出現在頁面 DOM 上.
+//原只在比對端 it 內 (比對標準圖之前) 執行, 今為 runCase 之 semantic 掛鉤, 兩端皆於流程結束後、寫檔 / 比對之前執行:
+//  E2E-001: 表內含新帳號 (截圖函式末尾以 woItems 刪 DB 列但未重拉清單, 畫面仍顯示)
+//  其餘: expectedModalText (錯誤 modal 仍顯示: 各截圖函式截完 modal 即返回, 不關閉)
+async function assertSemanticForCase(page, lang, name) {
+    if (name === 'E2E-001-after-save-with-new-user') {
+        let expectedAccount = `au-newuser-${lang}-baseline`
+        let found = await pageHasText(page, expectedAccount)
+        if (!found) {
+            let dump = await collectDomText(page)
+            assert.fail(`預期 Users list 含新帳號 "${expectedAccount}", 實際可見文字: ${dump}`)
+        }
+    }
+    else if (expectedModalText[name] && expectedModalText[name][lang]) {
+        let expected = expectedModalText[name][lang]
+        let found = await pageHasText(page, expected)
+        if (!found) {
+            let dump = await collectDomText(page)
+            assert.fail(`預期 modal 含 "${expected}" (來自 spec), 實際可見文字: ${dump}`)
+        }
+    }
+    else {
+        throw new Error(`assertSemanticForCase: 案例 "${name}" / 語系 "${lang}" 未定義語意斷言`)
+    }
 }
 
 
@@ -385,11 +397,12 @@ async function loginAsAdminAndOpenUsersList(page, lang) {
     await page.waitForTimeout(10000)
 
     //偵測: 等 backstage Statistics 文字 (login 成功 + redirect 完成)
-    await waitUntilExist(page, `backstage ${t.statistics} 文字`, (s) => document.body.innerText.includes(s), { arg: t.statistics })
+    await waitUntilExist(page, `backstage ${t.statistics} 文字`, (s) => document.body.innerText.includes(s), { arg: t.statistics, timeout: 60000 })
 
-    await page.locator(`text="${t.usersList}"`).first().waitFor({ state: 'visible', timeout: 15000 })
+    await page.locator(`text="${t.usersList}"`).first().waitFor({ state: 'visible', timeout: 60000 })
     await page.locator(`text="${t.usersList}"`).first().click()
-    await page.waitForTimeout(2500)
+    //等清單頁之「編輯模式」勾選列渲染後再讀其狀態(取代固定 2.5 秒: 未渲染時下方讀到 null 即略過開啟, 2026-09-28; 以下偵測上限同日放寬至 60 秒)
+    await page.locator(`text="${t.editMode}"`).first().waitFor({ state: 'visible', timeout: 60000 })
 
     //確認 Edit mode 是 on; 否則點一下
     let editChecked = await page.evaluate((label) => {
@@ -404,22 +417,8 @@ async function loginAsAdminAndOpenUsersList(page, lang) {
     }
     //等 ag-grid 初始載入後 cell 完全 hydrate (marathon 模式累積 backend / vue-cli 暖記憶體會讓
     //getUsersList 回 / Vue mount / ag-grid render 三階段時序變動, 不等到 idle 直接 click + 會撞)
-    await page.waitForFunction(async () => {
-        let snap = () => {
-            let cells = document.querySelectorAll('.ag-cell')
-            return JSON.stringify({
-                count: cells.length,
-                first10: Array.from(cells).slice(0, 10).map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 20)),
-            })
-        }
-        let s1 = snap()
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s2 = snap()
-        if (s1 !== s2) return false
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s3 = snap()
-        return s2 === s3
-    }, null, { timeout: 15000 })
+    //waitGridIdle: 內容＋幾何簽章連續 1s 不變; 登入後清單必有列 (base seed + admin / existing), 故 minCells:1 不把尚未出現之表格當靜止
+    await waitGridIdle(page, { minCells: 1, timeout: 60000 })
     await page.waitForTimeout(1000)
 }
 
@@ -561,7 +560,7 @@ async function waitCheckYes(page, lang) {
     //  2. ag-grid 內部水平 scroll=0 — toggle isAdmin / isActive 等右側欄會將 grid 捲到右邊,
     //     截到 timeCreate / timeUpdate 等每次值都不同的動態欄位 → pixel diff
     //  3. 鼠標移到角落 — 清 hover state / tooltip 殘留
-    //  4. 等 ag-grid 真 idle — 連續兩次 raf 之間 cell 數量 + 第一列 cell HTML hash 完全一致才算穩定
+    //  4. 等 ag-grid 真 idle — waitGridIdle: password 標頭已出現、水平捲動量 0、格數＋首列內容＋容器／標頭／首列幾何＋捲動量連續 1s 不變
     //     (固定 timeout 對 CPU 忙時不夠, idle 偵測對「壞運氣」case 也足夠)
     await page.evaluate(() => {
         window.scrollTo(0, 0)
@@ -569,30 +568,8 @@ async function waitCheckYes(page, lang) {
         if (body) body.scrollLeft = 0
     })
     await page.mouse.move(0, 0)
-    await page.waitForFunction(async () => {
-        let body = document.querySelector('.ag-center-cols-viewport')
-        if (!body) return true //無 grid (login etc), 直接 ok
-        if (body.scrollLeft !== 0) return false
-        //password header 必須出現
-        if (!document.querySelector('.ag-header-cell[col-id="password"]')) return false
-        //連續三次 raf 之間 cell 數量 + row[0] cell HTML 全等 → 認定 idle
-        //(marathon 模式累積 browser 狀態, 兩個 raf 偶有差異; 三個更穩定)
-        let snap = () => {
-            let cells = document.querySelectorAll('.ag-cell')
-            let row0Cells = Array.from(document.querySelectorAll('.ag-row[row-index="0"] .ag-cell'))
-            return JSON.stringify({
-                count: cells.length,
-                row0: row0Cells.map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
-            })
-        }
-        let s1 = snap()
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s2 = snap()
-        if (s1 !== s2) return false
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s3 = snap()
-        return s2 === s3
-    }, null, { timeout: 15000 })
+    //不給 minCells: 呼叫處含 E2E-009 (全選 trash 後儲存) 之空表格, 空表格亦須可判定靜止
+    await waitGridIdle(page, { requireSelector: '.ag-header-cell[col-id="password"]', requireScrollLeftZero: true, timeout: 15000 })
     await page.waitForTimeout(1500)
 }
 
@@ -629,27 +606,13 @@ async function captureSuccessAfterSave(page, lang) {
     await page.locator(`text="${t.ok}"`).first().click() //dismiss success modal
     //等表格刷新後 (重 fetch getUsersList) 看到新帳號
     await page.locator(`text="${newAccount}"`).first().waitFor({ state: 'visible', timeout: 15000 })
-    //等 ag-grid getUsersList 後重畫穩定 (連續三 raf cell 不變), 否則 marathon 模式偶有未繪完截圖
+    //等 ag-grid getUsersList 後重畫穩定 (waitGridIdle: 內容＋幾何簽章連續 1s 不變), 否則 marathon 模式偶有未繪完截圖;
+    //前一步已見新帳號, 表格必有列, 故 minCells:1
     await page.evaluate(() => {
         let body = document.querySelector('.ag-center-cols-viewport')
         if (body) body.scrollLeft = 0
     })
-    await page.waitForFunction(async () => {
-        let snap = () => {
-            let cells = document.querySelectorAll('.ag-cell')
-            return JSON.stringify({
-                count: cells.length,
-                first10: Array.from(cells).slice(0, 10).map(c => (c.getAttribute('col-id') || '') + ':' + (c.innerText || '').slice(0, 30)),
-            })
-        }
-        let s1 = snap()
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s2 = snap()
-        if (s1 !== s2) return false
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-        let s3 = snap()
-        return s2 === s3
-    }, null, { timeout: 15000 })
+    await waitGridIdle(page, { minCells: 1, timeout: 15000 })
     await page.mouse.move(0, 0)
     await page.waitForTimeout(1500)
 
@@ -868,15 +831,16 @@ async function captureRowsEmpty(page, lang) {
     await page.mouse.click(cbBox.x, cbBox.y)
     await page.waitForTimeout(500)
     await page.mouse.move(0, 0)
-    //[多階段 stage1] 全選態: header + 所有列 checkbox 已勾選 (列還在), 框整表呈現「全選了哪些列」
-    let bufSelected = await captureStableWithBox(page, '.ag-theme-balham')
+    //[多階段 stage1] 全選態: header + 所有列 checkbox 已勾選 (列還在), 框表格之標頭與各列呈現「全選了哪些列」
+    //(gridContentBox: 標頭＋可見資料列; 2026-09-28 改: 原框整個表格外框, 列下方空白一併框入, 技能 §7.2 表格列)
+    let bufSelected = await captureStableWithBox(page, gridContentBox('.ag-theme-balham'))
     //點 trash 刪光
     let trashBtn = await locateMdiButton(page, mdiTrashCanOutline)
     await page.mouse.click(trashBtn.x, trashBtn.y)
     await page.waitForTimeout(800)
     await page.mouse.move(0, 0)
-    //[多階段 stage2] trash 後 save 前的「空 ag-grid」(整表已空)
-    let bufEmpty = await captureStableWithBox(page, '.ag-theme-balham')
+    //[多階段 stage2] trash 後 save 前的「空 ag-grid」(整表已空; 框標頭與「無資料」訊息)
+    let bufEmpty = await captureStableWithBox(page, gridContentBox('.ag-theme-balham'))
     await clickSave(page)
     await waitCheckYes(page, lang)
     //[多階段 stage3] 觀看區 = CheckYes modal（整表空的前端攔截訊息）
@@ -1021,68 +985,151 @@ async function captureTokenExpiredBackend(page, lang) {
 
 
 // ===================================================================
-// 產生標準圖
+// 案例宣告與案例管線 (產製端與比對端共用)
 // ===================================================================
 
-async function generateBaselineForLang(lang) {
-    console.log(`=== 產生標準圖（${lang}）===`)
+//順序與 mocha it 相同 (產製順序 ≡ 比對順序); it 標題即案例鍵 (--grep 依之); stages 為該案產出之圖鍵 (與寫檔名、比對名一致; 產出與宣告不符即報錯).
+//E2E-013 / 014 重用 003 / 007 之截圖流程, 圖鍵改名歸屬 013 / 014 (各有自己的標準圖檔, 非只比對).
+let cases = [
+    {
+        name: 'E2E-001-after-save-with-new-user',
+        run: captureSuccessAfterSave,
+        stages: ['E2E-001-1-new-blank-row', 'E2E-001-2-save-success-modal', 'E2E-001-3-after-save-with-new-user'],
+    },
+    {
+        name: 'E2E-002-account-empty',
+        run: captureAccountEmpty,
+        stages: ['E2E-002-1-account-empty-cell', 'E2E-002-2-account-empty'],
+    },
+    {
+        name: 'E2E-003-account-duplicate',
+        run: captureAccountDuplicate,
+        stages: ['E2E-003-1-duplicate-account-cells', 'E2E-003-2-account-duplicate'],
+    },
+    {
+        name: 'E2E-004-password-empty',
+        run: capturePasswordEmpty,
+        stages: ['E2E-004-1-password-empty-cell', 'E2E-004-2-password-empty'],
+    },
+    {
+        name: 'E2E-005-email-empty',
+        run: captureEmailEmpty,
+        stages: ['E2E-005-1-email-empty-cell', 'E2E-005-2-email-empty'],
+    },
+    {
+        name: 'E2E-006-email-format',
+        run: captureEmailFormatBad,
+        stages: ['E2E-006-1-email-format-cell', 'E2E-006-2-email-format'],
+    },
+    {
+        name: 'E2E-007-email-duplicate',
+        run: captureEmailDuplicate,
+        stages: ['E2E-007-1-duplicate-email-cells', 'E2E-007-2-email-duplicate'],
+    },
+    {
+        name: 'E2E-008-redir-empty',
+        run: captureRedirEmpty,
+        stages: ['E2E-008-1-redir-empty-cell', 'E2E-008-2-redir-empty'],
+    },
+    {
+        name: 'E2E-009-rows-empty',
+        run: captureRowsEmpty,
+        stages: ['E2E-009-1-all-rows-selected', 'E2E-009-2-empty-grid', 'E2E-009-3-rows-empty'],
+    },
+    {
+        name: 'E2E-010-cannot-demote-self',
+        run: captureCannotDemoteSelf,
+        stages: ['E2E-010-1-isadmin-uncheck-cell', 'E2E-010-2-cannot-demote-self'],
+    },
+    {
+        name: 'E2E-011-cannot-disable-self',
+        run: captureCannotDisableSelf,
+        stages: ['E2E-011-1-isactive-uncheck-cell', 'E2E-011-2-cannot-disable-self'],
+    },
+    {
+        name: 'E2E-012-password-policy-backend',
+        run: capturePasswordPolicyBackend,
+        stages: ['E2E-012-1-password-policy-cell', 'E2E-012-2-password-policy-backend'],
+    },
+    {
+        name: 'E2E-013-account-conflict-backend',
+        run: captureAccountConflictBackend,
+        stages: ['E2E-013-1-duplicate-account-cells', 'E2E-013-2-account-conflict-backend'],
+    },
+    {
+        name: 'E2E-014-email-conflict-backend',
+        run: captureEmailConflictBackend,
+        stages: ['E2E-014-1-duplicate-email-cells', 'E2E-014-2-email-conflict-backend'],
+    },
+    {
+        name: 'E2E-015-token-expired-backend',
+        run: captureTokenExpiredBackend,
+        stages: ['E2E-015-token-expired-backend'],
+        verify: async () => {
+            //token 過期 → 後端 reject → 新使用者不應被建立 (DB 副作用驗證; 原只在比對端 it 內)
+            let created = await woItems.users.select({ account: 'au-newuser-015' }).catch(() => [])
+            assert.strict.equal(created.length, 0, `token 過期 reject 後新使用者 au-newuser-015 不應被建立, 實際 ${created.length} 筆`)
+        },
+    },
+]
 
-    let cases = [
-        ['E2E-001-after-save-with-new-user', captureSuccessAfterSave],
-        ['E2E-002-account-empty', captureAccountEmpty],
-        ['E2E-003-account-duplicate', captureAccountDuplicate],
-        ['E2E-004-password-empty', capturePasswordEmpty],
-        ['E2E-005-email-empty', captureEmailEmpty],
-        ['E2E-006-email-format', captureEmailFormatBad],
-        ['E2E-007-email-duplicate', captureEmailDuplicate],
-        ['E2E-008-redir-empty', captureRedirEmpty],
-        ['E2E-009-rows-empty', captureRowsEmpty],
-        ['E2E-010-cannot-demote-self', captureCannotDemoteSelf],
-        ['E2E-011-cannot-disable-self', captureCannotDisableSelf],
-        ['E2E-012-password-policy-backend', capturePasswordPolicyBackend],
-        ['E2E-013-account-conflict-backend', captureAccountConflictBackend],
-        ['E2E-014-email-conflict-backend', captureEmailConflictBackend],
-        ['E2E-015-token-expired-backend', captureTokenExpiredBackend],
-    ]
-
-    //per-case fresh browser + DB setup, 與 mocha test 端 beforeEach/afterEach 對稱.
-    //保證 marathon mode 與 single-case run 收斂到同一 stable state (無 cross-case browser
-    //state 累積). 詳全域 CLAUDE.md §6.3「截圖穩定性」.
-    for (let [name, fn] of cases) {
-        if (!shouldGen(lang, name)) continue
-        console.log(`  ${name}`)
-
-        await deleteTestUsersAndTokens()
-        await insertTestUsersAndTokens()
-
-        let browser = await launchBrowser()
-        let page = await browser.newPage()
-        page.on('dialog', async (dialog) => { await dialog.accept() })
-
-        let result = await fn(page, lang)
-        //多階段: fn 可回 Buffer (單張) 或 dict { baselineName: buf } (多張); 統一成 dict 寫檔
-        let stages = Buffer.isBuffer(result) ? { [name]: result } : result
-        for (let [bname, b] of Object.entries(stages)) {
-            fs.writeFileSync(bp(lang, bname), b)
-        }
-
-        await browser.close()
-        await deleteTestUsersAndTokens()
-    }
+//單一案例管線: per-case DB 重置 + fresh browser (新 context, 自動接受 dialog) → 復原 admin token → 流程 → 流程結束畫面之語意斷言 →
+//DB 不變式 → 寫檔 / 比對 → 關瀏覽器 → 清資料
+async function runCase(mode, lang, c, extra = {}) {
+    return await runBaselineCase({
+        mode,
+        lang,
+        name: c.name,
+        run: c.run,
+        stages: c.stages,
+        verify: c.verify || null,
+        launch: launchBrowser,
+        pathOf: bp,
+        labelOf: (lg, key) => `adduser-${lg}-${key}`,
+        match: assertBaselineMatch,
+        prepare: async () => {
+            await deleteTestUsersAndTokens()
+            await insertTestUsersAndTokens()
+        },
+        beforeRun: async () => {
+            //原只在比對端 it 開頭 (開頁後、流程前) 執行, 今兩端共跑 (順序同原比對端)
+            await resetAdminToken()
+        },
+        semantic: async (ctx) => {
+            await assertSemanticForCase(ctx.page, ctx.lang, c.name)
+        },
+        afterCase: async () => {
+            await deleteTestUsersAndTokens()
+        },
+        ...extra,
+    })
 }
 
 
+// ===================================================================
+// 產生標準圖
+// ===================================================================
+
 async function generateBaseline() {
     process.env.E2E_STRICT_CAPTURE = '1'
+    //截圖前篩選 (--names / --langs / --write-mode / E2E_BASELINE_OUT_DIR); 不符任何鍵即於此報錯
+    let gate = createBaselineGate({ langs, cases })
+    console.log(gate.describe())
     await startServersOnce()
 
     if (!fs.existsSync(baselineDir)) {
         fs.mkdirSync(baselineDir, { recursive: true })
     }
 
-    for (let lang of langs) {
-        await generateBaselineForLang(lang)
+    for (let lang of gate.langs) {
+        console.log(`=== 產生標準圖（${lang}）===`)
+        for (let c of gate.casesFor(lang)) {
+            console.log(`  ${c.name}`)
+            await runCase('regen', lang, c, { gate })
+        }
     }
+    //--names 之任一項未產出即報錯 (不靜默略過)
+    gate.finalize()
 
     await deleteTestUsersAndTokens()
 
@@ -1281,193 +1328,98 @@ else {
     })
 
 
-    // --- UI baseline 比對 (14 case × 2 lang = 28 baselines) ---
+    // --- UI baseline 比對 (15 case, 每語系 31 張圖鍵 × 2 lang = 62 baselines) ---
 
     for (let lang of langs) {
 
         describe(`AddUser E2E [${lang}] — UI baseline 比對`, function() {
             this.timeout(240000)
 
-            let browser
-            let page
-
-            //per-case 獨立: 每個 it 都 fresh browser + DB setup, 確保單 case --grep 也能跑.
+            //per-case 獨立 (fresh browser + DB 重置) 由 runCase 負責, 確保單 case --grep 也能跑.
             //(設計理由: 避免 marathon flake — 多 case 在同 browser 跑會累積 GPU/font/CSS state
             //導致 baseline 不確定. per-case 隔離雖 launch overhead 較高, 但換來 case 獨立可
             //除錯 + baseline 確定性.)
             beforeEach(async function() {
                 this.timeout(240000)
                 await startServersOnce()
-
-                await deleteTestUsersAndTokens()
-                await insertTestUsersAndTokens()
-
-                browser = await launchBrowser()
-                let context = await browser.newContext()
-                page = await context.newPage()
-
-                page.on('dialog', async (dialog) => {
-                    await dialog.accept()
-                })
             })
 
-            afterEach(async function() {
-                if (browser) {
-                    await browser.close()
-                    browser = null
-                }
-                await deleteTestUsersAndTokens()
-            })
-
-            let cases = [
-                ['E2E-001-after-save-with-new-user', captureSuccessAfterSave],
-                ['E2E-002-account-empty', captureAccountEmpty],
-                ['E2E-003-account-duplicate', captureAccountDuplicate],
-                ['E2E-004-password-empty', capturePasswordEmpty],
-                ['E2E-005-email-empty', captureEmailEmpty],
-                ['E2E-006-email-format', captureEmailFormatBad],
-                ['E2E-007-email-duplicate', captureEmailDuplicate],
-                ['E2E-008-redir-empty', captureRedirEmpty],
-                ['E2E-009-rows-empty', captureRowsEmpty],
-                ['E2E-010-cannot-demote-self', captureCannotDemoteSelf],
-                ['E2E-011-cannot-disable-self', captureCannotDisableSelf],
-                ['E2E-012-password-policy-backend', capturePasswordPolicyBackend],
-                ['E2E-013-account-conflict-backend', captureAccountConflictBackend],
-                ['E2E-014-email-conflict-backend', captureEmailConflictBackend],
-                ['E2E-015-token-expired-backend', captureTokenExpiredBackend],
-            ]
-
-            for (let [name, fn] of cases) {
-                it(`${name}`, async function() {
-                    await resetAdminToken()
-                    let result = await fn(page, lang)
-
-                    //語意斷言 (主) — 從 spec 衍生的預期文字必須出現在頁面 DOM 上
-                    let pageHasText = async (text) => {
-                        return await page.evaluate((t) => {
-                            let walk = (el) => {
-                                if (!el) return false
-                                if (el.nodeType === 3) return (el.nodeValue || '').includes(t)
-                                if (el.nodeType !== 1) return false
-                                let tag = el.tagName
-                                if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return false
-                                for (let c of el.childNodes) {
-                                    if (walk(c)) return true
-                                }
-                                return false
-                            }
-                            return walk(document.body)
-                        }, text)
-                    }
-
-                    let collectVisibleText = async () => {
-                        return await page.evaluate(() => {
-                            let parts = []
-                            let walk = (el) => {
-                                if (!el) return
-                                if (el.nodeType === 3) {
-                                    let t = (el.nodeValue || '').trim()
-                                    if (t) parts.push(t)
-                                    return
-                                }
-                                if (el.nodeType !== 1) return
-                                let tag = el.tagName
-                                if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return
-                                for (let c of el.childNodes) walk(c)
-                            }
-                            walk(document.body)
-                            return parts.join(' | ').slice(0, 2000)
-                        })
-                    }
-
-                    if (name === 'E2E-001-after-save-with-new-user') {
-                        let expectedAccount = `au-newuser-${lang}-baseline`
-                        let found = await pageHasText(expectedAccount)
-                        if (!found) {
-                            let dump = await collectVisibleText()
-                            assert.fail(`預期 Users list 含新帳號 "${expectedAccount}", 實際可見文字: ${dump}`)
-                        }
-                    }
-                    else if (expectedModalText[name] && expectedModalText[name][lang]) {
-                        let expected = expectedModalText[name][lang]
-                        let found = await pageHasText(expected)
-                        if (!found) {
-                            let dump = await collectVisibleText()
-                            assert.fail(`預期 modal 含 "${expected}" (來自 spec), 實際可見文字: ${dump}`)
-                        }
-                    }
-
-                    //E2E-015: token 過期 → 後端 reject → 新使用者不應被建立 (DB 副作用驗證)
-                    if (name === 'E2E-015-token-expired-backend') {
-                        let created = await woItems.users.select({ account: 'au-newuser-015' }).catch(() => [])
-                        assert.strict.equal(created.length, 0, `token 過期 reject 後新使用者 au-newuser-015 不應被建立, 實際 ${created.length} 筆`)
-                    }
-
-                    //像素斷言 (補強, 視覺回歸); 多階段 fn 回 dict { baselineName: buf } → 逐張比對
-                    //fail 時自動保留 capture + baseline 到 ./testPending (不覆蓋, 帶 timestamp) 供 diff
-                    let stages = Buffer.isBuffer(result) ? { [name]: result } : result
-                    for (let [bname, b] of Object.entries(stages)) {
-                        assertBaselineMatch(b, bp(lang, bname), `adduser-${lang}-${bname}`)
-                    }
+            //流程結束畫面之語意斷言 (semantic)、DB 不變式 (verify) 皆於比對標準圖之前 (pixel baseline 為補強層)
+            for (let c of cases) {
+                it(`${c.name}`, async function() {
+                    await runCase('compare', lang, c, { onKnownDefect: () => this.skip() })
                 })
             }
 
+            //不產標準圖之 it (只在 mocha 執行): 原由本 describe 之 beforeEach / afterEach 提供之 DB 重置 + fresh browser
+            //(新 context + page + 自動接受 dialog) 與收尾 (關瀏覽器 → 清資料), 改於本 it 內自理, 順序不變
             it(`new-user-can-login: 用 admin 設定的密碼登入新 user → 進 user view (非強制變更)`, async function() {
-                let loginText = lang === 'eng' ? 'Log in' : '登入'
-                let newAccount = `au-newuser-${lang}-login`
-                let rawPw = 'Pw@KLMN5678'
+                await deleteTestUsersAndTokens()
+                await insertTestUsersAndTokens()
+                let browser = await launchBrowser()
+                try {
+                    let page = await openCasePage(browser)
 
-                await woItems.users.select({ account: newAccount }).catch(() => []).then(async (us) => {
-                    for (let u of us) await woItems.users.del({ id: u.id }).catch(() => {})
-                })
+                    let loginText = lang === 'eng' ? 'Log in' : '登入'
+                    let newAccount = `au-newuser-${lang}-login`
+                    let rawPw = 'Pw@KLMN5678'
 
-                //per-case beforeEach 後 page 還是 about:blank, callFapi 需要 Vue app 載入, 故先導頁
-                await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
-                await page.waitForTimeout(2500)
+                    await woItems.users.select({ account: newAccount }).catch(() => []).then(async (us) => {
+                        for (let u of us) await woItems.users.del({ id: u.id }).catch(() => {})
+                    })
 
-                await resetAdminToken()
-                let allUsers = await woItems.users.select()
-                allUsers = allUsers.map((u) => { let c = { ...u }; delete c.password; return c })
-                allUsers.push(buildNewRowPlain(newAccount, rawPw, { email: `${newAccount}@test.com` }))
-                let r = await callFapi(page, 'updateUsersList', [userTokens[testUsers.admin.id], lang, allUsers])
-                assert.strict.equal(r.ok, true)
+                    //開頁後 page 還是 about:blank, callFapi 需要 Vue app 載入, 故先導頁
+                    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
+                    await page.waitForTimeout(2500)
 
-                await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
-                await page.evaluate(() => localStorage.clear())
-                await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
-                await page.waitForTimeout(2500)
+                    await resetAdminToken()
+                    let allUsers = await woItems.users.select()
+                    allUsers = allUsers.map((u) => { let c = { ...u }; delete c.password; return c })
+                    allUsers.push(buildNewRowPlain(newAccount, rawPw, { email: `${newAccount}@test.com` }))
+                    let r = await callFapi(page, 'updateUsersList', [userTokens[testUsers.admin.id], lang, allUsers])
+                    assert.strict.equal(r.ok, true)
 
-                if (lang === 'cht') {
-                    await page.locator('text=English').first().click()
-                    await page.waitForTimeout(400)
-                    await page.locator('text=中文').first().click()
-                    await page.waitForTimeout(600)
+                    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
+                    await page.evaluate(() => localStorage.clear())
+                    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
+                    await page.waitForTimeout(2500)
+
+                    if (lang === 'cht') {
+                        await page.locator('text=English').first().click()
+                        await page.waitForTimeout(400)
+                        await page.locator('text=中文').first().click()
+                        await page.waitForTimeout(600)
+                    }
+
+                    //偵測: 等 login 表單 input 元件出現
+                    await waitUntilExist(page, 'login form inputs (2 個)', () => document.querySelectorAll('input').length >= 2)
+
+                    await typeIntoNthInput(page, 0, newAccount)
+                    await typeIntoNthInput(page, 1, rawPw)
+
+                    await page.locator(`text="${loginText}"`).first().waitFor({ state: 'visible', timeout: 10000 })
+                    await page.locator(`text="${loginText}"`).first().click()
+
+                    //login → view=user 為跨頁 redirect, 較久. 一律先 fixed 5s 等 redirect 啟動.
+                    await page.waitForTimeout(5000)
+
+                    //偵測: 等 url 變為 view=user (login 成功 + redirect 完成)
+                    await waitUntilExist(page, 'url 含 view=user', () => location.href.includes('view=user'))
+
+                    let url = await page.evaluate(() => location.href)
+                    assert.strict.match(url, /view=user/)
+
+                    let pwCount = await page.locator('input[type="password"]').count()
+                    assert.strict.equal(pwCount, 0, `不該強制展開變更密碼表單`)
+
+                    await woItems.users.select({ account: newAccount }).catch(() => []).then(async (us) => {
+                        for (let u of us) await woItems.users.del({ id: u.id }).catch(() => {})
+                    })
                 }
-
-                //偵測: 等 login 表單 input 元件出現
-                await waitUntilExist(page, 'login form inputs (2 個)', () => document.querySelectorAll('input').length >= 2)
-
-                await typeIntoNthInput(page, 0, newAccount)
-                await typeIntoNthInput(page, 1, rawPw)
-
-                await page.locator(`text="${loginText}"`).first().waitFor({ state: 'visible', timeout: 10000 })
-                await page.locator(`text="${loginText}"`).first().click()
-
-                //login → view=user 為跨頁 redirect, 較久. 一律先 fixed 5s 等 redirect 啟動.
-                await page.waitForTimeout(5000)
-
-                //偵測: 等 url 變為 view=user (login 成功 + redirect 完成)
-                await waitUntilExist(page, 'url 含 view=user', () => location.href.includes('view=user'))
-
-                let url = await page.evaluate(() => location.href)
-                assert.strict.match(url, /view=user/)
-
-                let pwCount = await page.locator('input[type="password"]').count()
-                assert.strict.equal(pwCount, 0, `不該強制展開變更密碼表單`)
-
-                await woItems.users.select({ account: newAccount }).catch(() => []).then(async (us) => {
-                    for (let u of us) await woItems.users.del({ id: u.id }).catch(() => {})
-                })
+                finally {
+                    await browser.close().catch(() => {})
+                    await deleteTestUsersAndTokens()
+                }
             })
 
         })
