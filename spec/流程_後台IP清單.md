@@ -101,6 +101,7 @@
 |---|---|---|---|
 | 儲存成功 | `ipSaveIpsSuccess` | `showCheckYes` 持久 modal（System message） | 管理員須點 OK 確認讀過 |
 | 儲存失敗（後端 reject） | `ipSaveIpsFail`（後接錯誤字串） | `showCheckYes` 持久 modal | 同上 |
+| 儲存失敗（寫入資料庫失敗，部分變更可能已生效） | `ipSaveIpsFail` 接 `saveWriteFail`（「資料寫入未全部完成，部分變更可能已生效，請重新整理頁面確認後再操作」/「Not all changes were written, and some may have taken effect. Please reload the page and check before making changes.」） | `showCheckYes` 持久 modal | UI 不可達：僅資料庫寫入例外（procOrm 整批錯誤或逐筆失敗）時發生，以 `test/unit-ormWriteFail.test.mjs` A6 驗證；procOrm 原文只寫 log，已寫入之列不回滾，IP 清單快取照清（ADR-080） |
 | 非預期例外（外層 catch） | `anUnexpectedErrorOccurred` | `$alert` toast（4 秒自動消失） | 非預期錯誤刻意低調呈現，不阻斷 |
 
 實際翻譯文字 → 寫測試時 grep `server/procLang.mjs` 對應鍵後直接讀取。
@@ -117,6 +118,7 @@
 - **粒度**：操作結果（成功 / 失敗）一律 `showCheckYes` 持久 modal（須確認讀過、可做 e2e pixel + 語意斷言）；非預期例外才用 `$alert` toast。
 - **邊界**：`isError` 恆為 `''`，前端驗證攔截分支為死碼；無「手動新增」列。
 - **契約**：Save 前開 loading、`finally` 一處關 loading；每個 `await showCheckYes(...)` 前先關 loading（modal 阻斷，避免 loading 疊著）。
+- **寫入失敗**（ADR-080）：寫入階段依刪除、新增、修改之順序寫入，任一步失敗即停止後續步驟、回 `saveWriteFail`，其前已寫入者不回滾；IP 清單之 30 秒快取（統計頁所讀）不論寫入成敗皆於寫入階段後清除。
 - **送出入口與連按**（ADR-074）：「儲存」鈕（WButtonCircle，`:promiseUnlock="true"`）之按鈕鎖交給 `runSubmit('saveIps')`，於請求結束時釋放；流程自觸發至結果訊息框關閉，期間再觸發即略過。後端以「updateIpsList:操作者 id」占位，同一操作者處理中再送出回 `saveInProgress`、不寫入。
 - **載入狀態**（ADR-076）：清單載入中顯示等待訊息；載入失敗顯示「取得數據失敗，請稍後再試」（`getDataError`），不顯示空表格。
 

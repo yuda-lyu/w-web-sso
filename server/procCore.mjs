@@ -41,6 +41,7 @@ import * as s from '../src/plugins/mShare.mjs'
 import hashPassword, { verifyPassword } from './hashPassword.mjs'
 import genRandomPassword from './genRandomPassword.mjs'
 import createLockSave from './lockSave.mjs'
+import ormWrite from './ormWrite.mjs'
 import { maskToken, maskKv } from './srLog.mjs'
 import { hasAppPerm, isAppPermsValue, normAppPerms } from '../src/appPerms.mjs'
 
@@ -673,8 +674,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //timeUpdate
         let timeUpdate = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
 
-        //save
-        await woItems.tokens.save({
+        //save, 逐筆檢查(ADR-080): 單筆失敗時 ORM 仍 resolve, 不檢查即回報未生效之新到期時間
+        await ormWrite(woItems.tokens, 'save', {
             id: tk.id,
             timeEnd: timeEndNew,
             timeUpdate,
@@ -688,6 +689,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             console.log(errTemp)
             // console.log(`token`, token)
             console.log(`can not update timeEnd for token`)
+            srLog.error({ event: 'fun-refreshToken-save', token: maskToken(token), err: getErrorMessage(errTemp) })
             return Promise.reject(`can not update timeEnd for token`)
         }
 
@@ -870,11 +872,16 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             //insert
             //operatorId 傳 u.id (自我參照): 自助註冊本人即創建者, userId / userIdUpdate 寫入自己的 id,
             //可由 userId === id 判斷此 user 為自助註冊（後台 admin 建立則 userId 為 admin id）
+            //寫入失敗時 procOrm 之原文(中文)不回前端, 記 log 後改回語系鍵 (ADR-034, ADR-080)
             await procOrm(u.id, 'users', 'insert', [u])
+                .catch((err) => {
+                    srLog.error({ event: 'fun-createUser-insert', key: 'userRegistrationFailed', account, err: getErrorMessage(err) })
+                    return Promise.reject('userRegistrationFailed')
+                })
         })
             .catch((err) => {
                 //remap setWithFree 之 'key in use' reject → 業務語意之 i18n 訊息.
-                //其他 reject (select unique check 之 'account/email already exists', insert 失敗等)
+                //其他 reject (select unique check 之 'account/email already exists', insert 失敗之 userRegistrationFailed 等)
                 //原樣 bubble.
                 let errMsg = (err && typeof err === 'string') ? err : (err && err.message) || String(err)
                 if (errMsg.includes(keyAccount)) {
@@ -928,13 +935,24 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
         //update timeVerified: timemsTZ 格式(同其他時間欄與後台編輯之寫入). 原 now2str 為秒級, 共用判斷 getIsVerified(istimemsTZ)
         //判為未驗證 → 後台清單顯示「未驗證」, 且該帳號設為管理者後過不了管理權限閘 funCheckAdmin (2026-09-29 修正)
-        await woItems.users.save({
+        //逐筆檢查(ADR-080): 寫入失敗回 verifyEmailFailed, 不顯示驗證成功; tokenVerify 未清, 使用者可再點同一連結重試
+        let errTemp = null
+        await ormWrite(woItems.users, 'save', {
             id: user.id,
             timeVerified: nowms2str(),
             //F-053 fix (lazy clear): 不主動清 tokenVerify, 避免並發 resendVerifyEmail 寫的新 token
             //被此處 race window 覆蓋. token 重用風險由 line ~818 之 isestr(timeVerified) → reject
             //'verifyEmailAlreadyVerified' 擋住, 已驗證 user 點舊連結會得友善訊息.
         })
+            .catch((err) => {
+                errTemp = err
+            })
+
+        //check
+        if (errTemp !== null) {
+            srLog.error({ event: 'fun-verifyEmail-save', key: 'verifyEmailFailed', userId: user.id, err: getErrorMessage(errTemp) })
+            return Promise.reject('verifyEmailFailed')
+        }
 
         return { state: 'success', msg: 'ok' }
     }
@@ -991,11 +1009,22 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             let name = get(u, 'name', '')
 
             //產生新 tokenVerify 並更新至 users
+            //逐筆檢查(ADR-080): 寫入失敗即 reject, 不記節流、不寄出連結無效之信
             let tokenVerify = `${genIDSeq()}`
-            await woItems.users.save({
+            let errTemp = null
+            await ormWrite(woItems.users, 'save', {
                 id: userId,
                 tokenVerify,
             })
+                .catch((err) => {
+                    errTemp = err
+                })
+
+            //check
+            if (errTemp !== null) {
+                srLog.error({ event: 'fun-resendVerifyEmail-save', key: 'userRegistrationResendFailed', userId, err: getErrorMessage(errTemp) })
+                return Promise.reject('userRegistrationResendFailed')
+            }
 
             //寫 throttle 時間戳 (放在 save 後, 確認此次 resend 已生效才記)
             lastResendTime.set(account, now)
@@ -1139,11 +1168,22 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             let passwordNew = hashPassword(newPassword, salt)
 
             //save (清 isForceChangePw='n', 變更密碼成功後即解除強制變更)
-            await woItems.users.save({
+            //逐筆檢查(ADR-080): 寫入失敗即 reject, 不寄「密碼已變更」信
+            let errTemp = null
+            await ormWrite(woItems.users, 'save', {
                 id: userId,
                 password: passwordNew,
                 isForceChangePw: 'n',
             })
+                .catch((err) => {
+                    errTemp = err
+                })
+
+            //check
+            if (errTemp !== null) {
+                srLog.error({ event: 'fun-changePassword-save', key: 'userChangePasswordFail', userId, err: getErrorMessage(errTemp) })
+                return Promise.reject('userChangePasswordFail')
+            }
 
             //若已變更密碼, 但寄送email失敗時, 不能報錯中斷流程
             try {
@@ -1264,12 +1304,23 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             let newPassword = genRandomPassword(passwordPolicy, targetAccount)
 
             //hash + save (含 isForceChangePw='y')
+            //逐筆檢查(ADR-080): 寫入失敗即 reject, 不記節流、不寄出未生效之新密碼
             let hashed = hashPassword(newPassword, salt)
-            await woItems.users.save({
+            let errTemp = null
+            await ormWrite(woItems.users, 'save', {
                 id: targetUserId,
                 password: hashed,
                 isForceChangePw: 'y',
             })
+                .catch((err) => {
+                    errTemp = err
+                })
+
+            //check
+            if (errTemp !== null) {
+                srLog.error({ event: 'fun-adminResetUserPassword-save', key: 'adminResetPasswordFailed', token: maskToken(token), targetUserId, err: getErrorMessage(errTemp) })
+                return Promise.reject('adminResetPasswordFailed')
+            }
 
             //寫 throttle 時間戳 (放在 save 後, 確認此次 reset 已生效才記)
             lastResetTime.set(targetUserId, now)
@@ -1318,7 +1369,39 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     }
 
 
+    //revokeTokensByUserId: 撤銷(刪除)使用者名下全部 token, 供刪除 / 停用使用者(updateTabItems)與登入失敗封鎖(procProtect.blockAccount)共用.
+    //一次刪除該使用者全部 token 並逐筆檢查(ormWrite), 單筆失敗不中斷其餘筆, 有失敗即 reject 錯誤訊息(含失敗筆主鍵)供呼叫端記錄.
+    //冪等(已無 token 時刪 0 筆), resolve 回傳刪除之 token 數. 使用者設計上不持有 isApp='y' token, 故一併撤 (ADR-037).
+    let revokeTokensByUserId = async (userId) => {
+
+        //check
+        if (!isestr(userId)) {
+            return Promise.reject(`invalid userId`)
+        }
+
+        //ts
+        let ts = await woItems.tokens.select({ userId })
+
+        //check
+        if (size(ts) === 0) {
+            return 0
+        }
+
+        //del
+        await ormWrite(woItems.tokens, 'del', map(ts, (t) => {
+            return { id: t.id }
+        }))
+
+        return size(ts)
+    }
+
+
     //updateTabItems
+    //分驗證與寫入兩階段 (ADR-080):
+    //- 驗證階段: 全部驗證於任何寫入之前完成, 任一失敗即 reject 該驗證之 key, 資料庫無任何變更 (ADR-021).
+    //- 寫入階段: 依刪除、新增、修改之順序寫入, 任一步 reject 即停止後續步驟並 reject 'saveWriteFail', 其前已寫入者不回滾 (ADR-044);
+    //  procOrm 遇逐筆失敗亦 reject 且其餘筆已寫入 (w-serv-orm 1.1.7 起). 寫入階段一經進入, 不論成敗皆執行寫入後副作用:
+    //  users 表撤銷本批欲刪除與欲停用者之 token, 並清除 opt.ocList 所給之清單快取 (失敗時資料庫可能已部分變更).
     let updateTabItems = async (woName, rows, keyDetect, opt = {}) => {
         // console.log('updateTabItems', woName, rows.length, keyDetect)
 
@@ -1336,6 +1419,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         if (!isestr(lang)) {
             lang = 'eng'
         }
+
+        //ocList: 該清單之讀取快取 (wsemi cache), 於寫入階段後清除 (ADR-008, ADR-080); 未給則不清
+        let ocList = get(opt, 'ocList', null)
 
         //idsNew: 前端標為新增(transient 欄位 _isNew === true)之列 id, 供下方比對既有列 (ADR-074);
         //_isNew 不在 schema keys 內, 下方 ltdtmapping 取欄時即剝除不入庫
@@ -1478,66 +1564,36 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         let r = ltdtDiffByKey(ltdtOld, ltdtNew, keyDetect)
         // console.log('ltdtDiffByKey r', r)
 
-        //del
-        if (size(r.del) > 0) {
-            await procOrm(operatorId, woName, 'del', r.del) //operatorId 用於 audit (userIdUpdate)
-
-            //users 路徑: 刪除使用者須一併撤銷其名下所有 token, 避免 orphan token 仍可 checkToken/refreshToken 續命
-            //(對稱於下方 isActive='n' 撤 token 迴圈與 procProtect.blockAccount). 逐筆撤銷失敗僅 srLog.error 不阻斷主流程.
-            if (woName === 'users') {
-                for (let row of r.del) {
-                    let userId = get(row, 'id', '')
-                    if (!isestr(userId)) {
-                        continue
-                    }
-                    try {
-                        let ts = await woItems.tokens.select({ userId })
-                        for (let t of ts) {
-                            await woItems.tokens.del({ id: t.id })
-                        }
-                    }
-                    catch (err) {
-                        srLog.error({ event: 'fun-updateTabItems-revokeTokenOnDelete', userId, err: getErrorMessage(err) })
-                    }
+        //users 路徑: 對新使用者的明文密碼進行 policy 檢查與 hash, 屬驗證階段, 須於任何寫入之前 (ADR-021, ADR-080;
+        //原置於刪除寫入之後, 密碼不符策略時刪除與撤銷已落地卻回驗證錯誤)
+        if (woName === 'users' && size(r.add) > 0) {
+            for (let row of r.add) {
+                let pw = get(row, 'password', '')
+                let account = get(row, 'account', '')
+                let chk = checkUserPassword(lang, pw, { account })
+                if (chk.state === 'error') {
+                    return Promise.reject(chk.key)
                 }
+                row.password = hashPassword(pw, salt)
             }
+            //後台建帳自動填 timeVerified: timemsTZ 格式(見 verifyEmail 同處說明; 原 now2str 秒級使新建帳號顯示未驗證、設為管理者後過不了 funCheckAdmin, 2026-09-29 修正)
+            each(r.add, (row) => {
+                let tv = get(row, 'timeVerified', '')
+                if (!isestr(tv)) {
+                    row.timeVerified = nowms2str()
+                }
+            })
         }
 
-        //add
-        if (size(r.add) > 0) {
-            //users 路徑: 對新使用者的明文密碼進行 policy 檢查與 hash
-            if (woName === 'users') {
-                for (let row of r.add) {
-                    let pw = get(row, 'password', '')
-                    let account = get(row, 'account', '')
-                    let chk = checkUserPassword(lang, pw, { account })
-                    if (chk.state === 'error') {
-                        return Promise.reject(chk.key)
-                    }
-                    row.password = hashPassword(pw, salt)
-                }
-                //後台建帳自動填 timeVerified: timemsTZ 格式(見 verifyEmail 同處說明; 原 now2str 秒級使新建帳號顯示未驗證、設為管理者後過不了 funCheckAdmin, 2026-09-29 修正)
-                each(r.add, (row) => {
-                    let tv = get(row, 'timeVerified', '')
-                    if (!isestr(tv)) {
-                        row.timeVerified = nowms2str()
-                    }
-                })
-            }
-            await procOrm(operatorId, woName, 'insert', r.add)
-        }
-
-        //diff
+        //rowsClear: 陣列欄變短之列先清空該欄: 儲存層 save 以 lodash merge 合併新舊列, 陣列逐索引合併, 新陣列較短時舊陣列尾端元素會殘留
+        //(如 tokens.perms 由 ['readTokens'] 撤銷為 [] 將無效, ADR-069). 先存 null 令該欄不再為陣列, 其後整列存入即為新陣列.
+        //兩次寫入之間該欄短暫為 null, tokens.perms 讀取端視同未設定(僅基本權限), 屬 fail closed 方向.
+        let rowsClear = []
         if (size(r.diff) > 0) {
-
-            //陣列欄變短之列先清空該欄: 儲存層 save 以 lodash merge 合併新舊列, 陣列逐索引合併, 新陣列較短時舊陣列尾端元素會殘留
-            //(如 tokens.perms 由 ['readTokens'] 撤銷為 [] 將無效, ADR-069). 先存 null 令該欄不再為陣列, 其後整列存入即為新陣列.
-            //兩次寫入之間該欄短暫為 null, tokens.perms 讀取端視同未設定(僅基本權限), 屬 fail closed 方向.
             let kpOld = {}
             each(ltdtOld, (v) => {
                 kpOld[get(v, keyDetect, '')] = v
             })
-            let rowsClear = []
             each(r.diff, (row) => {
                 let id = get(row, keyDetect, '')
                 let clear = null
@@ -1554,11 +1610,67 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                     rowsClear.push(clear)
                 }
             })
+        }
+
+        //寫入階段: 刪除 → 新增 → 修改, 任一步 reject 即停止後續步驟 (不回滾, ADR-044)
+        let errWrite = null
+        try {
+
+            //del
+            if (size(r.del) > 0) {
+                await procOrm(operatorId, woName, 'del', r.del) //operatorId 用於 audit (userIdUpdate)
+            }
+
+            //add
+            if (size(r.add) > 0) {
+                await procOrm(operatorId, woName, 'insert', r.add)
+            }
+
+            //diff
             if (size(rowsClear) > 0) {
                 await procOrm(operatorId, woName, 'save', rowsClear)
             }
+            if (size(r.diff) > 0) {
+                await procOrm(operatorId, woName, 'save', r.diff)
+            }
 
-            await procOrm(operatorId, woName, 'save', r.diff)
+        }
+        catch (err) {
+            errWrite = err
+        }
+
+        //users 路徑: 撤銷本批欲刪除與欲停用(isActive==='n')者名下全部 token, 避免 orphan token 仍可 checkToken/refreshToken 續命 (ADR-037).
+        //撤銷範圍依本批意圖, 不依寫入成敗(寫入失敗之列亦撤, fail closed); 先寫入再撤銷: 刪除 / 停用落地後已無法登入, 不會再產生新 token.
+        //停用者沿用整表掃描(本批表內 isActive==='n' 者皆撤, 冪等). 撤銷失敗僅 srLog.error 不阻斷主流程.
+        if (woName === 'users') {
+            for (let row of r.del) {
+                let userId = get(row, 'id', '')
+                await revokeTokensByUserId(userId)
+                    .catch((err) => {
+                        srLog.error({ event: 'fun-updateTabItems-revokeTokenOnDelete', userId, err: getErrorMessage(err) })
+                    })
+            }
+            for (let row of ltdtNew) {
+                if (get(row, 'isActive', '') !== 'n') {
+                    continue
+                }
+                let userId = get(row, 'id', '')
+                await revokeTokensByUserId(userId)
+                    .catch((err) => {
+                        srLog.error({ event: 'fun-updateTabItems-revokeTokenOnDisable', userId, err: getErrorMessage(err) })
+                    })
+            }
+        }
+
+        //寫入後立即 invalidate 30s cache, 避免改完之統計頁顯示舊資料 (ADR-008, audit F-050); 寫入失敗時資料庫可能已部分變更, 一併清除 (ADR-080)
+        if (ocList !== null) {
+            ocList.clear('fun')
+        }
+
+        //check, 寫入階段失敗一律回 saveWriteFail, procOrm 原文(含失敗筆主鍵)僅記 log (ADR-034, ADR-080)
+        if (errWrite !== null) {
+            srLog.error({ event: 'fun-updateTabItems-write', key: 'saveWriteFail', woName, err: getErrorMessage(errWrite) })
+            return Promise.reject('saveWriteFail')
         }
 
         //users 路徑: 回傳前剝除 password 欄位, 避免明文/hash 經 API 洩漏
@@ -1828,8 +1940,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //updateUsersList
     let updateUsersList = async (rows, opt = {}) => {
 
-        //updateTabItems
-        rows = await updateTabItems('users', rows, 'id', { resetOrder: true, ...opt })
+        //updateTabItems, 撤銷刪除 / 停用者之 token 與清除使用者清單快取皆於其寫入階段後執行 (ADR-080)
+        rows = await updateTabItems('users', rows, 'id', { resetOrder: true, ...opt, ocList: ocGetUsersList })
 
         return rows
     }
@@ -1881,33 +1993,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         return await lockSave('updateUsersList', operatorId, async () => {
 
             //updateUsersList (帶 lang/operatorId 給下層用於 add 群組密碼策略檢查與 audit)
+            //停用使用者即時撤銷其全部 token (ADR-037) 與清除使用者清單快取 (ADR-008), 皆於 updateTabItems 寫入階段後執行, 不論寫入成敗 (ADR-080)
             rows = await updateUsersList(rows, { lang, operatorId })
-
-            //停用使用者即時撤銷其全部 token: 本批中 isActive==='n' 之 user, 於儲存成功後刪除其名下所有 token
-            //(使用者設計上不持有 isApp='y' token, 故一併撤). 作法比照 procProtect.blockAccount:
-            //woItems.tokens.select({ userId }) 取陣列後逐筆 del. 冪等 (該 user 已無 token 時刪 0 筆無害).
-            //撤 token 為附帶副作用, 失敗僅記 srLog.error 不阻斷主流程.
-            for (let row of rows) {
-                if (get(row, 'isActive', '') !== 'n') {
-                    continue
-                }
-                let userId = get(row, 'id', '')
-                if (!isestr(userId)) {
-                    continue
-                }
-                try {
-                    let ts = await woItems.tokens.select({ userId })
-                    for (let t of ts) {
-                        await woItems.tokens.del({ id: t.id })
-                    }
-                }
-                catch (err) {
-                    srLog.error({ event: 'fun-updateUsersList-revokeToken', userId, err: getErrorMessage(err) })
-                }
-            }
-
-            //寫入後立即 invalidate 30s cache, 避免 admin 改完之 dashboard 顯示舊資料 (audit F-050)
-            ocGetUsersList.clear('fun')
 
             return rows
         })
@@ -1975,8 +2062,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             return { ...r, perms: normAppPerms(get(r, 'perms')) }
         })
 
-        //updateTabItems
-        rows = await updateTabItems('tokens', rows, 'id', { resetOrder: false })
+        //updateTabItems, 清除權杖清單快取於其寫入階段後執行 (ADR-080)
+        rows = await updateTabItems('tokens', rows, 'id', { resetOrder: false, ocList: ocGetTokensList })
 
         return rows
     }
@@ -1995,11 +2082,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //雙擊防護(後端): 同一操作者之權杖清單儲存處理中再送出即拒絕 (見 lockSave, ADR-074)
         return await lockSave('updateTokensList', operatorId, async () => {
 
-            //updateTokensList
+            //updateTokensList, 清除權杖清單快取 (ADR-008) 於 updateTabItems 寫入階段後執行, 不論寫入成敗 (ADR-080)
             rows = await updateTokensList(rows)
-
-            //寫入後立即 invalidate 30s cache, 避免 admin 改完之 dashboard 顯示舊資料 (audit F-050)
-            ocGetTokensList.clear('fun')
 
             return rows
         })
@@ -2041,8 +2125,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //updateIpsList
     let updateIpsList = async (rows) => {
 
-        //updateTabItems
-        rows = await updateTabItems('ips', rows, 'id', { resetOrder: false })
+        //updateTabItems, 清除 IP 清單快取於其寫入階段後執行 (ADR-080)
+        rows = await updateTabItems('ips', rows, 'id', { resetOrder: false, ocList: ocGetIpsList })
 
         return rows
     }
@@ -2061,11 +2145,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //雙擊防護(後端): 同一操作者之 IP 清單儲存處理中再送出即拒絕 (見 lockSave, ADR-074)
         return await lockSave('updateIpsList', operatorId, async () => {
 
-            //updateIpsList
+            //updateIpsList, 清除 IP 清單快取 (ADR-008) 於 updateTabItems 寫入階段後執行, 不論寫入成敗 (ADR-080)
             rows = await updateIpsList(rows)
-
-            //寫入後立即 invalidate 30s cache, 避免 admin 改完之 dashboard 顯示舊資料 (audit F-050)
-            ocGetIpsList.clear('fun')
 
             return rows
         })
@@ -2109,6 +2190,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         adminResetUserPassword,
 
         getIpByKV,
+
+        revokeTokensByUserId,
 
         getGenUserByKV,
         getGenUserByUserId,

@@ -10,7 +10,7 @@
     "w-echarts-vue": "^1.0.18",
     "w-email": "^1.1.7",
     "w-serv-hapi": "^1.1.5",
-    "w-serv-orm": "^1.1.6",
+    "w-serv-orm": "^1.1.7",
     "w-syslog": "^1.0.32",
     "wsemi": "^1.9.12"
   },

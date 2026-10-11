@@ -342,4 +342,23 @@ describe('註冊驗證結果頁訊息 settings 覆寫 (ADR-064)', function() {
         assert.strict.equal(html.includes(BUILTIN_ENG), true, `預期 eng 回退內建文字, 實際 html: ${html.slice(0, 300)}`)
     })
 
+    it('EXT-003: 前端字典不含後端專用鍵(信件與結果頁四則訊息, 含 verifyEmailFailed), 且含前端須顯示之寫入失敗鍵', async function() {
+        //WWebSso emTextKeys: 後端專用之文字鍵不送前端(CLAUDE_process.md「新增或修改寄信 / 語系文字」); 結果頁第四則 verifyEmailFailed 為 2026-10-11 新增(ADR-080)
+        //saveWriteFail / userRegistrationFailed 由前端 $tErr 翻譯顯示(清單儲存失敗、註冊失敗), 須在前端字典內
+        let r = await callFapi('getWebInfor', [])
+        assert.strict.equal(r.ok, true, `getWebInfor 失敗: ${r.err}`)
+        for (let lang of ['eng', 'cht']) {
+            let kp = get(r, ['val', 'kpLang', lang], {})
+            let keysBackendOnly = ['chpwEmTitle', 'chpwEmContent', 'regVerifyEmTitle', 'regVerifyEmContent', 'resetPwEmTitle', 'resetPwEmContent',
+                'userRegistrationVerifySuccess', 'verifyEmailAlreadyVerified', 'verifyEmailInvalidToken', 'verifyEmailFailed']
+            for (let k of keysBackendOnly) {
+                assert.strict.equal(k in kp, false, `${lang} 前端字典不應含後端專用鍵 ${k}`)
+            }
+            for (let k of ['saveWriteFail', 'userRegistrationFailed']) {
+                assert.strict.equal(typeof kp[k], 'string', `${lang} 前端字典應含 ${k}`)
+                assert.strict.ok(kp[k].length > 0, `${lang} ${k} 不應為空`)
+            }
+        }
+    })
+
 })

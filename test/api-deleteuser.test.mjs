@@ -8,7 +8,8 @@ import { startServersOnce, callFapi } from './tools/api-setup.mjs'
 
 //
 // 對應 spec/流程_後台刪除使用者.md
-// 此檔僅含 "API 契約" cases (updateUsersList 非 admin reject),
+// 此檔僅含 "API 契約" cases (updateUsersList 非 admin reject、刪除後撤銷被刪者令牌),
+// 另含 spec/流程_後台變更使用者資訊.md 之停用撤銷 (API-003; 與刪除撤銷同一機制 ADR-037 / ADR-080, 共用本檔 fixture),
 // UI flow 走 test/e2e-deleteuser.test.mjs (Playwright + baseline).
 //
 
@@ -80,7 +81,7 @@ async function deleteTestUsersAndTokens() {
 }
 
 
-describe('DeleteUser API — updateUsersList 拒絕情境', function() {
+describe('DeleteUser API — updateUsersList 拒絕情境與撤銷令牌', function() {
     this.timeout(60000)
 
     beforeEach(async function() {
@@ -119,6 +120,76 @@ describe('DeleteUser API — updateUsersList 拒絕情境', function() {
             `DB users 數量應不變, before=${dbBefore.length} after=${dbAfter.length}`)
 
         await _delTokensByUserId(testUsers.target.id)
+    })
+
+    //insertTokens: 為操作者(admin)與 target 各建令牌(target 2 個, 模擬多裝置), 回傳令牌字串
+    async function insertTokens() {
+        let timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+        let ta = ds.tokens.funNew({ userId: testUsers.admin.id })
+        let tt1 = ds.tokens.funNew({ userId: testUsers.target.id })
+        let tt2 = ds.tokens.funNew({ userId: testUsers.target.id })
+        for (let t of [ta, tt1, tt2]) {
+            t.timeEnd = timeEnd
+        }
+        await woItems.tokens.insert([ta, tt1, tt2])
+        return { tokenAdmin: ta.token, tokenTarget1: tt1.token, tokenTarget2: tt2.token }
+    }
+
+    //rowsOfAll: 當下表中所有 user (移除 password 欄以模擬前端送出格式), fn 可過濾或改寫
+    async function rowsOfAll(fn) {
+        let allUsers = await woItems.users.select()
+        let rows = allUsers.map((u) => {
+            let c = { ...u }
+            delete c.password
+            return c
+        })
+        return fn(rows)
+    }
+
+    //assertTargetTokensRevoked: 被撤銷者 tokens 表無其列, 其令牌對外 checkToken 回 tokenExpired (ADR-006)
+    async function assertTargetTokensRevoked(tks) {
+        let rs = await woItems.tokens.select({ userId: testUsers.target.id })
+        assert.strict.equal(rs.length, 0, `target 名下令牌應全數撤銷, 剩 ${rs.length}`)
+        for (let token of [tks.tokenTarget1, tks.tokenTarget2]) {
+            let r = await callFapi('checkToken', [token])
+            assert.strict.equal(r.ok, false, `已撤銷之令牌不得通過 checkToken`)
+            assert.strict.equal(r.err, 'tokenExpired')
+        }
+        //操作者令牌不受影響
+        let self = await callFapi('checkToken', [tks.tokenAdmin])
+        assert.strict.equal(self.ok, true, `操作者令牌應仍有效: ${self.err}`)
+    }
+
+    it('API-002-delete-revokes-tokens: admin 刪除使用者並儲存, 被刪者名下全部令牌即失效', async function() {
+        //spec 流程_後台刪除使用者〈規則摘要〉級聯清理: 刪除寫入後撤銷被刪使用者名下全部令牌 (ADR-037 / ADR-080)
+        let tks = await insertTokens()
+        //前置: 被刪者之令牌原本有效 (避免以本就無效之令牌假通過)
+        let before = await callFapi('checkToken', [tks.tokenTarget1])
+        assert.strict.equal(before.ok, true, `前置: target 令牌應有效: ${before.err}`)
+
+        let rows = await rowsOfAll((rs) => rs.filter((u) => u.id !== testUsers.target.id))
+        let r = await callFapi('updateUsersList', [tks.tokenAdmin, 'eng', rows])
+        assert.strict.equal(r.ok, true, `預期 resolve, 實際 reject: ${r.err}`)
+
+        let us = await woItems.users.select({ id: testUsers.target.id })
+        assert.strict.equal(us.length, 0, 'target 應已刪除')
+        await assertTargetTokensRevoked(tks)
+    })
+
+    it('API-003-disable-revokes-tokens: admin 停用使用者並儲存, 被停用者名下全部令牌即失效 (spec 流程_後台變更使用者資訊)', async function() {
+        //spec 流程_後台變更使用者資訊〈規則摘要〉: 停用(isActive 改為 'n')即撤銷其全部令牌 (ADR-037 / ADR-080)
+        let tks = await insertTokens()
+        let before = await callFapi('checkToken', [tks.tokenTarget1])
+        assert.strict.equal(before.ok, true, `前置: target 令牌應有效: ${before.err}`)
+
+        let rows = await rowsOfAll((rs) => rs.map((u) => (u.id === testUsers.target.id ? { ...u, isActive: 'n' } : u)))
+        let r = await callFapi('updateUsersList', [tks.tokenAdmin, 'eng', rows])
+        assert.strict.equal(r.ok, true, `預期 resolve, 實際 reject: ${r.err}`)
+
+        let us = await woItems.users.select({ id: testUsers.target.id })
+        assert.strict.equal(us.length, 1, 'target 停用不刪除')
+        assert.strict.equal(us[0].isActive, 'n')
+        await assertTargetTokensRevoked(tks)
     })
 
 })

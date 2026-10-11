@@ -1,104 +1,16 @@
 import assert from 'assert'
-import path from 'path'
-import { fileURLToPath } from 'url'
 import get from 'lodash-es/get.js'
-import proc from '../server/procCore.mjs'
-
-
-//resolve server/template (scenario B: 路徑落在套件自身資料夾, 用 fileURLToPath, 全域 §5.2)
-let __dirname = path.dirname(fileURLToPath(import.meta.url))
-let pathTemplate = path.join(__dirname, '..', 'server', 'template')
-
-
-//passwordPolicy fixture: 與 settings.json 之 passwordPolicy 結構/值一致, 作為 SUT 的策略配置
-//「傳入」真實 procCore 工廠 (非本地複製驗證邏輯). procCore.checkUserPassword 完全依此 opt 跑.
-let passwordPolicy = {
-    minLength: 8,
-    maxLength: 16,
-    requireLetter: true,
-    requireUppercase: false,
-    requireLowercase: false,
-    requireDigit: true,
-    requireSpecial: true,
-    noSpace: true,
-    onlyAscii: true,
-    forbiddenChars: ['\\'],
-    noConsecutiveCharsFromAccount: true,
-    consecutiveCharsMinMatch: 2,
-    commonPasswordBlacklist: [
-        '1234', '12345', '123456', '1234567', '12345678',
-        '123456789', '1234567890', '12345678910',
-        '111111', '000000', '666666', '888888', '7777777', '11111111',
-        '123123', '123321', '654321', '987654321',
-        'qwerty', 'qwerty123', 'qwerty1', 'qwertyuiop', 'qazwsx',
-        '1q2w3e4r', '1q2w3e4r5t', '1q2w3e', '1qaz2wsx', 'zxcvbnm',
-        'password', 'password1', 'passw0rd', 'admin', 'admin123',
-        'welcome', 'letmein', 'login', 'master', 'monkey', 'dragon',
-        'shadow', 'sunshine', 'superman', 'batman', 'football',
-        'baseball', 'soccer', 'hockey', 'michael', 'jordan', 'jennifer',
-        'hunter', 'ranger', 'harley', 'thomas', 'charlie', 'andrew',
-        'daniel', 'ashley', 'bailey', 'mustang', 'access', 'secret',
-        'ninja', 'jesus', 'hello', 'freedom', 'trustno1',
-        '1qaz@WSX', 'P@ssw0rd', 'Pass@123', 'Aa123456', 'Aa@123456',
-        'Admin@123', 'abc@123',
-        'abc123', 'abcdef', 'abcd1234', 'abc',
-        'iloveyou', 'fuckyou', 'f*ckyou', 'whatever', 'nothing',
-        'google', 'computer', 'internet', 'samsung', 'apple', 'killer',
-        'princess', 'lovely', 'tigger', 'starwars', 'pokemon',
-        'minecraft', '123qwe', 'zaq1zaq1', 'photoshop', 'adobe123',
-        '18atcskd2w', 'mynoob',
-    ],
-}
+import { buildProc } from './tools/unitProc.mjs'
 
 
 //mock factory 依賴: woItems (DB 存取層) / procOrm (寫入). checkUserPassword 為純函式不碰 DB;
 //createUser 用 select(查重)/procOrm(insert)/srEmail(寄信). 寄信失敗於 createUser 內被 catch, 不影響回傳.
+//真實 procCore 工廠、passwordPolicy fixture 與 opt 見 test/tools/unitProc.mjs 之 buildProc
 let mkWoItems = () => ({
     users: { select: async () => [], save: async () => {} },
     ips: { select: async () => [], save: async () => {} },
     tokens: { select: async () => [], save: async () => {} },
 })
-let mkOpt = (over = {}) => ({
-    srLog: { log: () => {} },
-    srEmail: { send: async () => {} },
-    salt: 'unit-test-salt',
-    minExpired: 100,
-    kpLang: { eng: { webName: 'Test', regVerifyEmTitle: 'Verify' } },
-    pathTemplate,
-    passwordPolicy,
-    allowUserRegistration: true,
-    siteUrl: 'http://localhost',
-    verifyBaseUrl: 'http://localhost',
-    ...over,
-})
-
-
-//buildProc: 取得真實 procCore 工廠回傳的 p (含 checkUserPassword / createUser).
-//procCore 工廠先前裝有 cleanUsers / cleanIps 背景清理 timer, 會吊住 node process 不退;
-//該兩 timer 已於 2026-07-06 依 ADR-013 (隱性解除) 移除. 此處攔截 setInterval 之防護保留,
-//若日後 procCore 再引入 timer, unit 測試仍可獨立退出 (不需 mocha --exit, 不需起 server). 不更動 production code.
-function buildProc(woItems, procOrm, over = {}) {
-    let realSetInterval = globalThis.setInterval
-    let timers = []
-    globalThis.setInterval = (...a) => {
-        let t = realSetInterval(...a)
-        if (t && typeof t.unref === 'function') {
-            t.unref()
-        }
-        timers.push(t)
-        return t
-    }
-    try {
-        let p = proc(woItems, procOrm, mkOpt(over))
-        for (let t of timers) {
-            clearInterval(t)
-        }
-        return p
-    }
-    finally {
-        globalThis.setInterval = realSetInterval
-    }
-}
 
 
 //共用實例 (checkUserPassword 為純函式, 多 case 唯讀共用無副作用)

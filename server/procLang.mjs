@@ -746,6 +746,10 @@ let kpLang = {
         eng: 'User registration is not available.',
         cht: '目前不開放使用者自行申請帳號。',
     },
+    userRegistrationFailed: { //申請帳號之寫入失敗 (ADR-080)
+        eng: 'Registration failed. Please try again later.',
+        cht: '帳號申請失敗，請稍後再試。',
+    },
     userRegistrationAccountInvalid: {
         eng: 'Please enter a valid account.',
         cht: '請輸入有效的帳號。',
@@ -809,6 +813,10 @@ let kpLang = {
     verifyEmailAlreadyVerified: {
         eng: 'This account has already been verified.',
         cht: '此帳號已完成驗證。',
+    },
+    verifyEmailFailed: { //驗證之寫入失敗, 連結仍有效可再點一次 (ADR-080)
+        eng: 'Email verification failed. Please click the verification link again later.',
+        cht: '電子郵件驗證失敗，請稍後再點一次驗證連結。',
     },
     userRegistrationVerifySuccess: {
         eng: 'Email verified successfully. Please log in.',
@@ -1299,6 +1307,10 @@ let kpLang = {
     saveNewRowExists: { //標為新增之列已存在(同一包資料重送)
         eng: `The newly added data has already been saved. Please reload the page before making changes.`,
         cht: `新增之資料已儲存過，請重新整理頁面後再操作`,
+    },
+    saveWriteFail: { //清單儲存之寫入階段失敗, 部分變更可能已寫入 (ADR-080)
+        eng: `Not all changes were written, and some may have taken effect. Please reload the page and check before making changes.`,
+        cht: `資料寫入未全部完成，部分變更可能已生效，請重新整理頁面確認後再操作`,
     },
 
 }

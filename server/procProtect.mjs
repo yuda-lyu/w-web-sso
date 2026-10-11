@@ -27,7 +27,9 @@ import haskey from 'wsemi/src/haskey.mjs'
 import arrHas from 'wsemi/src/arrHas.mjs'
 import pm2resolve from 'wsemi/src/pm2resolve.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
+import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
 import ds from '../src/schema/index.mjs'
+import ormWrite from './ormWrite.mjs'
 import { maskToken } from './srLog.mjs'
 
 
@@ -46,6 +48,14 @@ function proc(woItems, p, opt = {}) {
         numForIpCallApi,
         minBlockForIpCallApi,
     } = opt
+
+
+    //logError: 封鎖寫入失敗之紀錄 (ADR-080); srLog 未給時略過, 同 blockAccountByToken 之 debug 守衛
+    let logError = (o) => {
+        if (srLog && isfun(srLog.error)) {
+            srLog.error(o)
+        }
+    }
 
 
     //kpAccountLoginFailed
@@ -137,22 +147,37 @@ function proc(woItems, p, opt = {}) {
         let timeBlocked = ot().add(minBlockForAccountLoginFailed, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
         // console.log('timeBlocked', timeBlocked)
 
-        //封鎖使用者, 須更新使用者timeBlocked
-        await woItems.users.save({
+        //封鎖使用者, 須更新使用者timeBlocked; 逐筆檢查 (ADR-080)
+        let errBlock = null
+        await ormWrite(woItems.users, 'save', {
             id: u.id,
             timeBlocked,
         })
+            .catch((err) => {
+                errBlock = err
+            })
 
         //封鎖使用者, 須刪除該 user 名下所有 token (multi-session 強制全部登出)
         //(原本走 p.getTokenByKV('userId', u.id) 取單筆, 但 ADR-001 接受同帳號多 active token,
         //getTokenByKV 之 nts>=2 reject 'duplicate token' 對 multi-session user 必觸發 → token
-        //完全沒刪 → 帳號被鎖但既有 session 仍可用. 改用 select 直接取陣列 + 迴圈逐筆 del,
+        //完全沒刪 → 帳號被鎖但既有 session 仍可用. 改用 select 直接取陣列後全部刪除,
         //對齊 spec/流程_自動封鎖機制.md A32「強制登出」契約 — Round-3 audit B-01 fix.)
-        let ts = await woItems.tokens.select({ userId: u.id })
-        for (let t of ts) {
-            await woItems.tokens.del({
-                id: t.id,
+        //撤銷與刪除 / 停用使用者共用 p.revokeTokensByUserId (一次刪除並逐筆檢查); 封鎖寫入失敗仍撤銷 (依意圖 fail closed, ADR-080)
+        let errRevoke = null
+        await p.revokeTokensByUserId(u.id)
+            .catch((err) => {
+                errRevoke = err
             })
+
+        //check, 失敗記錄後 reject; 封鎖未寫入時, 下次登入失敗仍超過門檻即再嘗試封鎖
+        if (errBlock !== null || errRevoke !== null) {
+            logError({
+                event: 'fun-blockAccount',
+                userId: u.id,
+                errBlock: errBlock !== null ? getErrorMessage(errBlock) : '',
+                errRevoke: errRevoke !== null ? getErrorMessage(errRevoke) : '',
+            })
+            return Promise.reject(`failed to block account`)
         }
 
     }
@@ -337,16 +362,36 @@ function proc(woItems, p, opt = {}) {
         let timeBlocked = ot().add(minBlockForTokenCallApi, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
         // console.log('timeBlocked', timeBlocked)
 
-        //封鎖使用者, 須更新使用者timeBlocked
-        await woItems.users.save({
+        //封鎖使用者, 須更新使用者timeBlocked; 逐筆檢查 (ADR-080)
+        let errBlock = null
+        await ormWrite(woItems.users, 'save', {
             id: u.id,
             timeBlocked,
         })
+            .catch((err) => {
+                errBlock = err
+            })
 
-        //封鎖使用者, 須刪除所用token
-        await woItems.tokens.del({
-            id: t.id,
-        })
+        //封鎖使用者, 須刪除該 user 名下所有 token (含所用 token; 與 blockAccount 同為 multi-session 強制全部登出, 共用 p.revokeTokensByUserId);
+        //原只刪所用 token, 封鎖期間該使用者其他裝置之既有登入照常可用, 與 spec E2E-005 及登入失敗封鎖不一致 (2026-10-11 改, ADR-080)
+        //封鎖寫入失敗仍撤銷 (依意圖 fail closed, ADR-080)
+        let errRevoke = null
+        await p.revokeTokensByUserId(u.id)
+            .catch((err) => {
+                errRevoke = err
+            })
+
+        //check, 失敗記錄後 reject
+        if (errBlock !== null || errRevoke !== null) {
+            logError({
+                event: 'fun-blockAccountByToken',
+                userId: u.id,
+                token: maskToken(token),
+                errBlock: errBlock !== null ? getErrorMessage(errBlock) : '',
+                errRevoke: errRevoke !== null ? getErrorMessage(errRevoke) : '',
+            })
+            return Promise.reject(`failed to block account by token`)
+        }
 
     }
 
@@ -641,8 +686,9 @@ function proc(woItems, p, opt = {}) {
                     errTemp = err
                 })
 
-            //check
+            //check, 封鎖寫入失敗記錄後 reject (ADR-080)
             if (errTemp !== null) {
+                logError({ event: 'fun-blockIpByIp', ip, err: getErrorMessage(errTemp) })
                 return Promise.reject(errTemp)
             }
 
@@ -661,11 +707,21 @@ function proc(woItems, p, opt = {}) {
         let timeBlocked = genTimeBlocked()
         // console.log('timeBlocked', timeBlocked)
 
-        //封鎖ip, 須更新ip的timeBlocked
-        await woItems.ips.save({
+        //封鎖ip, 須更新ip的timeBlocked; 逐筆檢查 (ADR-080)
+        let errSave = null
+        await ormWrite(woItems.ips, 'save', {
             id: oip.id,
             timeBlocked,
         })
+            .catch((err) => {
+                errSave = err
+            })
+
+        //check, 封鎖寫入失敗記錄後 reject; 計時器下一輪仍超限時會再嘗試封鎖
+        if (errSave !== null) {
+            logError({ event: 'fun-blockIpByIp', ip, err: getErrorMessage(errSave) })
+            return Promise.reject(errSave)
+        }
 
     }
 

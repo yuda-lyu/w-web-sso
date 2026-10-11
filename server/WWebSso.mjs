@@ -96,6 +96,7 @@ import { defaultPasswordPolicy } from './defaultPasswordPolicy.mjs'
  * @param {Object} [optExt.userRegistrationVerifySuccess={}] 輸入註冊驗證結果頁「驗證成功」訊息物件，逐語系鍵(eng、cht)各自給文字或檔案路徑(檔案存在即讀檔作為文字)，代入verifyEmailResultContent之{message}，未給之語系採內建語系文字，預設{}
  * @param {Object} [optExt.verifyEmailAlreadyVerified={}] 輸入註冊驗證結果頁「帳號已完成驗證」訊息物件，逐語系鍵(eng、cht)各自給文字或檔案路徑，代入{message}，未給之語系採內建語系文字，預設{}
  * @param {Object} [optExt.verifyEmailInvalidToken={}] 輸入註冊驗證結果頁「驗證連結無效或已失效」訊息物件，逐語系鍵(eng、cht)各自給文字或檔案路徑，代入{message}，未給之語系採內建語系文字，預設{}
+ * @param {Object} [optExt.verifyEmailFailed={}] 輸入註冊驗證結果頁「驗證失敗(寫入驗證時間失敗，連結仍有效可再點)」訊息物件，逐語系鍵(eng、cht)各自給文字或檔案路徑，代入{message}，未給之語系採內建語系文字，預設{}
  * @param {String} [optExt.verifyEmailResultContent=''] 輸入註冊驗證結果頁HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{title}與{message}置換符({message}依請求lang代入對應語系文字故單一模板即可)，未給採pathTemplate之verifyEmailResult.html(缺檔回退套件內建模板)，預設''
  * @returns {Object} 回傳物件，其內server為hapi伺服器實體，wsrv為w-converhp的伺服器事件物件，wsds為w-serv-webdata的伺服器事件物件，可監聽error事件
  */
@@ -420,12 +421,13 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     //chpwEmTitle/chpwEmContent: 變更密碼通知信({sender}/{name} 置換)
     //regVerifyEmTitle/regVerifyEmContent: 註冊驗證信({sender}/{name}/{verifyUrl} 置換)
     //resetPwEmTitle/resetPwEmContent: 重設密碼通知信({sender}/{name}/{account}/{newPassword} 置換)
-    //userRegistrationVerifySuccess/verifyEmailAlreadyVerified/verifyEmailInvalidToken: 註冊驗證結果頁(server-rendered)之三則訊息, 代入 verifyEmailResultContent 之 {message}
-    //  (2026-09-15 部署方需求: 訊息須點名部署系統, 不宜改內建預設; 沿用本機制得逐語系回退與檔案路徑支援, kpLangExt 雖亦可覆寫但為整鍵取代須兩語系皆給)
+    //userRegistrationVerifySuccess/verifyEmailAlreadyVerified/verifyEmailInvalidToken/verifyEmailFailed: 註冊驗證結果頁(server-rendered)之四則訊息, 代入 verifyEmailResultContent 之 {message}
+    //  (2026-09-15 部署方需求: 訊息須點名部署系統, 不宜改內建預設; 沿用本機制得逐語系回退與檔案路徑支援, kpLangExt 雖亦可覆寫但為整鍵取代須兩語系皆給;
+    //   verifyEmailFailed 為 2026-10-11 新增之寫入失敗訊息, 同屬結果頁故比照, ADR-080)
     let kpLangExtEmail = {}
     let emTextKeys = [
         'chpwEmTitle', 'chpwEmContent', 'regVerifyEmTitle', 'regVerifyEmContent', 'resetPwEmTitle', 'resetPwEmContent',
-        'userRegistrationVerifySuccess', 'verifyEmailAlreadyVerified', 'verifyEmailInvalidToken',
+        'userRegistrationVerifySuccess', 'verifyEmailAlreadyVerified', 'verifyEmailInvalidToken', 'verifyEmailFailed',
     ]
     emTextKeys.forEach((k) => {
         let kp = getEmText(k)
