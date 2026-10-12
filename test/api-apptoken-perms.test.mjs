@@ -420,4 +420,26 @@ describe('應用系統金鑰權限閘 — 17 個權限閘 × 13 種呼叫者 (AD
         assert.strict.equal(hit.includes('"perm-app-base"'), false, '紀錄不得含權杖全文')
     })
 
+
+    it('PERM-A-008-mint: admin 於金鑰清單新增應用系統金鑰列(鑄造, ADR-042): 擁有者為送入之虛擬 id, 該金鑰依其權限可用且可取得虛擬使用者資訊(修改前擁有者被改寫為空字串而回 invalid userId from token)', async function() {
+        let rows = await getRowsForSave('tokens')
+        let t = ds.tokens.funNew({ userId: 'id-perm-minted', isApp: 'y' })
+        t.id = 'id-perm-minted'
+        t.token = 'perm-minted'
+        t.isApp = 'y'
+        t.perms = ['readStats']
+        t.timeEnd = TIME_END
+        rows.push(t)
+        let r = await callFapi('updateTokensList', ['token-for-admin', 'eng', rows])
+        assert.strict.equal(r.ok, true, JSON.stringify(r))
+        let ts = await woItems.tokens.select({ id: 'id-perm-minted' })
+        assert.strict.equal(ts[0].userId, 'id-perm-minted', '擁有者為送入值(ADR-084)')
+        //虛擬使用者資訊經 getUserByToken(需擁有者); 權限閘依 perms
+        let u = await httpApi('getSsoUserInfor', { token: 'perm-minted', key: 'token', value: 'perm-minted' })
+        assert.strict.equal(u.ok, true, JSON.stringify(u))
+        assert.strict.equal(u.val.id, 'id-perm-minted')
+        let sta = await callFapi('getStaIp', ['perm-minted'])
+        assert.strict.equal(sta.ok, true, `readStats 應通過: ${JSON.stringify(sta.err)}`)
+    })
+
 })

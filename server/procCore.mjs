@@ -6,6 +6,7 @@ import map from 'lodash-es/map.js'
 import size from 'lodash-es/size.js'
 import keys from 'lodash-es/keys.js'
 import filter from 'lodash-es/filter.js'
+import isEqual from 'lodash-es/isEqual.js'
 import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
@@ -36,6 +37,7 @@ import waitFun from 'wsemi/src/waitFun.mjs'
 import delay from 'wsemi/src/delay.mjs'
 import nowms2str from 'wsemi/src/nowms2str.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
+import clearXSS from 'wsemi/src/clearXSS.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
 import hashPassword, { verifyPassword } from './hashPassword.mjs'
@@ -48,6 +50,10 @@ import { hasAppPerm, isAppPermsValue, normAppPerms } from '../src/appPerms.mjs'
 
 //keysUserCredential: users 表之憑證欄(密碼雜湊 / 註冊驗證用 token), 對外介接輸出一律剝除 (ADR-068); 新增憑證欄時於此登錄
 let keysUserCredential = ['password', 'tokenVerify']
+
+
+//maxKeyBytes: 主鍵 UTF-8 位元組數上限, 同 LMDB 預設鍵長上限(lmdb/open.js 之 DEFAULT_MAX_KEY_SIZE; 實測 1978 位元組可寫、1979 即拒), 供清單儲存於寫入前驗證 (ADR-081)
+let maxKeyBytes = 1978
 
 
 //htmlEscape: email body 內所有 placeholder 值套用, 防使用者可控欄位 (name / account 等)
@@ -825,6 +831,12 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             return Promise.reject('userRegistrationNameInvalid')
         }
 
+        //account / name / email 會被 clearXSS 改寫即拒絕 (ADR-081): procOrm 寫入時對各欄位 clearXSS, 儲存值將與送入值不同,
+        //而唯一性檢查、登入與重寄驗證信皆以送入值查詢(實測: 帳號 john<doe 存成 john&lt;doe, 以原帳號登入失敗; 另可與 john&lt;doe 重複註冊)
+        if ([account, name, email].some((v) => clearXSS(v) !== v)) {
+            return Promise.reject('htmlMarkupNotAllowed')
+        }
+
         //原子占位「account 鎖」與「email 鎖」兩段獨立 key, 任一衝突即 reject:
         //- 同 account 不同 email 並行 → 第 2 條撞 `createUser:account:<a>` 占位失敗, reject 'key in use'.
         //- 不同 account 同 email 並行 → 第 2 條撞 `createUser:email:<e>` 占位失敗, reject 'key in use'.
@@ -872,7 +884,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             //insert
             //operatorId 傳 u.id (自我參照): 自助註冊本人即創建者, userId / userIdUpdate 寫入自己的 id,
             //可由 userId === id 判斷此 user 為自助註冊（後台 admin 建立則 userId 為 admin id）
-            //寫入失敗時 procOrm 之原文(中文)不回前端, 記 log 後改回語系鍵 (ADR-034, ADR-080)
+            //寫入失敗時 procOrm 之原文不回前端, 記 log 後改回語系鍵 (ADR-034, ADR-080)
             await procOrm(u.id, 'users', 'insert', [u])
                 .catch((err) => {
                     srLog.error({ event: 'fun-createUser-insert', key: 'userRegistrationFailed', account, err: getErrorMessage(err) })
@@ -1399,6 +1411,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //updateTabItems
     //分驗證與寫入兩階段 (ADR-080):
     //- 驗證階段: 全部驗證於任何寫入之前完成, 任一失敗即 reject 該驗證之 key, 資料庫無任何變更 (ADR-021).
+    //  凡可於寫入前判定、寫入時才會被拒或被靜默改寫之輸入一律於此拒絕 (ADR-081): rows 非陣列、主鍵非字串 / 重複 / 超過鍵長上限 → 'invalidRows';
+    //  新增或修改列之欄位值會被 clearXSS 改寫 → 'htmlMarkupNotAllowed'. keyDetect 之三呼叫端皆為 'id', 與 procOrm 判準所用之主鍵欄相同.
     //- 寫入階段: 依刪除、新增、修改之順序寫入, 任一步 reject 即停止後續步驟並 reject 'saveWriteFail', 其前已寫入者不回滾 (ADR-044);
     //  procOrm 遇逐筆失敗亦 reject 且其餘筆已寫入 (w-serv-orm 1.1.7 起). 寫入階段一經進入, 不論成敗皆執行寫入後副作用:
     //  users 表撤銷本批欲刪除與欲停用者之 token, 並清除 opt.ocList 所給之清單快取 (失敗時資料庫可能已部分變更).
@@ -1423,6 +1437,11 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //ocList: 該清單之讀取快取 (wsemi cache), 於寫入階段後清除 (ADR-008, ADR-080); 未給則不清
         let ocList = get(opt, 'ocList', null)
 
+        //check, rows 須為陣列 (ADR-081): 非陣列經 ltdtmapping 成空陣列, 比對時舊表全數歸為刪除
+        if (!isarr(rows)) {
+            return Promise.reject('invalidRows')
+        }
+
         //idsNew: 前端標為新增(transient 欄位 _isNew === true)之列 id, 供下方比對既有列 (ADR-074);
         //_isNew 不在 schema keys 內, 下方 ltdtmapping 取欄時即剝除不入庫
         let idsNew = []
@@ -1444,26 +1463,24 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             })
         }
 
-        //ckKey
+        //ckKey: 偵測欄位未給予(非有效字串)或本批重複, 回傳 'empty'、'duplicate' 或 null
         let ckKey = (rows, key) => {
-            let err = null
-
-            //check
+            let r = null
             let kp = {}
-            each(rows, (v, k) => {
+            each(rows, (v) => {
 
                 //value
                 let value = get(v, key, '')
 
                 //check
                 if (!isestr(value)) {
-                    err = `rows[${k}].${key} is not an effective string`
+                    r = 'empty'
                     return false //跳出
                 }
 
                 //check
                 if (haskey(kp, value)) {
-                    err = `rows[${k}].${key}[${value}] is duplicate`
+                    r = 'duplicate'
                     return false //跳出
                 }
 
@@ -1471,22 +1488,23 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                 kp[value] = true
 
             })
-
-            return err
+            return r
         }
 
-        //偵測未給予或重複
-        let err = null
-        if (true) {
-            if (arrHas(woName, ['users'])) { //users可重複name
-                err = ckKey(rows, 'id')
-                if (err !== null) {
-                    return Promise.reject(err)
-                }
-                err = ckKey(rows, 'email')
-                if (err !== null) {
-                    return Promise.reject(err)
-                }
+        //列格式(三清單共用, ADR-081): 主鍵須為非空字串、本批不重複, 且 UTF-8 位元組數不超過 LMDB 鍵長上限
+        //(超過者寫入時才被 ORM 拒絕, 屆時同批之刪除已落地; 重複者於比對時後列覆蓋前列); 不符一律 reject 'invalidRows'
+        if (ckKey(rows, 'id') !== null || rows.some((r) => Buffer.byteLength(r.id, 'utf8') > maxKeyBytes)) {
+            return Promise.reject('invalidRows')
+        }
+
+        //users 之 email 須為非空字串且本批不重複(users 可重複 name), 回與前端同之語系鍵 (ADR-034, ADR-081; 原回含 email 值之原始字串)
+        if (arrHas(woName, ['users'])) {
+            let ck = ckKey(rows, 'email')
+            if (ck === 'empty') {
+                return Promise.reject('userEmailEmpty')
+            }
+            if (ck === 'duplicate') {
+                return Promise.reject('userEmailDuplicate')
             }
         }
 
@@ -1564,6 +1582,17 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         let r = ltdtDiffByKey(ltdtOld, ltdtNew, keyDetect)
         // console.log('ltdtDiffByKey r', r)
 
+        //新增或修改列之任一欄位值(含主鍵; password 此時為明文、其後雜湊, 不檢查)會被 clearXSS 改寫即拒絕, 屬驗證階段 (ADR-021, ADR-081):
+        //procOrm 寫入時對各欄位 clearXSS(w-serv-orm getMapOrm 之 adjustData), 主鍵會被改寫者 1.1.8 起整批拒絕(屆時同批之刪除已落地),
+        //其餘欄位則被靜默改寫, 使儲存值與送入值不同(account / email 之唯一性與登入即以送入值比對).
+        //刪除不經 clearXSS、比對後屬 same 之列不寫入, 皆不檢查; 惟 users 以 resetOrder 依位置重編 order, 既有列只要位置變動即屬 diff 而受檢
+        let rowsMarkup = filter([...r.add, ...r.diff], (row) => {
+            return keys(row).some((k) => k !== 'password' && !isEqual(clearXSS(row[k]), row[k]))
+        })
+        if (size(rowsMarkup) > 0) {
+            return Promise.reject('htmlMarkupNotAllowed')
+        }
+
         //users 路徑: 對新使用者的明文密碼進行 policy 檢查與 hash, 屬驗證階段, 須於任何寫入之前 (ADR-021, ADR-080;
         //原置於刪除寫入之後, 密碼不符策略時刪除與撤銷已落地卻回驗證錯誤)
         if (woName === 'users' && size(r.add) > 0) {
@@ -1623,7 +1652,25 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
             //add
             if (size(r.add) > 0) {
-                await procOrm(operatorId, woName, 'insert', r.add)
+                if (woName === 'tokens') {
+                    //tokens 之 userId 為令牌擁有者, 而 procOrm(w-serv-orm getMapOrm 之 adjustData)於 insert 時把 userId 欄改寫為其 userId 參數(視為建立者):
+                    //依擁有者分組並以擁有者為參數寫入, 使擁有者即送入值(原以本清單之操作者 '' 寫入, 鑄造之金鑰無擁有者而不可用; ADR-042, ADR-084).
+                    //分組用 Map: 擁有者為任意字串, 一般物件會誤中原型鏈上之鍵(如 constructor)
+                    let mpOwner = new Map()
+                    each(r.add, (row) => {
+                        let owner = get(row, 'userId', '')
+                        if (!mpOwner.has(owner)) {
+                            mpOwner.set(owner, [])
+                        }
+                        mpOwner.get(owner).push(row)
+                    })
+                    for (let [owner, rowsOwner] of mpOwner) {
+                        await procOrm(owner, woName, 'insert', rowsOwner)
+                    }
+                }
+                else {
+                    await procOrm(operatorId, woName, 'insert', r.add)
+                }
             }
 
             //diff

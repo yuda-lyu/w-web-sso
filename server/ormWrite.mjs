@@ -3,7 +3,7 @@ import map from 'lodash-es/map.js'
 import size from 'lodash-es/size.js'
 import join from 'lodash-es/join.js'
 import isfun from 'wsemi/src/isfun.mjs'
-import getItemsFail from 'w-serv-orm/src/getItemsFail.mjs'
+import getItemsFail from 'w-data-collector/src/getItemsFail.mjs'
 
 
 /**
@@ -11,6 +11,7 @@ import getItemsFail from 'w-serv-orm/src/getItemsFail.mjs'
  *
  * w-orm 系列規格: save、del 遇單筆失敗時整批仍 resolve, 該筆以 ok 為 0 並附 err 回報, 須由呼叫端逐筆檢查;
  * 未檢查者其 catch 永不觸發, 失敗被當成功而照常執行後續(寄信、記節流、回報成功).
+ * 逐筆判讀用 w-data-collector 之 getItemsFail(w-serv-orm 1.1.8 起之 procOrm 亦用之, 規則相同).
  * procOrm 自 w-serv-orm 1.1.7 起已內含此檢查(逐筆失敗即 reject), 經 procOrm 之寫入點不需再用本函數.
  * 單筆失敗不中斷整批, 故 reject 時其餘筆數已寫入.
  *

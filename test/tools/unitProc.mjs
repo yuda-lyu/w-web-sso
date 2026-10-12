@@ -1,6 +1,10 @@
 import path from 'path'
 import { fileURLToPath } from 'url'
 import cloneDeep from 'lodash-es/cloneDeep.js'
+import merge from 'lodash-es/merge.js'
+import isEqual from 'lodash-es/isEqual.js'
+import getMapOrm from 'w-serv-orm/src/getMapOrm.mjs'
+import getProc from 'w-serv-orm/src/getProc.mjs'
 import procCore from '../../server/procCore.mjs'
 import procProtect from '../../server/procProtect.mjs'
 
@@ -129,10 +133,14 @@ function mkSrLog() {
 }
 
 
-//mkTable: 記憶體資料表, 回傳形式依 w-orm 系列規格(w-orm-lmdb 1.0.37 WOrmLmdb.mjs 之 save/del/insert JSDoc):
+//mkTable: 記憶體資料表, 語意對齊 w-orm-lmdb(1.0.38 WOrmLmdb.mjs 之 insert / save / del; 1.0.37 → 1.0.38 未改下列語意, 只另加操作中被 close 之整批 reject 與 del 讀取錯誤之逐筆失敗, 替身不模擬):
 //save、del 回傳與輸入等長保序之逐筆陣列, 單筆失敗時整批仍 resolve, 該筆 ok 為 0 並附 err; insert 回傳聚合物件, 錯誤皆屬整批性而 reject.
+//insert 遇既存主鍵略過(ifNoExists, 以 nInserted 計實際新增筆數, 不 reject); save 以 lodash merge 合併舊列(陣列逐索引合併, 較短之新陣列殘留舊尾端, ADR-069),
+//合併後與舊列相同者不寫入(nModified 0). 主鍵 UTF-8 位元組數超過 LMDB 鍵長上限(lmdb/open.js DEFAULT_MAX_KEY_SIZE 1978)者: insert 整批 reject, save 該筆 ok 為 0
+//(真 LMDB 之 insert 於拋錯前已送出之列可能已寫入, 替身簡化為不寫入).
 //故障注入: fail.save / fail.del 放入主鍵即令該筆逐筆失敗; fail.batch 放入函數名(select、insert、save、del)即令該次呼叫整批 reject.
-//calls 記錄各函數之呼叫次數, 供觀察快取是否重抓.
+//calls 記錄各函數之呼叫次數(供觀察快取是否重抓、驗證階段之拒絕未觸發任何寫入); log 記錄各次寫入呼叫之輸入(供核對寫入內容與順序).
+let MAX_KEY_BYTES = 1978
 function mkTable(rows = []) {
     let kp = new Map()
     for (let r of rows) {
@@ -140,13 +148,17 @@ function mkTable(rows = []) {
     }
     let fail = { save: new Set(), del: new Set(), batch: new Set() }
     let calls = { select: 0, insert: 0, save: 0, del: 0 }
+    let log = { insert: [], save: [], del: [] }
     let toArr = (data) => (Array.isArray(data) ? data : [data])
     let isMatch = (r, find) => Object.keys(find || {}).every((k) => r[k] === find[k])
     let rejectBatch = (mode) => Promise.reject(new Error(`injected ${mode} batch fail`))
+    let isKeyTooLarge = (id) => typeof id === 'string' && Buffer.byteLength(id, 'utf8') > MAX_KEY_BYTES
+    let errKeySize = `Key size is larger than the maximum key size (${MAX_KEY_BYTES})`
     return {
         kp,
         fail,
         calls,
+        log,
         get: (id) => cloneDeep(kp.get(id)),
         select: async (find) => {
             calls.select++
@@ -157,22 +169,26 @@ function mkTable(rows = []) {
         },
         insert: async (data) => {
             calls.insert++
+            log.insert.push(cloneDeep(data))
             if (fail.batch.has('insert')) {
                 return rejectBatch('insert')
             }
             let arr = toArr(data)
+            if (arr.some((v) => isKeyTooLarge(v.id))) {
+                return Promise.reject(new Error(errKeySize))
+            }
+            let nInserted = 0
             for (let v of arr) {
-                if (kp.has(v.id)) {
-                    return Promise.reject(new Error(`id[${v.id}] already exists`))
+                if (!kp.has(v.id)) {
+                    kp.set(v.id, cloneDeep(v))
+                    nInserted++
                 }
             }
-            for (let v of arr) {
-                kp.set(v.id, cloneDeep(v))
-            }
-            return { n: arr.length, nInserted: arr.length, ok: 1 }
+            return { n: arr.length, nInserted, ok: 1 }
         },
         save: async (data) => {
             calls.save++
+            log.save.push(cloneDeep(data))
             if (fail.batch.has('save')) {
                 return rejectBatch('save')
             }
@@ -180,9 +196,16 @@ function mkTable(rows = []) {
                 if (fail.save.has(v.id)) {
                     return { n: 1, nInserted: 0, nModified: 0, ok: 0, err: `injected save fail id[${v.id}]` }
                 }
+                if (isKeyTooLarge(v.id)) {
+                    return { n: 1, nInserted: 0, nModified: 0, ok: 0, err: errKeySize }
+                }
                 let old = kp.get(v.id)
                 if (old) {
-                    kp.set(v.id, { ...old, ...cloneDeep(v) })
+                    let vm = merge({}, old, cloneDeep(v))
+                    if (isEqual(vm, old)) {
+                        return { n: 1, nInserted: 0, nModified: 0, ok: 1 }
+                    }
+                    kp.set(v.id, vm)
                     return { n: 1, nInserted: 0, nModified: 1, ok: 1 }
                 }
                 kp.set(v.id, cloneDeep(v))
@@ -191,6 +214,7 @@ function mkTable(rows = []) {
         },
         del: async (data) => {
             calls.del++
+            log.del.push(cloneDeep(data))
             if (fail.batch.has('del')) {
                 return rejectBatch('del')
             }
@@ -208,14 +232,10 @@ function mkTable(rows = []) {
 }
 
 
-//loadMapOrm: 以帶查詢字串之 URL 另載一份 w-serv-orm getMapOrm 模組實例, 回傳以替身 woItems 綁定之 mapOrm(即 procOrm 之核心).
-//getMapOrm 以模組層變數保存 ds 與 woItems(單例); 本 repo 之 npm test 為單一 mocha 行程(--no-parallel), 他檔載入 g_mOrm 時已以真實資料庫設定該單例,
-//另載一份可令替身不覆寫之. SSO 未註冊 addFunCheck / addFunPreProcessing / addFunPostProcessing 且 useCheckUser 為 false(g_mOrm.mjs),
-//故 getProc 包裝之 procOrm 與 mapOrm 行為相同.
-async function loadMapOrm(ds, woItems, tag = 'unit') {
-    let url = import.meta.resolve('w-serv-orm/src/getMapOrm.mjs')
-    let m = await import(`${url}?${tag}`)
-    return m.default(ds, woItems)
+//mkProcOrm: 以替身 woItems 組出真實 w-serv-orm 之 procOrm, 組法同其 WServOrm(getMapOrm → getProc), opt 同 SSO 正式預設(server/WWebSso.mjs 之 optWServOrm).
+//w-serv-orm 1.1.8 起 getMapOrm 與 getProc 皆為各實例狀態, 同一行程內多次組出互不干擾(他檔載入 g_mOrm 之正式實例亦不受影響).
+function mkProcOrm(ds, woItems) {
+    return getProc(getMapOrm(ds, woItems), { useCheckUser: false, getUserById: null, useExcludeWhenNotAdmin: false }).procOrm
 }
 
 
@@ -227,5 +247,5 @@ export {
     buildProtect,
     mkSrLog,
     mkTable,
-    loadMapOrm
+    mkProcOrm
 }

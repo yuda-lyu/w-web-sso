@@ -12,7 +12,8 @@ import { startServersOnce, callFapi } from './tools/api-setup.mjs'
 // 此檔僅含 "API 契約" cases (updateUsersList reject / DB side effect),
 // UI flow (add row + 各 inline 錯誤 + happy save) 走 test/e2e-adduser.test.mjs (Playwright + baseline).
 //
-// 涵蓋 cases: password-* (策略 reject) / self-lockout-* / happy-path / existing-row-password-preserved
+// 涵蓋 cases: password-* (策略 reject) / self-lockout-* / happy-path / existing-row-password-preserved /
+//   寫入前驗證 (ADR-081: 主鍵或欄位含會被 clearXSS 改寫之標記、主鍵超過鍵長上限; 同批之刪除不得落地)
 //
 
 let salt = '{salt}'
@@ -257,6 +258,63 @@ describe('AddUser API — updateUsersList 拒絕情境與副作用', function() 
         let after = await woItems.users.select({ id: testUsers.existing.id })
         assert.strict.equal(after[0].password, originalHash)
         assert.strict.equal(after[0].description, 'updated desc')
+    })
+
+    //usersViaBackend: 由後端讀取使用者清單. 測試行程直讀 LMDB 時, 若於後端寫入後立即讀取可能讀到舊快照(lmdb-js 之讀交易延至計時器重設, 見 ADR-081),
+    //「資料庫無變更」之斷言改由後端讀: 後端若曾寫入, 其讀交易已於自身 commit 時重設
+    async function usersViaBackend() {
+        let r = await callFapi('getUsersList', [userTokens[testUsers.admin.id]])
+        assert.strict.equal(r.ok, true, `getUsersList: ${r.err}`)
+        return r.val
+    }
+
+    it('API-011-markup-id-rejected-before-write: 刪除與主鍵含 HTML 標記之新增列同批 → htmlMarkupNotAllowed, 欲刪除者仍在且其令牌仍有效 (ADR-081)', async function() {
+        //ADR-081 / ADR-021: 主鍵會被 clearXSS 改寫者屬驗證失敗, 於任何寫入之前拒絕(修改前: 刪除落地後新增才被 w-serv-orm 1.1.8 整批拒絕, 回 saveWriteFail 且已撤銷令牌)
+        let tExisting = ds.tokens.funNew({ userId: testUsers.existing.id })
+        tExisting.timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+        await woItems.tokens.insert([tExisting])
+        let newRow = { ...buildNewRowPlain('ap-au-markup-id', 'Pw@KLMN5678', { email: 'ap-au-markup-id@test.com' }), id: '<x>ap-au-markup-id' }
+        let rows = (await buildAllRowsWithNew(newRow)).filter((u) => u.id !== testUsers.existing.id)
+        let r = await callFapi('updateUsersList', [userTokens[testUsers.admin.id], 'eng', rows])
+        assert.strict.equal(r.ok, false)
+        assert.strict.equal(r.err, 'htmlMarkupNotAllowed')
+        let us = await usersViaBackend()
+        assert.strict.equal(us.some((u) => u.id === testUsers.existing.id), true, '欲刪除者應仍在')
+        assert.strict.equal(us.some((u) => u.email === 'ap-au-markup-id@test.com'), false, '新增列不得寫入')
+        //ADR-080 決策 1: 未進入寫入階段不撤銷 → 欲刪除者之令牌仍有效
+        let ck = await callFapi('checkToken', [tExisting.token])
+        assert.strict.equal(ck.ok, true, `欲刪除者之令牌應仍有效: ${ck.err}`)
+    })
+
+    it('API-012-markup-account-rejected: 新增列帳號含 HTML 標記(會被 clearXSS 改寫) → htmlMarkupNotAllowed, 未新增 (ADR-081)', async function() {
+        //ADR-081: 帳號被改寫後儲存值與輸入不同, 以所輸入之帳號登入失敗且唯一性可被繞過 → 驗證階段拒絕
+        let email = 'ap-au-markup-acc@test.com'
+        try {
+            let rows = await buildAllRowsWithNew(buildNewRowPlain('ap<au>markup', 'Pw@KLMN5678', { email }))
+            let r = await callFapi('updateUsersList', [userTokens[testUsers.admin.id], 'eng', rows])
+            assert.strict.equal(r.ok, false)
+            assert.strict.equal(r.err, 'htmlMarkupNotAllowed')
+            let us = await usersViaBackend()
+            assert.strict.equal(us.some((u) => u.email === email), false, '新增列不得寫入')
+        }
+        finally {
+            //修改前會寫入(帳號存成 ap&lt;au>markup), 清掉以免殘留
+            for (let u of await woItems.users.select({ email }).catch(() => [])) {
+                await woItems.users.del({ id: u.id }).catch(() => {})
+            }
+        }
+    })
+
+    it('API-013-overlong-id-rejected-before-write: 刪除與主鍵超過 LMDB 鍵長上限之新增列同批 → invalidRows, 欲刪除者仍在 (ADR-081)', async function() {
+        //ADR-081 / ADR-021: 主鍵 UTF-8 超過 1978 位元組者寫入時才被 LMDB 拒絕(修改前: 刪除已落地, 回 saveWriteFail)
+        let newRow = { ...buildNewRowPlain('ap-au-longid', 'Pw@KLMN5678', { email: 'ap-au-longid@test.com' }), id: 'k'.repeat(1979) }
+        let rows = (await buildAllRowsWithNew(newRow)).filter((u) => u.id !== testUsers.existing.id)
+        let r = await callFapi('updateUsersList', [userTokens[testUsers.admin.id], 'eng', rows])
+        assert.strict.equal(r.ok, false)
+        assert.strict.equal(r.err, 'invalidRows')
+        let us = await usersViaBackend()
+        assert.strict.equal(us.some((u) => u.id === testUsers.existing.id), true, '欲刪除者應仍在')
+        assert.strict.equal(us.some((u) => u.email === 'ap-au-longid@test.com'), false, '新增列不得寫入')
     })
 
 })

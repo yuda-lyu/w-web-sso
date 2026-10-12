@@ -908,10 +908,16 @@ let kpLang = {
         eng: 'No user data after conversion.',
         cht: '轉換後無使用者資料。',
     },
-    //admin 批次更新 (users/tokens/ips) 之 rows 非合法陣列 (防 NoSQL operator injection guard)
+    //admin 批次更新 (users/tokens/ips) 之列格式不符: rows 非合法陣列 (kpfun 守門, 防 NoSQL operator injection guard),
+    //或主鍵非字串 / 本批重複 / 超過儲存鍵長上限 (updateTabItems 驗證階段, ADR-081)
     invalidRows: {
         eng: 'Invalid data format.',
         cht: '資料格式錯誤。',
+    },
+    //輸入之欄位值含 HTML 標記而會被 XSS 清除改寫 (如 < 後接英文字母、白名單外之屬性), 儲存值將與輸入不同, 於寫入前拒絕 (清單儲存與自助註冊, ADR-081)
+    htmlMarkupNotAllowed: {
+        eng: 'The input contains HTML markup that is not allowed (such as "<" followed by a letter). Please remove it and try again.',
+        cht: '輸入內容含有不允許的 HTML 標記（如「<」後接英文字母），請移除後再試一次。',
     },
     //admin 批次更新 users: account 欄位為空 (防直打 API 寫入空帳號)
     accountRequired: {

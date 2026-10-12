@@ -13,6 +13,23 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 ## Upgrade Notes
 
+### Upgrading from 1.1.8 and earlier
+
+**寫入前驗證（行為變更）**：後台清單儲存（`updateUsersList` / `updateTokensList` / `updateIpsList`，含以具寫入權限之 app token 呼叫者）與自助註冊（`createUser`）改於任何寫入之前驗證下列輸入；拒絕時資料庫無任何變更（同批之刪除不會先落地、不撤銷令牌、不清快取）：
+
+| 輸入 | 新回應 key | 原本行為 |
+|---|---|---|
+| 欄位值（含主鍵；明文密碼除外）含會被 XSS 清除改寫之 HTML 標記（如 `<` 後接英文字母、白名單外之屬性；白名單標籤與不構成標記之 `<` 如 `a < b` 照常） | `htmlMarkupNotAllowed` | 一般欄位存成 `&lt;` 之形式（帳號因此無法以所輸入之值登入、唯一性可被繞過）；主鍵則於寫入中段被拒，回 `saveWriteFail` 而同批刪除已落地 |
+| rows 非陣列；主鍵非字串、本批重複，或 UTF-8 超過 1978 位元組（LMDB 鍵長上限） | `invalidRows` | 重複主鍵後列覆蓋前列；超長主鍵於寫入中段失敗（同上部分寫入） |
+| 使用者清單之 email 為空 / 本批重複 | `userEmailEmpty` / `userEmailDuplicate` | 含 email 值之英文字串 |
+
+- 既有資料不回溯：已存成 `&lt;` 形式之值維持原樣。
+- 依賴：`w-serv-orm ^1.1.8`、`w-data-collector ^1.0.46`、`wsemi ^1.9.13`；w-serv-orm 自身之錯誤訊息改為英文（只寫入 srLog，不回前端）。
+
+**停用 `useCheckUser` / `getUserById` / `useExcludeWhenNotAdmin`（行為變更）**：此三鍵原透傳給 w-serv-orm 之使用者檢查。本套件不開放 ORM 通道，寫入皆於各功能內以權杖授權（使用者須為管理者、app token 須具對應寫入權限），自助註冊為公開流程；開啟 `useCheckUser` 時自助註冊必回 `userRegistrationFailed`、金鑰與 IP 清單之儲存必回 `saveWriteFail`（未給 `getUserById` 時使用者清單亦然；有給時以 app token 儲存使用者清單仍然失敗），`useExcludeWhenNotAdmin` 則從未作用。本版起三鍵一律忽略，給予時（含 `null` 等非布林值）於啟動時記警告（console 與 srLog 之 `boot` 事件）；請自 settings / optExt 移除。
+
+**金鑰清單經 API 新增之列保留擁有者（修正）**：直打 `updateTokensList` 新增列（鑄造金鑰；後台介面無新增列）時，擁有者（`userId`）原被改寫為空字串而使該金鑰不可用；本版起依送入值寫入。
+
 ### Upgrading from 1.1.4 and earlier
 
 **修正說明**：1.1.4（含）以前，對外查詢 helper 失敗時會把已代入權杖之完整網址放進 reject 值與 console；消費端若把錯誤原樣回應，送出無效權杖即可取得該系統向 SSO 介接用之 app token。本版起 helper 之 reject 值與 console 皆不含權杖（下述），且 app token 改為依權限授權、預設只能查使用者（見下方「應用系統金鑰權限」）。

@@ -32,6 +32,7 @@ import procLang from './procLang.mjs'
 import procProtect from './procProtect.mjs'
 import procStaInfor from './procStaInfor.mjs'
 import procSettings from './procSettings.mjs'
+import getOptWServOrm from './getOptWServOrm.mjs'
 import { defaultPasswordPolicy } from './defaultPasswordPolicy.mjs'
 
 
@@ -48,9 +49,9 @@ import { defaultPasswordPolicy } from './defaultPasswordPolicy.mjs'
  * @param {String} [pathSettings='./settings.json'] 輸入設定檔案路徑字串，檔案為json5格式，非既存檔案則回退'./settings.json'，預設'./settings.json'
  * @param {Object} [optExt={}] 輸入額外設定物件，與設定檔內容合併且同名鍵以optExt為準，以下各鍵亦可直接寫於設定檔(各鍵之預設值與範例詳套件自帶settings.json)，預設{}
  * @param {Integer} [optExt.serverPort=11007] 輸入伺服器通訊port整數，預設11007
- * @param {Boolean} [optExt.useCheckUser=false] 輸入是否檢查使用者資訊布林值，預設false
- * @param {Function} [optExt.getUserById=null] 輸入當useCheckUser=true時依照使用者ID取得使用者資訊物件函數，預設null
- * @param {Boolean} [optExt.useExcludeWhenNotAdmin=false] 輸入使用ORM的select方法時是否自動刪除數據內isActive欄位之布林值，預設false
+ * @param {Boolean} [optExt.useCheckUser=false] 已停用，給予即忽略並於啟動時記警告：本套件不開放ORM通道，寫入之授權由各功能自行負責(清單儲存須為管理者或具對應權限之應用系統金鑰，自助註冊為公開流程)，不經w-serv-orm之使用者檢查，預設false
+ * @param {Function} [optExt.getUserById=null] 已停用，給予即忽略並於啟動時記警告，原為useCheckUser=true時供w-serv-orm依使用者ID取得使用者資訊之函數，預設null
+ * @param {Boolean} [optExt.useExcludeWhenNotAdmin=false] 已停用，給予即忽略並於啟動時記警告，原僅作用於經ORM之select，本套件之查詢不經ORM，預設false
  * @param {Object} [optExt.webName={}] 輸入站台名稱物件，至少包含語系eng與cht鍵的名稱，預設{}
  * @param {Object} [optExt.webDescription={}] 輸入站台描述物件，至少包含語系eng與cht鍵的名稱，預設{}
  * @param {String} [optExt.webLogo=''] 輸入站台logo字串，採base64格式，預設''
@@ -154,14 +155,12 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         srLog[level]({ event: 'boot', msg })
     }
 
-    //useCheckUser
-    let useCheckUser = get(opt, 'useCheckUser', false)
-
-    //getUserById
-    let getUserById = get(opt, 'getUserById', null)
-
-    //useExcludeWhenNotAdmin
-    let useExcludeWhenNotAdmin = get(opt, 'useExcludeWhenNotAdmin', false)
+    //optWServOrm, 交予 WServOrm 之設定固定(不啟用 w-serv-orm 之使用者檢查與非管理者過濾): 本套件不開放 ORM 通道, 寫入之授權由各功能自行負責
+    //(清單儲存先經 checkToken, 自助註冊為公開流程); settings / optExt 仍給予 useCheckUser、getUserById、useExcludeWhenNotAdmin 者忽略並記警告 (ADR-083)
+    let { optWServOrm, ignored: ignoredOrmKeys } = getOptWServOrm(opt)
+    if (size(ignoredOrmKeys) > 0) {
+        logBoot('warn', `settings / optExt 之 ${ignoredOrmKeys.join('、')} 已停用而忽略: 本套件之寫入皆於各功能內以權杖授權(使用者須為管理者、應用系統金鑰須具對應權限), 自助註冊為公開流程, 不經 w-serv-orm 之使用者檢查(開啟將使自助註冊與金鑰 / IP 清單之儲存必然失敗), 請移除該設定`)
+    }
 
     //webName
     let webName = get(opt, 'webName', {})
@@ -449,12 +448,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         kpLangWeb[lang] = kp
     })
 
-    //WServOrm
-    let optWServOrm = {
-        useCheckUser,
-        getUserById,
-        useExcludeWhenNotAdmin,
-    }
+    //WServOrm, 設定見上方 optWServOrm (ADR-083)
     let wp = {}
     try {
         wp = WServOrm(ds, WOrm, url, db, optWServOrm)

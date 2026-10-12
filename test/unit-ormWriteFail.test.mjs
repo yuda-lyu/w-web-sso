@@ -5,22 +5,21 @@ import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword, { verifyPassword } from '../server/hashPassword.mjs'
 import ormWrite from '../server/ormWrite.mjs'
-import { mkOpt, buildProc, buildProtect, mkSrLog, mkTable, loadMapOrm } from './tools/unitProc.mjs'
+import { mkOpt, buildProc, buildProtect, mkSrLog, mkTable, mkProcOrm } from './tools/unitProc.mjs'
 
 
 //
-// ORM 寫入失敗之處理 (spec: spec/設計要點與取捨.md ADR-080, 並對齊 ADR-021 / ADR-037 / ADR-044)
+// ORM 寫入失敗之處理 (spec: spec/設計要點與取捨.md ADR-080、ADR-081, 並對齊 ADR-021 / ADR-037 / ADR-044)
 //
 // w-orm 系列規格: save、del 遇單筆失敗時整批仍 resolve, 該筆以 ok 為 0 回報; w-serv-orm 1.1.7 起 procOrm 遇逐筆失敗即 reject,
-// 且其餘筆已寫入. 本檔以真實 procCore / procProtect 工廠、真實 w-serv-orm mapOrm, 搭配可注入失敗之記憶體資料表(test/tools/unitProc.mjs mkTable),
-// 驗證寫入失敗時之回應、撤銷 token、清快取、寄信與節流. 不起 server、不碰資料庫.
+// 且其餘筆已寫入; 1.1.8 起新增與修改之主鍵會被 clearXSS 改寫者整批拒絕. 本檔以真實 procCore / procProtect 工廠、真實 w-serv-orm procOrm,
+// 搭配可注入失敗之記憶體資料表(test/tools/unitProc.mjs mkTable), 驗證寫入失敗時之回應、撤銷 token、清快取、寄信與節流. 不起 server、不碰資料庫.
 //
 
 
 let SALT = mkOpt().salt
 let PW_INIT = 'Init@1234'
 let HASH_INIT = hashPassword(PW_INIT, SALT)
-let nEnv = 0
 
 
 //tFuture: token 到期時間(1 小時後)
@@ -53,7 +52,7 @@ let mkIp = (id, ip) => {
 }
 
 
-//mkEnv: 每案例獨立之資料表、mapOrm 實例(帶唯一查詢字串另載, 互不共用模組單例)與 procCore
+//mkEnv: 每案例獨立之資料表、procOrm 實例與 procCore
 async function mkEnv() {
     let users = mkTable([
         mkUser('u-admin', 'admin1', 1, { isAdmin: 'y' }),
@@ -74,8 +73,7 @@ async function mkEnv() {
         mkIp('ip-2', '10.0.0.2'),
     ])
     let woItems = { users, tokens, ips }
-    nEnv++
-    let procOrm = await loadMapOrm(ds, woItems, `unit-ormWriteFail-${nEnv}`)
+    let procOrm = mkProcOrm(ds, woItems)
     let srLog = mkSrLog()
     let mails = []
     let srEmail = {
@@ -131,6 +129,25 @@ let errOf = async (pm) => {
 //errLogs: 取某 event 之 srLog.error 紀錄
 let errLogs = (srLog, event) => {
     return srLog.logs.error.filter((o) => o.event === event)
+}
+
+
+//snapTables: 三表全部列之快照(依主鍵排序), 供斷言「資料庫無任何變更」
+let snapTables = (env) => {
+    let snap = (t) => [...t.kp.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([, r]) => cloneDeep(r))
+    return { users: snap(env.users), tokens: snap(env.tokens), ips: snap(env.ips) }
+}
+
+
+//writesOf: 資料表之寫入呼叫次數(insert + save + del)
+let writesOf = (t) => {
+    return t.calls.insert + t.calls.save + t.calls.del
+}
+
+
+//mkUserNew: 後台新增使用者列(前端以 funNew 產生並標 _isNew, 明文密碼符合策略)
+let mkUserNew = (id, account) => {
+    return { ...ds.users.funNew({ account, name: account, email: `${account}@example.com`, isAdmin: 'n' }), id, password: 'Good@2468', _isNew: true }
 }
 
 
@@ -376,6 +393,9 @@ describe('updateTabItems - 清單儲存之寫入失敗 (ADR-080)', function() {
         //ADR-080 決策 2: 修改步驟之前置清空(陣列欄縮短, ADR-069)失敗即停止, 整列修改不執行
         assert.strictEqual(err, 'saveWriteFail')
         assert.strictEqual(env.tokens.calls.save - nSaveBefore, 1)
+        //ADR-069: 唯一之寫入即前置清空(該欄存 null, procOrm 另補 timeUpdate), 非整列存入
+        let payload = env.tokens.log.save[env.tokens.log.save.length - 1]
+        assert.deepStrictEqual(payload.map((v) => [v.id, v.perms, 'token' in v]), [['t-x1', null, false]])
         assert.deepStrictEqual(env.tokens.get('t-x1').perms, ['readTokens', 'readStats'])
         //ADR-080 決策 3(b)
         let nSelect = env.tokens.calls.select
@@ -392,6 +412,245 @@ describe('updateTabItems - 清單儲存之寫入失敗 (ADR-080)', function() {
         assert.deepStrictEqual(tokenIdsOf(env.tokens, 'u-z'), [])
         let us = await env.p.getUsersListCache()
         assert.strictEqual(us.find((u) => u.id === 'u-z').isActive, 'n')
+    })
+
+    //三清單之呼叫入口(經權杖檢查包裝, 同 kpfun 之下一層)
+    let callOf = {
+        users: (p, rows) => p.checkTokenAndUpdateUsersList('tk-admin', 'eng', rows),
+        tokens: (p, rows) => p.checkTokenAndUpdateTokensList('tk-admin', rows),
+        ips: (p, rows) => p.checkTokenAndUpdateIpsList('tk-admin', rows),
+    }
+
+    it('A11 新增列主鍵含 HTML 標記(會被 clearXSS 改寫)且與刪除同批: 回 htmlMarkupNotAllowed, 資料庫無變更、不撤銷、不清快取', async function() {
+        let env = await mkEnv()
+        await env.p.getUsersListCache()
+        let before = snapTables(env)
+        let rows = listRows(env.users).filter((r) => r.id !== 'u-x')
+        rows.push(mkUserNew('<x>u-new', 'nuser'))
+        let err = await errOf(env.p.checkTokenAndUpdateUsersList('tk-admin', 'eng', rows))
+        //ADR-081 / ADR-021: 欄位值(含主鍵)會被 clearXSS 改寫之新增列屬驗證失敗, 於任何寫入之前拒絕(w-serv-orm 1.1.8 於新增時整批拒絕, 屆時同批之刪除已落地)
+        assert.strictEqual(err, 'htmlMarkupNotAllowed')
+        assert.deepStrictEqual(snapTables(env), before)
+        assert.strictEqual(writesOf(env.users) + writesOf(env.tokens), 0)
+        //ADR-080 決策 1: 未進入寫入階段不撤銷、不清快取、不記寫入錯誤
+        let nSelect = env.users.calls.select
+        await env.p.getUsersListCache()
+        assert.strictEqual(env.users.calls.select, nSelect)
+        assert.strictEqual(errLogs(env.srLog, 'fun-updateTabItems-write').length, 0)
+    })
+
+    it('A12 修改列主鍵含 HTML 標記(既有資料)且與刪除同批(三清單): 回 htmlMarkupNotAllowed, 資料庫無變更', async function() {
+        let cases = [
+            { woName: 'users', idDel: 'u-x', seed: () => mkUser('<x>h', 'huser', 6), edit: (r) => ({ ...r, name: 'huser2' }) },
+            { woName: 'tokens', idDel: 't-z1', seed: () => mkToken('<x>h', 'tk-h', 'u-y'), edit: (r) => ({ ...r, perms: ['readStats'] }) },
+            { woName: 'ips', idDel: 'ip-2', seed: () => mkIp('<x>h', '10.0.0.8'), edit: (r) => ({ ...r, ip: '10.0.0.9' }) },
+        ]
+        for (let c of cases) {
+            let env = await mkEnv()
+            let t = env[c.woName]
+            t.kp.set('<x>h', c.seed())
+            let before = snapTables(env)
+            let rows = listRows(t)
+                .filter((r) => r.id !== c.idDel)
+                .map((r) => (r.id === '<x>h' ? c.edit(r) : r))
+            let err = await errOf(callOf[c.woName](env.p, rows))
+            //ADR-081: 修改列同一判準(w-serv-orm 1.1.8 之 save 同樣整批拒絕)
+            assert.strictEqual(err, 'htmlMarkupNotAllowed', c.woName)
+            assert.deepStrictEqual(snapTables(env), before, c.woName)
+            assert.strictEqual(writesOf(t), 0, c.woName)
+        }
+    })
+
+    it('A13 權杖清單與 IP 清單之新增列主鍵含 HTML 標記且與刪除同批: 同回 htmlMarkupNotAllowed, 資料庫無變更', async function() {
+        let cases = [
+            { woName: 'tokens', idDel: 't-z1', rowNew: { ...mkToken('<x>t-new', 'tk-new', 'u-z'), perms: [] } },
+            { woName: 'ips', idDel: 'ip-2', rowNew: mkIp('<x>ip-new', '10.0.0.3') },
+        ]
+        for (let c of cases) {
+            let env = await mkEnv()
+            let t = env[c.woName]
+            let before = snapTables(env)
+            let rows = listRows(t).filter((r) => r.id !== c.idDel)
+            rows.push(c.rowNew)
+            let err = await errOf(callOf[c.woName](env.p, rows))
+            //ADR-081: 判準位於 updateTabItems 驗證階段, 三種清單同一路徑
+            assert.strictEqual(err, 'htmlMarkupNotAllowed', c.woName)
+            assert.deepStrictEqual(snapTables(env), before, c.woName)
+            assert.strictEqual(writesOf(t), 0, c.woName)
+        }
+    })
+
+    it('A14 對照(三清單): 主鍵含標記之既有列刪除或未變更、新增列主鍵為白名單標籤或不構成標記之 <: 照常寫入(判準同 w-serv-orm, 不多擋)', async function() {
+        let cases = [
+            { woName: 'users', mk: (id, s, order) => (order ? mkUser(id, `${s}user`, order) : mkUserNew(id, `${s}user`)), ord: [6, 7] },
+            { woName: 'tokens', mk: (id, s) => ({ ...mkToken(id, `tk-${s}`, 'u-y'), perms: [] }), ord: [] },
+            { woName: 'ips', mk: (id, s) => mkIp(id, `10.0.1.${s.length}`), ord: [] },
+        ]
+        for (let c of cases) {
+            let env = await mkEnv()
+            let t = env[c.woName]
+            t.kp.set('<x>k', c.mk('<x>k', 'k', c.ord[0]))
+            t.kp.set('<x>h', c.mk('<x>h', 'hh', c.ord[1]))
+            if (c.woName === 'users') {
+                env.tokens.kp.set('t-h1', mkToken('t-h1', 'tk-h1', '<x>h'))
+            }
+            //刪除排在最後之 <x>h、新增列接於尾端: users 之 order 依位置重編, <x>k 之 order 不變方屬未變更(見 A15)
+            let rows = listRows(t).filter((r) => r.id !== '<x>h')
+            rows.push(c.mk('n<1', 'lll'), c.mk('<b>n</b>', 'bbbb'))
+            let err = await errOf(callOf[c.woName](env.p, rows))
+            //ADR-081: 刪除不經 clearXSS 故不檢查; 比對後屬未變更之列不寫入; 'n<1' 與白名單標籤 '<b>n</b>' 不會被 clearXSS 改寫 → 皆照常
+            assert.strictEqual(err, null, c.woName)
+            assert.strictEqual(t.get('<x>h'), undefined, c.woName)
+            assert.ok(t.get('<x>k'), c.woName)
+            assert.ok(t.get('n<1'), c.woName)
+            assert.ok(t.get('<b>n</b>'), c.woName)
+            if (c.woName === 'users') {
+                assert.deepStrictEqual(tokenIdsOf(env.tokens, '<x>h'), [])
+            }
+            assert.strictEqual(env.srLog.logs.error.length, 0, c.woName)
+        }
+    })
+
+    it('A15 使用者清單既有列之主鍵含標記: 介面於最首新增列(order 依位置重編)即使該列落入修改而被拒; 同次刪除該列即可存回', async function() {
+        let env = await mkEnv()
+        env.users.kp.set('<x>h', mkUser('<x>h', 'huser', 6))
+        let before = snapTables(env)
+        //介面之新增列置於最首(src/components/LayoutContentUsers.vue 新增之「添加至最首」), resetOrder 依位置重編 order → 既有各列 order 皆變而屬修改
+        let err = await errOf(env.p.checkTokenAndUpdateUsersList('tk-admin', 'eng', [mkUserNew('u-new', 'nuser'), ...listRows(env.users)]))
+        assert.strictEqual(err, 'htmlMarkupNotAllowed')
+        assert.deepStrictEqual(snapTables(env), before)
+        assert.strictEqual(writesOf(env.users), 0)
+        //處置: 同一次儲存刪除該列(刪除不經 clearXSS)即可存回
+        await env.p.checkTokenAndUpdateUsersList('tk-admin', 'eng', [mkUserNew('u-new', 'nuser'), ...listRows(env.users).filter((r) => r.id !== '<x>h')])
+        assert.ok(env.users.get('u-new'))
+        assert.strictEqual(env.users.get('<x>h'), undefined)
+    })
+
+    it('A16 一般欄位含標記(會被 clearXSS 改寫)之修改列與合法新增同批、無刪除: 回 htmlMarkupNotAllowed, 新增亦未寫入', async function() {
+        let env = await mkEnv()
+        let before = snapTables(env)
+        let rows = listRows(env.users).map((r) => (r.id === 'u-z' ? { ...r, name: 'Tom <CEO>' } : r))
+        rows.push(mkUserNew('u-new', 'nuser'))
+        let err = await errOf(env.p.checkTokenAndUpdateUsersList('tk-admin', 'eng', rows))
+        //ADR-081: 一般欄位之改寫使儲存值與送入值不同(account / email 之登入與唯一性即以送入值比對), 同屬驗證失敗; 修改前之寫入順序為新增先於修改
+        assert.strictEqual(err, 'htmlMarkupNotAllowed')
+        assert.deepStrictEqual(snapTables(env), before)
+        assert.strictEqual(writesOf(env.users), 0)
+    })
+
+    it('A17 權杖清單: 權限縮短(前置清空)與他列欄位含標記同批: 回 htmlMarkupNotAllowed, 前置清空亦未寫入', async function() {
+        let env = await mkEnv()
+        env.tokens.kp.set('t-x1', { ...env.tokens.get('t-x1'), perms: ['readTokens', 'readStats'] })
+        let before = snapTables(env)
+        let rows = listRows(env.tokens).map((r) => {
+            if (r.id === 't-x1') {
+                return { ...r, perms: ['readTokens'] }
+            }
+            if (r.id === 't-y1') {
+                return { ...r, token: '<x>tk-y1' }
+            }
+            return r
+        })
+        let w0 = writesOf(env.tokens)
+        let err = await errOf(env.p.checkTokenAndUpdateTokensList('tk-admin', rows))
+        assert.strictEqual(err, 'htmlMarkupNotAllowed')
+        assert.deepStrictEqual(snapTables(env), before)
+        assert.strictEqual(writesOf(env.tokens) - w0, 0)
+    })
+
+    it('A18 新增列主鍵超過 LMDB 鍵長上限(UTF-8 1978 位元組)且與刪除同批(三清單): 回 invalidRows, 資料庫無變更; 恰為上限者照常寫入', async function() {
+        let idLong = 'k'.repeat(1979)
+        let idMax = `${'中'.repeat(659)}k` //659 x 3 + 1 = 1978 位元組
+        let cases = [
+            { woName: 'users', idDel: 'u-x', mkNew: (id) => mkUserNew(id, 'luser') },
+            { woName: 'tokens', idDel: 't-z1', mkNew: (id) => ({ ...mkToken(id, 'tk-long', 'u-z'), perms: [] }) },
+            { woName: 'ips', idDel: 'ip-2', mkNew: (id) => mkIp(id, '10.0.0.3') },
+        ]
+        for (let c of cases) {
+            let env = await mkEnv()
+            let before = snapTables(env)
+            let rows = listRows(env[c.woName]).filter((r) => r.id !== c.idDel)
+            rows.push(c.mkNew(idLong))
+            let err = await errOf(callOf[c.woName](env.p, rows))
+            //ADR-081 / ADR-021: 超過鍵長上限者寫入時才被 ORM 拒絕(屆時同批之刪除已落地), 於驗證階段拒絕
+            assert.strictEqual(err, 'invalidRows', c.woName)
+            assert.deepStrictEqual(snapTables(env), before, c.woName)
+            let env2 = await mkEnv()
+            await callOf[c.woName](env2.p, [...listRows(env2[c.woName]), c.mkNew(idMax)])
+            assert.ok(env2[c.woName].get(idMax), c.woName)
+        }
+    })
+
+    it('A19 本批主鍵重複(三清單): 回 invalidRows, 資料庫無變更', async function() {
+        let cases = [
+            { woName: 'users', dup: 'u-z', edit: (r) => ({ ...r, name: 'zuser2' }) },
+            { woName: 'tokens', dup: 't-z1', edit: (r) => ({ ...r, perms: ['readStats'] }) },
+            { woName: 'ips', dup: 'ip-1', edit: (r) => ({ ...r, ip: '10.0.0.9' }) },
+        ]
+        for (let c of cases) {
+            let env = await mkEnv()
+            let before = snapTables(env)
+            let rows = listRows(env[c.woName])
+            rows.push(c.edit(rows.find((r) => r.id === c.dup)))
+            let err = await errOf(callOf[c.woName](env.p, rows))
+            //ADR-081: 三清單同一列格式驗證(原只有 users 檢查且回原始字串; tokens / ips 之重複列於比對時後列覆蓋前列)
+            assert.strictEqual(err, 'invalidRows', c.woName)
+            assert.deepStrictEqual(snapTables(env), before, c.woName)
+        }
+    })
+
+    it('A20 使用者清單之 email 為空或本批重複: 回語系鍵 userEmailEmpty / userEmailDuplicate, 資料庫無變更', async function() {
+        let env = await mkEnv()
+        let before = snapTables(env)
+        let rowsEmpty = listRows(env.users).map((r) => (r.id === 'u-z' ? { ...r, email: '' } : r))
+        //ADR-034 / ADR-081: 底層 reject 一律為語系鍵(原為含 email 值之原始字串, 經 kpfun 包裝寫入 srLog 並回前端)
+        assert.strictEqual(await errOf(env.p.checkTokenAndUpdateUsersList('tk-admin', 'eng', rowsEmpty)), 'userEmailEmpty')
+        let rowsDup = listRows(env.users).map((r) => (r.id === 'u-z' ? { ...r, email: 'xuser@example.com' } : r))
+        assert.strictEqual(await errOf(env.p.checkTokenAndUpdateUsersList('tk-admin', 'eng', rowsDup)), 'userEmailDuplicate')
+        assert.deepStrictEqual(snapTables(env), before)
+    })
+
+    it('A21 清單儲存之 rows 非陣列(不經 kpfun 守門之呼叫): 回 invalidRows, 不得把舊表全數視為刪除', async function() {
+        let env = await mkEnv()
+        let before = snapTables(env)
+        assert.strictEqual(await errOf(env.p.updateUsersList({ id: 'u-z' }, { lang: 'eng', operatorId: 'u-admin' })), 'invalidRows')
+        assert.strictEqual(await errOf(env.p.checkTokenAndUpdateIpsList('tk-admin', { id: 'ip-1' })), 'invalidRows')
+        assert.deepStrictEqual(snapTables(env), before)
+    })
+
+    it('A22 判準與上游等價(語料): SSO 拒絕之主鍵即真 procOrm 新增時拒絕者, 拒絕之一般欄值即真 procOrm 會改寫者', async function() {
+        let corpus = ['<x>u', '<b>u', '<b onclick=1>u', '<i>u</i>', 'u<1', 'a < b', 'u>1', 'a>b<c', 'u-new<', 'a<!--x-->b', 'a << b', '<!x', '</x', '<?x', '<img src=x onerror=1>', 'R&D', 'n-ok']
+        for (let s of corpus) {
+            //上游: 以真 w-serv-orm procOrm 新增(主鍵為 s 者看是否拒絕; 欄位 ip 為 s 者看儲存值是否被改寫)
+            let tUp = mkTable([])
+            let po = mkProcOrm(ds, { ips: tUp })
+            let upRejectsId = (await errOf(po('', 'ips', 'insert', [{ id: s, ip: '10.0.0.5', timeBlocked: '' }]))) !== null
+            await po('', 'ips', 'insert', [{ id: 'n-field', ip: s, timeBlocked: '' }])
+            let upRewritesField = tUp.get('n-field').ip !== s
+            //SSO: 經 IP 清單儲存送入同樣之新增列
+            let envId = await mkEnv()
+            let errId = await errOf(envId.p.checkTokenAndUpdateIpsList('tk-admin', [...listRows(envId.ips), mkIp(s, '10.0.0.5')]))
+            let envF = await mkEnv()
+            let errF = await errOf(envF.p.checkTokenAndUpdateIpsList('tk-admin', [...listRows(envF.ips), mkIp('n-field', s)]))
+            assert.strictEqual(errId, upRejectsId ? 'htmlMarkupNotAllowed' : null, `id[${s}]`)
+            assert.strictEqual(errF, upRewritesField ? 'htmlMarkupNotAllowed' : null, `ip[${s}]`)
+        }
+    })
+
+    it('A23 權杖清單新增列(鑄造使用者 token 與應用系統金鑰, ADR-042): 擁有者 userId 為送入值, 不被 procOrm 之建立者戳記改寫(修改前為空字串)', async function() {
+        let env = await mkEnv()
+        let rows = listRows(env.tokens)
+        rows.push({ ...mkToken('t-new-u', 'tk-new-u', 'u-z'), perms: [] })
+        rows.push({ ...mkToken('t-new-a1', 'tk-new-a1', 'id-app-new'), isApp: 'y', perms: ['readStats'] })
+        rows.push({ ...mkToken('t-new-a2', 'tk-new-a2', 'id-app-new'), isApp: 'y', perms: [] })
+        let err = await errOf(env.p.checkTokenAndUpdateTokensList('tk-admin', rows))
+        assert.strictEqual(err, null)
+        //ADR-084: tokens 之 userId 為擁有者; adjustData 於 insert 時把 userId 欄改寫為 procOrm 之 userId 參數(視為建立者), 故依擁有者分組寫入
+        assert.strictEqual(env.tokens.get('t-new-u').userId, 'u-z')
+        assert.strictEqual(env.tokens.get('t-new-a1').userId, 'id-app-new')
+        assert.strictEqual(env.tokens.get('t-new-a2').userId, 'id-app-new')
+        assert.deepStrictEqual(env.tokens.get('t-new-a1').perms, ['readStats'])
+        assert.strictEqual(env.tokens.get('t-x1').userId, 'u-x', '既有列不受影響')
     })
 
 })
@@ -501,6 +760,23 @@ describe('單筆寫入點之逐筆檢查 (ADR-080 決策 5)', function() {
         assert.strictEqual(err, 'userRegistrationFailed')
         assert.strictEqual(env.mails.length, 0)
         assert.strictEqual(errLogs(env.srLog, 'fun-createUser-insert').length, 1)
+    })
+
+    it('B8 createUser 之帳號 / 姓名 / email 含 HTML 標記(會被 clearXSS 改寫): 回 htmlMarkupNotAllowed, 未新增、不寄驗證信', async function() {
+        let cases = [
+            { field: 'account', account: 'john<doe', name: 'john', email: 'john@example.com' },
+            { field: 'name', account: 'tomceo', name: 'Tom <CEO>', email: 'tomceo@example.com' },
+            { field: 'email', account: 'xmail', name: 'xmail', email: '<x>@example.com' },
+        ]
+        for (let c of cases) {
+            let env = await mkEnv()
+            let before = snapTables(env)
+            let err = await errOf(env.p.createUser('eng', { account: c.account, name: c.name, email: c.email, password: 'Pass@9876', confirmPassword: 'Pass@9876' }))
+            //ADR-081: procOrm 寫入時對各欄位 clearXSS, 儲存值將與送入值不同, 而唯一性、登入與重寄驗證信皆以送入值查詢 → 驗證階段拒絕
+            assert.strictEqual(err, 'htmlMarkupNotAllowed', c.field)
+            assert.deepStrictEqual(snapTables(env), before, c.field)
+            assert.strictEqual(env.mails.length, 0, c.field)
+        }
     })
 
 })
