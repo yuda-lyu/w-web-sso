@@ -23,6 +23,7 @@ import { startServersOnce, cleanup, apiUrl } from './e2e-setup.mjs'
 
 
 let fapiPm = null
+let instClient = null //WServHapiClient 實例, 供 root after 停止(ADR-085)
 
 
 //取得 fapi client (lazy init + cached). 須在 startServersOnce 之後呼叫.
@@ -30,7 +31,7 @@ function getFapi() {
     if (fapiPm) return fapiPm
     fapiPm = new Promise((resolve, reject) => {
         let timer = setTimeout(() => reject(new Error('getFapi timeout after 30s — backend not ready')), 30000)
-        WServHapiClient({
+        instClient = WServHapiClient({
             useShowLog: false,
             url: apiUrl,
             apiName: 'api',
@@ -46,13 +47,23 @@ function getFapi() {
             getRefreshTable: () => {},
             getBeforeUpdateTableTags: () => {},
             getAfterUpdateTableTags: () => {},
-        }).on('error', (err) => {
+        })
+        instClient.on('error', (err) => {
             //連線錯誤不直接 reject, 因 init 過程可能短暫 ws 重連
             //getServerMethods 還是會在連上後觸發
             console.log('[api-setup] WServHapiClient error (init phase, will retry):', err && err.message || err)
         })
     })
     return fapiPm
+}
+
+
+//stopFapi: 停止 client 之輪詢、取得函數清單與同步表之請求與計時器; w-serv-hapi 1.1.6 起 clearBroadcast 與 clearSync 兩者皆須呼叫(只呼叫其一時輪詢或同步照常)
+function stopFapi() {
+    if (instClient !== null) {
+        instClient.clearBroadcast()
+        instClient.clearSync()
+    }
 }
 
 
@@ -74,10 +85,11 @@ async function callFapi(funcName, args) {
 
 
 //
-// WServHapiClient 內含 w-sync-webdata 子系統會啟 setInterval 持續輪詢 table tags,
-// 沒對外暴露 close/destroy. 即使 cleanup 殺掉 backend, polling loop 仍 hold event loop
-// 並噴 ECONNREFUSED retry log, 導致 mocha 跑完不退. 唯一可靠的中止方式是 process.exit().
-// 註冊在最末的 root after, 確保 e2e cleanup 已經先跑完才強制退出.
+// 結束: root after 先停止 client(stopFapi), 再強制 process.exit().
+// w-serv-hapi 1.1.6 起 client 可停止: clearBroadcast 清除 w-serv-broadcast 之輪詢計時器並中止在途輪詢, clearSync 中止 w-serv-webdata 自身之在途請求
+// (原註解「沒對外暴露 close/destroy, 唯一可靠的中止方式是 process.exit()」已不成立; 撐住行程者為輪詢計時器而非 w-sync-webdata, ADR-085).
+// exit 保留為保險: 停止前已送出之 callFapi 仍依重試撐住行程, 單一 mocha 行程內另有 g_mOrm 之資料庫連線等資源.
+// 註冊在最末的 root after: e2e-setup 先被 import, 其 root after(cleanup, 殺 backend)先跑, 之後才停止 client 並退出.
 //
 let exitHookRegistered = false
 function registerForceExitOnce() {
@@ -86,6 +98,13 @@ function registerForceExitOnce() {
     if (typeof globalThis.after === 'function') {
         globalThis.after(function() {
             this.timeout(5000)
+            //停止失敗不得阻止其後之退出(否則 mocha 不退), 只印出
+            try {
+                stopFapi()
+            }
+            catch (err) {
+                console.log('[api-setup] stopFapi failed:', err && err.message ? err.message : err)
+            }
             //讓 stdout flush + 給 mocha reporter 印完
             setImmediate(() => process.exit(process.exitCode || 0))
         })

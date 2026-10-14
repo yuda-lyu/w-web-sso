@@ -29,7 +29,7 @@
 <nav >
     
     
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="WWebSso.html">WWebSso</a></li></ul><h3>Global</h3><ul><li><a href="global.html#convertUser">convertUser</a></li><li><a href="global.html#createLockSave">createLockSave</a></li><li><a href="global.html#fetchSsoMsg">fetchSsoMsg</a></li><li><a href="global.html#httpGetJson">httpGetJson</a></li><li><a href="global.html#maskUrl">maskUrl</a></li><li><a href="global.html#submitGuard">submitGuard</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="WWebSso.html">WWebSso</a></li></ul><h3>Global</h3><ul><li><a href="global.html#convertUser">convertUser</a></li><li><a href="global.html#createLockSave">createLockSave</a></li><li><a href="global.html#fetchSsoMsg">fetchSsoMsg</a></li><li><a href="global.html#getIgnoredOrmKeys">getIgnoredOrmKeys</a></li><li><a href="global.html#httpGetJson">httpGetJson</a></li><li><a href="global.html#maskUrl">maskUrl</a></li><li><a href="global.html#ormWrite">ormWrite</a></li><li><a href="global.html#resolveShellWorker">resolveShellWorker</a></li><li><a href="global.html#submitGuard">submitGuard</a></li><li><a href="global.html#wrapTimer">wrapTimer</a></li></ul>
     
 </nav>
 
@@ -82,7 +82,7 @@ token發放/驗證/更新, 後台使用者/金鑰/IP管理與統計資訊, 以�
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="server_WWebSso.mjs.html">server/WWebSso.mjs</a>, <a href="server_WWebSso.mjs.html#line102">line 102</a>
+        <a href="server_WWebSso.mjs.html">server/WWebSso.mjs</a>, <a href="server_WWebSso.mjs.html#line104">line 104</a>
     </li></ul></dd>
     
 
@@ -437,12 +437,10 @@ token發放/驗證/更新, 後台使用者/金鑰/IP管理與統計資訊, 以�
             
                 <td class="default">
                 
-                    <code>false</code>
-                
                 </td>
             
 
-            <td class="description last"><p>輸入是否檢查使用者資訊布林值，預設false</p></td>
+            <td class="description last"><p>已停用(w-serv-orm 1.1.9 已移除)，本套件不轉交；給予undefined、null、false以外之值即忽略並於啟動時記警告。寫入之授權由各功能自行負責(清單儲存須為管理者或具對應權限之應用系統金鑰，自助註冊為公開流程)</p></td>
         </tr>
 
     
@@ -477,12 +475,10 @@ token發放/驗證/更新, 後台使用者/金鑰/IP管理與統計資訊, 以�
             
                 <td class="default">
                 
-                    <code>null</code>
-                
                 </td>
             
 
-            <td class="description last"><p>輸入當useCheckUser=true時依照使用者ID取得使用者資訊物件函數，預設null</p></td>
+            <td class="description last"><p>已停用(w-serv-orm 1.1.9 已移除)，本套件不轉交；給予undefined、null、false以外之值即忽略並於啟動時記警告</p></td>
         </tr>
 
     
@@ -517,12 +513,10 @@ token發放/驗證/更新, 後台使用者/金鑰/IP管理與統計資訊, 以�
             
                 <td class="default">
                 
-                    <code>false</code>
-                
                 </td>
             
 
-            <td class="description last"><p>輸入使用ORM的select方法時是否自動刪除數據內isActive欄位之布林值，預設false</p></td>
+            <td class="description last"><p>已停用(w-serv-orm 1.1.9 已移除)，本套件不轉交；給予undefined、null、false以外之值即忽略並於啟動時記警告</p></td>
         </tr>
 
     
@@ -1362,7 +1356,7 @@ token發放/驗證/更新, 後台使用者/金鑰/IP管理與統計資訊, 以�
                 </td>
             
 
-            <td class="description last"><p>輸入log紀錄儲存位置字串，預設'./logs'</p></td>
+            <td class="description last"><p>輸入log紀錄儲存位置字串，相對路徑以工作目錄解析，資料夾不可建立時(例如上層為檔案)於啟動時拋錯(w-syslog 1.0.33起，早於建立資料庫)，預設'./logs'</p></td>
         </tr>
 
     
@@ -2329,6 +2323,46 @@ token發放/驗證/更新, 後台使用者/金鑰/IP管理與統計資訊, 以�
 
         <tr>
             
+                <td class="name"><code>verifyEmailFailed</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>{}</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入註冊驗證結果頁「驗證失敗(寫入驗證時間失敗，連結仍有效可再點)」訊息物件，逐語系鍵(eng、cht)各自給文字或檔案路徑，代入{message}，未給之語系採內建語系文字，預設{}</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
                 <td class="name"><code>verifyEmailResultContent</code></td>
             
 
@@ -2395,7 +2429,7 @@ token發放/驗證/更新, 後台使用者/金鑰/IP管理與統計資訊, 以�
 
         
 <div class="param-desc">
-    <p>回傳物件，其內server為hapi伺服器實體，wsrv為w-converhp的伺服器事件物件，wsds為w-serv-webdata的伺服器事件物件，可監聽error事件</p>
+    <p>回傳w-serv-hapi之伺服器事件物件(WServHapiServer)：可監聽error事件(啟動失敗與執行期錯誤，內容依來源層而異，未監聽時由w-serv-hapi以console.error輸出)；ready()回傳promise，伺服器啟動成功時resolve為hapi伺服器實體、失敗時以原錯誤reject；stop()回傳promise，停止hapi伺服器與其通訊層資源，恆resolve，惟不停止本套件之背景計時器(帳號、權杖與IP之封鎖偵測)與資料庫連線，呼叫後行程仍持續(本套件尚未提供完整停止)；getServer()與getInstWConverServer()回傳promise，分別resolve為hapi伺服器實體與通訊實體</p>
 </div>
 
 
@@ -2454,7 +2488,7 @@ token發放/驗證/更新, 後台使用者/金鑰/IP管理與統計資訊, 以�
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Sun Oct 11 2026 16:39:27 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Wed Oct 14 2026 08:46:15 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>

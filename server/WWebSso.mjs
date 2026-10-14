@@ -32,7 +32,7 @@ import procLang from './procLang.mjs'
 import procProtect from './procProtect.mjs'
 import procStaInfor from './procStaInfor.mjs'
 import procSettings from './procSettings.mjs'
-import getOptWServOrm from './getOptWServOrm.mjs'
+import getIgnoredOrmKeys from './getIgnoredOrmKeys.mjs'
 import { defaultPasswordPolicy } from './defaultPasswordPolicy.mjs'
 
 
@@ -49,9 +49,9 @@ import { defaultPasswordPolicy } from './defaultPasswordPolicy.mjs'
  * @param {String} [pathSettings='./settings.json'] 輸入設定檔案路徑字串，檔案為json5格式，非既存檔案則回退'./settings.json'，預設'./settings.json'
  * @param {Object} [optExt={}] 輸入額外設定物件，與設定檔內容合併且同名鍵以optExt為準，以下各鍵亦可直接寫於設定檔(各鍵之預設值與範例詳套件自帶settings.json)，預設{}
  * @param {Integer} [optExt.serverPort=11007] 輸入伺服器通訊port整數，預設11007
- * @param {Boolean} [optExt.useCheckUser=false] 已停用，給予即忽略並於啟動時記警告：本套件不開放ORM通道，寫入之授權由各功能自行負責(清單儲存須為管理者或具對應權限之應用系統金鑰，自助註冊為公開流程)，不經w-serv-orm之使用者檢查，預設false
- * @param {Function} [optExt.getUserById=null] 已停用，給予即忽略並於啟動時記警告，原為useCheckUser=true時供w-serv-orm依使用者ID取得使用者資訊之函數，預設null
- * @param {Boolean} [optExt.useExcludeWhenNotAdmin=false] 已停用，給予即忽略並於啟動時記警告，原僅作用於經ORM之select，本套件之查詢不經ORM，預設false
+ * @param {Boolean} [optExt.useCheckUser] 已停用(w-serv-orm 1.1.9 已移除)，本套件不轉交；給予undefined、null、false以外之值即忽略並於啟動時記警告。寫入之授權由各功能自行負責(清單儲存須為管理者或具對應權限之應用系統金鑰，自助註冊為公開流程)
+ * @param {Function} [optExt.getUserById] 已停用(w-serv-orm 1.1.9 已移除)，本套件不轉交；給予undefined、null、false以外之值即忽略並於啟動時記警告
+ * @param {Boolean} [optExt.useExcludeWhenNotAdmin] 已停用(w-serv-orm 1.1.9 已移除)，本套件不轉交；給予undefined、null、false以外之值即忽略並於啟動時記警告
  * @param {Object} [optExt.webName={}] 輸入站台名稱物件，至少包含語系eng與cht鍵的名稱，預設{}
  * @param {Object} [optExt.webDescription={}] 輸入站台描述物件，至少包含語系eng與cht鍵的名稱，預設{}
  * @param {String} [optExt.webLogo=''] 輸入站台logo字串，採base64格式，預設''
@@ -72,7 +72,7 @@ import { defaultPasswordPolicy } from './defaultPasswordPolicy.mjs'
  * @param {String} [optExt.subfolder=''] 輸入站台所在子目錄字串，提供站台位於內網採反向代理進行服務時，故需支援位於子目錄情形，預設''
  * @param {String} [optExt.mappingBy='email'] 輸入外部系統識別使用者token後所提供之資料物件，與權限系統之使用者資料物件，兩者間查找之對應欄位，可選'id'、'email'、'name'，預設'email'
  * @param {Object} [optExt.kpLangExt={}] 輸入擴充前端語系物件，預設{}
- * @param {String} [optExt.logFd='./logs'] 輸入log紀錄儲存位置字串，預設'./logs'
+ * @param {String} [optExt.logFd='./logs'] 輸入log紀錄儲存位置字串，相對路徑以工作目錄解析，資料夾不可建立時(例如上層為檔案)於啟動時拋錯(w-syslog 1.0.33起，早於建立資料庫)，預設'./logs'
  * @param {String} [optExt.logInterval='hr'] 輸入log紀錄檔案拆檔時長字串，預設'hr'
  * @param {Integer} [optExt.logNumKeep=null] 輸入log檔保留數上限正整數，超出者自最舊刪除，未給採w-syslog預設(hr模式365*24、day模式365)，預設null
  * @param {String} [optExt.emSrcEmail=null] 輸入email寄信用email字串，預設null
@@ -99,7 +99,7 @@ import { defaultPasswordPolicy } from './defaultPasswordPolicy.mjs'
  * @param {Object} [optExt.verifyEmailInvalidToken={}] 輸入註冊驗證結果頁「驗證連結無效或已失效」訊息物件，逐語系鍵(eng、cht)各自給文字或檔案路徑，代入{message}，未給之語系採內建語系文字，預設{}
  * @param {Object} [optExt.verifyEmailFailed={}] 輸入註冊驗證結果頁「驗證失敗(寫入驗證時間失敗，連結仍有效可再點)」訊息物件，逐語系鍵(eng、cht)各自給文字或檔案路徑，代入{message}，未給之語系採內建語系文字，預設{}
  * @param {String} [optExt.verifyEmailResultContent=''] 輸入註冊驗證結果頁HTML字串或檔案路徑(檔案存在即讀檔作為內容)，支援{title}與{message}置換符({message}依請求lang代入對應語系文字故單一模板即可)，未給採pathTemplate之verifyEmailResult.html(缺檔回退套件內建模板)，預設''
- * @returns {Object} 回傳物件，其內server為hapi伺服器實體，wsrv為w-converhp的伺服器事件物件，wsds為w-serv-webdata的伺服器事件物件，可監聽error事件
+ * @returns {Object} 回傳w-serv-hapi之伺服器事件物件(WServHapiServer)：可監聽error事件(啟動失敗與執行期錯誤，內容依來源層而異，未監聽時由w-serv-hapi以console.error輸出)；ready()回傳promise，伺服器啟動成功時resolve為hapi伺服器實體、失敗時以原錯誤reject；stop()回傳promise，停止hapi伺服器與其通訊層資源，恆resolve，惟不停止本套件之背景計時器(帳號、權杖與IP之封鎖偵測)與資料庫連線，呼叫後行程仍持續(本套件尚未提供完整停止)；getServer()與getInstWConverServer()回傳promise，分別resolve為hapi伺服器實體與通訊實體
  */
 function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let instWServHapiServer = null
@@ -155,11 +155,12 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         srLog[level]({ event: 'boot', msg })
     }
 
-    //optWServOrm, 交予 WServOrm 之設定固定(不啟用 w-serv-orm 之使用者檢查與非管理者過濾): 本套件不開放 ORM 通道, 寫入之授權由各功能自行負責
-    //(清單儲存先經 checkToken, 自助註冊為公開流程); settings / optExt 仍給予 useCheckUser、getUserById、useExcludeWhenNotAdmin 者忽略並記警告 (ADR-083)
-    let { optWServOrm, ignored: ignoredOrmKeys } = getOptWServOrm(opt)
+    //ignoredOrmKeys, w-serv-orm 已移除之使用者檢查設定: 本套件不轉交(WServOrm 不傳 opt); settings / optExt 仍給予且其值會被上游拒絕者忽略並記警告,
+    //使舊設定照常啟動(若轉交, w-serv-orm 1.1.10 起於建構時拋錯). 寫入之授權由各功能自行負責(清單儲存先經 checkToken, 自助註冊為公開流程) (ADR-083 / ADR-085)
+    //警告只寫出被列出之鍵名, 理由文字不含其他鍵名(R-ORM-02)
+    let ignoredOrmKeys = getIgnoredOrmKeys(opt)
     if (size(ignoredOrmKeys) > 0) {
-        logBoot('warn', `settings / optExt 之 ${ignoredOrmKeys.join('、')} 已停用而忽略: 本套件之寫入皆於各功能內以權杖授權(使用者須為管理者、應用系統金鑰須具對應權限), 自助註冊為公開流程, 不經 w-serv-orm 之使用者檢查(開啟將使自助註冊與金鑰 / IP 清單之儲存必然失敗), 請移除該設定`)
+        logBoot('warn', `settings / optExt 之 ${ignoredOrmKeys.join('、')} 已忽略: w-serv-orm 1.1.9 起已移除此類使用者檢查設定, 本套件之寫入皆於各功能內以權杖授權(使用者須為管理者、應用系統金鑰須具對應權限), 自助註冊為公開流程, 請自設定移除`)
     }
 
     //webName
@@ -448,10 +449,10 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         kpLangWeb[lang] = kp
     })
 
-    //WServOrm, 設定見上方 optWServOrm (ADR-083)
+    //WServOrm, 不傳 opt: w-serv-orm 1.1.9 起無設定鍵, 已移除之使用者檢查設定見上方 ignoredOrmKeys (ADR-085)
     let wp = {}
     try {
-        wp = WServOrm(ds, WOrm, url, db, optWServOrm)
+        wp = WServOrm(ds, WOrm, url, db)
     }
     catch (err) {
         console.log('WServOrm init failed', err)
@@ -1056,7 +1057,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
     //WServHapiServer
     let optHapi = {
-        port: opt.serverPort,
+        port: serverPort, //已正規化之值(未給或無效即 11007); 原交未正規化之 opt.serverPort, 未給時 w-serv-hapi 改用其預設 8080 (ADR-085)
         pathStaticFiles,
         apiName: 'api',
         apis,

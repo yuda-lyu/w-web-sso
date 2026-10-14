@@ -1,11 +1,12 @@
-//api-ormopts.test.mjs — 部署設定給予 w-serv-orm 之使用者檢查(useCheckUser 等)時, 各寫入點照常且啟動時記警告 (ADR-083)
+//api-ormopts.test.mjs — 部署設定給予 w-serv-orm 已移除之使用者檢查設定(useCheckUser 等)時, 照常啟動、啟動時記警告且各寫入點照常 (ADR-083 / ADR-085)
 //
-// 依據: spec/設計要點與取捨.md ADR-083
-//   - WWebSso 一律以 useCheckUser:false、getUserById:null、useExcludeWhenNotAdmin:false 建立 WServOrm(server/getOptWServOrm.mjs);
-//     settings / optExt 仍給予者忽略, 並於啟動時記警告(console 與 srLog 之 boot 事件, warn)列出被忽略之鍵
+// 依據: spec/設計要點與取捨.md ADR-083、ADR-085; CLAUDE_rulebook.md R-ORM-02
+//   - WWebSso 不轉交此三鍵(WServOrm 不傳 opt); settings / optExt 給予上游會拒絕之值者忽略, 並於啟動時記警告(console 與 srLog 之 boot 事件, warn),
+//     只列出被忽略之鍵、未給者不出現(server/getIgnoredOrmKeys.mjs)
 //   - 寫入之授權由各功能自行負責(checkToken: 使用者須為管理者、應用系統金鑰須具對應寫入權限; 自助註冊為公開流程), 故下列寫入照常:
 //     自助註冊、使用者清單(管理者 / writeUsers)、金鑰清單(管理者 / writeTokens)、IP 清單(管理者 / writeIps)
-//   - 修改前: useCheckUser:true(未給 getUserById)時上列寫入皆失敗(自助註冊回 userRegistrationFailed, 清單儲存回 saveWriteFail)
+//   - 本檔為「舊設定不使後端啟動失敗」之端到端守護: 若改為轉交, w-serv-orm 1.1.10 起於建構時拋錯, before 之重啟即逾時而 8 案全紅
+//   - 2026-10-12 修改前(w-serv-orm 1.1.8 透傳): useCheckUser:true(未給 getUserById)時上列寫入皆失敗(自助註冊回 userRegistrationFailed, 清單儲存回 saveWriteFail)
 // 作法: 真後端(11007)以臨時 settings(useCheckUser:true、useExcludeWhenNotAdmin:true)重啟; SMTP 導向 127.0.0.1:1(註冊驗證信必敗而不外寄, 寄信失敗不阻斷註冊, 既有契約).
 //   每案例前重置 base seed + 本檔 fixture, 案例後只刪非 base seed(對齊其他 api 檔); 檔尾以預設 settings 重啟.
 

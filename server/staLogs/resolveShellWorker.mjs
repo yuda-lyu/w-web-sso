@@ -1,0 +1,108 @@
+import fs from 'fs'
+import path from 'path'
+import { createRequire } from 'module'
+
+
+//解析 staLogs worker 檔之絕對路徑(規則帳本 R-PKG-01; X1, ADR-086, 對應 w-syslog 審計之方案④; 與 w-web-api / w-web-perm 同一實作, 只差 PKG_NAME).
+//why: 原以模組頂層之 __filename／__dirname 於載入時算出 worker 路徑——打包成 umd(toolg/gDistRollup.mjs)時,
+//rollup 把 import.meta.url 換成引用 __filename 之墊片且避讓名單不含 __filename, 頂層同名宣告使 bundle 載入即 TDZ;
+//改名後 __dirname 為 bundle 所在資料夾(dist/), 其下無 worker 檔. 故改為首次使用時依下列順序解析(由呼叫端快取).
+
+
+let PKG_NAME = 'w-web-sso'
+let REL_SHELL_WORKER = 'server/staLogs/staLogsCore.shellWorker.mjs'
+
+
+//findNearestPkgDir: 由 dir 往上找最近之含 package.json 之資料夾, 找不到回 ''
+function findNearestPkgDir(dir, existsSync) {
+    let d = dir
+    for (;;) {
+        if (existsSync(path.join(d, 'package.json'))) {
+            return d
+        }
+        let up = path.dirname(d)
+        if (up === d) {
+            return ''
+        }
+        d = up
+    }
+}
+
+
+/**
+ * 解析本套件 staLogs worker 檔之絕對路徑, 供源碼、已安裝之套件、本套件之 dist 與被下游再打包時皆可用
+ *
+ * 順序: (a) 由 fpSelf 往上找最近之 package.json, 其 name 為 pkgName 且其下 rel 存在 → 採用(最近之 package.json 名稱不符即不再往上);
+ * (b) createRequire(fpSelf).resolve(`${pkgName}/${rel}`)(被下游打包時往上找 node_modules); (c) 同上但以 cwd 為基準(bundle 被搬離 node_modules 樹而由專案根執行);
+ * (d) 皆失敗拋 Error, 訊息含套件名、相對路徑與已試之位置
+ *
+ * @param {Object} p 輸入物件
+ * @param {String} p.fpSelf 輸入呼叫端模組之檔案絕對路徑(由 import.meta.url 轉得; 打包後為 bundle 之位置)
+ * @param {String} [p.cwd=process.cwd()] 輸入 (c) 之基準資料夾
+ * @param {String} [p.pkgName='w-web-sso'] 輸入本套件名稱
+ * @param {String} [p.rel='server/staLogs/staLogsCore.shellWorker.mjs'] 輸入 worker 檔相對於套件根之路徑
+ * @param {Function} [p.existsSync=fs.existsSync] 輸入檔案是否存在之函數(測試注入用)
+ * @param {Function} [p.readFileSync=fs.readFileSync] 輸入讀檔函數(測試注入用)
+ * @param {Function} [p.createRequire] 輸入 module.createRequire(測試注入用)
+ * @returns {String} 回傳 worker 檔之絕對路徑
+ */
+function resolveShellWorker(p = {}) {
+    let fpSelf = p.fpSelf
+    let cwd = p.cwd || process.cwd()
+    let pkgName = p.pkgName || PKG_NAME
+    let rel = p.rel || REL_SHELL_WORKER
+    let existsSync = p.existsSync || fs.existsSync
+    let readFileSync = p.readFileSync || fs.readFileSync
+    let createRequireFn = p.createRequire || createRequire
+    if (typeof fpSelf !== 'string' || fpSelf === '') {
+        throw new Error('invalid fpSelf')
+    }
+
+    let tried = []
+
+    //(a) 本模組所屬套件根
+    let dirPkg = findNearestPkgDir(path.dirname(fpSelf), existsSync)
+    if (dirPkg === '') {
+        tried.push(`(a) no package.json above ${path.dirname(fpSelf)}`)
+    }
+    else {
+        let name = ''
+        try {
+            name = JSON.parse(readFileSync(path.join(dirPkg, 'package.json'), 'utf8')).name
+        }
+        catch (err) {}
+        let fp = path.join(dirPkg, rel)
+        if (name !== pkgName) {
+            tried.push(`(a) ${path.join(dirPkg, 'package.json')} name[${name}]`)
+        }
+        else if (!existsSync(fp)) {
+            tried.push(`(a) ${fp}`)
+        }
+        else {
+            return fp
+        }
+    }
+
+    //(b) 由本模組位置以模組解析, (c) 由 cwd 以模組解析
+    let id = `${pkgName}/${rel}`
+    let bases = [['b', fpSelf], ['c', path.join(cwd, 'noop.js')]]
+    for (let [k, base] of bases) {
+        try {
+            let fp = createRequireFn(base).resolve(id)
+            if (existsSync(fp)) {
+                return fp
+            }
+            tried.push(`(${k}) ${fp}`)
+        }
+        catch (err) {
+            tried.push(`(${k}) resolve ${id} from ${base}`)
+        }
+    }
+
+    //(d)
+    throw new Error(`cannot resolve ${rel} of ${pkgName} (the package must be installed with its server folder), tried: ${tried.join('; ')}`)
+}
+
+
+export { PKG_NAME, REL_SHELL_WORKER }
+export default resolveShellWorker

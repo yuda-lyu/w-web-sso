@@ -24,9 +24,19 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 | 使用者清單之 email 為空 / 本批重複 | `userEmailEmpty` / `userEmailDuplicate` | 含 email 值之英文字串 |
 
 - 既有資料不回溯：已存成 `&lt;` 形式之值維持原樣。
-- 依賴：`w-serv-orm ^1.1.8`、`w-data-collector ^1.0.46`、`wsemi ^1.9.13`；w-serv-orm 自身之錯誤訊息改為英文（只寫入 srLog，不回前端）。
+- 依賴：`w-serv-orm ^1.1.11`、`w-serv-hapi ^1.1.6`、`w-data-collector ^1.0.46`、`w-syslog ^1.0.33`、`w-orm-lmdb ^1.0.39`、`wsemi ^1.9.16`；w-serv-orm 自身之錯誤訊息改為英文（只寫入 srLog，不回前端）。
 
-**停用 `useCheckUser` / `getUserById` / `useExcludeWhenNotAdmin`（行為變更）**：此三鍵原透傳給 w-serv-orm 之使用者檢查。本套件不開放 ORM 通道，寫入皆於各功能內以權杖授權（使用者須為管理者、app token 須具對應寫入權限），自助註冊為公開流程；開啟 `useCheckUser` 時自助註冊必回 `userRegistrationFailed`、金鑰與 IP 清單之儲存必回 `saveWriteFail`（未給 `getUserById` 時使用者清單亦然；有給時以 app token 儲存使用者清單仍然失敗），`useExcludeWhenNotAdmin` 則從未作用。本版起三鍵一律忽略，給予時（含 `null` 等非布林值）於啟動時記警告（console 與 srLog 之 `boot` 事件）；請自 settings / optExt 移除。
+**停用 `useCheckUser` / `getUserById` / `useExcludeWhenNotAdmin`（行為變更）**：此三鍵原透傳給 w-serv-orm 之使用者檢查；w-serv-orm 1.1.9 起已移除此三鍵（1.1.10 起給予 `undefined`、`null`、`false` 以外之值即於建構時拋錯）。本套件不再轉交，寫入皆於各功能內以權杖授權（使用者須為管理者、app token 須具對應寫入權限），自助註冊為公開流程。舊設定若仍給予（如 `useCheckUser: true`），後端照常啟動並於啟動時記警告（console 與 srLog 之 `boot` 事件，只列出給予之鍵）；`null`、`false` 視同未給、不警告；請自 settings / optExt 移除。停用前之行為：開啟 `useCheckUser` 時自助註冊必回 `userRegistrationFailed`、金鑰與 IP 清單之儲存必回 `saveWriteFail`（未給 `getUserById` 時使用者清單亦然；有給時以 app token 儲存使用者清單仍然失敗），`useExcludeWhenNotAdmin` 則從未作用。
+
+**`serverPort` 未給或無效時監聽 11007（修正）**：原後端把未正規化之 `serverPort` 交給 w-serv-hapi，settings 未給或給非正整數時實際監聽 8080，與文件所載之預設 11007、註冊驗證信連結之回退網址 `http://localhost:11007` 不一致；本版起一律監聽正規化後之值。
+
+**背景計時器之錯誤不再中斷後端（修正）**：w-serv-hapi 1.1.6 起不再於行程層攔截未處理之錯誤（本套件亦不註冊，全域錯誤政策由部署方決定）。本版起帳號登入失敗紀錄剪枝、權杖與 IP 之調用次數封鎖、新 IP 偵測等計時器之內部錯誤一律記入 srLog（`event: 'timer-error'`）並於下一輪照常執行，不會使後端行程結束；原新 IP 偵測於讀取 IP 清單失敗後即永久停止偵測。
+
+**統計之 log 掃描 worker 改於首次統計時定位（修正）**：原於模組載入時以模組所在位置組出 worker 檔之路徑，經打包（本套件之 `dist`，即 `main` 所指之 `dist/w-web-sso.umd.js`，或被下游專案再打包）後載入即拋 `ReferenceError: Cannot access '…' before initialization`，且打包後之位置下沒有 worker 檔。本版起於第一次統計時依序由本套件根目錄、bundle 所在位置之 `node_modules`、工作目錄之 `node_modules` 定位 `server/staLogs/staLogsCore.shellWorker.mjs` 並快取；找不到時該次統計回 `getStaDataFailed`（srLog 記錄已試之位置），不影響其他功能。安裝時須保留套件之 `server/` 資料夾（預設即保留）。bundle 內之 w-syslog 原亦有同型問題，已隨其 1.0.33 修正，本版之 `dist` 可正常載入。
+
+**log（依賴 w-syslog 1.0.33，行為變更）**：`logFd` 之資料夾不可建立（例如上層為檔案）時啟動即拋錯（早於建立資料庫）；寫檔失敗與 log 背景執行緒之錯誤不再使後端行程結束（改輸出至 stderr）；`logFd` 為連結（junction／symlink）時亦依 `logNumKeep`（未給採 w-syslog 預設）刪除最舊之 log 檔，原本不刪；log 資料夾於執行中被刪除時，切檔時自動重建。
+
+**回傳物件**：`WWebSso(...)` 回傳 w-serv-hapi 之伺服器事件物件（可監聽 `error`）；w-serv-hapi 1.1.6 起另有 `ready()`、`stop()`，其中 `stop()` 只停止 HTTP 與通訊層，不停止本套件之背景計時器與資料庫連線，呼叫後行程仍持續（完整停止尚未提供）。
 
 **金鑰清單經 API 新增之列保留擁有者（修正）**：直打 `updateTokensList` 新增列（鑄造金鑰；後台介面無新增列）時，擁有者（`userId`）原被改寫為空字串而使該金鑰不可用；本版起依送入值寫入。
 

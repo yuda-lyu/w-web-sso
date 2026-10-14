@@ -30,6 +30,7 @@ import pmSeries from 'wsemi/src/pmSeries.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
 import ds from '../src/schema/index.mjs'
 import ormWrite from './ormWrite.mjs'
+import wrapTimer from './wrapTimer.mjs'
 import { maskToken } from './srLog.mjs'
 
 
@@ -55,6 +56,12 @@ function proc(woItems, p, opt = {}) {
         if (srLog && isfun(srLog.error)) {
             srLog.error(o)
         }
+    }
+
+
+    //timerError: 計時器回呼之未預期錯誤(R-ERR-01, ADR-085); 記錄後由 wrapTimer 釋放, 下一輪照常執行
+    let timerError = ({ timer, err }) => {
+        logError({ event: 'timer-error', timer, err: getErrorMessage(err) })
     }
 
 
@@ -279,14 +286,8 @@ function proc(woItems, p, opt = {}) {
     //再次觸發剪枝, 窗外過期紀錄與 key 本身會永久殘留 (記憶體緩慢累積, D24 回歸, 詳 z審計報告v3.md F-1).
     //保留一個純剪枝用途之輕量 timer(不含封鎖判定, 避免與即時路徑重複觸發 blockAccount): 定期把窗外
     //已無有效紀錄之帳號 key 整個 delete(而非僅設為 []), 真正歸零記憶體佔用, 防撒網式帳號列舉放大累積.
-    let lockingForAccountLoginFailedPrune = false
-    setInterval(async () => {
-
-        //check
-        if (lockingForAccountLoginFailedPrune) {
-            return
-        }
-        lockingForAccountLoginFailedPrune = true
+    //重入略過與錯誤收斂由 wrapTimer 負責(R-ERR-01), 以下各計時器同
+    setInterval(wrapTimer('accountLoginFailedPrune', async () => {
 
         //timeStart
         let timeStart = ot().add(-minForAccountLoginFailed, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
@@ -303,11 +304,8 @@ function proc(woItems, p, opt = {}) {
                 kpAccountLoginFailed[account] = recs
             }
         })
-            .finally(() => {
-                lockingForAccountLoginFailedPrune = false
-            })
 
-    }, 2000)
+    }, timerError), 2000)
 
 
     //kpTokenCallApi
@@ -427,14 +425,7 @@ function proc(woItems, p, opt = {}) {
 
 
     //timer, 限制token最大調用API次數
-    let lockingForTokenCallApi = false
-    setInterval(async() => {
-
-        //check
-        if (lockingForTokenCallApi) {
-            return
-        }
-        lockingForTokenCallApi = true
+    setInterval(wrapTimer('tokenCallApi', async () => {
 
         //timeStart
         let timeStart = ot().add(-minForTokenCallApi, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
@@ -460,7 +451,7 @@ function proc(woItems, p, opt = {}) {
             if (nrecs > numForTokenCallApi) {
                 // console.log(`token[${token}]: nrecs[${nrecs}] > numForTokenCallApi[${numForTokenCallApi}]`)
 
-                //blockAccountByToken, 沒封鎖token, 是通過封鎖使用者且直接刪除使用userId之token
+                //blockAccountByToken, 沒封鎖token, 是通過封鎖使用者且直接刪除使用userId之token; 逐token攔下, 一筆失敗不中斷其他token
                 await blockAccountByToken(token)
                     .catch((err) => {
                         console.log(err)
@@ -469,11 +460,8 @@ function proc(woItems, p, opt = {}) {
             }
 
         })
-            .finally(() => {
-                lockingForTokenCallApi = false
-            })
 
-    }, 2000)
+    }, timerError), 2000)
 
 
     //kpIpCallApi
@@ -756,15 +744,8 @@ function proc(woItems, p, opt = {}) {
     }
 
 
-    //timer, 偵測新ip出現儲存至ips
-    let lockingForIpDetectNew = false
-    setInterval(async() => {
-
-        //check
-        if (lockingForIpDetectNew) {
-            return
-        }
-        lockingForIpDetectNew = true
+    //timer, 偵測新ip出現儲存至ips; 讀取或新增失敗由 wrapTimer 記錄(timer-error), 下一輪重試(原讀取失敗時重入鎖不釋放而永久停擺, ADR-085)
+    setInterval(wrapTimer('ipDetectNew', async () => {
 
         //ips
         let ips = keys(kpIpCallApi)
@@ -811,25 +792,12 @@ function proc(woItems, p, opt = {}) {
 
         //insert
         await woItems.ips.insert(oipsNew)
-            .catch((err) => {
-                console.log(err) //顯示其他錯誤
-            })
-            .finally(() => {
-                lockingForIpDetectNew = false
-            })
 
-    }, 2000)
+    }, timerError), 2000)
 
 
     //timer, 限制ip最大調用API次數
-    let lockingForIpCallApi = false
-    setInterval(async() => {
-
-        //check
-        if (lockingForIpCallApi) {
-            return
-        }
-        lockingForIpCallApi = true
+    setInterval(wrapTimer('ipCallApi', async () => {
 
         //timeStart
         let timeStart = ot().add(-minForIpCallApi, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
@@ -855,7 +823,7 @@ function proc(woItems, p, opt = {}) {
             if (nrecs > numForIpCallApi) {
                 // console.log(`ip[${ip}]: nrecs[${nrecs}] > numForIpCallApi[${numForIpCallApi}]`)
 
-                //blockIpByIp
+                //blockIpByIp, 逐ip攔下, 一筆失敗不中斷其他ip
                 await blockIpByIp(ip)
                     .catch((err) => {
                         console.log(err)
@@ -864,14 +832,8 @@ function proc(woItems, p, opt = {}) {
             }
 
         })
-            .catch((err) => {
-                console.log(err) //顯示其他錯誤
-            })
-            .finally(() => {
-                lockingForIpCallApi = false
-            })
 
-    }, 2000)
+    }, timerError), 2000)
 
 
     //pp

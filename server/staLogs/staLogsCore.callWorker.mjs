@@ -1,22 +1,41 @@
 import { fileURLToPath } from 'url'
-import path from 'path'
 import { Worker } from 'worker_threads'
 import genPm from 'wsemi/src/genPm.mjs'
 import { staLogs as staLogsCore } from './staLogsCore.mjs'
+import resolveShellWorker from './resolveShellWorker.mjs'
 
 
-let __filename = fileURLToPath(import.meta.url)
-let __dirname = path.dirname(__filename)
+//worker 檔之路徑: 首次使用時解析並快取(規則帳本 R-PKG-01; X1, ADR-086). 頂層不宣告 __filename／__dirname、不於載入時以模組位置組路徑:
+//本檔被打包成 umd 時, rollup 把 import.meta.url 換成引用 __filename 之墊片且不避讓該名, 頂層同名宣告(本檔或同一 bundle 內任一模組)使載入即 TDZ;
+//且打包後模組位置為 bundle 所在之 dist/, 其下無 worker 檔. 亦不可改用 import.meta.dirname／filename／resolve(umd 換成 undefined).
+//import.meta.url 只在函數內使用(呼叫時才求值); 解析失敗不快取, 下次呼叫重試
+let fpWkCache = ''
+function getShellWorkerPath() {
+    if (fpWkCache === '') {
+        fpWkCache = resolveShellWorker({ fpSelf: fileURLToPath(import.meta.url) })
+    }
+    return fpWkCache
+}
 
-let fpWkDefault = path.resolve(__dirname, 'staLogsCore.shellWorker.mjs')
 
-
-//runWorker: 以單一 worker 執行掃描, 回傳 worker 之 payload; fpWk 可注入 (測試用)
+//runWorker: 以單一 worker 執行掃描, 回傳 worker 之 payload; fpWk 可注入 (測試用), 未給則以 getShellWorkerPath 解析
+//  解析失敗時 reject 該 Error(訊息含已試之位置), 不 spawn
 //  終止路徑一律走 settle(): message(done/error) / error / exit 三者任一先到者定案, 其餘為 no-op, 且皆 terminate 回收
 //  exit 為必要: worker 未送任何訊息即結束 (如 worker 內 process.exit) 時若無 exit 監聽, promise 永不落定,
 //  又因 staLogsCore 之 single-flight 以 finally 釋放 in-flight key, 該 key 會永久卡死 (後續同參數呼叫皆取得死 promise, 需重啟後端)
-function runWorker(param, fpWk = fpWkDefault) {
+function runWorker(param, fpWk = '') {
     let pm = genPm()
+
+    //fpWk
+    if (typeof fpWk !== 'string' || fpWk === '') {
+        try {
+            fpWk = getShellWorkerPath()
+        }
+        catch (err) {
+            pm.reject(err)
+            return pm
+        }
+    }
 
     //wk
     let wk = new Worker(fpWk)
@@ -28,8 +47,9 @@ function runWorker(param, fpWk = fpWkDefault) {
             settled = true
             fn(v)
         }
+        //terminate 回傳 Promise 且不 await: 於源頭 catch(本套件不註冊行程層錯誤監聽, w-serv-hapi 1.1.6 起亦不代為吞錯, 未處理之 rejection 即終止行程; R-ERR-01)
         try {
-            wk.terminate()
+            wk.terminate().catch(() => {})
         }
         catch (err) {}
     }
@@ -75,5 +95,5 @@ function staLogs(timeLength = 7, timeInterval = 'hr', opt = {}) {
 }
 
 
-export { staLogs, scanFilesByWorker, runWorker }
+export { staLogs, scanFilesByWorker, runWorker, getShellWorkerPath }
 export default staLogs

@@ -515,7 +515,7 @@ async function execIpBlockTrigger(browserRef, lang, u, virtIp) {
 
     //驗 UI: 新開 page 進登入頁卡 Connecting (verifyConn 擋連線)
     //另以網路層確認「伺服器確實拒絕」: 連線層未通過時 /api 回應標頭 Return-Msg 為 permission denied
-    //(node_modules/w-converhp/src/WConverhpServer.mjs:1139、routeSpec.mjs:22), 使「10s 後仍卡 Connecting」不致於負載高、
+    //(node_modules/w-converhp/src/WConverhpServer.mjs 之連線層拒絕回應 permission、routeSpec.mjs 之 st200; 2.1.9 起行號位移, 不寫行號), 使「10s 後仍卡 Connecting」不致於負載高、
     //正常連線本身慢於 10s 時誤判為被擋(spec 之 10s 為使用者觀察期, 仍照等; 2026-09-28 補)
     let page2 = await ctx.newPage()
     let denied2 = page2.waitForResponse((r) => r.url().includes('/api') && r.headers()['return-msg'] === 'permission denied', { timeout: 60000 }).then(() => true, (err) => err)

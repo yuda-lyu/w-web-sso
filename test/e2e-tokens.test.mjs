@@ -26,8 +26,9 @@ import { runBaselineCase, createBaselineGate, assertTextSpec, pageHasText, colle
 //     --langs <eng,cht> 限語系;  --write-mode missing|changed  只寫缺少者 / 只寫與現行標準圖差異超過容差者 (預設 all)
 //     env E2E_BASELINE_OUT_DIR=<dir>  寫到暫存目錄 (等價驗證用, 不動 test/pics)
 //   產製端與比對端呼叫同一案例管線 (runBaselineCase): 前置 → 截圖 → 語意斷言 → DB 不變式 → 寫檔 / 比對; 斷言不過一張都不寫.
-//   例外: 應用系統權限案例之 API client 端到端檢查 (callFapi) 只在比對端執行 — WServHapiClient 無法關閉, 直跑產製若建立連線將不退出,
-//   而產製端不得以 process.exit 繞過 (技能 §9.1; 強制退出之明文例外只在 api-setup 之 root after)
+//   例外: 應用系統權限案例之 API client 端到端檢查 (callFapi) 只在比對端執行. 原因「WServHapiClient 無法關閉, 直跑產製若建立連線將不退出」
+//   自 w-serv-hapi 1.1.6 起不成立(clearBroadcast + clearSync 可停止, ADR-085); 改為兩端皆執行須另驗產製端之退出, 列 CLAUDE_rulebook.md 已知缺口.
+//   產製端仍不得以 process.exit 繞過 (技能 §9.1; 強制退出之明文例外只在 api-setup 之 root after)
 //
 // 標準圖存放：test/pics/tokens/tokens-{lang}-{number}-{name}.png
 //

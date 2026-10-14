@@ -232,10 +232,10 @@ function mkTable(rows = []) {
 }
 
 
-//mkProcOrm: 以替身 woItems 組出真實 w-serv-orm 之 procOrm, 組法同其 WServOrm(getMapOrm → getProc), opt 同 SSO 正式預設(server/WWebSso.mjs 之 optWServOrm).
+//mkProcOrm: 以替身 woItems 組出真實 w-serv-orm 之 procOrm, 組法同其 WServOrm(getMapOrm → getProc), 與 SSO 正式之 WServOrm 同樣不傳 opt(1.1.9 起無設定鍵, R-ORM-02).
 //w-serv-orm 1.1.8 起 getMapOrm 與 getProc 皆為各實例狀態, 同一行程內多次組出互不干擾(他檔載入 g_mOrm 之正式實例亦不受影響).
 function mkProcOrm(ds, woItems) {
-    return getProc(getMapOrm(ds, woItems), { useCheckUser: false, getUserById: null, useExcludeWhenNotAdmin: false }).procOrm
+    return getProc(getMapOrm(ds, woItems)).procOrm
 }
 
 
