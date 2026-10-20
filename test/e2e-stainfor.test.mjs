@@ -131,7 +131,7 @@ let userTokens = {}
 
 
 //E2E-007 固定 fixture log (spec 流程_後台統計資訊 E2E-007 測試資料):
-//本機 e2e 只有 127.0.0.1 一個真實 IP (後端刻意不讀 x-forwarded-for, WWebSso.mjs:640), 「IP 使用量統計」表之列數
+//本機 e2e 只有 127.0.0.1 一個真實 IP (資料通道 verifyConn 取 x-forwarded-for 第一段為來源 IP, 僅 cleanKp* 端點取 socket 位址, 見 CLAUDE_rulebook.md R-KEY-01 更正; 本案之固定 IP 以 fixture log 直接寫入, 不依賴實際連線), 「IP 使用量統計」表之列數
 //原本來自 ./logs 內歷史真實資料, 隨 7 天窗移動而漂移 (baseline 5 列 vs 現況 1 列 → 尺寸不符必紅).
 //改以「非 ISO 檔名」(filterVpfsByWindow fail-open 一律保留, 且 w-syslog cleanLogs 只刪 ISO 檔名不會誤刪) 寫入
 //4 個固定 IP 之 verifyConn 行, time 相對執行當下推算 (2h 前 + 26h 前, 皆在 7 天窗內) → 表恆有 ≥5 個 IP →

@@ -415,22 +415,14 @@
 <script>
 import ot from 'dayjs'
 import get from 'lodash-es/get.js'
-import each from 'lodash-es/each.js'
 import map from 'lodash-es/map.js'
 import size from 'lodash-es/size.js'
 import keys from 'lodash-es/keys.js'
-import groupBy from 'lodash-es/groupBy.js'
-import sumBy from 'lodash-es/sumBy.js'
-import omit from 'lodash-es/omit.js'
-import reduce from 'lodash-es/reduce.js'
-import toPairs from 'lodash-es/toPairs.js'
-import sortBy from 'lodash-es/sortBy.js'
-import reverse from 'lodash-es/reverse.js'
 import isearr from 'wsemi/src/isearr.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
 import strright from 'wsemi/src/strright.mjs'
-import haskey from 'wsemi/src/haskey.mjs'
 import debounce from 'wsemi/src/debounce.mjs'
+import { getFreqVal, groupFreq, calcUsageSummary } from '../plugins/staUsage.mjs'
 import WEchartsVue from 'w-echarts-vue/src/components/WEchartsVue.vue'
 import { mdiShieldAccountOutline, mdiAccountGroupOutline, mdiAccountCheckOutline, mdiAccountLockOutline, mdiAccountClockOutline, mdiChartBoxOutline, mdiLoginVariant, mdiTicketConfirmationOutline, mdiAccessPointNetwork, mdiMonitorAccount, mdiFolderKeyNetworkOutline, mdiIpNetworkOutline } from '@mdi/js/mdi.js'
 import WIcon from 'w-component-vue/src/components/WIcon.vue'
@@ -627,27 +619,8 @@ export default {
                     groupHours = 24
                 }
 
-                //gs
-                let gs = groupBy(arr, (v) => {
-                    let t = ot(v.time)
-                    let h = t.hour()
-                    let hGroup = Math.floor(h / groupHours)
-                    let tNew = t.startOf('day').add(hGroup * groupHours, 'hour')
-                    return tNew.format()
-                })
-                // console.log('gs', gs)
-
-                //groupBy
-                dataProc = map(gs, (vs, time) => {
-                    let r = {
-                        time,
-                        data: {},
-                    }
-                    each(keysPick, (k) => {
-                        r.data[k] = sumBy(vs, `data.${k}`)
-                    })
-                    return r
-                })
+                //依時間分組合併並加總各鍵(keysPick 可為IP或使用者名稱, 含 . 或 __proto__ 者亦須正確; 見 staUsage.groupFreq)
+                dataProc = groupFreq(arr, groupHours, keysPick)
                 // console.log('dataProc', dataProc)
 
             }
@@ -680,7 +653,7 @@ export default {
             //getName
             let getName = (valueKey) => {
                 let langKey = ''
-                if (haskey(kpKey, valueKey)) {
+                if (Object.prototype.hasOwnProperty.call(kpKey, valueKey)) { //自有鍵: valueKey 可為使用者名稱 / IP (constructor 等原型鍵名不致取得繼承值)
                     langKey = kpKey[valueKey]
                 }
                 else {
@@ -702,7 +675,7 @@ export default {
                     name,
                     type: 'bar',
                     barWidth: barWidthPercent, // 改為動態 barWidth
-                    data: map(dataProc, item => get(item, `data.${valueKey}`, 0)),
+                    data: map(dataProc, item => getFreqVal(item, valueKey, 0)), //valueKey 可為IP(含 .)或名稱, 不當 lodash 路徑 (R-KEY-01)
                     itemStyle: {
                         color,
                     },
@@ -961,66 +934,8 @@ export default {
         calculateTokenUsageSummary: function(tokenFrequency) {
             let vo = this
 
-            // 先取得所有使用者
-            let users = reduce(tokenFrequency, (acc, entry) => {
-                let userData = omit(get(entry, 'data', {}), 'count')
-                each(keys(userData), (username) => {
-                    if (!haskey(acc, username)) {
-                        acc[username] = {
-                            username,
-                            total: 0,
-                            last1d: 0,
-                            last8h: 0,
-                            last4h: 0,
-                            last1h: 0,
-                        }
-                    }
-                })
-                return acc
-            }, {})
-
-            // now
-            let now = ot()
-
-            // 迭代 tokenFrequency 進行計算
-            each(tokenFrequency, (entry) => {
-                let t = ot(entry.time)
-                let diff1d = now.diff(t, 'hour') <= 24
-                let diff8h = now.diff(t, 'hour') <= 8
-                let diff4h = now.diff(t, 'hour') <= 4
-                let diff1h = now.diff(t, 'hour') <= 1
-                let userData = omit(get(entry, 'data', {}), 'count')
-                each(userData, (value, username) => {
-                    if (haskey(users, username)) {
-                        users[username].total += value
-                        if (diff1d) {
-                            users[username].last1d += value
-                        }
-                        if (diff8h) {
-                            users[username].last8h += value
-                        }
-                        if (diff4h) {
-                            users[username].last4h += value
-                        }
-                        if (diff1h) {
-                            users[username].last1h += value
-                        }
-                    }
-                })
-            })
-
-            // 將物件轉換為陣列並排序
-            let sortedSummary = toPairs(users)
-            sortedSummary = map(sortedSummary, (v) => v[1]) //只取value
-            sortedSummary = sortBy(sortedSummary, 'total')
-            sortedSummary = reverse(sortedSummary)
-            sortedSummary = map(sortedSummary, (v, k) => {
-                v.number = k + 1
-                return v
-            })
-            // console.log('sortedSummary', sortedSummary)
-
-            vo.tokenUsageSummary = sortedSummary
+            // 各使用者之使用統計: data 之鍵為使用者名稱(可為 length 等), 依自有鍵走訪, 見 src/plugins/staUsage.mjs (R-OBJ-ITER-01 / R-KEY-01)
+            vo.tokenUsageSummary = calcUsageSummary(tokenFrequency, 'username')
         },
 
         toggleShowAllTokenUsers: function() {
@@ -1031,66 +946,8 @@ export default {
         calculateIpUsageSummary: function(ipFrequency) {
             let vo = this
 
-            // 先取得所有IP
-            let ips = reduce(ipFrequency, (acc, entry) => {
-                let ipData = omit(get(entry, 'data', {}), 'count')
-                each(keys(ipData), (ip) => {
-                    if (!haskey(acc, ip)) {
-                        acc[ip] = {
-                            ip,
-                            total: 0,
-                            last1d: 0,
-                            last8h: 0,
-                            last4h: 0,
-                            last1h: 0,
-                        }
-                    }
-                })
-                return acc
-            }, {})
-
-            // now
-            let now = ot()
-
-            // 迭代 ipFrequency 進行計算
-            each(ipFrequency, (entry) => {
-                let t = ot(entry.time)
-                let diff1d = now.diff(t, 'hour') <= 24
-                let diff8h = now.diff(t, 'hour') <= 8
-                let diff4h = now.diff(t, 'hour') <= 4
-                let diff1h = now.diff(t, 'hour') <= 1
-                let ipData = omit(get(entry, 'data', {}), 'count')
-                each(ipData, (value, ip) => {
-                    if (haskey(ips, ip)) {
-                        ips[ip].total += value
-                        if (diff1d) {
-                            ips[ip].last1d += value
-                        }
-                        if (diff8h) {
-                            ips[ip].last8h += value
-                        }
-                        if (diff4h) {
-                            ips[ip].last4h += value
-                        }
-                        if (diff1h) {
-                            ips[ip].last1h += value
-                        }
-                    }
-                })
-            })
-
-            // 將物件轉換為陣列並排序
-            let sortedSummary = toPairs(ips)
-            sortedSummary = map(sortedSummary, (v) => v[1]) //只取value
-            sortedSummary = sortBy(sortedSummary, 'total')
-            sortedSummary = reverse(sortedSummary)
-            sortedSummary = map(sortedSummary, (v, k) => {
-                v.number = k + 1
-                return v
-            })
-            // console.log('sortedSummary', sortedSummary)
-
-            vo.ipUsageSummary = sortedSummary
+            // 各IP之使用統計: data 之鍵為IP(取自標頭, 可為 length 等任意字串, 含 . 者不得當 lodash 路徑), 依自有鍵走訪, 見 src/plugins/staUsage.mjs (R-OBJ-ITER-01 / R-KEY-01)
+            vo.ipUsageSummary = calcUsageSummary(ipFrequency, 'ip')
         },
 
         toggleShowAllIpUsers: function() {

@@ -18,6 +18,9 @@ import filterVpfsByWindow from './filterVpfsByWindow.mjs'
 //  4. single-flight: 同參數併發呼叫共用同一 in-flight promise
 //  輸出形狀與原三檔一致 (golden test: test/unit-staLogs-golden.test.mjs 以改造前實作產出之 expected 深比較)
 //  刻意差異: 無 time (或 time 無法解析) 之行不計入任何桶 (原實作 ot(undefined) 視為 now 而計入當前桶)
+//  token / ip 各桶之明細鍵為 log 之 userId / ip (ip 取自 X-Forwarded-For 標頭第一段, 未登入者可植入任意字串), 規則 R-KEY-01 / R-OBJ-ITER-01:
+//    明細容器 (kp) 一律無原型 (constructor、__proto__、toString 等為一般鍵, 不致累加成字串或指派被忽略); 輸出之 count 為該桶總筆數 (保留字),
+//    ip / userId 恰為 "count" 者之筆數已含於總數, 不另列、不覆寫總數; 其餘鍵 (含 length) 皆為一般鍵 (消費端迭代須依自有鍵, 見 procStaInfor)
 
 
 let EV_TOKEN = 'fun-checkToken'
@@ -226,7 +229,7 @@ async function scanFile(fp, tStartMs, fmt, labeler = null) {
         if (kind === 1) {
             let b = agg.token[label]
             if (b === undefined) {
-                b = { count: 0, kp: {} }
+                b = { count: 0, kp: Object.create(null) }
                 agg.token[label] = b
             }
             b.count += 1
@@ -236,7 +239,7 @@ async function scanFile(fp, tStartMs, fmt, labeler = null) {
         else if (kind === 2) {
             let b = agg.ip[label]
             if (b === undefined) {
-                b = { count: 0, kp: {} }
+                b = { count: 0, kp: Object.create(null) }
                 agg.ip[label] = b
             }
             b.count += 1
@@ -288,7 +291,7 @@ function mergeAgg(target, agg) {
         let s = agg.token[label]
         let b = target.token[label]
         if (b === undefined) {
-            b = { count: 0, kp: {} }
+            b = { count: 0, kp: Object.create(null) }
             target.token[label] = b
         }
         b.count += s.count
@@ -300,7 +303,7 @@ function mergeAgg(target, agg) {
         let s = agg.ip[label]
         let b = target.ip[label]
         if (b === undefined) {
-            b = { count: 0, kp: {} }
+            b = { count: 0, kp: Object.create(null) }
             target.ip[label] = b
         }
         b.count += s.count
@@ -343,15 +346,21 @@ function buildOutputs(merged, kpTime) {
             }))
     }
 
+    //toKpData: { count: 總筆數, ...各 userId / ip 之筆數 }; count 為保留字, kp 內鍵為 "count" 者不覆寫總數 (R-KEY-01); 展開 (spread) 以自有屬性定義, __proto__ 亦為自有資料屬性
+    let toKpData = (b) => {
+        let d = { count: b.count, ...b.kp }
+        d.count = b.count
+        return d
+    }
     let token = toRs(
         () => ({ count: 0 }),
         merged.token,
-        (b) => ({ count: b.count, ...b.kp }),
+        toKpData,
     )
     let ip = toRs(
         () => ({ count: 0 }),
         merged.ip,
-        (b) => ({ count: b.count, ...b.kp }),
+        toKpData,
     )
     let login = toRs(
         () => ({ attempt: 0, success: 0, error: 0 }),

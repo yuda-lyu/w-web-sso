@@ -13,6 +13,18 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 ## Upgrade Notes
 
+### Upgrading from 1.1.10 and earlier
+
+**未登入請求可使後端結束（修正）**：來源 IP（`X-Forwarded-For` 標頭第一段）、權杖參數與登入帳號原以一般物件為鍵記錄調用／失敗次數；值為 `constructor`、`__proto__`、`toString` 等原型鍵名時，記錄函數拋出 `TypeError`（`verifyConn` 與 HTTP 路由內未被接住之 async 呼叫），在 Node 預設設定下使後端行程結束（`X-Forwarded-For: constructor` 或 `/api/checkToken?token=constructor` 單一請求即可）；帳號為該類名稱之既存使用者，登入失敗亦不計次、不會被封鎖。本版起以無原型容器記錄，這些字串與其他字串同為一般鍵。
+
+**統計頁之 IP／使用者鍵為 `length` 時失真（修正）**：統計 log 以 IP（標頭可植入）或 userId 為鍵累計，鍵為 `length` 時，後台統計（`getStaIp`、`getStaToken`）與統計頁原以陣列樣方式走訪，真實鍵被略過（該小時桶之全部 IP／使用者計數與總數消失），且每個時間桶多出數字假鍵；原型鍵名之計數另累加成字串，鍵為 `count` 者蓋掉該桶總數。本版起一律依自有鍵處理：`count` 為該桶總筆數（保留字，IP／userId 恰為 `count` 者、以及權杖統計中使用者名稱恰為 `count` 者，其筆數已含於總數、不另列），其餘字串（含 `length`）皆為一般鍵。
+
+**統計頁逐 IP 圖表與時間分組恆為 0（修正）**：前端以 `data.<IP>` 字串取值，含 `.` 之 IPv4 被當作路徑，選擇「逐一顯示」IP 或 4／8 小時、1 日分組時數值恆為 0（使用者／IP 用量表不經路徑取值，遇 `length` 鍵之缺陷同上一點）。本版起不再把名稱或 IP 當路徑。
+
+**後台清單儲存之主鍵／帳號為原型鍵名（修正）**：主鍵或帳號為 `constructor`、`__proto__`、`toString` 等時，原誤判為重複（`invalidRows`／`accountDuplicate`）；新增之使用者其明文密碼被清為空。本版起照常驗證與儲存；後台使用者清單頁之前端預檢（帳號／email 重複、空值）原亦以一般物件判重，帳號為 `constructor` 等時誤判重複而擋下整份清單儲存，一併修正。`checkTokenAndUpdateUsersList`、`checkTokenAndUpdateTokensList` 之 `rows` 非陣列時回 `invalidRows`（資料通道入口原已以陣列檢查拒絕；原權杖清單遇非陣列於內部拋 `TypeError`）。
+
+**來源 IP 之信任邊界（未變更，評估見 `CLAUDE_rulebook.md`〈已知缺口〉）**：`X-Forwarded-For` 第一段仍被信任且未驗證格式。直接對外提供服務時，用戶端可任意填寫此標頭以規避 IP 封鎖與頻率限制、冒用他人 IP（可使他人 IP 遭自動封鎖）、以任意字串登錄 `ips` 表與統計；部署於反向代理後時，請由最外層受信任之代理覆寫（而非附加）該標頭。後續版本擬提供 `trustProxy` 設定與 IP 格式驗證。
+
 ### Upgrading from 1.1.8 and earlier
 
 **寫入前驗證（行為變更）**：後台清單儲存（`updateUsersList` / `updateTokensList` / `updateIpsList`，含以具寫入權限之 app token 呼叫者）與自助註冊（`createUser`）改於任何寫入之前驗證下列輸入；拒絕時資料庫無任何變更（同批之刪除不會先落地、不撤銷令牌、不清快取）：

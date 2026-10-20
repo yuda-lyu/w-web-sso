@@ -6,7 +6,6 @@ import size from 'lodash-es/size.js'
 import filter from 'lodash-es/filter.js'
 import sumBy from 'lodash-es/sumBy.js'
 import mapKeys from 'lodash-es/mapKeys.js'
-import cloneDeep from 'lodash-es/cloneDeep.js'
 import cache from 'wsemi/src/cache.mjs'
 import * as s from '../src/plugins/mShare.mjs'
 import staUserAccountLogin from './staLogs/staUserAccountLogin.callWorker.mjs'
@@ -258,24 +257,23 @@ function proc(woItems, p, opt = {}) {
         //staToken
         let rs = await staToken(7, 'hr', { fdLog: logFd, srLog })
 
-        //kpCount
-        let kpCount = {}
+        //kpCount, 鍵為 log 之 userId (R-KEY-01: 無原型; R-OBJ-ITER-01: v.data 依自有鍵走訪, userId 為 length 時不致被當陣列樣迭代)
+        let kpCount = Object.create(null)
         each(rs, (v) => {
-            each(v.data, (count, userId) => {
+            for (let userId of Object.keys(v.data)) {
                 if (userId === 'count') {
-                    return true //跳出換下一個
+                    continue //保留字(該桶總筆數), 換下一個
                 }
                 kpCount[userId] = 0
-            })
+            }
         })
 
         //getUsersListCache
         let us = await p.getUsersListCache() //使用快取加速
 
         //kpUsername
-        let kpUsername = {
-            count: 0, //預先給予count為0
-        }
+        let kpUsername = Object.create(null)
+        kpUsername.count = 0 //預先給予count為0
         each(us, (u) => {
             kpUsername[u.id] = u.name
         })
@@ -283,31 +281,35 @@ function proc(woItems, p, opt = {}) {
         //add username
         rs = map(rs, (v) => {
 
-            //cloneDeep
-            let _kpCount = cloneDeep(kpCount)
+            //複製(補零之全桶鍵集合)
+            let _kpCount = Object.assign(Object.create(null), kpCount)
 
             //填入對應userId的count
-            each(v.data, (count, userId) => {
-                _kpCount[userId] = count
-            })
+            for (let userId of Object.keys(v.data)) {
+                if (userId === 'count') {
+                    continue
+                }
+                _kpCount[userId] = v.data[userId]
+            }
 
             //userId換成username
             _kpCount = mapKeys(_kpCount, (count, userId) => {
-                if (userId === 'count') {
-                    return userId //若為count直接回傳
+                let username = kpUsername[userId] //自有鍵查值, 不把 userId 當 lodash 路徑 (R-KEY-01)
+                if (username === undefined) {
+                    username = userId //若找不到, 改用userId顯示
                 }
-                let username = get(kpUsername, userId, userId) //若找不到, 改用userId顯示
                 return username
             })
 
-            //vt
+            //vt, count 為該桶總筆數(保留字), 使用者名稱恰為 count 者不覆寫之
             let vt = {
                 time: v.time,
                 data: {
-                    count: v.count,
+                    count: v.data.count,
                     ..._kpCount,
                 },
             }
+            vt.data.count = v.data.count
 
             return vt
         })
@@ -347,36 +349,40 @@ function proc(woItems, p, opt = {}) {
         //staIp
         let rs = await staIp(7, 'hr', { fdLog: logFd, srLog })
 
-        //kpCount
-        let kpCount = {}
+        //kpCount, 鍵為 log 之 ip (取自 X-Forwarded-For 標頭, 使用端可植入任意字串; R-KEY-01: 無原型; R-OBJ-ITER-01: v.data 依自有鍵走訪, ip 為 length 時不致被當陣列樣迭代)
+        let kpCount = Object.create(null)
         each(rs, (v) => {
-            each(v.data, (count, ip) => {
+            for (let ip of Object.keys(v.data)) {
                 if (ip === 'count') {
-                    return true //跳出換下一個
+                    continue //保留字(該桶總筆數), 換下一個
                 }
                 kpCount[ip] = 0
-            })
+            }
         })
 
         //擴充ip
         rs = map(rs, (v) => {
 
-            //cloneDeep
-            let _kpCount = cloneDeep(kpCount)
+            //複製(補零之全桶鍵集合)
+            let _kpCount = Object.assign(Object.create(null), kpCount)
 
             //填入對應ip的count
-            each(v.data, (count, ip) => {
-                _kpCount[ip] = count
-            })
+            for (let ip of Object.keys(v.data)) {
+                if (ip === 'count') {
+                    continue
+                }
+                _kpCount[ip] = v.data[ip]
+            }
 
-            //vt
+            //vt, count 為該桶總筆數(保留字)
             let vt = {
                 time: v.time,
                 data: {
-                    count: v.count,
+                    count: v.data.count,
                     ..._kpCount,
                 },
             }
+            vt.data.count = v.data.count
 
             return vt
         })

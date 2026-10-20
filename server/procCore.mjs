@@ -1466,7 +1466,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //ckKey: 偵測欄位未給予(非有效字串)或本批重複, 回傳 'empty'、'duplicate' 或 null
         let ckKey = (rows, key) => {
             let r = null
-            let kp = {}
+            let kp = Object.create(null) //主鍵 / email 為使用端字串, 容器無原型 (R-KEY-01)
             each(rows, (v) => {
 
                 //value
@@ -1515,7 +1515,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //新增列已存在即拒絕 (ADR-074): 同一包重送且第 2 次於第 1 次完成後才處理時, 第 1 次已建立之列會被當「修改」,
         //以前端之空值 / 佔位字覆寫伺服器於新增時填入之欄位(實測: 新使用者 timeVerified 被清空、建立者 / 建立時間寫成佔位字而無法登入)
         if (size(idsNew) > 0) {
-            let kpIdOld = {}
+            let kpIdOld = Object.create(null)
             each(ltdtOld, (r) => {
                 kpIdOld[get(r, 'id', '')] = true
             })
@@ -1529,14 +1529,14 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //帳號全域唯一, 與既有比對時排除「本批同 id 之自身既有列」(更新自己時 account 可維持不變).
         if (woName === 'users') {
             //既有 account → id 對照 (排除自身用)
-            let accountToIdOld = {}
+            let accountToIdOld = Object.create(null)
             each(ltdtOld, (r) => {
                 let a = get(r, 'account', '')
                 if (isestr(a)) {
                     accountToIdOld[a] = get(r, 'id', '')
                 }
             })
-            let kpAccount = {}
+            let kpAccount = Object.create(null)
             let errAccount = null
             each(rows, (row) => {
                 let account = get(row, 'account', '')
@@ -1566,7 +1566,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //users 路徑: 既有 row 的 password 保留 DB hash, 避免前端送來的 '' (getUsersList 已 strip)
         //在儲存階段把 DB 既有 password 覆蓋成空字串, 等同把所有既有使用者密碼洗掉
         if (woName === 'users') {
-            let oldById = {}
+            let oldById = Object.create(null)
             each(ltdtOld, (r) => {
                 oldById[r.id] = r
             })
@@ -1619,7 +1619,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //兩次寫入之間該欄短暫為 null, tokens.perms 讀取端視同未設定(僅基本權限), 屬 fail closed 方向.
         let rowsClear = []
         if (size(r.diff) > 0) {
-            let kpOld = {}
+            let kpOld = Object.create(null)
             each(ltdtOld, (v) => {
                 kpOld[get(v, keyDetect, '')] = v
             })
@@ -2009,18 +2009,24 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         let uOperator = await getUserByToken(token)
         let operatorId = get(uOperator, 'id', '')
 
+        //rows 來自使用端, 須為陣列才可走訪: 帶數字 length 之物件經 lodash each 會改走索引 0..length-1 (length 極大時空轉阻塞事件迴圈, 且真實鍵被略過) (R-OBJ-ITER-01);
+        //資料通道入口 (WWebSso updateUsersList) 已以 isearr 守門, 此為縱深, 並使本函數單獨呼叫時亦與 updateTabItems 同回 invalidRows
+        if (!isarr(rows)) {
+            return Promise.reject('invalidRows')
+        }
+
         //自我保護僅適用於使用者操作者: app token 之操作者為虛擬使用者, users 表無其列, 無「自己」可刪除/降權/停用 (ADR-069)
         let isAppOperator = get(uOperator, 'isApp', '') === 'y'
         if (!isAppOperator) {
 
             //自我鎖死保護: 若 rows 內含操作者自己, 且操作者把自己 isAdmin/isActive 改成非 'y', reject
             let selfRow = null
-            each(rows, (rr) => {
+            for (let rr of rows) {
                 if (get(rr, 'id', '') === operatorId) {
                     selfRow = rr
-                    return false //跳出
+                    break //跳出
                 }
-            })
+            }
             //自我刪除保護: rows 內找不到操作者 row, 代表 admin 嘗試把自己刪除, reject 防止直接打 API 繞過前端
             if (isestr(operatorId) && !iseobj(selfRow)) {
                 return Promise.reject('cannotDeleteSelf')
@@ -2088,9 +2094,14 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //updateTokensList
     let updateTokensList = async (rows) => {
 
+        //rows 來自使用端, 須為陣列才可走訪 (同 checkTokenAndUpdateUsersList; 非陣列〔如帶 length 之物件〕原於下方 for…of 拋 TypeError, R-OBJ-ITER-01)
+        if (!isarr(rows)) {
+            return Promise.reject('invalidRows')
+        }
+
         //perms: 本批有變動(或新增)之列須為未設定或已登錄權限字串之陣列, 任一列不合法則整批 reject 不寫入 (ADR-069).
         //與 DB 相同之列不驗: DB 內既有之毀損值(非陣列等)若也擋, 後台整批存回將永遠失敗而無從修正; 其正規化後之有效權限與讀取端 fail closed 結果相同.
-        let kpPermsOld = {}
+        let kpPermsOld = Object.create(null)
         each(await woItems.tokens.select(), (t) => {
             kpPermsOld[t.id] = JSON.stringify(get(t, 'perms'))
         })

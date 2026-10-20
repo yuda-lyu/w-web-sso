@@ -29,7 +29,7 @@
 <nav >
     
     
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="WWebSso.html">WWebSso</a></li></ul><h3>Global</h3><ul><li><a href="global.html#convertUser">convertUser</a></li><li><a href="global.html#createLockSave">createLockSave</a></li><li><a href="global.html#fetchSsoMsg">fetchSsoMsg</a></li><li><a href="global.html#getIgnoredOrmKeys">getIgnoredOrmKeys</a></li><li><a href="global.html#httpGetJson">httpGetJson</a></li><li><a href="global.html#maskUrl">maskUrl</a></li><li><a href="global.html#ormWrite">ormWrite</a></li><li><a href="global.html#resolveShellWorker">resolveShellWorker</a></li><li><a href="global.html#submitGuard">submitGuard</a></li><li><a href="global.html#wrapTimer">wrapTimer</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="WWebSso.html">WWebSso</a></li></ul><h3>Global</h3><ul><li><a href="global.html#calcUsageSummary">calcUsageSummary</a></li><li><a href="global.html#convertUser">convertUser</a></li><li><a href="global.html#createLockSave">createLockSave</a></li><li><a href="global.html#fetchSsoMsg">fetchSsoMsg</a></li><li><a href="global.html#getFreqVal">getFreqVal</a></li><li><a href="global.html#getIgnoredOrmKeys">getIgnoredOrmKeys</a></li><li><a href="global.html#groupFreq">groupFreq</a></li><li><a href="global.html#httpGetJson">httpGetJson</a></li><li><a href="global.html#maskUrl">maskUrl</a></li><li><a href="global.html#ormWrite">ormWrite</a></li><li><a href="global.html#resolveShellWorker">resolveShellWorker</a></li><li><a href="global.html#submitGuard">submitGuard</a></li><li><a href="global.html#sumFreqVal">sumFreqVal</a></li><li><a href="global.html#wrapTimer">wrapTimer</a></li></ul>
     
 </nav>
 
@@ -124,6 +124,247 @@
 
     
         <h3 class="subsection-title">Methods</h3>
+
+        
+            
+
+    
+
+    <h4 class="name" id="calcUsageSummary"><span class="type-signature"></span>calcUsageSummary<span class="signature">(freq, nameKey, now<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Array}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>由依時間桶之使用頻率計算各名稱 / IP 之使用統計(總計與近1日、8小時、4小時、1小時)並依總計由大到小排序、加上名次</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="src_plugins_staUsage.mjs.html">src/plugins/staUsage.mjs</a>, <a href="src_plugins_staUsage.mjs.html#line110">line 110</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-examples">Example</h5>
+    
+    <pre class="prettyprint"><code>let freq = [{ time: '2026-10-20T10:00:00+08:00', data: { count: 6, length: 4, '1.2.3.4': 2 } }]
+console.log(calcUsageSummary(freq, 'ip', ot('2026-10-20T10:30:00+08:00')))
+// => [ { ip: 'length', total: 4, ..., number: 1 }, { ip: '1.2.3.4', total: 2, ..., number: 2 } ]</code></pre>
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>freq</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>輸入依時間桶之使用頻率陣列，格式為[{ time, data: { count, [名稱或IP]: 次數 } }]</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>nameKey</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>輸入輸出列之名稱欄位名，如'username'或'ip'</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>now</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>輸入現在時刻dayjs物件，預設ot()</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>回傳統計陣列，格式為[{ [nameKey], total, last1d, last8h, last4h, last1h, number }]</p>
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
 
         
             
@@ -829,6 +1070,264 @@ operatorId 可為操作者 id 或「操作者 id + 列識別」(只擋同一列�
 
     
 
+    <h4 class="name" id="getFreqVal"><span class="type-signature"></span>getFreqVal<span class="signature">(item, key, def<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {*}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>取時間桶 data 內某鍵之值(自有屬性; 不把鍵當 lodash 路徑)</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="src_plugins_staUsage.mjs.html">src/plugins/staUsage.mjs</a>, <a href="src_plugins_staUsage.mjs.html#line32">line 32</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-examples">Example</h5>
+    
+    <pre class="prettyprint"><code>console.log(getFreqVal({ time: 't', data: { count: 6, '1.2.3.4': 5 } }, '1.2.3.4'))
+// => 5
+console.log(getFreqVal({ time: 't', data: { '1.2.3.4': 5 } }, '1.2.3.5'))
+// => 0</code></pre>
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+        <th>Default</th>
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>item</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入時間桶物件，格式為{ time, data }</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>key</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入鍵字串，可為使用者名稱或IP(含 . 與 [ 皆視為一般字元)</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>def</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Number</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>0</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入無此鍵時之預設值，預設0</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>回傳值，無此自有鍵或值為undefined時回傳預設值</p>
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">*</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
     <h4 class="name" id="getIgnoredOrmKeys"><span class="type-signature"></span>getIgnoredOrmKeys<span class="signature">(opt<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Array}</span></h4>
 
     
@@ -985,6 +1484,219 @@ operatorId 可為操作者 id 或「操作者 id + 列識別」(只擋同一列�
         
 <div class="param-desc">
     <p>回傳應忽略並警告之鍵名陣列，依 useCheckUser、getUserById、useExcludeWhenNotAdmin 之序</p>
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Array</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="groupFreq"><span class="type-signature"></span>groupFreq<span class="signature">(arr, groupHours, keysPick)</span><span class="type-signature"> &rarr; {Array}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>依時間分組(每 groupHours 小時一組)合併時間桶並加總指定鍵之值(圖表之 4 小時 / 8 小時 / 1 日分組)</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="src_plugins_staUsage.mjs.html">src/plugins/staUsage.mjs</a>, <a href="src_plugins_staUsage.mjs.html#line77">line 77</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-examples">Example</h5>
+    
+    <pre class="prettyprint"><code>let arr = [{ time: '2026-10-20T01:00:00+08:00', data: { '1.2.3.4': 2 } }, { time: '2026-10-20T02:00:00+08:00', data: { '1.2.3.4': 3 } }]
+console.log(groupFreq(arr, 4, ['1.2.3.4'])[0].data['1.2.3.4'])
+// => 5</code></pre>
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>arr</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>輸入依時間桶之使用頻率陣列，格式為[{ time, data: { count, [名稱或IP]: 次數 } }]</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>groupHours</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Number</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>輸入每組小時數，如4、8、24</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>keysPick</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>輸入要加總之鍵陣列，如['count']或全部名稱 / IP；可含 . 或 <strong>proto</strong> 等任意字串</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>回傳分組後之陣列，格式為[{ time, data: { [鍵]: 加總值 } }]；data 為無原型物件(鍵以自有屬性保存)</p>
 </div>
 
 
@@ -2143,6 +2855,194 @@ opt.hold 為函數, 輸入流程結果, 回傳 true 時保持占位與按鈕鎖(
 
     
 
+    <h4 class="name" id="sumFreqVal"><span class="type-signature"></span>sumFreqVal<span class="signature">(items, key)</span><span class="type-signature"> &rarr; {Number}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>加總多個時間桶 data 內某鍵之值</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="src_plugins_staUsage.mjs.html">src/plugins/staUsage.mjs</a>, <a href="src_plugins_staUsage.mjs.html#line54">line 54</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-examples">Example</h5>
+    
+    <pre class="prettyprint"><code>console.log(sumFreqVal([{ data: { 'a.b': 2 } }, { data: { 'a.b': 3 } }], 'a.b'))
+// => 5</code></pre>
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>items</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>輸入時間桶陣列，格式為[{ time, data }]</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>key</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>輸入鍵字串，可為使用者名稱或IP</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>回傳加總值，無任何桶含此鍵時為0</p>
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Number</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
     <h4 class="name" id="wrapTimer"><span class="type-signature"></span>wrapTimer<span class="signature">(name, fn, onError<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {function}</span></h4>
 
     
@@ -2412,7 +3312,7 @@ why: 計時器之 async 回呼 reject 時無人接手, Node 預設即結束行�
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Tue Oct 20 2026 06:52:06 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Tue Oct 20 2026 15:03:56 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>

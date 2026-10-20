@@ -42,6 +42,10 @@ import { defaultPasswordPolicy } from './defaultPasswordPolicy.mjs'
  * 建立SSO web服務: 使用者登入/自動登入/登出, 自助註冊與email驗證, 變更/重設密碼與通知信,
  * token發放/驗證/更新, 後台使用者/金鑰/IP管理與統計資訊, 以及供外部系統查驗token與使用者資訊之API
  *
+ * 來源IP(IP封鎖、調用頻率限制、新IP登錄與統計)取自資料通道請求標頭X-Forwarded-For之第一段(未驗證格式，無此標頭或為空才取連線位址)，
+ * 本套件信任該標頭：直接對外提供服務(前方無反向代理)時，用戶端可任意填寫(規避封鎖、冒用他人IP、以任意字串登錄IP與統計)；
+ * 部署於反向代理後時，請由最外層受信任之代理覆寫(而非附加)該標頭。僅/api/cleanKpIpCallApi與/api/cleanKpAccountLoginFailed取連線位址，不受影響
+ *
  * @class
  * @param {Function} WOrm 輸入資料庫ORM函數
  * @param {String} url 輸入資料庫連線字串，例如w-orm-lmdb為'./db'，或w-orm-mongodb為'mongodb://username:password@$127.0.0.1:27017'

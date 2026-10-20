@@ -5,7 +5,6 @@ import get from 'lodash-es/get.js'
 import each from 'lodash-es/each.js'
 import map from 'lodash-es/map.js'
 import size from 'lodash-es/size.js'
-import keys from 'lodash-es/keys.js'
 import trim from 'lodash-es/trim.js'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
@@ -65,13 +64,19 @@ function proc(woItems, p, opt = {}) {
     }
 
 
+    //mkKp: 以使用端字串(帳號、權杖、來源 IP)為鍵之容器一律無原型 (R-KEY-01):
+    //  鍵為 constructor、__proto__、toString 等原型鍵名時, 一般物件之 kp[key] 取得繼承值而 .push 拋 TypeError (async 函數之 reject 未被接住, 行程結束),
+    //  __proto__ 之指派被忽略; 無原型物件下皆為一般鍵. 查值一律 kp[key], 不經 lodash get (含 . 或 [ 之字串會被解析為路徑)
+    let mkKp = () => Object.create(null)
+
+
     //kpAccountLoginFailed
-    let kpAccountLoginFailed = {}
+    let kpAccountLoginFailed = mkKp()
 
 
     //cleanKpAccountLoginFailed
     let cleanKpAccountLoginFailed = async () => {
-        kpAccountLoginFailed = {}
+        kpAccountLoginFailed = mkKp()
     }
 
 
@@ -309,7 +314,7 @@ function proc(woItems, p, opt = {}) {
 
 
     //kpTokenCallApi
-    let kpTokenCallApi = {}
+    let kpTokenCallApi = mkKp()
 
 
     //blockAccountByToken
@@ -411,7 +416,10 @@ function proc(woItems, p, opt = {}) {
 
     //getInforsByTokenCallApi
     let getInforsByTokenCallApi = async(token) => {
-        let rs = get(kpTokenCallApi, token, [])
+        let rs = kpTokenCallApi[token]
+        if (rs === undefined) {
+            rs = []
+        }
         return rs
     }
 
@@ -465,12 +473,12 @@ function proc(woItems, p, opt = {}) {
 
 
     //kpIpCallApi
-    let kpIpCallApi = {}
+    let kpIpCallApi = mkKp()
 
 
     //cleanKpIpCallApi
     let cleanKpIpCallApi = async () => {
-        kpIpCallApi = {}
+        kpIpCallApi = mkKp()
     }
 
 
@@ -731,7 +739,10 @@ function proc(woItems, p, opt = {}) {
 
     //getInforsByIpCallApi
     let getInforsByIpCallApi = async(ip) => {
-        let rs = get(kpIpCallApi, ip, [])
+        let rs = kpIpCallApi[ip]
+        if (rs === undefined) {
+            rs = []
+        }
         return rs
     }
 
@@ -747,8 +758,8 @@ function proc(woItems, p, opt = {}) {
     //timer, 偵測新ip出現儲存至ips; 讀取或新增失敗由 wrapTimer 記錄(timer-error), 下一輪重試(原讀取失敗時重入鎖不釋放而永久停擺, ADR-085)
     setInterval(wrapTimer('ipDetectNew', async () => {
 
-        //ips
-        let ips = keys(kpIpCallApi)
+        //ips, 鍵為使用端可植入之字串 (X-Forwarded-For), 以自有鍵取得 (R-KEY-01 / R-OBJ-ITER-01)
+        let ips = Object.keys(kpIpCallApi)
         // console.log('ips', ips)
 
         //getIpsList
@@ -756,25 +767,25 @@ function proc(woItems, p, opt = {}) {
         // console.log('oips', oips)
 
         //kpIpOld
-        let kpIpOld = {}
+        let kpIpOld = mkKp()
         each(oips, (oip) => {
             let ip = oip.ip
             kpIpOld[ip] = true
         })
 
         //kpIpNew
-        let kpIpNew = {}
+        let kpIpNew = mkKp()
         each(ips, (ip) => {
             kpIpNew[ip] = true
         })
 
         //ipsNew
         let ipsNew = []
-        each(kpIpNew, (v, ip) => {
+        for (let ip of Object.keys(kpIpNew)) {
             if (!haskey(kpIpOld, ip)) {
                 ipsNew.push(ip)
             }
-        })
+        }
         // console.log('ipsNew', ipsNew)
 
         //oipsNew

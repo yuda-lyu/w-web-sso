@@ -662,8 +662,8 @@ export default {
             let rows = get(vo, 'opt.rows', [])
 
             //kpErr
-            let kpErr = {}
-            let kpAccount = {}
+            let kpErr = Object.create(null) //鍵為使用者輸入之帳號 / email / 主鍵, 容器無原型 (R-KEY-01)
+            let kpAccount = Object.create(null)
             each(rows, (v, k) => {
 
                 //account
@@ -702,8 +702,8 @@ export default {
             let rows = get(vo, 'opt.rows', [])
 
             //kpErr
-            let kpErr = {}
-            let kpEmail = {}
+            let kpErr = Object.create(null)
+            let kpEmail = Object.create(null)
             each(rows, (v, k) => {
 
                 //email
@@ -751,7 +751,7 @@ export default {
             let rows = get(vo, 'opt.rows', [])
 
             //kpErr
-            let kpErr = {}
+            let kpErr = Object.create(null)
             each(rows, (v, k) => {
 
                 //redir
@@ -778,7 +778,7 @@ export default {
 
             let rows = get(vo, 'opt.rows', [])
 
-            let kpErr = {}
+            let kpErr = Object.create(null)
             each(rows, (v) => {
 
                 //只檢查新增列, 既有列 password 顯示為「重設密碼」按鈕, 不在本流程驗證範圍
@@ -928,14 +928,17 @@ export default {
                 'email': vo.errItemsByEmail,
                 'redir': vo.errItemsByRedir,
             }
-            let err = get(errMaps[field], v, '')
+            //鍵為使用者輸入之 account / email / redir 值: 自有鍵查值, 不把輸入值當 lodash 路徑 (含 . 或 [ 者會被解析為路徑而取到他列之錯誤文字; R-KEY-01)
+            let kp = errMaps[field]
+            let err = (kp !== null && typeof kp === 'object' && Object.prototype.hasOwnProperty.call(kp, v)) ? kp[v] : ''
             return isestr(err) ? err : ''
         },
 
         //新增列密碼欄位錯誤查詢, 鍵為 row.id (其他欄位以 value 當鍵, 但 password 不適合做鍵)
         cellPasswordErr: function(id) {
             let vo = this
-            let err = get(vo.errItemsByPassword, id, '')
+            let kp = vo.errItemsByPassword
+            let err = (kp !== null && typeof kp === 'object' && Object.prototype.hasOwnProperty.call(kp, id)) ? kp[id] : ''
             return isestr(err) ? err : ''
         },
 
