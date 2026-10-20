@@ -13,6 +13,16 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 ## Upgrade Notes
 
+### Upgrading from 1.1.11 and earlier
+
+**來源 IP 須為合法 IP（行為變更）**：資料通道的來源 IP 仍取請求標頭 `X-Forwarded-For` 以逗號分隔之第一個非空段（最左），但取得之值現須通過 `net.isIP`（IPv4 或 IPv6；帶 zone 識別碼者總長度不得超過 64 字元）才採用，且**原樣使用、不改寫**（不剝除 `::ffff:` 前綴、不改大小寫），因此以原字串寫入 `ips` 表之既有封鎖列照常命中。唯一之正規化是去除 port：`IPv4:port`（如 `203.0.113.9:8080`）與括號形式 `[IPv6]:port`（如 `[2001:db8::1]:443`）取其 IP 本身（部分雲端閘道會在標頭附帶來源 port；同一 IP 不同 port 計為同一 IP，不會退回連線位址而使全部使用者呈現為閘道位址），port 須為 1～5 位數字且不超過 65535，去除後之 IP 同樣原樣使用。去除後仍非 IP（如 `256.1.1.1:80`、`1.2.3.4:abc`）或標頭值本身非 IP（如 `length`、`constructor`、含標記之字串、`unknown`、超長字串）時不採用，改取連線位址並記一筆 `warn`（`event` 為 `fun-getIpByHeaders`、`key` 為 `invalidForwardedFor`，至多每 10 秒一筆，`suppressed` 為期間被略過之次數，只記長度與前 64 字元）；標頭不存在或為空時仍靜默取連線位址。退回連線位址者，其 IP 封鎖與頻率限制一併改以連線位址計算：若該位址（例如反向代理 IP）已被封鎖，這些請求將被拒；`ips` 表中既有的非 IP 字串列（修改前由任意標頭值登錄而來，含其封鎖列；帶 port 者如 `203.0.113.9:8080` 亦同，新請求改以去 port 後之 `203.0.113.9` 判定並另登新列）不會再被命中，建議管理端檢視並清除。
+
+**計數容器之鍵於窗口過後清除（修正）**：權杖與來源 IP 的調用次數紀錄原只在剪枝時移除窗外之紀錄，鍵本身永久殘留；未登入請求每換一個權杖參數或標頭值就多一個永久殘留之空鍵（長時間運行記憶體無上限成長，且每 2 秒的剪枝與偵測計時器都要走訪全部鍵）。本版起 `minForTokenCallApi`／`minForIpCallApi` 窗口內無新請求之鍵即刪除（登入失敗紀錄原即如此）。連帶行為：管理者自 IP 清單刪除某 IP 後，窗口（預設 10 分鐘）過後不再被偵測計時器自動復活（修改前每 2 秒復活一次）；偵測新 IP 之計時器若連續失敗超過整個窗口，窗內只請求過一次之 IP 不會補登，該 IP 再次請求即重新登錄。
+
+**來源 IP 之信任邊界（維持；不提供 `trustProxy`）**：本套件信任 `X-Forwarded-For` 最左段且不做防偽造——線上系統常有多層反向代理、使用者 IP 由反代提供，能經跳板偽造者，反代拿到的也是偽造值，此類防護屬防火牆／反向代理之責。部署於反向代理後時，請由最外層受信任之代理覆寫（而非附加）該標頭；直接對外提供服務（前方無反向代理）時，用戶端可填寫任意合法格式之 IP 以規避 IP 封鎖與頻率限制、冒用他人 IP（可使他人 IP 遭自動封鎖），大量互異之合法 IP 亦會使 `ips` 表列數成長。`/api/cleanKpIpCallApi`、`/api/cleanKpAccountLoginFailed` 不讀標頭，只取連線位址。
+
+**查詢使用者之欄位名限 `id`／`account`／`email`／`name`（行為變更）**：`/api/getSsoUserInfor`（`key` 參數）與後台 `getUserInfor`（第 3 個參數）原由呼叫端任意指定欄位名並直接作為資料庫查詢欄位，誤用 `key=userId`（建立者欄）不報錯而查到建立者，亦可對憑證欄（如 `tokenVerify`）探測值是否存在。本版起欄位名須為 `id`、`account`、`email`、`name` 其一，其餘（含大小寫不同者）回 `invalidUserQueryKey`（不回顯欄位名與查詢值，權限檢查仍在先：無權限者先得 `tokenExpired`）；欄位名或查詢值為空字串、重複參數（陣列）等格式不符者，仍由既有的入口檢查先回 `tokenExpired`。HTTP `key=token`（以權杖查使用者）不受影響；後台 `getUserInfor` 傳 `key='token'` 亦屬白名單外而被拒（原即無此用法，以權杖查請走 HTTP `key=token` 或 `getUserByToken`）。被拒之查詢仍寫一筆稽核紀錄（`api/getSsoUserInfor`／`kpfun-getUserInfor`，查詢值已遮罩；使用端可自填之欄位名與識別欄查詢值寫入 log 前置換控制字元，超過 256 字元者截斷並附 `...(len=原長)`）。對外查詢 helper（`getUserByToken`、`getUserByUserId`、`getUsersByToken`）之網址範本檢查改為完整參數比對：`key=tokenVerify`、`xkey=token`、`token={sysToken}x` 等僅子字串相符者不再通過（回 `noTokenKeyValueInUrl`／`noTokenKeyUserIdInUrl`／`noTokenInUrl`）；`token={sysToken}`、`key=token`（或 `key=id`）、`value={token}`（或 `value={userId}`）須各為網址查詢字串中恰出現一次的完整參數（以 `?`、`&` 定界；出現在路徑、片段、參數值內或重複者不算，如 `key=token&key=id`、`#key=token`、`key=token+`），順序與其他參數不限。
+
 ### Upgrading from 1.1.10 and earlier
 
 **未登入請求可使後端結束（修正）**：來源 IP（`X-Forwarded-For` 標頭第一段）、權杖參數與登入帳號原以一般物件為鍵記錄調用／失敗次數；值為 `constructor`、`__proto__`、`toString` 等原型鍵名時，記錄函數拋出 `TypeError`（`verifyConn` 與 HTTP 路由內未被接住之 async 呼叫），在 Node 預設設定下使後端行程結束（`X-Forwarded-For: constructor` 或 `/api/checkToken?token=constructor` 單一請求即可）；帳號為該類名稱之既存使用者，登入失敗亦不計次、不會被封鎖。本版起以無原型容器記錄，這些字串與其他字串同為一般鍵。
@@ -23,7 +33,7 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 **後台清單儲存之主鍵／帳號為原型鍵名（修正）**：主鍵或帳號為 `constructor`、`__proto__`、`toString` 等時，原誤判為重複（`invalidRows`／`accountDuplicate`）；新增之使用者其明文密碼被清為空。本版起照常驗證與儲存；後台使用者清單頁之前端預檢（帳號／email 重複、空值）原亦以一般物件判重，帳號為 `constructor` 等時誤判重複而擋下整份清單儲存，一併修正。`checkTokenAndUpdateUsersList`、`checkTokenAndUpdateTokensList` 之 `rows` 非陣列時回 `invalidRows`（資料通道入口原已以陣列檢查拒絕；原權杖清單遇非陣列於內部拋 `TypeError`）。
 
-**來源 IP 之信任邊界（未變更，評估見 `CLAUDE_rulebook.md`〈已知缺口〉）**：`X-Forwarded-For` 第一段仍被信任且未驗證格式。直接對外提供服務時，用戶端可任意填寫此標頭以規避 IP 封鎖與頻率限制、冒用他人 IP（可使他人 IP 遭自動封鎖）、以任意字串登錄 `ips` 表與統計；部署於反向代理後時，請由最外層受信任之代理覆寫（而非附加）該標頭。後續版本擬提供 `trustProxy` 設定與 IP 格式驗證。
+**來源 IP 之信任邊界（2026-10-20 更正）**：本條原載「後續版本擬提供 `trustProxy` 設定與 IP 格式驗證」。IP 格式驗證已於上一節（Upgrading from 1.1.11 and earlier）實作；`trustProxy` 經使用者裁示不提供——偽造防護屬防火牆／反向代理之責，本套件維持信任 `X-Forwarded-For` 最左段。
 
 ### Upgrading from 1.1.8 and earlier
 
@@ -94,7 +104,7 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 **`/api/getSsoUsersList`（及 `getUsersByToken`）不再輸出 `tokenVerify`**（憑證欄；`password` 原即不輸出）。後台使用者清單不受影響。
 
-**log**：權杖遮罩對 16 字元以下之權杖露出更少字元（36 字元 session token 格式不變），陣列與非字串一律遮罩；資料通道之 `referer` 只記 origin + pathname；`getSsoUserInfor` 以非識別欄（id / account / email / name 以外）查詢時之查詢值遮罩。
+**log**：權杖遮罩對 16 字元以下之權杖露出更少字元（36 字元 session token 格式不變），陣列與非字串一律遮罩；資料通道之 `referer` 只記 origin + pathname；`getSsoUserInfor` 以非識別欄（id / account / email / name 以外）查詢時之查詢值遮罩（欄位名限白名單後，此類查詢被拒，稽核紀錄之查詢值仍遮罩）。
 
 ### Upgrading from 1.0.3x / 1.0.5x
 

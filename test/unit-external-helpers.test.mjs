@@ -96,6 +96,60 @@ describe('對外查詢 helper — 失敗路徑與代入 (不起後端, ADR-068 K
         assert.strict.equal((await run(() => getUsersByToken(dataJson({ x: 'nothing' }), SELF))).v, 'noTokenInUrl')
     })
 
+    it('HLPU-002b-placeholder-whole-param: 範本以完整參數比對——key=tokenVerify / xkey=token / token={sysToken}x 等僅子字串相符者亦拒 (R-QKEY-01 規則 5)', async function() {
+        let d = (x) => dataJson({ x })
+        //getUserByToken: 三個參數各自須為完整的 name=value(前後不得為參數字元 [A-Za-z0-9_.~%-])
+        for (let x of [
+            'token={sysToken}&key=tokenVerify&value={token}', 'token={sysToken}&key=token2&value={token}', 'token={sysToken}&key=token.x&value={token}',
+            'token={sysToken}&key=token-x&value={token}', 'token={sysToken}&xkey=token&value={token}', 'token={sysToken}&key=token&xvalue={token}',
+            'token={sysToken}&key=token&value={token}x', 'token={sysToken}x&key=token&value={token}', 'xtoken={sysToken}&key=token&value={token}',
+            'token={sysToken}&_key=token&value={token}',
+            //參數字元集合 [A-Za-z0-9_.~%-] 之每個成員皆須在前後界(外審 sol 之變異: 去掉 % 或 ~ 後仍全綠)
+            'token={sysToken}&%key=token&value={token}', 'token={sysToken}&~key=token&value={token}', 'token={sysToken}&.key=token&value={token}', 'token={sysToken}&-key=token&value={token}',
+            'token={sysToken}&key=token%&value={token}', 'token={sysToken}&key=token~&value={token}', 'token={sysToken}&key=token_&value={token}', 'token={sysToken}&key=token9&value={token}',
+            '%token={sysToken}&key=token&value={token}', 'token={sysToken}~&key=token&value={token}', 'token={sysToken}&key=token&%value={token}', 'token={sysToken}&key=token&value={token}%',
+            //以分隔字元定界(外審 agy-opus 之格): 後界為 sub-delim 等非分隔字元者, server 實得之參數值並非 token(如 key=token+ 實得 "token ")
+            'token={sysToken}&key=token+&value={token}', 'token={sysToken}&key=token!&value={token}', 'token={sysToken}&key=token*&value={token}', 'token={sysToken}&key=token,x&value={token}',
+            'token={sysToken}&key=token/x&value={token}', 'token={sysToken}&key=token:x&value={token}', 'token={sysToken}&key=token;&value={token}', 'token={sysToken}&key=token)&value={token}',
+            'token={sysToken}&a+key=token&value={token}', 'token={sysToken}&a=key=token&value={token}', 'token={sysToken}&amp;key=token&amp;value={token}', 'token={sysToken}&a:key=token&value={token}',
+            //參數名 / 值之大小寫須完全相同(外審 minimax V-04)
+            'token={sysToken}&KEY=token&value={token}', 'token={sysToken}&key=Token&value={token}', 'token={sysToken}&key=TOKEN&value={token}', 'Token={sysToken}&key=token&value={token}',
+            'token={sysToken}&key=token&VALUE={token}', 'token={sysToken}&key=token&value={Token}', 'token={SysToken}&key=token&value={token}',
+            //同名參數出現兩次以上(server 收陣列而拒)
+            'token={sysToken}&key=token&key=id&value={token}', 'token={sysToken}&key=token&key=token&value={token}', 'token={sysToken}&token={sysToken}&key=token&value={token}',
+            'token={sysToken}&key=token&value={token}&value={token}', 'key=id&token={sysToken}&key=token&value={token}',
+        ]) {
+            assert.strict.equal((await run(() => getUserByToken(d(x), SELF, TAR))).v, 'noTokenKeyValueInUrl', x)
+        }
+        //參數位置: 路徑與片段內之 key=token 不是查詢參數(片段不送出)
+        for (let u of [
+            'http://ho st/key=token?token={sysToken}&value={token}', 'http://ho st/api?token={sysToken}&value={token}#key=token',
+            'http://ho st/api?token={sysToken}&key=tokenx&value={token}#key=token', 'http://ho st/api;key=token?token={sysToken}&value={token}',
+        ]) {
+            assert.strict.equal((await run(() => getUserByToken(u, SELF, TAR))).v, 'noTokenKeyValueInUrl', u)
+        }
+        //getUserByUserId
+        for (let x of [
+            'token={sysToken}&key=idx&value={userId}', 'token={sysToken}&key=id2&value={userId}', 'token={sysToken}&key=id.x&value={userId}',
+            'token={sysToken}&xkey=id&value={userId}', 'token={sysToken}&key=id&value={userId}x', 'token={sysToken}x&key=id&value={userId}',
+            'xtoken={sysToken}&key=id&value={userId}', 'token={sysToken}&key=id&xvalue={userId}',
+            'token={sysToken}&key=id+&value={userId}', 'token={sysToken}&key=id&key=token&value={userId}', 'token={sysToken}&key=id&value={userId}&value={userId}',
+            'token={sysToken}&key=id&value={userId}!',
+        ]) {
+            assert.strict.equal((await run(() => getUserByUserId(d(x), SELF, UID))).v, 'noTokenKeyUserIdInUrl', x)
+        }
+        //getUsersByToken
+        for (let x of ['xtoken={sysToken}', 'token={sysToken}x', 'token={sysToken}.', '_token={sysToken}', 'token={sysToken}+', 'token={sysToken}&token={sysToken}', 'a=token={sysToken}']) {
+            assert.strict.equal((await run(() => getUsersByToken(d(x), SELF))).v, 'noTokenInUrl', x)
+        }
+        //完整參數(任意順序、前後有其他參數或片段)仍通過範本檢查, 往下才因網址無法解析而失敗
+        for (let q of ['value={token}&key=token&token={sysToken}', 'lang=eng&token={sysToken}&key=token&value={token}&x=1', 'token={sysToken}&key=token&value={token}#frag']) {
+            assert.strict.equal((await run(() => getUserByToken(`http://ho st/api/getSsoUserInfor?${q}`, SELF, TAR))).v, 'cannotGetUserByUrl', q)
+        }
+        assert.strict.equal((await run(() => getUserByUserId('http://ho st/api/getSsoUserInfor?value={userId}&key=id&token={sysToken}&lang=eng', SELF, UID))).v, 'cannotGetUserByUrl')
+        assert.strict.equal((await run(() => getUsersByToken('http://ho st/api/getSsoUsersList?lang=eng&token={sysToken}', SELF))).v, 'cannotGetUsersByUrl')
+    })
+
     it('HLPU-003-F2c-unparseable-url: 網址無法解析 → cannotGetUserByUrl / cannotGetUsersByUrl, 輸出不含權杖 (fetch 錯誤原文夾帶完整網址)', async function() {
         let r1 = await run(() => getUserByToken(`http://ho st/api/getSsoUserInfor?${PH_TOKEN}`, SELF, TAR))
         assert.strict.equal(r1.v, 'cannotGetUserByUrl')

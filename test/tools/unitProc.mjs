@@ -102,6 +102,50 @@ function withIntervals(fn) {
 }
 
 
+//withFakeClock: 執行 fn 期間以可控時鐘取代 global Date(dayjs 的 ot() 與 Date.now 皆受控, 逾時窗口類邏輯不需實際等待),
+//fn 收到 clock = { now(), set(ms), advance(ms) }; 結束後(含 fn 拋錯)還原 Date. mocha 於載入時已保存自身的 Date, 不受影響.
+let fakeClockActive = false
+async function withFakeClock(fn, start = Date.now()) {
+    //不可巢狀或並行: 全域 Date 只有一份, 後進者結束時會把先進者之 FakeDate 當成「原本的 Date」還原而洩漏; 前一個 fn 逾時未落定時亦於此處明確失敗
+    if (fakeClockActive) {
+        throw new Error('withFakeClock: 已有進行中之假時鐘(不可巢狀、並行, 或前一個 fn 尚未落定)')
+    }
+    fakeClockActive = true
+    let RealDate = globalThis.Date
+    let t = start
+    class FakeDate extends RealDate {
+        constructor(...a) {
+            if (a.length === 0) {
+                super(t)
+            }
+            else {
+                super(...a)
+            }
+        }
+
+        static now() {
+            return t
+        }
+    }
+    globalThis.Date = FakeDate
+    try {
+        return await fn({
+            now: () => t,
+            set: (ms) => {
+                t = ms
+            },
+            advance: (ms) => {
+                t += ms
+            },
+        })
+    }
+    finally {
+        globalThis.Date = RealDate
+        fakeClockActive = false
+    }
+}
+
+
 //buildProc: 取得真實 procCore 工廠回傳的 p.
 //procCore 工廠先前裝有 cleanUsers / cleanIps 背景清理 timer, 會吊住 node process 不退;
 //該兩 timer 已於 2026-07-06 依 ADR-013 (隱性解除) 移除. 攔截 setInterval 之防護保留, 若日後 procCore 再引入 timer, unit 測試仍可獨立退出.
@@ -243,6 +287,7 @@ export {
     passwordPolicy,
     mkOpt,
     withIntervals,
+    withFakeClock,
     buildProc,
     buildProtect,
     mkSrLog,

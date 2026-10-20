@@ -1,10 +1,11 @@
 //api-iterclient.test.mjs — 使用端字串鍵經真實 HTTP / 資料通道之統計與防護 (R-OBJ-ITER-01、R-KEY-01)
 //
 // 依據: CLAUDE_rulebook.md「R-OBJ-ITER-01」「R-KEY-01」; 單元層 unit-iterClientObj
-//   - 來源: 請求標頭 X-Forwarded-For 第一段即 verifyConn 之 ip(未驗證格式、未登入者可植入); token 為查詢參數 / 資料通道參數
-//   - IT-A-001 標頭 IP 為 length: 統計頁(getStaIp)之該桶明細不被略過、不產生索引假鍵
+//   - 來源: log 之 ip / userId(修改前 X-Forwarded-For 第一段即 verifyConn 之 ip, 未登入者可植入任意字串; R-IP-01 起非 IP 字串退回連線位址,
+//     故 ip 為 length 等字串只可能來自既有 log——修改前產生之歷史紀錄、他處植入); token 為查詢參數 / 資料通道參數
+//   - IT-A-001 統計 log 含 IP 為 length 之紀錄: 統計頁(getStaIp)之該桶明細不被略過、不產生索引假鍵; 標頭值 length 不再進入統計(R-IP-01)
 //   - IT-A-002 權杖之 userId 為 length: 統計(getStaToken)同上
-//   - IT-A-003 標頭 IP / token 為原型鍵名(constructor、__proto__): 後端不結束、仍可回應, 統計照記
+//   - IT-A-003 標頭 IP / token 為原型鍵名(constructor、__proto__): 後端不結束、仍可回應; 標頭為非 IP 字串者以連線位址計(R-IP-01)
 // 作法: 每案以臨時 settings(logFd 指向 test/_tmp/api-iterclient/logs)重啟全新後端——
 //   ①統計只讀本檔造成之 log, 不汙染 ./logs(e2e-stainfor 之統計頁讀同一資料夾); ②統計 30 秒快取為新行程之空快取; ③修改前會結束後端之案不影響他檔.
 //   檔尾以預設 settings 重啟、刪臨時資料夾並還原 base seed(IP 偵測計時器會把標頭 IP 登錄進 ips 表).
@@ -55,6 +56,20 @@ let fakeKeys = (rs) => {
 }
 
 
+//writeHistoryLog: 於臨時 logFd 植入一份歷史 log(90 分鐘前, 非現時小時桶): 非 ISO 檔名不被 w-syslog 輪替清理(同 e2e-stainfor fixture);
+//格式同 staLogsCore 讀取之 JSON 行 { time, event, ip }
+function writeHistoryLog(ipPlan) {
+    let t = ot().subtract(90, 'minute').valueOf()
+    let rows = []
+    for (let [ip, n] of ipPlan) {
+        for (let i = 0; i < n; i++) {
+            rows.push(JSON.stringify({ time: t, event: 'verifyConn', ip }))
+        }
+    }
+    fs.writeFileSync(path.join(fdTmp, 'logs', 'it-a-history.log'), rows.join('\n') + '\n')
+}
+
+
 //postMain: 資料通道端點(verifyConn 先記 log 再解析本體, 本體無效不影響記錄), 同 api-srlog-noleak
 async function postMain(headers = {}) {
     return await fetch(`${apiUrl}/api/main`, { method: 'POST', headers, body: 'x' }).then((r) => r.status).catch((err) => `ERR ${err.message}`)
@@ -88,8 +103,10 @@ describe('使用端字串鍵經真後端 (R-OBJ-ITER-01 / R-KEY-01)', function()
     })
 
 
-    it('IT-A-001 X-Forwarded-For 為 length: getStaIp 之真實 IP 計數不失、length 為一般鍵、無索引假鍵', async function() {
-        //spec(R-OBJ-ITER-01): 標頭第一段 "length" 即 verifyConn 之 ip, 該小時桶 data 為 { count, length: 3, '203.0.113.9': 2, ... }
+    it('IT-A-001 統計 log 含 IP 為 length 之紀錄: getStaIp 之真實 IP 計數不失、length 為一般鍵、無索引假鍵; 標頭值 length 不進入統計', async function() {
+        //spec(R-OBJ-ITER-01): 歷史 log 之 ip 為 length 3 次 → 該小時桶 data 為 { count, length: 3, ... }
+        writeHistoryLog([['length', 3], ['198.51.100.4', 2]])
+        //spec(R-IP-01): 標頭值 length 非 IP → 以連線位址計, 不得加到 length 鍵(修改前標頭值即 ip, length 鍵會多 3 筆)
         for (let i = 0; i < 3; i++) {
             await postMain({ 'X-Forwarded-For': 'length' })
         }
@@ -100,12 +117,13 @@ describe('使用端字串鍵經真後端 (R-OBJ-ITER-01 / R-KEY-01)', function()
         let r = await callFapi('getStaIp', [ADMIN])
         assert.strictEqual(r.ok, true, `getStaIp 應成功: ${r.err}`)
         let rs = r.val
-        //原實作: data 被當陣列樣迭代, 真實鍵被略過(203.0.113.9 之 2 筆與 length 皆消失)且所有桶多出 0、1、2 假鍵
+        //原實作: data 被當陣列樣迭代, 真實鍵被略過(198.51.100.4 之 2 筆與 length 皆消失)且所有桶多出 0、1、2 假鍵
         assert.strictEqual(sumKey(rs, 'length'), 3)
+        assert.strictEqual(sumKey(rs, '198.51.100.4'), 2)
         assert.strictEqual(sumKey(rs, '203.0.113.9'), 2)
         assert.deepStrictEqual(fakeKeys(rs), [])
-        //端到端不變式: count 為各桶 verifyConn 總數, 至少含本案送出之 5 筆
-        assert.ok(rs.reduce((a, b) => a + (own(b.data, 'count') || 0), 0) >= 5)
+        //端到端不變式: count 為各桶 verifyConn 總數, 至少含歷史 5 筆與本案送出之 5 筆
+        assert.ok(rs.reduce((a, b) => a + (own(b.data, 'count') || 0), 0) >= 10)
     })
 
     it('IT-A-002 權杖之 userId 為 length: getStaToken 以使用者名稱為鍵之計數不失、無索引假鍵', async function() {
@@ -131,8 +149,8 @@ describe('使用端字串鍵經真後端 (R-OBJ-ITER-01 / R-KEY-01)', function()
     })
 
     let cases = [
-        ['IT-A-003a', 'X-Forwarded-For 為 constructor', 'xff', 'constructor'],
-        ['IT-A-003b', 'X-Forwarded-For 為 __proto__', 'xff', '__proto__'],
+        ['IT-A-003a', 'X-Forwarded-For 為 constructor(非 IP, 以連線位址計)', 'xff', 'constructor'],
+        ['IT-A-003b', 'X-Forwarded-For 為 __proto__(非 IP, 以連線位址計)', 'xff', '__proto__'],
         ['IT-A-003c', 'checkToken 之 token 參數為 constructor', 'token', 'constructor'],
         ['IT-A-003d', 'checkToken 之 token 參數為 __proto__', 'token', '__proto__'],
     ]
@@ -147,11 +165,13 @@ describe('使用端字串鍵經真後端 (R-OBJ-ITER-01 / R-KEY-01)', function()
             let r = await fetch(`${apiUrl}/api/checkToken?token=it-a-no-such-token`)
             assert.strictEqual(r.status, 200)
             assert.deepStrictEqual(await r.json(), { state: 'error', msg: 'tokenExpired' })
-            //統計照記: 標頭 IP 計為一般鍵(token 案之 verifyConn 之 ip 為本機位址, 不查)
+            //統計照記(token 案之 verifyConn 之 ip 為本機位址, 不查): 標頭值非 IP(R-IP-01)→ 以連線位址計, 該字串不成為統計鍵
+            //(容器對原型鍵名之防護由 unit-iterClientObj IT-K 直接以該鍵呼叫 procProtect 守; 修改前此處標頭值即統計鍵, 計 1 筆)
             if (kind === 'xff') {
                 let s = await callFapi('getStaIp', [ADMIN])
                 assert.strictEqual(s.ok, true, `getStaIp 應成功: ${s.err}`)
-                assert.strictEqual(sumKey(s.val, val), 1)
+                assert.strictEqual(sumKey(s.val, val), 0)
+                assert.ok(['127.0.0.1', '::1', '::ffff:127.0.0.1'].reduce((a, k) => a + sumKey(s.val, k), 0) >= 1)
             }
         })
     }

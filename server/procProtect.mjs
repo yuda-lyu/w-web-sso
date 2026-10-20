@@ -1,5 +1,6 @@
 import path from 'path'
 import fs from 'fs'
+import { isIP } from 'net'
 import ot from 'dayjs'
 import get from 'lodash-es/get.js'
 import each from 'lodash-es/each.js'
@@ -30,7 +31,19 @@ import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
 import ds from '../src/schema/index.mjs'
 import ormWrite from './ormWrite.mjs'
 import wrapTimer from './wrapTimer.mjs'
-import { maskToken } from './srLog.mjs'
+import { maskToken, safeText } from './srLog.mjs'
+
+
+//來源 IP 取自 X-Forwarded-For 之值: 合法 IP 之長度上限(IPv6 文字最長 45 字元, 外加 zone 識別碼; net.isIP 對 zone 識別碼長度無上限,
+//  單獨依 isIP 時 `::1%` 加萬字元仍被判為 IP)、非合法 IP 時之 warn 限流間隔(ms)與預覽長度 (R-IP-01)
+let FORWARDED_IP_MAX_LEN = 64
+let FORWARDED_WARN_INTERVAL_MS = 10 * 1000
+let FORWARDED_PREVIEW_LEN = 64
+
+//來源 IP 之帶 port 形式(去 port 取 IP 之唯一正規化, R-IP-01): IPv4:port 與括號形式 [IPv6]:port; port 為 1~5 位十進位數字且不得超過 FORWARDED_PORT_MAX
+let FORWARDED_RE_V4_PORT = /^(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})$/
+let FORWARDED_RE_V6_PORT = /^\[([^[\]]+)\]:(\d{1,5})$/
+let FORWARDED_PORT_MAX = 65535
 
 
 function proc(woItems, p, opt = {}) {
@@ -68,6 +81,27 @@ function proc(woItems, p, opt = {}) {
     //  鍵為 constructor、__proto__、toString 等原型鍵名時, 一般物件之 kp[key] 取得繼承值而 .push 拋 TypeError (async 函數之 reject 未被接住, 行程結束),
     //  __proto__ 之指派被忽略; 無原型物件下皆為一般鍵. 查值一律 kp[key], 不經 lodash get (含 . 或 [ 之字串會被解析為路徑)
     let mkKp = () => Object.create(null)
+
+
+    //pruneKpKey: 計數容器單一鍵之剪枝 (R-CNT-01, 單一擁有者): 取窗內紀錄; 窗內無紀錄則刪除該鍵(不留空陣列, 否則使用端可植入之互異字串使鍵數無上限成長),
+    //  有則換成只含窗內紀錄之陣列; 回傳窗內紀錄. kp[key] 已不是讀取時之 times 者回 null 且不更動:
+    //  計時器逐鍵 await 封鎖寫入之間, cleanKp* 可能已換掉整個容器(或該鍵已被重建 / 刪除), times 為舊快照——
+    //  不得以之覆蓋 / 刪除新紀錄, 呼叫端亦不得以之作為封鎖依據 (清理即取消尚未處理之鍵的舊判定)
+    let pruneKpKey = (kp, key, times, timeStart) => {
+        if (kp[key] !== times) {
+            return null
+        }
+        let recs = times.filter((timeRec) => {
+            return timeRec >= timeStart //ot(t).isAfter(timeStart)
+        })
+        if (size(recs) === 0) {
+            delete kp[key]
+        }
+        else {
+            kp[key] = recs
+        }
+        return recs
+    }
 
 
     //kpAccountLoginFailed
@@ -229,8 +263,8 @@ function proc(woItems, p, opt = {}) {
                     msg: u,
                 }
 
-                //清除帳號的登入失敗紀錄
-                kpAccountLoginFailed[account] = []
+                //清除帳號的登入失敗紀錄 (刪鍵, 不留空陣列: R-CNT-01)
+                delete kpAccountLoginFailed[account]
 
             })
             .catch(async (err) => {
@@ -297,17 +331,9 @@ function proc(woItems, p, opt = {}) {
         //timeStart
         let timeStart = ot().add(-minForAccountLoginFailed, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
 
-        //逐帳號剪枝, 窗內仍有紀錄則保留壓縮後陣列, 窗內全無則整個 delete key
+        //逐帳號剪枝, 窗內仍有紀錄則保留壓縮後陣列, 窗內全無則整個 delete key (pruneKpKey, R-CNT-01)
         await pmSeries(kpAccountLoginFailed, async (times, account) => {
-            let recs = times.filter((timeRec) => {
-                return timeRec >= timeStart
-            })
-            if (size(recs) === 0) {
-                delete kpAccountLoginFailed[account]
-            }
-            else {
-                kpAccountLoginFailed[account] = recs
-            }
+            pruneKpKey(kpAccountLoginFailed, account, times, timeStart)
         })
 
     }, timerError), 2000)
@@ -442,14 +468,14 @@ function proc(woItems, p, opt = {}) {
         //偵測token調用API次數
         await pmSeries(kpTokenCallApi, async (times, token) => {
 
-            //recs, 提取指定時間範圍內的紀錄
-            let recs = times.filter((timeRec) => {
-                return timeRec >= timeStart //ot(t).isAfter(timeStart)
-            })
+            //recs, 提取指定時間範圍內的紀錄, 並更新容器: 僅保留指定時間範圍內的紀錄, 窗內無紀錄則刪除該鍵 (pruneKpKey, R-CNT-01)
+            let recs = pruneKpKey(kpTokenCallApi, token, times, timeStart)
             // console.log(token, 'recs', recs)
 
-            //更新, 僅保留指定時間範圍內的紀錄
-            kpTokenCallApi[token] = recs
+            //容器或該鍵已被換掉 (times 為舊快照): 略過本鍵, 不據舊紀錄封鎖
+            if (recs === null) {
+                return
+            }
 
             //nrecs
             let nrecs = size(recs)
@@ -482,6 +508,74 @@ function proc(woItems, p, opt = {}) {
     }
 
 
+    //warnInvalidForwardedFor: X-Forwarded-For 之值非合法 IP 而退回連線位址時記 warn (R-IP-01):
+    //  至多每 FORWARDED_WARN_INTERVAL_MS 一筆, 期間略過之次數於下一筆以 suppressed 帶出;
+    //  該值為使用端可植入之任意字串, 只記長度與前 FORWARDED_PREVIEW_LEN 字元, 不整段寫入 log; srLog 未給或無 warn 函式時略過
+    let tsWarnForwarded = null
+    let nSuppressedForwarded = 0
+    let warnInvalidForwardedFor = (raw, ipUsed) => {
+        if (!(srLog && isfun(srLog.warn))) {
+            return
+        }
+        let now = Date.now()
+        if (tsWarnForwarded !== null) {
+            if (now < tsWarnForwarded) {
+                //時鐘回撥: 以現時重設窗口起點並略過本筆 (連續回撥亦不致每筆皆記)
+                tsWarnForwarded = now
+                nSuppressedForwarded++
+                return
+            }
+            if (now - tsWarnForwarded < FORWARDED_WARN_INTERVAL_MS) {
+                nSuppressedForwarded++
+                return
+            }
+        }
+        let suppressed = nSuppressedForwarded
+        tsWarnForwarded = now
+        nSuppressedForwarded = 0
+
+        //記錄失敗 (同步拋錯或回傳被 reject 之 Promise) 不得使取 IP 失敗: 使用端以非 IP 標頭即可觸發此路徑, 記錄器故障不應放大為請求失敗
+        try {
+            let r = srLog.warn({
+                event: 'fun-getIpByHeaders',
+                key: 'invalidForwardedFor',
+                len: raw.length,
+                preview: safeText(raw.slice(0, FORWARDED_PREVIEW_LEN)),
+                ip: ipUsed,
+                suppressed,
+            })
+            if (r && isfun(r.catch)) {
+                r.catch(() => {})
+            }
+        }
+        catch (err) {
+            //診斷輸出失敗, 略過
+        }
+    }
+
+
+    //pickForwardedIp: X-Forwarded-For 之一段(已 trim 且非空)可否採用為來源 IP (R-IP-01, 單一擁有者), 回採用之 IP 或空字串:
+    //  合法 IP(isIP 為 4 或 6 且長度 ≤ FORWARDED_IP_MAX_LEN)→ 原字串, 不改寫(不剝 ::ffff:、不改大小寫、不去 zone; ips 表以原字串精確比對封鎖列, 改寫則既有列不再命中)
+    //  唯一之正規化: IPv4:port、[IPv6]:port 去 port 取 IP(部分雲端閘道於標頭帶來源 port; 退回連線位址則多層反代下全部使用者被視為同一閘道位址,
+    //  頻率限制與自動封鎖將誤封所有人), 去後之 IP 仍須通過上列檢查; 去後仍非 IP 或非此兩種形式者回空字串, 由呼叫端退回連線位址並記 warn
+    let pickForwardedIp = (raw) => {
+        let ip = raw
+        if (isIP(raw) === 0) {
+            ip = ''
+            let m4 = FORWARDED_RE_V4_PORT.exec(raw)
+            let m6 = FORWARDED_RE_V6_PORT.exec(raw)
+            let m = m4 || m6
+            if (m && Number(m[2]) <= FORWARDED_PORT_MAX && isIP(m[1]) === (m4 ? 4 : 6)) {
+                ip = m[1]
+            }
+        }
+        if (ip.length > FORWARDED_IP_MAX_LEN) {
+            return ''
+        }
+        return ip
+    }
+
+
     //getIpByHeaders
     let getIpByHeaders = (req) => {
 
@@ -504,11 +598,21 @@ function proc(woItems, p, opt = {}) {
         let ip = ''
 
         //x-forwarded-for, 內容為client, proxy1, proxy2,...要取第1個
+        //取得之值經 pickForwardedIp 須為合法 IP 才採用(原樣不改寫; 僅 IPv4:port、[IPv6]:port 去 port); 非 IP 者不採用, 由下列連線位址補上並限流記 warn (R-IP-01)
+        //信任邊界: 該標頭之真實性由最外層受信任之反向代理 / 防火牆保證, 本套件不做防偽造, 維持取最左段之語意 (使用者 2026-10-20 裁示)
+        let ipInvalid = ''
         if (!isestr(ip)) {
             let c = get(headers, 'x-forwarded-for', '')
             let s = sep(c, ',')
             ip = get(s, 0, '')
             ip = trim(ip)
+            if (isestr(ip)) {
+                let ipPicked = pickForwardedIp(ip)
+                if (!isestr(ipPicked)) {
+                    ipInvalid = ip
+                }
+                ip = ipPicked
+            }
         }
 
         //info.remoteAddress
@@ -533,6 +637,11 @@ function proc(woItems, p, opt = {}) {
                 ip = req.connection.remoteAddress
                 ip = trim(ip)
             }
+        }
+
+        //標頭值非 IP: 已退回連線位址, 限流記 warn
+        if (ipInvalid !== '') {
+            warnInvalidForwardedFor(ipInvalid, ip)
         }
 
         //logshow, 只印標頭名稱: 標頭值含 authorization(Bearer 權杖)、帶 ?token= 之 referer 等憑證 (ADR-068)
@@ -758,13 +867,14 @@ function proc(woItems, p, opt = {}) {
     //timer, 偵測新ip出現儲存至ips; 讀取或新增失敗由 wrapTimer 記錄(timer-error), 下一輪重試(原讀取失敗時重入鎖不釋放而永久停擺, ADR-085)
     setInterval(wrapTimer('ipDetectNew', async () => {
 
-        //ips, 鍵為使用端可植入之字串 (X-Forwarded-For), 以自有鍵取得 (R-KEY-01 / R-OBJ-ITER-01)
-        let ips = Object.keys(kpIpCallApi)
-        // console.log('ips', ips)
-
         //getIpsList
         let oips = await p.getIpsList()
         // console.log('oips', oips)
+
+        //ips, 鍵為使用端可植入之字串 (X-Forwarded-For), 以自有鍵取得 (R-KEY-01 / R-OBJ-ITER-01);
+        //於讀完 ips 清單後才取鍵: 讀取等待期間已被剪枝刪除之鍵不再登錄 (R-CNT-01), 同期新出現者一併登錄
+        let ips = Object.keys(kpIpCallApi)
+        // console.log('ips', ips)
 
         //kpIpOld
         let kpIpOld = mkKp()
@@ -817,14 +927,14 @@ function proc(woItems, p, opt = {}) {
         //偵測ip調用API次數
         await pmSeries(kpIpCallApi, async (times, ip) => {
 
-            //recs, 提取指定時間範圍內的紀錄
-            let recs = times.filter((timeRec) => {
-                return timeRec >= timeStart //ot(t).isAfter(timeStart)
-            })
+            //recs, 提取指定時間範圍內的紀錄, 並更新容器: 僅保留指定時間範圍內的紀錄, 窗內無紀錄則刪除該鍵 (pruneKpKey, R-CNT-01)
+            let recs = pruneKpKey(kpIpCallApi, ip, times, timeStart)
             // console.log(ip, 'recs', recs)
 
-            //更新, 僅保留指定時間範圍內的紀錄
-            kpIpCallApi[ip] = recs
+            //容器或該鍵已被換掉 (times 為舊快照, 例: 計時器等待前一鍵之封鎖寫入時 cleanKpIpCallApi 清空計數): 略過本鍵, 不據舊紀錄封鎖
+            if (recs === null) {
+                return
+            }
 
             //nrecs
             let nrecs = size(recs)
@@ -847,6 +957,16 @@ function proc(woItems, p, opt = {}) {
     }, timerError), 2000)
 
 
+    //getKpKeyCounts: 三個計數容器目前之鍵數 (診斷用; 例: 確認剪枝後鍵確實退場, R-CNT-01)
+    let getKpKeyCounts = async () => {
+        return {
+            accountLoginFailed: Object.keys(kpAccountLoginFailed).length,
+            tokenCallApi: Object.keys(kpTokenCallApi).length,
+            ipCallApi: Object.keys(kpIpCallApi).length,
+        }
+    }
+
+
     //pp
     let pp = {
 
@@ -854,6 +974,7 @@ function proc(woItems, p, opt = {}) {
 
         cleanKpAccountLoginFailed,
         cleanKpIpCallApi,
+        getKpKeyCounts,
 
         // getEndByToken, //等同於p._checkToken(此未提供外部使用), 類似p.checkToken(resolve只回傳true, reject代表無效token與錯誤)
         getBlockedByAccount,

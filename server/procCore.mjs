@@ -44,7 +44,7 @@ import hashPassword, { verifyPassword } from './hashPassword.mjs'
 import genRandomPassword from './genRandomPassword.mjs'
 import createLockSave from './lockSave.mjs'
 import ormWrite from './ormWrite.mjs'
-import { maskToken, maskKv } from './srLog.mjs'
+import { maskToken, maskKv, keysUserQuery, capText } from './srLog.mjs'
 import { hasAppPerm, isAppPermsValue, normAppPerms } from '../src/appPerms.mjs'
 
 
@@ -163,7 +163,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //check
         if (nus === 0) {
             if (srLog && isfun(srLog.debug)) {
-                srLog.debug({ event: 'fun-getGenUserByKV', key: 'userNotFound', keyUser, valueUser })
+                srLog.debug({ event: 'fun-getGenUserByKV', key: 'userNotFound', keyUser: capText(keyUser), valueUser: maskKv(keyUser, valueUser) }) //非識別欄之值可能即憑證, 與上方 console 同遮罩 (R-QKEY-01)
             }
             return Promise.reject(`can not find the user by ${keyUser}`)
         }
@@ -171,7 +171,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //check
         if (nus >= 2) {
             if (srLog && isfun(srLog.debug)) {
-                srLog.debug({ event: 'fun-getGenUserByKV', key: 'userDuplicate', keyUser, valueUser })
+                srLog.debug({ event: 'fun-getGenUserByKV', key: 'userDuplicate', keyUser: capText(keyUser), valueUser: maskKv(keyUser, valueUser) }) //同上 (R-QKEY-01)
             }
             return Promise.reject(`duplicate ${keyUser}`)
         }
@@ -1858,6 +1858,12 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
     //getUserInfor
     let getUserInfor = async (key, value, opt = {}) => {
+
+        //key 為使用端給定之欄位名(對外 HTTP / kpfun), 須在白名單 id / account / email / name (R-QKEY-01, 單一擁有者):
+        //白名單外 reject 固定 key, 不回顯 key 與 value, 不查資料庫; 本函式只經 checkTokenAndGetUserInfor 呼叫, 故檢查必在 checkToken 之後
+        if (!(isestr(key) && keysUserQuery.includes(key))) {
+            return Promise.reject('invalidUserQueryKey')
+        }
 
         //u
         //對外 getUserInfor 邊界: 查無 target 時 _getGenUserByKV 會 reject 原始字串

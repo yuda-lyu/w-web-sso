@@ -4,6 +4,7 @@ import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
 import { startServersOnce, cleanup, apiUrl, resetToBaseSeed, deleteNonBaseSeed } from './tools/e2e-setup.mjs'
+import { callFapi } from './tools/api-setup.mjs'
 
 
 //
@@ -32,6 +33,12 @@ import { startServersOnce, cleanup, apiUrl, resetToBaseSeed, deleteNonBaseSeed }
 //   branch-target-not-found-no-permission:     admin token + key='account' + 不存在之 value (target 查無)
 //                                              → state=error, msg = key 'tokenNoPermission' (handler iseobj(userTarget)
 //                                                檢核失敗分支 reject 此 key, WWebSso.mjs:925)
+// 查詢欄位名白名單 id / account / email / name (R-QKEY-01, run02 裁示 2):
+//   QK-A-001-http-whitelist-keys-pass:         HTTP 白名單內四欄 (id / account / email / name) → success
+//   QK-A-002-http-other-keys-rejected:         HTTP 白名單外 (憑證欄 / 建立者欄 / 旗標欄 / 原型鍵名...) → state=error, msg 為固定 key 'invalidUserQueryKey',
+//                                              回應不含查詢值與欄位名
+//   QK-A-003-kpfun-keys:                       kpfun getUserInfor 同規則 (白名單內成功、白名單外 'invalidUserQueryKey'、key='token' 屬白名單外)
+//   QK-A-004-unauthorized-first:               未授權者 (非 admin / 無效權杖) 先得 'tokenExpired', 不得藉此探測白名單
 //
 
 let salt = '{salt}'
@@ -265,6 +272,103 @@ describe('getSsoUserInfor API E2E — token 權限驗證', function() {
             true,
             `預期 msg 含 key "tokenNoPermission" (查無→無權限, 不洩露存在性), 實際: ${msgStr}`
         )
+    })
+
+
+    //查詢欄位名白名單 (R-QKEY-01): HTTP 路由
+    it('QK-A-001-http-whitelist-keys-pass: admin token + key=id / account / email / name → success, 命中同一使用者', async function() {
+        let adminToken = userTokens[testUsers.admin.id]
+        let u = testUsers.userB
+        for (let [key, value] of [['id', u.id], ['account', u.account], ['email', u.email], ['name', u.name]]) {
+            let { status, body } = await callGetSsoUserInfor(adminToken, key, value)
+            assert.strict.equal(status, 200, key)
+            assert.strict.equal(body.state, 'success', `${key}: ${JSON.stringify(body)}`)
+            assert.strict.equal(body.msg.id, u.id, key)
+            assert.strict.equal(body.msg.password, undefined, key)
+        }
+    })
+
+    it('QK-A-002-http-other-keys-rejected: 白名單外之欄位名 → state=error, msg 固定 key invalidUserQueryKey, 回應不含查詢值與欄位名', async function() {
+        let adminToken = userTokens[testUsers.admin.id]
+        let u = testUsers.userB
+        let value = `SYNTH-QV-${Date.now()}-zz`
+        //userId: users.userId 為建立者主鍵欄, 修前不報錯而查到建立者; password / tokenVerify: 憑證欄; 其餘為旗標欄、原型鍵名、近似名稱
+        //(HTTP `key=token` 在上游分流, 僅精確字串 'token' 不受白名單影響; 'Token' / 'TOKEN' / 'token ' 為白名單外)
+        let keys = ['userId', 'password', 'tokenVerify', 'isAdmin', 'isActive', 'timeBlocked', 'description', 'constructor', '__proto__', 'toString', 'ID', 'Account', 'account ', 'id.x', 'idx', 'Token', 'TOKEN', 'token ']
+        for (let key of keys) {
+            for (let v of [value, u.id]) {
+                let { status, body } = await callGetSsoUserInfor(adminToken, key, v)
+                assert.strict.equal(status, 200, key)
+                assert.strict.equal(body.state, 'error', `${key}: ${JSON.stringify(body)}`)
+                assert.strict.equal(body.msg, 'invalidUserQueryKey', `${key}: ${JSON.stringify(body)}`)
+                let text = JSON.stringify(body)
+                assert.ok(!text.includes(v), `${key}: 回應不得回顯查詢值`)
+                assert.ok(!text.includes(key.trim()) || 'invalidUserQueryKey'.includes(key.trim()), `${key}: 回應不得回顯欄位名`)
+            }
+        }
+        //key 為空字串或缺席: 入口一致性檢查先拒(tokenExpired), 行為不變
+        let { body: bEmpty } = await callGetSsoUserInfor(adminToken, '', u.id)
+        assert.strict.equal(bEmpty.state, 'error')
+        assert.strict.equal(bEmpty.msg, 'tokenExpired')
+    })
+
+    it('QK-A-003-kpfun-keys: kpfun getUserInfor 同規則(白名單內成功、白名單外 invalidUserQueryKey、key=token 屬白名單外)', async function() {
+        let adminToken = userTokens[testUsers.admin.id]
+        let u = testUsers.userB
+        let rOk = await callFapi('getUserInfor', [adminToken, 'account', u.account])
+        assert.strict.equal(rOk.ok, true, JSON.stringify(rOk))
+        assert.strict.equal(rOk.val.id, u.id)
+        let value = `SYNTH-QVK-${Date.now()}-zz`
+        for (let key of ['userId', 'password', 'tokenVerify', 'isAdmin', 'constructor', '__proto__', 'token']) {
+            let r = await callFapi('getUserInfor', [adminToken, key, value])
+            assert.strict.equal(r.ok, false, key)
+            assert.ok(String(r.err).includes('invalidUserQueryKey'), `${key}: ${JSON.stringify(r)}`)
+            assert.ok(!String(r.err).includes(value), `${key}: 回應不得回顯查詢值`)
+        }
+    })
+
+    it('QK-A-005-app-token: 應用系統金鑰(isApp=y, readUsers 為基本權限)同規則——白名單內成功、白名單外 invalidUserQueryKey', async function() {
+        let u = testUsers.userB
+        let ok = await callGetSsoUserInfor('token-for-app', 'account', u.account)
+        assert.strict.equal(ok.body.state, 'success', JSON.stringify(ok.body))
+        assert.strict.equal(ok.body.msg.id, u.id)
+        let value = `SYNTH-QVA-${Date.now()}-zz`
+        for (let key of ['tokenVerify', 'userId', 'Account']) {
+            let { body } = await callGetSsoUserInfor('token-for-app', key, value)
+            assert.strict.equal(body.state, 'error', `${key}: ${JSON.stringify(body)}`)
+            assert.strict.equal(body.msg, 'invalidUserQueryKey', key)
+            assert.ok(!JSON.stringify(body).includes(value), `${key}: 回應不得回顯查詢值`)
+        }
+        let rf = await callFapi('getUserInfor', ['token-for-app', 'tokenVerify', value])
+        assert.strict.equal(rf.ok, false)
+        assert.ok(String(rf.err).includes('invalidUserQueryKey'), JSON.stringify(rf))
+    })
+
+    it('QK-A-006-entry-guard: 對外入口之既有守門先於白名單——key 為空字串或重複參數(陣列)一律 tokenExpired(R-QKEY-01 已知限制; 不回顯)', async function() {
+        let adminToken = userTokens[testUsers.admin.id]
+        let u = testUsers.userB
+        let base = `${apiUrl}/api/getSsoUserInfor?token=${encodeURIComponent(adminToken)}`
+        for (let q of [`&key=&value=${u.id}`, `&key=id&key=account&value=${u.id}`, `&key=tokenVerify&key=id&value=${u.id}`, `&key=id&value=`, `&key=id`]) {
+            let r = await fetch(base + q)
+            let body = await r.json()
+            assert.strict.equal(body.state, 'error', q)
+            assert.strict.equal(body.msg, 'tokenExpired', `${q}: ${JSON.stringify(body)}`)
+        }
+    })
+
+    it('QK-A-004-unauthorized-first: 非 admin / 無效權杖者先得 tokenExpired, 白名單內外皆同(不得探測白名單)', async function() {
+        let userAToken = userTokens[testUsers.userA.id]
+        let u = testUsers.userB
+        for (let token of [userAToken, 'invalid-token-zzz']) {
+            for (let key of ['account', 'tokenVerify', 'userId']) {
+                let { body } = await callGetSsoUserInfor(token, key, u.account)
+                assert.strict.equal(body.state, 'error', `${token}/${key}`)
+                assert.ok(String(body.msg).includes('tokenExpired'), `${token}/${key}: ${JSON.stringify(body)}`)
+            }
+            let r = await callFapi('getUserInfor', [token, 'tokenVerify', u.account])
+            assert.strict.equal(r.ok, false)
+            assert.ok(String(r.err).includes('tokenExpired'), `${token}: ${JSON.stringify(r)}`)
+        }
     })
 
 })

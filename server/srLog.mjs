@@ -38,6 +38,15 @@ let init = (opt = {}) => {
 }
 
 
+//safeText: 字串中之控制字元(< 32、127)換成 '?', 避免請求端以 CR/LF 等自填 log 行 (maskToken 與其他寫入使用端字串之 log 共用)
+export function safeText(s) {
+    return Array.from(s, (c) => {
+        let x = c.charCodeAt(0)
+        return (x < 32 || x === 127) ? '?' : c
+    }).join('')
+}
+
+
 //maskToken: 權杖寫入 log 前之遮罩(M 契約, spec/設計要點與取捨.md ADR-068; perm / api / task 之 maskTok 以同一組測資守護)
 //- 陣列逐元素遮罩: Hapi 對重複之 query 參數(?token=a&token=b)給陣列, 原實作對非字串原樣回傳致權杖全文入 log
 //- 露出字數 k=min(4, floor(n/8)): 原固定前 4 後 4 對 ≤8 字元之權杖等於全文, 36 字元 session token 仍為前 4 後 4
@@ -57,19 +66,33 @@ export function maskToken(token) {
     if (k === 0) {
         return `(len=${n})`
     }
-    let safe = (s) => Array.from(s, (c) => {
-        let x = c.charCodeAt(0)
-        return (x < 32 || x === 127) ? '?' : c
-    }).join('')
-    return `${safe(token.slice(0, k))}...${safe(token.slice(-k))}(len=${n})`
+    return `${safeText(token.slice(0, k))}...${safeText(token.slice(-k))}(len=${n})`
+}
+
+
+//keysUserQuery: 以使用端給定之欄位名查使用者時允許之欄位名(識別欄白名單, R-QKEY-01), 單一定義; maskKv 以同一組判定識別欄
+export let keysUserQuery = ['id', 'account', 'email', 'name']
+
+
+//capText: 使用端可自填之字串(欄位名 key、識別欄之查詢值)寫入 log 前處理(R-QKEY-01 規則 6, 與 maskToken 同一紀律):
+//  控制字元(< 32、127)置換為 ?; 長度超過 LOG_TEXT_MAX 者截斷並附 ...(len=原長), 否則原樣; 非字串原樣回傳
+export let LOG_TEXT_MAX = 256
+export function capText(s) {
+    if (!isestr(s)) {
+        return s
+    }
+    let t = safeText(s)
+    if (t.length > LOG_TEXT_MAX) {
+        return `${t.slice(0, LOG_TEXT_MAX)}...(len=${t.length})`
+    }
+    return t
 }
 
 
 //maskKv: 以指定欄位查使用者時之查詢值寫入 log 前處理; 識別欄照記供追查, 其餘欄位(token / tokenVerify 等)之值即憑證故遮罩
-let keysKvPlain = ['id', 'account', 'email', 'name']
 export function maskKv(key, value) {
-    if (isestr(key) && keysKvPlain.includes(key)) {
-        return value
+    if (isestr(key) && keysUserQuery.includes(key)) {
+        return capText(value)
     }
     return maskToken(value)
 }

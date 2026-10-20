@@ -846,6 +846,11 @@ let kpLang = {
         eng: 'Token does not have permission.',
         cht: '權杖無存取權限。',
     },
+    //外部 API 查詢 (getSsoUserInfor / kpfun getUserInfor): 查詢欄位名不在白名單 id / account / email / name (R-QKEY-01; 外部錯誤回 key, 不回顯欄位名與查詢值)
+    invalidUserQueryKey: {
+        eng: 'Invalid query field. Please use id, account, email or name.',
+        cht: '查詢欄位無效，請使用 id、account、email 或 name。',
+    },
     // tokenInvalid: {
     //     eng: 'Your session has expired. Please log in again.',
     //     cht: '登入逾時，請重新登入。',

@@ -2,7 +2,7 @@ import get from 'lodash-es/get.js'
 import isestr from 'wsemi/src/isestr.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import isfun from 'wsemi/src/isfun.mjs'
-import { fetchSsoMsg, convertUser } from './fetchSsoMsg.mjs'
+import { fetchSsoMsg, convertUser, hasUrlParam } from './fetchSsoMsg.mjs'
 
 
 async function getUserByUserId(url, tokenSelf, userIdTar, opt = {}) {
@@ -25,7 +25,7 @@ async function getUserByUserId(url, tokenSelf, userIdTar, opt = {}) {
     let funConvertUser = get(opt, 'funConvertUser')
 
     //url
-    if (url.indexOf('token={sysToken}') < 0 || url.indexOf('key=id') < 0 || url.indexOf('value={userId}') < 0) { //三者缺一即拒
+    if (!hasUrlParam(url, 'token', '{sysToken}') || !hasUrlParam(url, 'key', 'id') || !hasUrlParam(url, 'value', '{userId}')) { //三者缺一即拒, 且須為完整參數(key=idx 不算 key=id)
         return Promise.reject('noTokenKeyUserIdInUrl')
     }
 

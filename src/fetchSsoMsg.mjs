@@ -42,6 +42,19 @@ function fill(url, kvs) {
 }
 
 
+//hasUrlParam: 網址範本是否含「恰一個」完整的 name=value 參數(R-QKEY-01 規則 5)
+//以參數分隔字元定界, 而非以參數字元排除: 參數名之前須為字串起點或 ? & " 空白, 參數值之後須為字串終點或 & # " 空白
+//  (" 與空白供單元測試以 data: 網址模擬 SSO 時, 範本位於 JSON 字串或文字內);
+//  key=tokenVerify、key=token+ (server 實得 "token ")、xkey=token、a=key=token、&amp;key=token、/key=token、#key=token、token={sysToken}x 等
+//  僅子字串相符者不通過(原 indexOf 子字串檢查會通過); 同名參數出現兩次以上(key=token&key=id)亦不通過(server 收陣列而拒)
+function hasUrlParam(url, name, value) {
+    let esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    let nAny = (url.match(new RegExp(`(?<=^|[?&"\\s])${esc(name)}=`, 'g')) || []).length
+    let nOne = (url.match(new RegExp(`(?<=^|[?&"\\s])${esc(name)}=${esc(value)}(?=$|[&#"\\s])`, 'g')) || []).length
+    return nAny === 1 && nOne === 1
+}
+
+
 /**
  * 代入 → 以 GET 打 SSO → 判 state → 驗資料型別, 成功回 SSO 之 msg
  *
@@ -136,4 +149,4 @@ async function convertUser(funConvertUser, u) {
 }
 
 
-export { fetchSsoMsg, convertUser }
+export { fetchSsoMsg, convertUser, hasUrlParam }
