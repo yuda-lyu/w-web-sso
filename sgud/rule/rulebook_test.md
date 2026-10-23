@@ -48,7 +48,7 @@
 
 14 份流程 spec 皆至少有一層測試; 跨流程共用之設計取捨在 `spec/設計要點與取捨.md`(ADR).
 
-### unit 層(23 檔, 330 case; 2026-10-23 sso-run03 +4: `unit-saveBaseline` SB-T16~T19; 2026-10-23 計數: 第 111 項第二波新增 `unit-writeContract`〔10〕、`unit-saveBaseline`〔50〕、`unit-tablock`〔24〕(含外審 sol 後補之 SB-U18、SB-T14~T15、SB-S07~S10、SITE-LOCK-W01、WC-09~WC-10), 原 20 檔 242 案維持全綠〔其中 `unit-ormWriteFail` 數案 fixture 與 `unit-iterClientObj` / `unit-countKeys` / `unit-protectTimers` 替身依 ADR-091 調整〕; 前一次 2026-10-20 計數(20 檔, 242 case), run02 新增 `unit-queryKey`〔12〕並於 `unit-sourceIp` 增 2 案、`unit-external-helpers` 增 1 案; 第 93 項 run01 新增 `unit-sourceIp`〔12〕、`unit-countKeys`〔12〕, 第 90 項新增 `unit-iterClientObj`〔21〕、`unit-staUsage`〔9〕; 2026-10-14: 15 檔 173 case)
+### unit 層(25 檔, 369 case; 2026-10-23 sso-run04 新增 `unit-passwordSession`〔21, R-SESS-01〕、`unit-usersRedir`〔18, R-VAL-02〕, `unit-tablock` 案數不變〔SITE-LOCK-S07 / S08 改為兩把表鎖任一被占用皆等待〕; 前次 23 檔 330 case; 2026-10-23 sso-run03 +4: `unit-saveBaseline` SB-T16~T19; 2026-10-23 計數: 第 111 項第二波新增 `unit-writeContract`〔10〕、`unit-saveBaseline`〔50〕、`unit-tablock`〔24〕(含外審 sol 後補之 SB-U18、SB-T14~T15、SB-S07~S10、SITE-LOCK-W01、WC-09~WC-10), 原 20 檔 242 案維持全綠〔其中 `unit-ormWriteFail` 數案 fixture 與 `unit-iterClientObj` / `unit-countKeys` / `unit-protectTimers` 替身依 ADR-091 調整〕; 前一次 2026-10-20 計數(20 檔, 242 case), run02 新增 `unit-queryKey`〔12〕並於 `unit-sourceIp` 增 2 案、`unit-external-helpers` 增 1 案; 第 93 項 run01 新增 `unit-sourceIp`〔12〕、`unit-countKeys`〔12〕, 第 90 項新增 `unit-iterClientObj`〔21〕、`unit-staUsage`〔9〕; 2026-10-14: 15 檔 173 case)
 
 | 檔案 | 涵蓋 | case |
 |---|---|---|
@@ -74,9 +74,11 @@
 | `unit-writeContract` | 多人同時編輯之寫入契約(R-CONC-02 / R-CONC-05, ADR-091): WC-01 每表每欄皆已分類(pk ∪ orderKey ∪ fields ∪ serverOnly = schema 全欄)、WC-02 逐欄分類與雙方欄位入 fields、WC-03 tokens 兩契約 scope 互補、WC-04 摘要凍結向量、WC-05 名次(空字串 order 排最後、重排被偵測 / 重編號不被偵測, V9)、WC-06 經 JSON 傳輸後前端基準 = 伺服端新鮮讀取所算(V10)、WC-07 算不出基準回 null、WC-08 `isSameSnapshot`、WC-09 / WC-10 接線靜態守護(WWebSso 同一組鎖注入 procCore 與 procProtect、三個清單頁存檔帶基準; 只證接線) | 10 |
 | `unit-saveBaseline` | 後台清單整表存檔之寫入契約(R-CONC-01~04, ADR-091; 真實 procCore / procProtect + 真實 w-serv-orm 表鎖與 procOrm + 記憶體資料表, `test/tools/unitEnv.mjs`): SB-U01~U18 使用者清單(V1、V4~V5、V7~V9、V12~V13、X2、X3、X8、T3、rowsInvalid、基準內存取器)、SB-I01~I05 IP 清單(X4、V4)、SB-T01~T19 金鑰清單選項 P(E1、X1、X7、升級、不帶基準 D3、perms 驗證略過未動之列、ADR-069 正規化; SB-T16~T19 清單存檔不得新增 session 列〔ADR-092 / R-CONC-06〕: 不帶基準與帶基準之已撤銷 session 列拒收、判準 `isApp !== 'y'` 五種值、拒收語系文字與 log key、應用系統金鑰新增 / session 刪除 / 升級照常)、SB-S01~S10 系統直寫只改不增與稽核與登入交錯與不可重入(X5)與自動封鎖鎖內再驗身分與登入鎖內再判登入條件、SB-C01~C02 並行(V14、X6) | 54 |
 | `unit-tablock` | 19 個寫入站點皆在表鎖內(R-CONC-01, V14): `SITE-LOCK-S01~S19` 以測試持有該表鎖 → 觸發站點 → 斷言「未完成、無寫入」→ 放行後完成; G01 每表一鍵、G02 同表 FIFO、G03 多表鎖次序不死結、G04 比對與寫入間插不進他人寫入; `SITE-LOCK-W01` 不另持鎖直接執行 S01~S19, 以 `mkEnvSso({ trackLocks: true })` 斷言每個站點之全部寫入皆發生在自己持有的表鎖內(抓得到「先空取鎖再釋放」) | 24 |
+| `unit-passwordSession` | 改密碼後之 session 處置(R-SESS-01 / ADR-093; 真實 procCore + 真實 w-serv-orm 表鎖 + 記憶體資料表, `test/tools/unitEnv.mjs`): PS-U-001 管理員重設撤銷對方全部 session 且 checkToken 皆拒、app 權杖(含擁有者為對方者)/ 他人 session / 管理員 session 不動、`isForceChangePw` 不變; 002 具 writeUsers 之 app 權杖重設; 003 無 session 冪等; 004～005 自行改密碼保留目前 session(隨呼叫權杖)、撤銷其他; 006 app 權杖呼叫改密碼全撤 session; 007～009 驗證未過(舊密碼錯 / 新密碼不合策略 / 重設對自己 / 目標不存在 / 非管理員)三表零變動; 010～012 失敗次序(撤銷失敗 → 整體拒絕、密碼不變、不寄信; 密碼寫入失敗 → 密碼不變、session 已撤銷〔fail closed〕, 含部分撤銷之狀態); 013 兩把表鎖任一被占用皆等待、等待期間不先寫; 014 / 015 與登入交錯之兩種次序終態無舊密碼取得之 session; 016 既有語意不變(舊密碼不可驗證、新密碼可驗證、信件照寄); 017 逾期 session 亦被撤銷; 018 管理員重設與同使用者自行改密碼並行之兩種次序(後寫者勝、不變式成立); 019 鎖內再驗呼叫權杖(等鎖期間被撤銷之 session 不得再改密碼; 兩 session 並行改密碼, 先到者保留自己、後到者被拒; 外審 sol#1); 020 撤銷以 reject(null / undefined) 失敗仍視為失敗(外審 sol#2); 021 撤銷進行中(持鎖)觸發之舊密碼登入須待密碼寫入後於鎖內被拒、兩入口皆然(外審 sol#5) | 21 |
+| `unit-usersRedir` | 後台使用者清單 redir 檢查(R-VAL-02 / ADR-094; 純函式 `src/usersRedirCheck.mjs`): UR-U-001～002 載入時即為空者(自助註冊者)不攔、改他欄亦不攔; 003 既有列非空改空只攔該列(E2E-007); 004 / 005 / 012 新增列空攔下、有值不攔、`_isNew` 優先於同主鍵之基準項(E2E-008); 006 / 007 補值與補後改回空; 008 基準有效而列不在基準內嚴格、008b 基準算不出(null 等)只檢查新增列; 009 缺欄與 null; 010 原型鍵名主鍵(R-KEY-01); 011 輸入形狀; 013 基準隨存檔後重讀更新; 014 基準經真 Vue 2 data 後 `__ob__` / `__proto__` / `constructor` 主鍵仍正確, 並以純物件對照證明舊作法被 Observer 覆蓋(外審 sol#3); UR-W01～W03 元件接線靜態守護(經模組判定、載入與存檔後重讀各更新 `redirOrig`〔去行尾註解後計數、緊接 baseline 賦值〕、redir 儲存格以列 id 查警示) | 18 |
 | `unit-countKeys` | 計數容器鍵清理(R-CNT-01 / ADR-089; 真實 procProtect 工廠 + 攔得之計時器回呼 + `withFakeClock` + `pp.getKpKeyCounts()`): CNT-001 權杖、CNT-002 IP 窗口過後無紀錄之鍵被刪; CNT-003 同鍵新舊混合只留窗內、全舊之鍵退場; CNT-004 窗內全有者不動; CNT-005 原型鍵名與 `length` / `count` / 含 `.` 之鍵可退場; CNT-006 300 組互異權杖 / IP 過期後全數退場; CNT-007 identity 守門(計時器停在封鎖寫入時 `cleanKpIpCallApi` 換掉容器, 新紀錄不被舊陣列覆蓋; 修改前被覆蓋為 0); CNT-008 帳號容器鍵退場、成功登入即刪鍵、行為不變; CNT-009 容器被換掉後不以舊快照封鎖; CNT-010 窗口起點邊界(三容器恰在起點保留、早 1 ms 剔除); CNT-011 偵測新 IP 於讀取清單等待期間之鍵變動; SITE-CNT-001(`kp[key] = recs` 不再出現、`pruneKpKey` 單一定義 3 處呼叫、三計時器呼叫點) | 12 |
 
-### api 層(17 檔, 156 case; 2026-10-23 sso-run03: `api-concurrency` +3〔CC-A-022~024, ADR-092〕; 2026-10-23 計數: 第 111 項第二波新增 `api-concurrency`〔21〕, `api-httpendpoints`(後台清單不含 `tokenVerify`)與 `api-ormopts`(ORMOPT-005 / 006 待刪金鑰改應用系統金鑰列)依 ADR-091 調整; 前一次 2026-10-20 計數(16 檔, 132 case), run02 增 10 案(`api-sourceip` 5→7、`api-getuserinfor` 5→11、`api-srlog-noleak` 3→5); 第 93 項 run01 新增 `api-sourceip`〔5〕, 第 90 項新增 `api-iterclient`〔6〕; 2026-10-14: 14 檔 111 case, api-serverport 為新增)
+### api 層(18 檔, 162 case; 2026-10-23 sso-run04 新增 `api-passwordsession`〔6, R-SESS-01〕, `api-resetpassword` API-008 改斷言新規則〔案數不變〕; 前次 17 檔 156 case; 2026-10-23 sso-run03: `api-concurrency` +3〔CC-A-022~024, ADR-092〕; 2026-10-23 計數: 第 111 項第二波新增 `api-concurrency`〔21〕, `api-httpendpoints`(後台清單不含 `tokenVerify`)與 `api-ormopts`(ORMOPT-005 / 006 待刪金鑰改應用系統金鑰列)依 ADR-091 調整; 前一次 2026-10-20 計數(16 檔, 132 case), run02 增 10 案(`api-sourceip` 5→7、`api-getuserinfor` 5→11、`api-srlog-noleak` 3→5); 第 93 項 run01 新增 `api-sourceip`〔5〕, 第 90 項新增 `api-iterclient`〔6〕; 2026-10-14: 14 檔 111 case, api-serverport 為新增)
 
 | 檔案 | 涵蓋 | case |
 |---|---|---|
@@ -92,13 +94,14 @@
 | `api-httpendpoints` | 對外 HTTP 端點(D14); EXT-001/002 驗結果頁訊息 settings 覆寫之端到端(換設定重啟, ADR-064); EXT-003 前端字典不含後端專用鍵(信件與結果頁四則訊息)且含寫入失敗鍵(ADR-080); 對外清單不含憑證欄而後台保留(ADR-068); verifyEmail 有效 tokenVerify 之寫入格式(ADR-075) | 12 |
 | `api-ormopts` | 部署設定給 `useCheckUser:true`、`useExcludeWhenNotAdmin:true` 時(換設定重啟, R-ORM-02 / ADR-083 / ADR-085): 照常啟動(若轉交, w-serv-orm 1.1.10 於建構時拋錯而啟動失敗)、啟動警告(srLog boot / warn 恰一筆、列出被忽略之鍵、未給之鍵不出現)、自助註冊(audit 為自身 id)、使用者 / 金鑰 / IP 清單 × 管理者 / 具對應寫入權限之應用系統金鑰之儲存照常; 2026-10-12 修改前 8 / 8 失敗 | 8 |
 | `api-serverport` | 部署設定未給或給無效之 `serverPort` 時(換設定重啟, ADR-085): 後端於預設 11007 就緒並回應(修改前 hapi 收未正規化之值而改聽 8080); 測試自寫缺鍵之 settings 至 `test/_tmp/api-serverport/` | 2 |
-| `api-resetpassword` | 後台重設密碼之後端契約(含 email 文字取自 `procLang`) | 9 |
+| `api-passwordsession` | 改密碼後之 session 處置經真後端 / 真登入 / 真傳輸(R-SESS-01 / ADR-093; SMTP 導向必敗; 每案各自之被重設對象以避開 30 秒節流): PSA-001 管理員重設 → 對方 3 個真實 session 皆失效(`checkToken` 回 `tokenExpired`)、app 權杖 / 他人 / 管理員 session 不受影響、`isForceChangePw='y'`、舊密碼不可登入; 002 具 writeUsers 之 app 權杖重設; 003 自行改密碼保留目前 session(`checkToken` + `getUserByToken` 仍成功)、其他失效、新密碼可登入; 004 舊密碼錯不撤銷; 005 重設後再登入再改密碼; 006 app 權杖(擁有者為該使用者)呼叫改密碼全撤 session、app 權杖不動 | 6 |
+| `api-resetpassword` | 後台重設密碼之後端契約(含 email 文字取自 `procLang`); API-008 於 2026-10-23 改為斷言「重設後 2 個 session 被撤銷、以其為擁有者之 app token 仍在」(原案「兩 token 仍存在」為 ADR-009, 已被 ADR-093 取代) | 9 |
 | `api-srlog-noleak` | srLog 權杖遮罩(ADR-068): verifyConn 之 referer、重複 token 參數(陣列)、`key=tokenVerify` 之查詢值(HTTP 與 kpfun 兩站點); 讀本次 `./logs` 斷言合成值不出現; run02(R-QKEY-01): `key=tokenVerify` 之探測仍可驗 log 遮罩——白名單置於 `srLog.info` 之後, 被拒之查詢留稽核紀錄且 value 已遮罩(LOG-003 加驗兩站點紀錄帶 `key=tokenVerify` 與遮罩形式 `前...後(len=N)`); LOG-004 兩站點被拒為固定 key `invalidUserQueryKey`、回應不回顯查詢值、log 有 error key; LOG-005 使用端可控之長欄位名與識別欄長查詢值入 log 前截斷(256 字元 + `...(len=N)`, 兩入口; 規則 6) | 5 |
 | `api-stainfor` | 統計數字正確性(D13) | 4 |
 | `api-sourceip` | 來源 IP 之格式驗證與計數鍵清理經真後端(R-IP-01 / R-CNT-01, ADR-089; 每案以臨時 settings〔`logFd` 指向 `test/_tmp/api-sourceip/logs`〕重啟全新後端, 不呼叫 `startServersOnce`): IP-A-001 標頭首段為 1000 字元 / `length` / `constructor` / `<img src=x>` / `unknown` / `1.2.3.4:80` → `ips` 表與統計皆只有連線位址、log 有限流之 `invalidForwardedFor` warn〔筆數上限依實際經過時間計〕且超長值只落 `len` 與 64 字元預覽; IP-A-002 合法 IPv4 / IPv6 / `::ffff:` / 大寫 IPv6 原樣登錄於 `ips` 表與統計、無 warn; IP-A-003 以原字串 `::ffff:203.0.113.20` 寫入之封鎖列仍命中(`return-msg: permission denied`)、未映射形式與非 IP 標頭不受影響; IP-A-004 `minForIpCallApi: 0.1`(6 秒)下窗口過後被管理者刪除之 `ips` 列不被偵測計時器復活(修改前每 2 秒復活); IP-A-005 `numForIpCallApi: 6` 下 8 個不同非 IP 標頭值合併計於連線位址而封鎖該位址, 其後非 IP 標頭之請求被拒、合法他 IP 不受影響(結尾刪除封鎖列); run02: IP-A-006 標頭帶 `IPv4:port` / `[IPv6]:port` 去 port 取 IP(`ips` 表去 port 後之 IP 各恰一列、無帶 port 之原字串、統計同一 IP 不同 port 合併計次、不記 warn)、IP-A-007 帶 port 之請求以 IP 本身計次封鎖(8 次不同 port 合併 > 門檻 6 而封鎖該 IP; 原字串封鎖列對帶 port 之請求命中; 連線位址與他 IP 不受牽連) | 7 |
 | `api-iterclient` | 使用端字串鍵經真後端(R-OBJ-ITER-01 / R-KEY-01, ADR-088; 每案以臨時 settings〔`logFd` 指向 `test/_tmp/api-iterclient/logs`〕重啟全新後端, 不汙染 `./logs`、統計快取為空; 不呼叫 `startServersOnce`, 只需後端): IT-A-001 統計 log 含 IP 為 `length` 之歷史紀錄(臨時 logFd 內植入 `it-a-history.log`, 90 分鐘前)→ `getStaIp` 之真實 IP 計數不失、`length` 為一般鍵、無索引假鍵, 且標頭值 `length` 不再成為統計鍵〔第 93 項前此案以標頭植入; R-IP-01 後非 IP 標頭退回連線位址〕; IT-A-002 權杖 userId 為 `length` → `getStaToken` 同; IT-A-003a～d 標頭 / `checkToken` 參數為 `constructor` / `__proto__` → 後端不結束、續可回應(修改前後端行程結束); 003a / b 之標頭為非 IP, 統計以連線位址計、該字串不成統計鍵, 容器對原型鍵名之防護由 `unit-iterClientObj` IT-K 直接以該鍵呼叫 `procProtect` 守 | 6 |
 
-### e2e 層(15 flow, 282 case, eng + cht; 2026-10-23 新增 concurrency 6 case〔E2E-CC-001~003 × 2 語系〕與 6 張標準圖〔被拒訊息框〕, 既有 14 flow 276 case 標準圖零重產)
+### e2e 層(15 flow, 284 case, eng + cht; 2026-10-23 sso-run04 modifyuser 新增 E2E-016〔2 case、4 張新標準圖; 既有 416 張 sha256 0 變動; `test/pics` 共 420 檔〕; 前次 282 case; 2026-10-23 新增 concurrency 6 case〔E2E-CC-001~003 × 2 語系〕與 6 張標準圖〔被拒訊息框〕, 既有 14 flow 276 case 標準圖零重產)
 
 | flow | case | baseline | 備註 |
 |---|---|---|---|
@@ -112,7 +115,7 @@
 | ips | 8 | 14 | |
 | login | 27 | 38 | 真打 AgentMail 抓驗證信, `.env` 之 `AGENTMAIL_*` 缺失 fail-fast; E2E-001 為共通進場路徑之「每步兩張」試點(2026-09-28, 1 張改 4 張 × 2 語系; 舊圖鍵 `E2E-001-ok` 已刪) |
 | logout | 10 | 14 | |
-| modifyuser | 30 | 54 | |
+| modifyuser | 32 | 58 | 2026-10-23 sso-run04 新增 E2E-016(自助註冊者〔載入時 redir 即為空〕列存在時改他列 name 存檔成功; 自助註冊者於該案內以 woItems 預置〔`selfRegUser`, 不併入 `testUsers`, 其餘案例清單列數與標準圖不變〕; 4 張新圖逐張審過: 紅框框住該列 redir 空格且無警示圖示、成功 modal eng + cht 原文) |
 | register | 38 | 38 | |
 | resetpassword | 26 | 28 | 8 張為 admin 走使用者清單, 20 張為強制變更密碼表單; E2E-006 含末列可見語意斷言(強制模式入口, ADR-063) |
 | stainfor | 14 | 14 +10 `_staref` | fixture log 由測試寫入 `logs/e2e-stainfor-fixture.log`(gitignore); 時間粒度下拉為 `WTextSelect`(`#timeGroupSel{Login,Token,Ip}`), 互動案例須真點不可 `selectOption`(ADR-063) |
@@ -151,6 +154,22 @@ baseline 共 398 張(2026-09-28 login E2E-001 試點 +6) + 12 張 `_` 前綴參�
 - 各 e2e / api 檔 `beforeEach` 以 `resetToBaseSeed()` 清 users / tokens / ips 後重插 base seed(hermetic); 檔內自建之 user / token 於 `afterEach` 或檔尾 `deleteNonBaseSeed()` 清除. `startServersOnce` 不做 seed.
 - 正式初始化 `g_initialData.mjs` 不主動重跑.
 - **檔間隔離規則 R-E2E-ISO(2026-10-23 sso-run02)**: `resetToBaseSeed()` 只重設 DB, server 記憶體另有狀態會回灌 DB——`procProtect` 之 `ipDetectNew`(每 2 秒)把 `kpIpCallApi` 內「`ips` 表尚無」之 IP 補登進表(記憶體鍵約 `minForIpCallApi`〔10 分鐘〕無新請求才剪枝). ①凡畫面含 `ips` 清單之 e2e 檔其 `prepare` 須**先** `cleanKpIpCallApi()` **再**重設 DB(`e2e-concurrency` 已做; `e2e-ips` 結構同型——只重設 DB、其清單畫面亦受補登影響——但其 8 案 14 張標準圖於主控全套(2026-10-22)通過, sso-run02 刻意未動其 `prepare`〔動了會改變 `127.0.0.1` 補登時點而牽動既有標準圖〕, 其保護來自②〔來源端不再留殘留〕; 推測該檔於主控全套中與 autoblock 隔數檔(autologin、changepassword、concurrency、deleteuser、init), 殘留計數已因逾窗口而被剪枝, 屬時序上之倖免〔推測, 未量測〕; 若日後出現第二個登記虛擬 IP 之來源檔, 須重評 `e2e-ips`); ②凡以 `X-Forwarded-For` 登記虛擬 IP 之檔(現為 `e2e-autoblock`)其 `afterCase` 須**先**清計數(`cleanKpIpCallApi` + `cleanKpAccountLoginFailed`)**再** `deleteNonBaseSeed()`(順序不可對調, 否則計時器可於兩者之間補登回已清空之表); ③`e2e-concurrency` 另以 `assertSeedOnly()` 守門(三表主鍵集合恰為 base seed + 本檔種子, 多出之 id / ip 列入錯誤訊息). 盤點指令: `rg "X-Forwarded-For|x-forwarded-for" test/e2e-*.test.mjs`(登記虛擬 IP 之檔, 現僅 autoblock)與 `rg "ips" test/e2e-*.test.mjs -l`(顯示 / 操作 IP 清單之檔). 驗證: 單一 mocha 行程依序跑「殘留來源 + 受害檔」(`test/e2e-autoblock.test.mjs test/e2e-concurrency.test.mjs`), 不以各檔單跑代之.
+
+### 改動範圍 → 測試檔(跑受影響者用; 2026-10-23 sso-run04 建; 全套只在最末輪由主控於凍結碼跑)
+
+非瀏覽器測試(unit、api)一律全跑(unit 約 15 秒、api 約 3.5 分); 下表決定**瀏覽器 e2e 要跑哪些檔**. 改到共用基礎(`test/tools/*`、版面共用元件、樣式、伺服端核心、建置設定、`package.json` 依賴)即擴大為全套.
+
+| 改動範圍 | 必跑之 e2e 檔 | 理由 |
+|---|---|---|
+| `server/procCore.mjs` 之 `checkTokenAndChangePassword` / `adminResetUserPassword` / `revokeSessionTokensLocked`(改密碼與 session 處置) | `e2e-changepassword`、`e2e-resetpassword`; 另以 `e2e-register`(自助註冊 → 登入 → 使用者頁流程含 session)、`e2e-login`(登入產生 session)抽驗 | 兩個站點之 UI 入口; 撤銷牽動登入後之 session 存續 |
+| `server/procCore.mjs` 之 `updateTabItems`、`revokeTokensByUserId[Locked]`、`createToken` / 登入 | `e2e-modifyuser`、`e2e-adduser`、`e2e-deleteuser`、`e2e-tokens`、`e2e-ips`、`e2e-concurrency`、`e2e-login`、`e2e-logout` | 三清單存檔與 session 生命週期 |
+| `src/components/LayoutContentUsers.vue` | `e2e-modifyuser`(整檔)、`e2e-adduser`、`e2e-deleteuser`、`e2e-resetpassword`(Reset 按鈕在此清單)、`e2e-concurrency`(使用者清單案) | 清單頁之驗證、警示、存檔 |
+| `src/components/LayoutContentTokens.vue` / `LayoutContentIps.vue` | `e2e-tokens`、`e2e-concurrency` / `e2e-ips`、`e2e-concurrency` | 同上 |
+| `src/components/PageUser.vue`(改密碼表單) | `e2e-changepassword`、`e2e-resetpassword`(強制變更密碼案)、`e2e-login` | |
+| `src/components/PageLogin.vue`、`src/plugins/mUI.mjs`(登入、redir 分流) | `e2e-login`、`e2e-autologin`、`e2e-register`、`e2e-logout` | |
+| `server/procProtect.mjs` | `e2e-autoblock`、`e2e-ips`、`e2e-login` | |
+| `server/procLang.mjs`(語系鍵) | 所有顯示該鍵之 flow; 另 `unit-lang` | |
+| `src/usersRedirCheck.mjs` | `e2e-modifyuser`(E2E-007、E2E-016)、`e2e-adduser`(E2E-008) | redir 檢查之唯一實作 |
 
 ### e2e 契約映射(對應全域技能[role-coder-for-test-e2e] §3 契約)
 

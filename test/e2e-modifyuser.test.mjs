@@ -26,7 +26,7 @@ import { runBaselineCase, createBaselineGate, waitGridIdle } from './tools/e2eLi
 //
 // 標準圖存放：test/pics/modifyuser/modifyuser-{lang}-{number}-{name}.png
 //
-// 涵蓋 15 個案例 (每語系 27 張圖鍵 × 2 lang = 54 baselines)。所有 capture 透過真實 UI
+// 涵蓋 16 個案例 (每語系 29 張圖鍵 × 2 lang = 58 baselines; 2026-10-23 sso-run04 新增 E2E-016 共 4 張, 既有 54 張不變)。所有 capture 透過真實 UI
 // 互動推進: 鍵盤滑鼠輸入 / ag-grid cell dblclick + Enter / checkbox click / 按鈕
 // SVG path 點擊 / WTimeminute popup 互動 / ag-grid row drag.
 // setup 階段以 woItems 預置 DB row, 是 e2e setup 例外 (見全域 CLAUDE.md §6.3 setup 階段例外).
@@ -147,6 +147,15 @@ let testUsers = {
         isAdmin: 'n',
         redir: `${baseUrl}/?view=user&token={token}`,
     },
+}
+
+//自助註冊者 (E2E-016 專用, 不併入 testUsers (insertTestUsersAndTokens 逐一插入其全部成員): 其餘案例之清單列數與標準圖不受影響; 由 captureLegacyEmptyRedirSaved 於該案內預置)
+let selfRegUser = {
+    id: 'id-mu-selfreg',
+    account: 'mu-selfreg',
+    rawPassword: 'Pw@muselfreg1',
+    name: 'Self Registered',
+    email: 'mu-selfreg@test.com',
 }
 
 let userTokens = {}
@@ -656,6 +665,59 @@ async function captureRedirEmpty(page, lang) {
 }
 
 
+//016 載入時即為空 redir 之既有使用者 (自助註冊者) 不擋他列存檔 (R-VAL-02, ADR-094; spec 本檔 E2E-016)
+//setup 例外: 以 woItems 預置一位「自助註冊者」(欄位形狀同 procCore.createUser: funNew 預設 redir 空字串、未驗證 email、userId 為自己)
+//流程: 登入後台 → 使用者清單 → 改 target 的 name → (stage1) 框自助註冊者列的 redir 空格 (無警示 icon) → 儲存 → (stage2) 框儲存成功 modal
+async function captureLegacyEmptyRedirSaved(page, lang) {
+    let selfReg = ds.users.funNew({
+        order: 895,
+        account: selfRegUser.account,
+        password: hashPassword(selfRegUser.rawPassword, salt),
+        name: selfRegUser.name,
+        email: selfRegUser.email,
+        tokenVerify: 'mu-selfreg-token-verify',
+        isAdmin: 'n',
+        isActive: 'y',
+    })
+    selfReg.id = selfRegUser.id
+    selfReg.userId = selfReg.id
+    selfReg.userIdUpdate = selfReg.id
+    selfReg.timeCreate = FIX_TIME
+    selfReg.timeUpdate = FIX_TIME
+    assert.strict.equal(selfReg.redir, '', '自助註冊者之 redir 為空字串 (funNew 預設, 同 createUser)')
+    await woItems.users.insert([selfReg])
+
+    await loginAsAdminAndOpenUsersList(page, lang)
+    let tgtRowIdx = parseInt(await findRowIndexByAccount(page, testUsers.target.account))
+    let regRowIdx = parseInt(await findRowIndexByAccount(page, selfRegUser.account))
+    assert.strict.equal(Number.isNaN(regRowIdx), false, '清單內應見自助註冊者列')
+    await fillAgGridCell(page, tgtRowIdx, 'name', 'Modified Target')
+
+    //[多階段 stage1] 儲存前框自助註冊者列的 redir 空格: 空值且無警示 icon (不是管理員本次所設, 不攔下)
+    await ensureColumnVisible(page, 'redir')
+    let cellSel = `.ag-row[row-index="${regRowIdx}"] .ag-cell[col-id="redir"]`
+    let cell = await page.evaluate((sel) => {
+        let c = document.querySelector(sel)
+        return c ? { text: (c.innerText || '').trim(), nImg: c.querySelectorAll('img').length } : null
+    }, cellSel)
+    assert.strict.deepEqual(cell, { text: '', nImg: 0 }, `自助註冊者之 redir 格應為空且無警示 icon, 實際: ${JSON.stringify(cell)}`)
+    let bufCell = await captureStableWithBox(page, cellSel)
+
+    await clickSave(page)
+    await waitCheckYes(page, lang)
+    //[多階段 stage2] 框儲存成功 modal; 成功訊息文字於點 OK 之前斷言
+    let bufModal = await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
+    let successNeedle = expectedSuccessModalText[lang]
+    let hasSuccess = await page.evaluate((s) => (document.body.innerText || '').includes(s), successNeedle)
+    assert.strict.equal(hasSuccess, true, `儲存成功 modal 應含成功訊息文字「${successNeedle}」 (case E2E-016; 若見「redir 無效」訊息即自助註冊者之空 redir 擋住了存檔)`)
+
+    return {
+        'E2E-016-1-legacy-redir-cell': bufCell,
+        'E2E-016-2-save-success-modal': bufModal,
+    }
+}
+
+
 //008 admin 解除自己 isAdmin (前端自我鎖死保護)
 //多階段: stage1 = save 前框 admin 自己列的 isAdmin checkbox 格 (已取消勾選), stage2 = CheckYes modal
 async function captureCannotDemoteSelf(page, lang) {
@@ -1088,6 +1150,23 @@ let cases = [
             let adminRow = await woItems.users.select({ id: testUsers.admin.id })
             let targetRow = await woItems.users.select({ id: testUsers.target.id })
             assert.strict.equal(targetRow[0].order < adminRow[0].order, true, `target.order (${targetRow[0].order}) 應 < admin.order (${adminRow[0].order})`)
+        },
+    },
+    {
+        name: 'E2E-016-legacy-empty-redir-saved',
+        title: `E2E-016-legacy-empty-redir-saved: 自助註冊者 (載入時 redir 即為空) 列存在 → 改他列 name → save → 不被攔下、儲存成功`,
+        run: captureLegacyEmptyRedirSaved,
+        stages: ['E2E-016-1-legacy-redir-cell', 'E2E-016-2-save-success-modal'],
+        verify: async () => {
+            //DB: 他列之變更已儲存; 自助註冊者列仍在、redir 仍為空 (未被改寫為他值)、其餘欄位不被本流程動到
+            let target = await woItems.users.select({ id: testUsers.target.id })
+            assert.strict.equal(target[0].name, 'Modified Target', `target name 應已儲存`)
+            let reg = await woItems.users.select({ id: selfRegUser.id })
+            assert.strict.equal(reg.length, 1, `自助註冊者列應仍在`)
+            assert.strict.equal(reg[0].redir, '', `自助註冊者 redir 應仍為空`)
+            assert.strict.equal(reg[0].name, selfRegUser.name, `自助註冊者 name 不應被動到`)
+            assert.strict.equal(reg[0].email, selfRegUser.email, `自助註冊者 email 不應被動到`)
+            assert.strict.equal(reg[0].timeVerified, '', `自助註冊者仍為未驗證`)
         },
     },
 ]

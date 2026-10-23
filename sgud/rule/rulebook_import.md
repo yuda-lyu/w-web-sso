@@ -21,26 +21,49 @@
     - 刪除:同鎖撤銷其權杖,依表名排序取 `[tokens, users]`.
     - 修改:保留 `id`.
     - 不變:不寫.
-  - **欄位歸屬**(初稿,第 113 項設計時定案):
+  - **定位(使用者 2026-10-23 裁示)**:
+    - 接入 AD 為業主要求.匯入哪些使用者由**匯入端程序先行過濾**後再外部同步至 sso;sso 對送來之清單一律接收,不另做業務過濾.
+    - sso 可自建**系統管理員**(管理 AD 使用者之用)與**一般使用者**(業主外部協力廠商等非 AD 之使用者).這些後台自建列(`from` 為空)不受匯入影響.
+    - 有問題之 AD 使用者,可於 sso 停用,或由權限系統(例 w-web-perm)移除其權限;由業主之系統管理員擇一處理,兩種皆須可行.
+  - **欄位歸屬**:
     - 外部擁有:`account`、`name`、`email` 等身分資料.
-    - 本系統擁有:`password`、`tokenVerify`、`timeBlocked`、`timeVerified`、`isForceChangePw`、權杖;匯入一律不寫.
-    - 歸屬待定:`isAdmin`、`isActive`.
+    - 本系統擁有,匯入一律不寫:`password`、`tokenVerify`、`timeBlocked`、`timeVerified`、`isForceChangePw`、權杖.
+    - 本系統擁有,但**新增時由匯入給預設值**,其後匯入不覆蓋:
+      - `isActive`:新增時預設 `'y'`(使用者裁示:預設匯入就是啟用).其後由 sso 管理員決定停用與否,下次匯入不改回;停用時同鎖撤銷其 session.
+      - `isAdmin`:新增時預設 `'n'`.依原則 1 與原則 8,匯入不授與管理權;是否由後台提升為管理員,由 sso 管理員決定.主控依原則定,使用者可否決.
   - 整批驗證、全有或全無:下列情形拒收、零寫入.
-    - 缺 `srcKey`、`srcKey` 為空或同批重複.
+    - 缺 `srcKey`、`srcKey` 為空或同批重複(**`srcKey` 即刻必填,不以 `id` 代替**;使用者 2026-10-23 裁示不提供呼叫端相容).
+    - 外部送 `id`(外部不得指定內部 `id`).
     - `from` 為空.
     - 觸及他來源或後台自建之列.
     - 帳號/email 與他來源或後台列衝突(原則 3 收嚴＋提示).
     - 空批次.
   - 回 `{ nAdd, nUpdate, nDel, nSame }`;錯誤回固定鍵、不回顯值.
-- **待設計(第 113 項)**:
-  - 外部匯入之使用者如何登入:sso 密碼、外部驗證,或首次登入設定密碼.
-  - 後台可否停用外部列.
-  - 外部列在後台使用者清單之唯讀範圍(比照 perm `lockExternalRows`).
+- **外部使用者之登入(使用者 2026-10-23 裁示)**:
+  - 先以外部匯入取得使用者清單.
+  - 登入之身分驗證由**後端伺服器程式碼注入依賴**,轉呼叫外部目錄之驗證程序,例如自有套件 **w-ldap**.
+  - 驗證方式:確認送來之帳密能否登入 AD,或送來之 token 能否通過 AD 之身分驗證;通過才授權登入,由 sso 發 session 權杖.
+  - 設計要點(實作時定案):
+    - 注入點例 `opt.verifyExternalUser({ from, account, password } | { from, token })`,回傳通過或失敗;依 `from` 決定由哪個驗證程序處理.
+    - `from` 非空之外部列,一律走注入之驗證;不使用 sso 本地之 `password`,匯入亦不寫 `password`.
+    - 未注入驗證程序之 `from`:該來源之使用者**一律不可登入**(原則 1 預設拒絕),並記 log.
+    - 驗證失敗計入既有之自動封鎖計數(帳號/IP),與本地帳密登入同規則.
+    - 外部目錄無法連線時回固定錯誤鍵,不得退回以本地密碼驗證.
+- **開發與測試環境**:
+  - w-ldap 已有 Samba AD DC 之 Docker 整合測試:`C:\opensrc\開源-JS-010-4-w-ldap\w-ldap\test\tools\sambaAd\`(Dockerfile、entrypoint.sh)與 `test/api-ldap-sambaAd.test.mjs`.
+    - 11 案,涵蓋帳密正確/錯誤、`<NETBIOS>\<帳號>` 與 `<帳號>@<realm>` 格式、非 ASCII 密碼.
+    - 埠 8990 只綁 127.0.0.1;測試結束即銷毀;映像保留沿用.
+    - 須 docker(Linux 容器模式);w-ldap 之 exe 只能在 Windows 執行.
+  - sso 實作時可沿用此映像建 AD 測試環境.使用者 10-23 指示:**不急**,待確認 AD 測試做法可行後再安排 sso 開發.
+- **後台對外部列**(原則 5,依上方欄位歸屬):
+  - 外部擁有欄位唯讀,比照 perm `lockExternalRows`:鎖頭與 tooltip.
+  - 後台不可刪除外部列;要移除須由匯入端不再送出.
+  - 本系統擁有欄位可改:`isActive`、`isAdmin`、封鎖等.
 - **刪除防護**:本條為**預期功能**.未實作或未完成之匯入程式(含雛形、外部端輔助 `provideTabs`)不是死碼,不得以「無引用／orphan」刪除(opensrcOper 帳本 G8).
 - **歷史**:
   - 本套件原有雛形:`server/provideTabs.mjs`、根目錄 `g.provideUsers.mjs`(永遠 reject `incompleted`)、`WWebSso.mjs` 內註解之 `delAll({ from })` 同步.
   - 2026-06-09 稽核(`06966d8`)以 zero ref／orphan 為由當死碼移除,其後無人察覺本套件已無外部匯入管道.
   - 現行外部只能以 app 權杖呼叫整表存檔 `updateUsersList`,會刪光清單外之使用者(含後台自建者).
 - **狀態:未做**(排程第 113 項;與第 111 項同輪設計,第 110 項發布後實作).
-- **驗收**:規格第 10 節 I1–I14,逐條對應測試檔(實作時建立).
+- **驗收**:規格第 10 節 I1–I15,逐條對應測試檔(實作時建立).
 - 盤點:`git grep -nE "path: '/syncAndReplaceTabs'|srcKey" -- server`(現 0 筆;完成後應有入口與 `srcKey` 比對).

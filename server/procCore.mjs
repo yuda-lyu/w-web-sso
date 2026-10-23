@@ -1312,9 +1312,14 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //'incorrect old password' reject 路徑, 自然不會多寄信.
         return await kmx(`changeUserPassword:${userId}`, async () => {
 
-            //讀取、驗舊密碼與寫入於 users 表鎖內(S07; kmx 在外層、表鎖在內層): password 為伺服器專有欄位、isForceChangePw 為雙方欄位(系統直寫須取表鎖),
-            //驗證所依之 DB 雜湊與寫入間不被其他寫入者(重設密碼、後台存檔)插隊; 只改不增, 列已被刪則拒絕而不新增殘缺列 (X5)
-            let { u, email } = await withTabLocks(['users'], async () => {
+            //讀取、驗舊密碼、撤銷其他 session 與寫入於 [tokens, users] 表鎖內(S07; kmx 在外層、表鎖在內層): password 為伺服器專有欄位、isForceChangePw 為雙方欄位(系統直寫須取表鎖),
+            //驗證所依之 DB 雜湊與寫入間不被其他寫入者(重設密碼、後台存檔、登入建立 session)插隊; 只改不增, 列已被刪則拒絕而不新增殘缺列 (X5)
+            //改密碼後之 session 處置 (R-SESS-01, ADR-093): 保留發出此請求之目前 session(token), 撤銷該使用者其他所有 session 權杖; app 權杖不是 session, 不撤銷
+            let { u, email } = await withTabLocks(['tokens', 'users'], async () => {
+
+                //鎖內再驗呼叫所用之權杖仍有效 (外審 sol#1): 鎖外之 checkToken 通過後、等鎖期間該 session 可能已被同使用者另一個改密碼請求或管理員重設撤銷,
+                //被撤銷之權杖不得再改密碼(否則「保留發出請求之目前 session」不成立, 該請求還會撤銷對方保留之 session); checkToken 只讀不取鎖, 可在鎖內呼叫
+                await checkToken(token)
 
                 //getGenUserByUserId (with password)
                 let u = await _getGenUserByKV('id', userId, { deletePassword: false })
@@ -1347,6 +1352,21 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
                 //hash newPassword
                 let passwordNew = hashPassword(newPassword, salt)
+
+                //撤銷其他 session(先於密碼寫入, 驗證皆已通過): 撤銷失敗即 reject 且密碼不變, 不會出現「密碼已變更但舊 session 仍有效」(R-SESS-01)
+                //(以布林旗標判失敗而非 errRevoke 是否為 null: reject 值可能為 null / undefined, 外審 sol#2)
+                let revokeFailed = false
+                let errRevoke = null
+                let nRevoked = await revokeSessionTokensLocked(userId, token)
+                    .catch((err) => {
+                        revokeFailed = true
+                        errRevoke = err
+                    })
+                if (revokeFailed) {
+                    srLog.error({ event: 'fun-changePassword-revokeSessions', key: 'userChangePasswordFail', userId, err: getErrorMessage(errRevoke) })
+                    return Promise.reject('userChangePasswordFail')
+                }
+                srLog.info({ event: 'fun-changePassword-revokeSessions', userId, nRevoked })
 
                 //save (清 isForceChangePw='n', 變更密碼成功後即解除強制變更), 更新者記該使用者本人 (R-CONC-04)
                 //逐筆檢查(ADR-080): 寫入失敗即 reject, 不寄「密碼已變更」信
@@ -1468,9 +1488,10 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                 return Promise.reject('adminResetPasswordAlreadyTriggered')
             }
 
-            //目標 user 查找與寫入於 users 表鎖內(S08; kmx 在外層、表鎖在內層): password 為伺服器專有欄位、isForceChangePw 為雙方欄位(系統直寫須取表鎖);
+            //目標 user 查找、撤銷其全部 session 與寫入於 [tokens, users] 表鎖內(S08; kmx 在外層、表鎖在內層): password 為伺服器專有欄位、isForceChangePw 為雙方欄位(系統直寫須取表鎖);
             //只改不增, 目標已被刪則拒絕而不新增殘缺列 (X5); 更新者記操作管理員 (R-CONC-04)
-            let { targetAccount, targetName, targetEmail, newPassword } = await withTabLocks(['users'], async () => {
+            //改密碼後之 session 處置 (R-SESS-01, ADR-093): 撤銷對方全部 session 權杖(不含 app 權杖); 呼叫者(管理員 / app 權杖)自己之權杖不在撤銷範圍(目標不得為自己)
+            let { targetAccount, targetName, targetEmail, newPassword } = await withTabLocks(['tokens', 'users'], async () => {
 
                 //目標 user (含 password 拿到也不用, 只是確認存在)
                 let uTarget = null
@@ -1491,9 +1512,26 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                 //產生隨機新密碼 (符合 passwordPolicy + account 限制)
                 let newPassword = genRandomPassword(passwordPolicy, targetAccount)
 
-                //hash + save (含 isForceChangePw='y')
-                //逐筆檢查(ADR-080): 寫入失敗即 reject, 不記節流、不寄出未生效之新密碼
+                //hash
                 let hashed = hashPassword(newPassword, salt)
+
+                //撤銷對方全部 session(先於密碼寫入): 撤銷失敗即 reject 且密碼不變, 不會出現「密碼已重設但舊 session 仍有效」(R-SESS-01)
+                //(以布林旗標判失敗而非 errRevoke 是否為 null: reject 值可能為 null / undefined, 外審 sol#2)
+                let revokeFailed = false
+                let errRevoke = null
+                let nRevoked = await revokeSessionTokensLocked(targetUserId)
+                    .catch((err) => {
+                        revokeFailed = true
+                        errRevoke = err
+                    })
+                if (revokeFailed) {
+                    srLog.error({ event: 'fun-adminResetUserPassword-revokeSessions', key: 'adminResetPasswordFailed', token: maskToken(token), targetUserId, err: getErrorMessage(errRevoke) })
+                    return Promise.reject('adminResetPasswordFailed')
+                }
+                srLog.info({ event: 'fun-adminResetUserPassword-revokeSessions', targetUserId, nRevoked })
+
+                //save (含 isForceChangePw='y')
+                //逐筆檢查(ADR-080): 寫入失敗即 reject, 不記節流、不寄出未生效之新密碼
                 let errTemp = null
                 await procOrm(operatorId, 'users', 'save', [{
                     id: targetUserId,
@@ -1592,6 +1630,40 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         }))
 
         return size(ts)
+    }
+
+
+    //revokeSessionTokensLocked: 改密碼後之 session 處置 (R-SESS-01, ADR-093), 須於 [tokens, users] 表鎖內呼叫(與密碼寫入同一組鎖, 不可重入).
+    //只撤銷 userId 名下之 session 權杖(isApp !== 'y', 即使用者登入所發); app 權杖(isApp === 'y')不是 session, 其 userId 為擁有者, 不撤銷
+    //(與 revokeTokensByUserIdLocked 之刪除 / 停用 / 封鎖情境不同: 該情境是使用者本身失效, 名下一切權杖皆撤).
+    //exceptToken: 發出請求之目前 session 權杖字串, 該筆保留(使用者自行改密碼); 管理員重設不給, 全撤.
+    //逐筆檢查(ormWrite), 單筆失敗不中斷其餘筆, 有失敗即 reject(含失敗筆主鍵), resolve 回傳撤銷筆數; 冪等(無可撤者回 0)
+    let revokeSessionTokensLocked = async (userId, exceptToken = '') => {
+
+        //check
+        if (!isestr(userId)) {
+            return Promise.reject(`invalid userId`)
+        }
+
+        //ts
+        let ts = await woItems.tokens.select({ userId })
+
+        //tsDel, session 權杖且非目前 session
+        let tsDel = filter(ts, (t) => {
+            return get(t, 'isApp', '') !== 'y' && !(isestr(exceptToken) && get(t, 'token', '') === exceptToken)
+        })
+
+        //check
+        if (size(tsDel) === 0) {
+            return 0
+        }
+
+        //del
+        await ormWrite(woItems.tokens, 'del', map(tsDel, (t) => {
+            return { id: t.id }
+        }))
+
+        return size(tsDel)
     }
 
 

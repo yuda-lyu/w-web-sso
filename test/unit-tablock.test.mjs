@@ -86,17 +86,22 @@ describe('19 個 server 寫入站點皆在表鎖內 (R-CONC-01, V14)', function(
         assert.notStrictEqual(env.users.get('u-v').tokenVerify, 'tv-1')
     })
 
-    it('SITE-LOCK-S07 checkTokenAndChangePassword (users save password)', async function() {
-        let env = mkEnvSso()
-        let pw0 = env.users.get('u-a').password
-        await assertWaits('S07', env, ['users'], ['users'], () => env.p.checkTokenAndChangePassword('tk-a1', 'eng', PW_INIT, 'New@5678'))
-        assert.notStrictEqual(env.users.get('u-a').password, pw0)
+    it('SITE-LOCK-S07 checkTokenAndChangePassword (users save password; [tokens, users] 兩把鎖任一被占用皆等待, 同鎖撤銷其他 session, R-SESS-01)', async function() {
+        for (let held of [['users'], ['tokens']]) {
+            let env = mkEnvSso()
+            let pw0 = env.users.get('u-a').password
+            await assertWaits(`S07 hold[${held}]`, env, held, ['users'], () => env.p.checkTokenAndChangePassword('tk-a1', 'eng', PW_INIT, 'New@5678'))
+            assert.notStrictEqual(env.users.get('u-a').password, pw0)
+        }
     })
 
-    it('SITE-LOCK-S08 adminResetUserPassword (users save password)', async function() {
-        let env = mkEnvSso()
-        await assertWaits('S08', env, ['users'], ['users'], () => env.p.adminResetUserPassword('tk-admin', 'eng', 'u-b'))
-        assert.strictEqual(env.users.get('u-b').isForceChangePw, 'y')
+    it('SITE-LOCK-S08 adminResetUserPassword (users save password; [tokens, users] 兩把鎖任一被占用皆等待, 同鎖撤銷對方全部 session, R-SESS-01)', async function() {
+        for (let held of [['users'], ['tokens']]) {
+            let env = mkEnvSso()
+            await assertWaits(`S08 hold[${held}]`, env, held, ['users'], () => env.p.adminResetUserPassword('tk-admin', 'eng', 'u-b'))
+            assert.strictEqual(env.users.get('u-b').isForceChangePw, 'y')
+            assert.strictEqual(env.tokens.get('t-b1'), undefined, '同鎖撤銷對方 session')
+        }
     })
 
     it('SITE-LOCK-S09 revokeTokensByUserId (tokens del; 持鎖版供上游同鎖使用)', async function() {

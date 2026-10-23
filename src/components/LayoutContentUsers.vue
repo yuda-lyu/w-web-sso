@@ -251,7 +251,7 @@
                         </template>
                         <!-- redir -->
                         <template v-else-if="props.key === 'redir'">
-                            <span v-if="cellFieldErr('redir', props.value)" :title="cellFieldErr('redir', props.value)">
+                            <span v-if="cellRedirErr($ui.gv(props.row, 'id'))" :title="cellRedirErr($ui.gv(props.row, 'id'))">
                                 <img style="padding-right:4px; vertical-align:sub; width:16px; height:16px;" :src="$ui.getIcon('warning')" />
                                 <span style="color:#F57C00;">{{ $ui.cstr(props.value) }}</span>
                             </span>
@@ -424,6 +424,7 @@ import WAggridVue from 'w-aggrid-vue/src/components/WAggridVue.vue'
 import WTimeminute from 'w-component-vue/src/components/WTimeminute.vue'
 import WButtonChip from 'w-component-vue/src/components/WButtonChip.vue'
 import { baselineOfUsers } from '../baselineOf.mjs'
+import { redirOrigOfUsers, redirErrIdsOfUsers } from '../usersRedirCheck.mjs'
 
 
 export default {
@@ -460,6 +461,7 @@ export default {
 
             firstLoading: true,
             baseline: null, //載入時(及存檔成功後重新讀取時)畫面所見之列的有序基準 [[id, 列摘要]], 存檔時送後端比對(多人同時編輯, 先動先贏); null 為未載入或算不出, 送出時被後端拒收
+            redirOrig: null, //與 baseline 同一快照各列之 redir 原值 Map(id → redir; 用 Map 以免被 Vue 響應式處理覆蓋 `__ob__` 等鍵), 供判定「載入時即為空之既有列(如自助註冊者)」不擋存檔 (R-VAL-02); null 為算不出(此時 baseline 亦為 null, 後端無基準一律拒收), 只檢查新增列
             errMsg: '', //清單載入失敗之訊息(getDataError), 有值時以訊息取代表格
             firstSetting: true,
             systemProcing: false, //程式端載入/重載清單資料期間為true, 用於排除非使用者操作之rowsChange
@@ -576,6 +578,7 @@ export default {
             .then((res) => {
                 // console.log(res)
                 vo.baseline = baselineOfUsers(res) //對畫面所見之同一快照自算基準(須在排序、變動之前; buildBaseline 不改輸入)
+                vo.redirOrig = redirOrigOfUsers(res)
                 res = sortBy(res, 'order')
                 vo.users = res
                 vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
@@ -747,29 +750,22 @@ export default {
             return kpErr
         },
 
+        //redir(登入後轉址)檢查, 鍵為列主鍵 id (R-VAL-02, ADR-094): 只攔下管理員本次新增或由非空改為空之列;
+        //載入時即為空之既有列(如自助註冊者)不擋存檔、不標警示——一列之既有資料問題不得擋住整份清單之存檔
         errItemsByRedir: function() {
             let vo = this
 
             //rows
             let rows = get(vo, 'opt.rows', [])
 
+            //ids
+            let ids = redirErrIdsOfUsers(rows, vo.redirOrig)
+
             //kpErr
             let kpErr = Object.create(null)
-            each(rows, (v, k) => {
-
-                //redir
-                let redir = get(v, 'redir', '')
-
-                //check
-                if (!isestr(redir)) {
-
-                    //kpErr
-                    kpErr[redir] = vo.$t(`userRedirEmpty`)
-
-                    return true //跳出換下一個
-                }
-
-            })
+            for (let id in ids) {
+                kpErr[id] = vo.$t(`userRedirEmpty`)
+            }
 
             return kpErr
         },
@@ -929,11 +925,18 @@ export default {
             let errMaps = {
                 'account': vo.errItemsByAccount,
                 'email': vo.errItemsByEmail,
-                'redir': vo.errItemsByRedir,
             }
             //鍵為使用者輸入之 account / email / redir 值: 自有鍵查值, 不把輸入值當 lodash 路徑 (含 . 或 [ 者會被解析為路徑而取到他列之錯誤文字; R-KEY-01)
             let kp = errMaps[field]
             let err = (kp !== null && typeof kp === 'object' && Object.prototype.hasOwnProperty.call(kp, v)) ? kp[v] : ''
+            return isestr(err) ? err : ''
+        },
+
+        //redir 欄位錯誤查詢, 鍵為 row.id (空值不能當鍵: 否則所有 redir 為空之儲存格會同時被標警示, 含載入時即為空而不擋存檔之既有列)
+        cellRedirErr: function(id) {
+            let vo = this
+            let kp = vo.errItemsByRedir
+            let err = (kp !== null && typeof kp === 'object' && Object.prototype.hasOwnProperty.call(kp, id)) ? kp[id] : ''
             return isestr(err) ? err : ''
         },
 
@@ -1577,6 +1580,7 @@ export default {
                 await vo.$fapi.getUsersList(token)
                     .then((res) => {
                         vo.baseline = baselineOfUsers(res)
+                        vo.redirOrig = redirOrigOfUsers(res)
                         res = sortBy(res, 'order')
                         vo.users = res
                         vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
@@ -1584,6 +1588,7 @@ export default {
                     .catch((err) => {
                         console.log('refresh getUsersList catch', err)
                         vo.baseline = null //重新讀取失敗: 舊基準已過期, 不沿用; 其後再存檔被後端拒收並提示重新載入(不降級為不帶基準)
+                        vo.redirOrig = null //同上, redir 比對基準亦不沿用(null 時只檢查新增列; 後端無基準之存檔一律拒收並提示重新載入)
                     })
 
                 //isModified

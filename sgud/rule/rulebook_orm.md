@@ -33,6 +33,22 @@
   - Grep `clearXSS` 於 `server/` → 只在 procCore 之 `updateTabItems`(欄位檢查)與 `createUser`(三欄檢查).
 - **站點全集(2026-10-12)**: `updateTabItems`(users / tokens / ips 三清單)、`createUser`; 皆已套. 測試: `unit-ormWriteFail` A11～A22、B8; `api-adduser` API-011～013(以 HEAD 版 procCore 對真後端驗紅、修改後綠).
 
+### R-VAL-02: 後台使用者清單之 redir 檢查——只攔管理員本次新增或由非空改為空之列; 載入時即為空之既有列(自助註冊者)不擋存檔、不標警示(2026-10-23, sso-run04 第 116 項; ADR-094; 原則 3)
+
+- **規則**:
+  1. 前端 `errItemsByRedir` 只對「新增列(`_isNew`)redir 空」與「既有列 redir 由非空改為空」回錯(訊息 `userRedirEmpty`, 儲存格警示與 modal 文字不變); 載入時即為空之既有列不回錯. 比對基準 `redirOrig`(**Map**, 列主鍵 → redir 原值; 不用純物件, 因基準存於 Vue data, Vue 2 響應式會以 `__ob__` 鍵覆蓋同名主鍵之值)與 `baseline` 同一快照(載入、存檔成功後重讀)更新; 基準有效而列不在基準內且非新增者視為管理員所設, 嚴格檢查; **基準算不出(`null`, 重讀失敗)時只檢查新增列、不檢查既有列**——此時 baseline 亦為 null, 後端無基準之存檔一律拒收(`saveBaselineFormat`, 提示重新載入), 前端先擋既有列只會使使用者先看到不相干之訊息(外審 sol#3、#4).
+  2. 儲存格警示以**列主鍵**為鍵(`cellRedirErr(id)`), 不以 redir 值為鍵(空值為鍵會使所有空 redir 儲存格同時被標).
+  3. 檢查邏輯在 `src/usersRedirCheck.mjs`(純函式, `redirOrigOfUsers` / `redirErrIdsOfUsers`); 元件只接線.
+  4. 後端不驗 redir(本就如此, 不新增); 自助註冊不給預設 redir、不遷移既有資料(取捨見 ADR-094; 「預設 redir」與「modal 指出列」為待裁示選項, 兩者皆會動既有標準圖).
+- **理由**: 自助註冊者 redir 為空是設計事實(`createUser` 以 `funNew` 預設, 註冊流程無此欄; `view=user` / `view=backstage` 登入不需 redir); 規格(E2E-007 / E2E-008)只要求攔管理員本次輸入之空值, 前端規則範圍(全部列)大於規格; 一列之既有資料問題不得擋住整份清單之存檔.
+- **盤點指令**:
+  - Grep `errItemsByRedir|cellRedirErr|redirOrig` 於 `src/components/LayoutContentUsers.vue` → `errItemsByRedir` 只呼叫 `redirErrIdsOfUsers`、不自行逐列 `isestr(redir)`; `redirOrig` 於載入與存檔後重讀各設一次、重讀失敗清 `null`; redir 儲存格只用 `cellRedirErr`.
+  - Grep `cellFieldErr\(` → 只剩 `'account'` / `'email'`(以值為鍵, K14 已套).
+- **站點全集(2026-10-23)**: 前端 1 處(`LayoutContentUsers.vue`); 清單類中僅使用者清單有 redir.
+- **測試**: `unit-usersRedir`(UR-U-001～014 邏輯 × 列來源與動作〔含基準 null、Map 與真 Vue data、基準重讀更新〕; UR-W01～03 接線靜態守護〔去行尾註解後計數、兩處賦值各緊接 baseline 賦值〕)、`e2e-modifyuser` E2E-016(新, 兩語系 4 張新標準圖; 既有 416 張 sha256 0 變動)與 E2E-007(既有列改空仍攔)、`e2e-adduser` E2E-008(新增列留空仍攔).
+- **修前紅**: 換入 HEAD 版 `LayoutContentUsers.vue`(sha256 回驗還原): E2E-016 兩語系皆失敗(自助註冊者之空 redir 格被標警示圖示, 儲存前斷言 `img` 數 1 ≠ 0; HEAD 之儲存被擋見 sso-verify01 X3c / X8d).
+- **變異驗證(2026-10-23, 外審修補後最終版)**: unit 層 9 項(U1～U5 含 U3b 邏輯、V1 / V2 / V4 接線)全數被抓到(對照組 18 案全綠); V3(元件呼叫檢查時不傳基準)只有 e2e 抓得到: 外審 sol#4 後語意為「基準 null 時只檢查新增列」, 故 V3 下 E2E-016 仍綠(實測 2 / 2 過, 即未被 E2E-016 抓到), 應由 E2E-007(既有列非空改空須被攔)偵測; 該次真瀏覽器層重驗(R-U1、R-V3)於 2026-10-23 因事故中止, **未完成(INCONCLUSIVE, 待補)**, 驅動為歸檔之 `mutate-repo.mjs`(R-V3 之偵測案已改為 E2E-007).
+
 ### R-ORM-02: 本套件不轉交 w-serv-orm 已移除之使用者檢查設定; settings / optExt 給予上游會拒絕之值者忽略並於啟動時記警告(2026-10-14 改寫, ADR-085; 原 2026-10-12, ADR-083)
 
 - **規則**:

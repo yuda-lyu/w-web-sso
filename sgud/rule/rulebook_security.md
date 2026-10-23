@@ -51,6 +51,25 @@
   - Grep `checkToken\(` 於 `server/` → 未帶 opt 者只能是上列自身權杖操作與 `adminResetUserPassword`(帶 `{ perm: 'writeUsers' }`).
 - **站點全集(2026-09-25)**: 17 閘 —— `WWebSso.mjs` 16(HTTP `getSsoUsersList`、`getSsoUserInfor` 兩分支; kpfun `getUserInfor`、`getUsersList`、`updateUsersList`、`getTokensList`、`updateTokensList`、`getIpsList`、`updateIpsList`、`getSta*` 6 支)+ `procCore.mjs` 1(`adminResetUserPassword`); 皆已套.
 
+### R-SESS-01: 改密碼後須撤銷 session 權杖——管理員重設撤銷對方全部; 自行改密碼保留目前 session、撤銷其他; app 權杖不撤銷(2026-10-23, sso-run04 第 117 項; ADR-093; 使用者裁示, OWASP ASVS)
+
+- **規則**:
+  1. **改密碼入口全集**(以 Grep 取得, 2026-10-23): `adminResetUserPassword`(管理員 session 或具 `writeUsers` 之 app 權杖; 對象為他人)、`checkTokenAndChangePassword`(session 權杖; app 權杖亦通過 `checkToken`, 作用於其擁有者並須舊密碼)——這兩個是**既有使用者密碼之唯一寫入點**; 其餘「寫 password」者為新帳號(`createUser` 自助註冊、`updateTabItems` users 新增列、離線 `g_initialData.mjs`), 無 session 可撤; 「忘記密碼 / email 重設」入口不存在(日後若新增, 須撤銷全部 session); HTTP 路由無改密碼端點. 新增任何改既有使用者密碼之站點, 須同時加撤銷並補本規則測試.
+  2. **撤銷範圍**: 只撤銷 `tokens.userId = 目標` 且 `isApp !== 'y'` 之列(session 權杖); app 權杖(`isApp === 'y'`, 含擁有者為該使用者者)不是 session, 不撤銷. 管理員重設撤銷全部; 自行改密碼以呼叫所用之權杖字串(`token`)為 `exceptToken` 保留其餘撤銷(app 權杖呼叫者無目前 session, 全撤); 實作為 `revokeSessionTokensLocked(userId, exceptToken)`, 與刪除 / 停用 / 封鎖用之 `revokeTokensByUserIdLocked`(名下一切權杖皆撤, ADR-037)分開, 不共用、不加旗標.
+  3. **鎖與次序**: 驗證、撤銷、密碼寫入全在 `withTabLocks(['tokens', 'users'])` 內(`kmx` 在外層); 驗證全通過後**先撤銷、後寫密碼**——撤銷失敗整體拒絕且密碼不變(`adminResetPasswordFailed` / `userChangePasswordFail`, 不寄信、不記節流); 撤銷成功而密碼寫入失敗則拒絕、密碼不變、session 已撤銷(fail closed); 不變式: 絕不出現「密碼已變更但舊 session 仍有效」. 驗證未過(舊密碼錯、新密碼不合策略、非管理員、對自己重設、目標不存在)不撤銷任何權杖.
+  4. 被撤銷之權杖立即無效(`checkToken` 查庫無快取, 回 `tokenExpired`); 不新增語系鍵; `isForceChangePw` 行為不變(重設 `'y'`、自行改密碼 `'n'`).
+  5. **自行改密碼於鎖內再驗呼叫權杖**(外審 sol#1): 鎖外 `checkToken` 通過後、等鎖期間該 session 可能已被撤銷, 被撤銷之權杖不得再改密碼(`tokenExpired`, 密碼不變、不撤銷他人); `checkToken` 只讀不取鎖可於鎖內呼叫. 管理員重設不加此再驗(操作者等鎖期間被撤銷屬 HEAD 既有之檢查後行為, 未改).
+  6. **撤銷失敗以布林旗標判定**(外審 sol#2), 不以「錯誤值是否為 null」: reject 值可能為 `null` / `undefined`.
+- **理由**: 改密碼的目的之一是讓外洩憑證換來之登入態失效(ASVS); 舊決定 ADR-009「不清除既有 token」被使用者 2026-10-23 裁示取代. 先撤銷後寫密碼是因無交易(ADR-044): 反過來撤銷失敗會留下「新密碼生效、舊 session 仍有效」之最壞狀態且補償回滾本身可失敗; 先撤銷之最壞狀態只是「多登出一次」.
+- **盤點指令**:
+  - Grep `revokeSessionTokensLocked` 於 `server/procCore.mjs` → 定義 1(外加其說明註解 1 行)、`checkTokenAndChangePassword` 呼叫 1(帶 `token`)、`adminResetUserPassword` 呼叫 1(不帶 exceptToken); 共 4 行命中.
+  - Grep `withTabLocks\(\['tokens', 'users'\]` 於 `server/procCore.mjs` → 恰 2 行, 即此二站點(procProtect 之封鎖站點另在 `procProtect.mjs`).
+  - Grep `password: |row\.password` 於 `server/procCore.mjs` → 恰 5 行: `createUser`(新帳號)、`checkTokenAndChangePassword`、`adminResetUserPassword`、`updateTabItems` 新增列之 `row.password` 兩行(新帳號); 寫入既有使用者 `password` 者只有 `checkTokenAndChangePassword` 與 `adminResetUserPassword`.
+- **站點全集(2026-10-23)**: 2 站點(`checkTokenAndChangePassword`、`adminResetUserPassword`), 皆已套; 新帳號寫 password 之 4 處不適用.
+- **測試**: `unit-passwordSession`(PS-U-001～021: 兩入口 × 呼叫者種類(管理員 session / writeUsers app 權杖 / 使用者 session / app 權杖呼叫改密碼)× app 權杖不撤銷 × 失敗點(驗證未過 / 撤銷失敗含 reject(null) / 密碼寫入失敗)× 鎖與競態(登入交錯、撤銷進行中插入登入、重設與自行改密碼並行、兩 session 並行改密碼、等鎖期間權杖被撤銷))、`api-passwordsession`(PSA-001～006, 真後端 / 真登入 / 真 `checkToken`)、`api-resetpassword` API-008(改斷言新規則)、`unit-tablock` SITE-LOCK-S07 / S08(兩把鎖任一被占用皆等待).
+- **修前紅**: 換入 HEAD 版 `server/procCore.mjs`(sha256 回驗還原): `api-passwordsession` 6 案 5 紅(PSA-001、002、003、005、006; PSA-004 為驗證未過不撤銷之對照組, 修前後皆綠); `unit-passwordSession` 17 案 11 紅(修前版 server).
+- **變異驗證(2026-10-23, 外審修補後最終版)**: unit 層 15 項全數被抓到(對照組 45 案全綠; 在 `tmp` 內之 repo 子集副本施作, 逐項還原並驗 sha256): S1 拿掉管理員重設之撤銷、S2 拿掉自行改密碼之撤銷、S3 撤銷到目前 session、S4 撤銷到 app 權杖、S5 / S6 撤銷失敗被吞(仍寫密碼)、S7 驗證未過即撤銷、S8～S11 表鎖只取單表(各站點 × users / tokens)、S12 保留者比對欄位錯、S13 / S14 失敗判定回退為 `errRevoke !== null`(reject(null) 被當成功)、S15 拿掉鎖內再驗呼叫權杖. S1～S4 另於真後端(`api-passwordsession` + `api-resetpassword`)重驗, 結果見報告(sso-run04-修正報告.md).
+
 ### R-IP-01: 來源 IP 之取值——`X-Forwarded-For` 最左段須為合法 IP 才採用, 否則退回連線位址並限流記 warn; 合法 IP 原樣不改寫(2026-10-20, 主控第 93 項; 使用者裁示: SSO 不做防偽造)
 
 - **規則**:

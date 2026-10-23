@@ -12,7 +12,7 @@ import { startServersOnce, callFapi } from './tools/api-setup.mjs'
 // 此檔僅含 "API 契約" cases (4xx/5xx 拒絕 / DB side effect / template 內容驗證),
 // UI flow 走 test/e2e-resetpassword.test.mjs (Playwright + baseline).
 //
-// 涵蓋 API-001 ~ API-009
+// 涵蓋 API-001 ~ API-009 (API-008 於 2026-10-23 改為斷言「重設後撤銷對方全部 session、app token 保留」, ADR-093)
 //
 
 let salt = '{salt}'
@@ -249,30 +249,39 @@ describe('ResetPassword API — 後端契約 (API-002/007/008/009)', function() 
         }
     })
 
-    it('API-008-multi-device-tokens-preserved: target 有 2 個既有 token, admin reset 後兩 token 仍存在', async function() {
+    it('API-008-multi-device-tokens-revoked: target 有 2 個 session token 與 1 個以其為擁有者之 app token, admin reset 後 2 個 session token 被撤銷、app token 仍存在', async function() {
+        //2026-10-23 sso-run04 第 117 項(使用者裁示, R-SESS-01 / ADR-093): 原案例「admin reset 不主動清 user token」(ADR-009)已被取代,
+        //同一案例編號與 fixture 改為斷言新規則: 管理員重設撤銷對方全部 session 權杖(isApp !== 'y'), app 權杖不是 session 不撤銷; 端到端詳見 api-passwordsession.test.mjs
         //用獨立 target (targetEng3) 避開其他 case 對 targetEng 之 30s throttle 污染
         let targetId = testUsers.targetEng3.id
         let oldTks = await woItems.tokens.select({ userId: targetId }).catch(() => [])
         for (let t of oldTks) await woItems.tokens.del({ id: t.id }).catch(() => {})
         let t1 = ds.tokens.funNew({ userId: targetId })
         let t2 = ds.tokens.funNew({ userId: targetId })
+        let tApp = ds.tokens.funNew({ userId: targetId })
         t1.timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
         t2.timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-        await woItems.tokens.insert([t1, t2])
+        tApp.timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+        tApp.isApp = 'y'
+        tApp.perms = []
+        await woItems.tokens.insert([t1, t2, tApp])
         let beforeTks = await woItems.tokens.select({ userId: targetId })
-        assert.strict.equal(beforeTks.length, 2, `起點應有 2 個 token, 實際 ${beforeTks.length}`)
-        let beforeIds = new Set(beforeTks.map(t => t.id))
+        assert.strict.equal(beforeTks.length, 3, `起點應有 3 個 token (2 session + 1 app), 實際 ${beforeTks.length}`)
 
         let adminToken = userTokens[testUsers.admin.id]
         let r = await callFapi('adminResetUserPassword', [adminToken, 'eng', targetId])
         assert.strict.equal(r.ok, true, `預期 resolve, 實際 reject: ${r.err}`)
 
-        //spec 二.5: 兩 token 仍存在 (admin reset 不主動清 user token)
+        //R-SESS-01: 2 個 session token 被撤銷, app token 保留
         let afterTks = await woItems.tokens.select({ userId: targetId })
-        assert.strict.equal(afterTks.length, 2, `reset 後仍應有 2 個 token, 實際 ${afterTks.length}`)
-        for (let t of afterTks) {
-            assert.strict.equal(beforeIds.has(t.id), true, `reset 後 token id "${t.id}" 不在原 2 個之列 (應為原 token 保留)`)
+        assert.deepStrictEqual(afterTks.map(t => t.id), [tApp.id], `reset 後應只剩 app token, 實際 ${JSON.stringify(afterTks.map(t => t.id))}`)
+        for (let t of [t1, t2]) {
+            let rc = await callFapi('checkToken', [t.token])
+            assert.strict.equal(rc.ok, false, `被撤銷之 session token 應無效`)
+            assert.strict.equal(rc.err, 'tokenExpired')
         }
+        let rApp = await callFapi('checkToken', [tApp.token])
+        assert.strict.equal(rApp.ok, true, `app token 不受影響: ${JSON.stringify(rApp)}`)
     })
 
     it('API-009-notification-email-text: 語系鍵 chpwEmContent (eng/cht) 含 {sender}/{name} placeholder', function() {

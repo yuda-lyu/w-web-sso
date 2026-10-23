@@ -13,6 +13,19 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 ## Upgrade Notes
 
+### Upgrading from 1.1.13 and earlier
+
+**改密碼後之 session 處置（行為變更）**：依 OWASP ASVS「改密碼後提供終止其他所有 session」，本版起改密碼會撤銷該使用者的登入權杖（session 權杖，`isApp` 非 `'y'`）：
+
+- **管理員重設他人密碼**（後台「重設密碼」鈕，或具 `writeUsers` 之 app 權杖呼叫 `adminResetUserPassword`）→ 撤銷**對方全部** session 權杖；該使用者所有裝置立即登出（下次呼叫回登入頁），須以新密碼重新登入。強制下次登入改密碼（`isForceChangePw='y'`）之行為不變。
+- **使用者自行改密碼**（`changeUserPassword`）→ **保留發出此請求之目前 session**，撤銷該使用者**其他所有** session 權杖；其他裝置須重新登入。
+- **app 權杖（應用系統金鑰，`isApp='y'`）不是 session，不撤銷**（含以該使用者為擁有者者）；疑似被盜之 app 權杖仍須由後台「金鑰清單」處置。以 app 權杖呼叫 `changeUserPassword`（作用於其擁有者，仍須提供舊密碼）時無「目前 session」可保留，該使用者全部 session 撤銷。
+- 密碼寫入與撤銷在 `[tokens, users]` 兩把表鎖內完成；驗證全數通過後先撤銷、後寫密碼：撤銷失敗則整次拒絕（`adminResetPasswordFailed`／`userChangePasswordFail`）且密碼不變；撤銷成功而密碼寫入失敗時拒絕、密碼不變、session 已撤銷（以原密碼重新登入）。不會出現「密碼已變更但舊 session 仍有效」。舊密碼錯、新密碼不合策略、目標不存在等驗證未過之情形不撤銷任何權杖。
+- 被撤銷之權杖立即無效（`checkToken`／`refreshToken` 皆拒）。無新增語系鍵、RPC 簽章不變。本套件無「忘記密碼、經 email 重設」之未登入入口；日後若新增，須同樣撤銷全部 session。
+- 影響：多裝置使用者自行改密碼後，其他裝置須重新登入（原本可使用至權杖到期）；管理員重設後目標使用者所有裝置皆登出。
+
+**後台使用者清單之「登入後轉址（redir）」檢查範圍（修正）**：自助註冊之使用者其 `redir` 為空（註冊流程不收轉址，預設空字串；以 `view=user`／`view=backstage` 登入不需轉址），過去前端對清單全部列檢查「redir 不可空」，只要清單中有這類使用者，管理員儲存任何變更都被擋（「尚未給予有效登入後轉址」）。本版起只攔下管理員**本次新增**之列與**由非空改為空**之既有列；載入時即為空之既有列不擋存檔、不標警示（欲讓其以預設 `view=login` 轉址登入，請管理員於清單補上 redir）。後端本就不驗 redir，無變更。
+
 ### Upgrading from 1.1.12 and earlier
 
 **多人同時編輯之寫入契約（行為變更）**：多位管理員可同時開啟後台使用者／金鑰／IP 清單，過去先存者之修改會被持舊畫面者整份蓋回（含系統另行寫入之驗證時間、封鎖時間、強制變更密碼旗標、密碼雜湊、續期後之到期時間），載入後新增之使用者／IP／登入中之 session 金鑰會被誤刪，已登出或被封鎖撤銷之 session 金鑰會復活。本版起（依 w-serv-orm 1.1.17，部署前提：單一行程、同表只由同一個 ORM 實例寫入）：

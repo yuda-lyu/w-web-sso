@@ -30,6 +30,8 @@ rg -n "woItems\.\w+\.(insert|save|del|delAll)\(" g_*.mjs
 ```
 站點 → 測試(`unit-tablock` 以「他人持該表表鎖時站點等待、不先寫」逐站點守護; `SITE-LOCK-S01~S19`; 變異 M01~M14、M10b 逐站點取錯表鎖皆被抓到): S01 loginByAccountAndPassword→createToken(另加鎖內重讀使用者狀態, `SB-S05`)、S02 refreshToken、S03 logoutByToken、S04 createUser(`SB-U13`、`CC-A-019`)、S05 verifyEmail、S06 resendVerifyEmail、S07 changePassword、S08 adminReset、S09 revoke(公開版取 tokens 鎖、持鎖版供 `[tokens, users]` 內使用)、S10~S14 updateTabItems 三路徑、S15 blockAccount、S16 blockAccountByToken、S17 / S18 blockIpByIp、S19 ipDetectNew.
 
+**2026-10-23 sso-run04 補記(第 117 項, R-SESS-01)**: S07 changePassword、S08 adminReset 之表鎖由 `['users']` 擴為 `['tokens', 'users']`(同鎖撤銷 session 權杖, 次序仍為 tokens 先於 users); 取鎖行數不變(procCore 10 行), `unit-tablock` SITE-LOCK-S07 / S08 改為「兩把鎖任一被占用皆等待」, 變異(只取單表, 4 種)皆被抓到.
+
 **盤點指令(可重跑)**:
 ```
 # 1. server/ 之 ORM 寫入站點全集(排除純註解行)——結果須恆為 19 行; 增減即本表待更新

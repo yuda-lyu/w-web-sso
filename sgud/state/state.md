@@ -1,10 +1,10 @@
 # 現況(state)
 
-本檔只記**現況**(各功能做到哪裡、對應之規則帳本條目與測試檔、已知缺口與待辦、最近一次驗證或發布之版本); 不寫過程(過程入 `sgud/exp/experience.md`). 接續工作先讀本檔. 完成一項功能或結束一輪工作時更新. 2026-10-22 建立(第 111 項 inv01 盤點輪); 2026-10-23 更新(第 111 項第二波 sso-run01 實作輪; sso-run02 e2e 隔離修正; sso-run03 清單存檔不得新增 session 列).
+本檔只記**現況**(各功能做到哪裡、對應之規則帳本條目與測試檔、已知缺口與待辦、最近一次驗證或發布之版本); 不寫過程(過程入 `sgud/exp/experience.md`). 接續工作先讀本檔. 完成一項功能或結束一輪工作時更新. 2026-10-22 建立(第 111 項 inv01 盤點輪); 2026-10-23 更新(第 111 項第二波 sso-run01 實作輪; sso-run02 e2e 隔離修正; sso-run03 清單存檔不得新增 session 列; sso-run04 改密碼後之 session 處置〔第 117 項〕與清單 redir 檢查範圍〔第 116 項〕).
 
 ## 版本與依賴
 
-- 套件版本: `package.json` 1.1.12(**版本號與 `script.txt` 依規定未動, 發布由使用者**); 工作樹 HEAD `26c2c54`(2026-10-20, 第 93 項 run02: strip forwarded port、whitelist query keys、mask logs); 未提交: 本輪(第 111 項第二波)之 `server/`、`src/`、`test/`、`spec/`、`README.md`、`.npmignore`(排除 `sgud`)、`sgud/`.
+- 套件版本: `package.json` 1.1.13(已由使用者發布; **其後之版本號與 `script.txt` 依規定未動, 發布由使用者**); 工作樹 HEAD `22c2de1`(第 111 項第二波: add table locks、stale-save guard、session protection); 未提交: sso-run04 之 `server/procCore.mjs`、`src/usersRedirCheck.mjs`(新)、`src/components/LayoutContentUsers.vue`、`test/`(含新增 `unit-passwordSession`、`api-passwordsession`、`unit-usersRedir`、e2e-modifyuser E2E-016 與 4 張新標準圖)、`spec/`、`README.md`、`sgud/`.
 - 關鍵依賴(`package.json` 範圍 = 已安裝版): `w-serv-orm ^1.1.17`(2026-10-23 自 ^1.1.15 升, 取 `withTabLocks / guardWrite / baseline` 與 `procOrm` 之 `mustExist / keepUserId`)、`w-orm-lmdb ^1.0.42`、`w-serv-hapi ^1.1.7`、`wsemi ^1.9.21`、`w-data-collector ^1.0.47`、`w-syslog ^1.0.34`、`w-component-vue ^2.5.31`、`w-package-tools-e2e ^1.0.8`、`w-screenctl ^1.0.26`.
 - 服務與 port 見 `CLAUDE_settings.md`(後端 11007、前端 8080、w-screenctl 7000).
 
@@ -14,8 +14,8 @@
 |---|---|---|---|
 | 使用者一般登入 / 自動登入 / 登出 | 完成 | `rulebook_security.md` R-SEC-01; `rulebook_mechanism.md` | `e2e-login`、`e2e-autologin`、`e2e-logout` |
 | 使用者創建帳密(自助註冊 / 驗證信) | 完成 | R-VAL-01、R-ORM-01(`rulebook_orm.md`) | `e2e-register`、`unit-register`、`unit-ormWriteFail` B1 / B2 / B6 / B8 |
-| 使用者變更密碼 / 後台重設使用者密碼 | 完成 | R-ORM-01 | `e2e-changepassword`、`e2e-resetpassword`、`api-resetpassword`、`unit-genRandomPassword` |
-| 後台新增 / 變更 / 刪除使用者(使用者清單) | 完成; 多人同時編輯保護**已做**(2026-10-23, 帶基準整表先動先贏; 不帶基準照舊允許至下一 major) | R-VAL-01、R-ORM-01、R-UI-01、R-CONC-01~05 | `e2e-adduser`、`e2e-modifyuser`、`e2e-deleteuser`、`e2e-concurrency`、`api-adduser`、`api-deleteuser`、`api-doubleclick`、`api-concurrency`、`unit-saveBaseline`、`unit-tablock`、`unit-writeContract` |
+| 使用者變更密碼 / 後台重設使用者密碼 | 完成; **改密碼後之 session 處置已做**(2026-10-23 sso-run04, 第 117 項, ADR-093: 管理員 / writeUsers app 權杖重設 → 撤銷對方全部 session 權杖; 自行改密碼 → 保留目前 session、撤銷其他; app 權杖不撤銷; 驗證通過後先撤銷後寫密碼、同在 `[tokens, users]` 鎖內; 取代 ADR-009) | R-ORM-01、R-SESS-01 | `e2e-changepassword`、`e2e-resetpassword`、`api-resetpassword`(API-008 改斷言新規則)、`api-passwordsession`、`unit-passwordSession`、`unit-genRandomPassword`、`unit-tablock`(S07 / S08) |
+| 後台新增 / 變更 / 刪除使用者(使用者清單) | 完成; 多人同時編輯保護**已做**(2026-10-23, 帶基準整表先動先贏; 不帶基準照舊允許至下一 major); **redir 檢查範圍已修**(2026-10-23 sso-run04, 第 116 項, ADR-094: 只攔管理員本次新增 / 由非空改空之列, 載入時即為空之既有列〔自助註冊者〕不擋存檔、不標警示) | R-VAL-01、R-VAL-02、R-ORM-01、R-UI-01、R-CONC-01~05 | `e2e-adduser`、`e2e-modifyuser`(含 E2E-016)、`e2e-deleteuser`、`e2e-concurrency`、`api-adduser`、`api-deleteuser`、`api-doubleclick`、`api-concurrency`、`unit-saveBaseline`、`unit-tablock`、`unit-writeContract`、`unit-usersRedir` |
 | 後台金鑰清單(含 app 權杖權限 perms) | 完成; 多人同時編輯保護**已做**(選項 P: app 列嚴格整表、session 列寬鬆; E1、X1、X7 已修); **清單存檔不得新增 session 列**(`isApp !== 'y'`、庫內不存在 → 整次拒收 `tokenSessionAddNotAllowed`, 帶或不帶基準皆然; 不帶基準送回已撤銷 session 列不再復活; 2026-10-23 sso-run03, ADR-092) | R-PERM-01、R-ORM-03、R-CONC-01~06 | `e2e-tokens`、`e2e-concurrency`、`api-apptoken-perms`、`api-concurrency`、`unit-appPerms`、`unit-saveBaseline`、`unit-tablock` |
 | 後台 IP 清單 | 完成; 多人同時編輯保護**已做**(X4 已修: 計時器登錄之新 IP 不被舊畫面刪) | R-VAL-01、R-CONC-01~05 | `e2e-ips`、`e2e-concurrency`、`api-concurrency`、`unit-saveBaseline` |
 | 多人同時編輯之寫入契約(`src/writeContracts/`、`src/baselineOf.mjs`、19 個 server 寫入站點之表鎖、`mustExist` 只改不增) | **完成**(sso-run01, 2026-10-23); 流程見 `spec/流程_多人同時編輯.md`、取捨見 ADR-091 | `rulebook_concurrency.md` R-CONC-01~05 | `unit-writeContract`、`unit-saveBaseline`、`unit-tablock`、`api-concurrency`、`e2e-concurrency` |
@@ -32,10 +32,17 @@
 - 規劃與實作之差異、V1~V14 對應、缺陷 → 測試、變異驗證 41 / 41、改動範圍 → 測試檔: 見 `rulebook_concurrency.md`「第二波實作結果」; 取捨見 ADR-091; 流程見 `spec/流程_多人同時編輯.md`.
 - **未做 / 後續**: 第 113 項(users 外部匯入管道, 依 `from` 範圍與 `srcKey` 差異同步; R-IMPORT-01)——其 V2 之 I1 同 `srcKey` 重送待該項補; 下一 major 把「不帶基準」改為拒收.
 
+## 第 117 項: 改密碼後之 session 處置; 第 116 項: 清單 redir 檢查範圍(已實作, 2026-10-23 sso-run04)
+
+- **117(R-SESS-01 / ADR-093, 取代 ADR-009)**: `server/procCore.mjs` 新增 `revokeSessionTokensLocked(userId, exceptToken)`(只撤 `isApp !== 'y'`; 與刪除 / 停用 / 封鎖用之 `revokeTokensByUserIdLocked` 分開); `checkTokenAndChangePassword`(保留 `token`、撤銷其餘 session)與 `adminResetUserPassword`(撤銷目標全部 session)改取 `['tokens', 'users']` 鎖、驗證通過後先撤銷後寫密碼(撤銷失敗整體拒絕、密碼不變; 寫入失敗則 session 已撤銷〔fail closed〕). 改密碼入口全集僅此二站點; 無「忘記密碼」入口. app 權杖可呼叫 `changeUserPassword`(作用於其擁有者、須舊密碼)為既有行為未改, 其呼叫時該使用者全部 session 撤銷.
+- **116(R-VAL-02 / ADR-094)**: `src/usersRedirCheck.mjs`(新, 純函式)+ `LayoutContentUsers.vue`(`redirOrig` 與 baseline 同快照、`errItemsByRedir` 改經模組、儲存格警示改以列主鍵 `cellRedirErr`); modal 文字與 E2E-007 / E2E-008 標準圖不變; 新案例 E2E-016 與 4 張新標準圖.
+- **待裁示選項(已入報告, 未改)**: ①自助註冊是否給預設 redir(需決定站台網址與既有資料遷移); ②被攔下之 modal 是否指出列帳號(會重產 E2E-007-2 / E2E-008-2 共 4 張既有標準圖).
+
 ## 已知缺口與待辦(索引; 全文見 `rulebook_gaps.md`)
 
 - 多人同時編輯之已知限制(全文見 `rulebook_concurrency.md`「已知限制與風險」): 不帶基準之舊頁 / app 權杖不受先動先贏保護(但已撤銷 session 列不再因送回而復活, R-CONC-06); IP 清單在繁忙系統較常需重新載入; 管理員刪 / 改載入後被 API 端續期之 session 時整次拒收; 離線工具 `g_initialData.mjs` 4 處直寫不取表鎖(前提服務已停止); 單一行程部署前提.
 - 原現存缺陷 E1、X1~X8 **已修**(2026-10-23, 見上).
+- 改密碼 session 處置之觀察(2026-10-23, 未改): ①app 權杖可呼叫 `changeUserPassword`(作用於其擁有者、須舊密碼, 既有行為); ②管理員重設路徑不於鎖內再驗操作者權杖 / 管理員身分(操作者等鎖期間被撤銷或降權仍可完成該次重設, HEAD 既有); ③密碼寫入失敗時 session 已先撤銷(不變式: 絕不「密碼已變更但舊 session 仍有效」, 非嚴格全有或全無).
 - `WWebSso` 無完整停止(回傳物件 `stop()` 不清計時器、不關資料庫).
 - `e2e-tokens` 之 API client 檢查只在比對端.
 - 標準圖「每操作兩張」第 2 期待辦(login E2E-001 為第 1 期已完成).
@@ -48,4 +55,5 @@
 - `e2e-concurrency`(2026-10-23 新增, 3 案 × 2 語系): 6 張標準圖(`test/pics/concurrency/`, 被拒訊息框; 每案僅 1 張, 偏離 skill「每步兩張」之理由見 ADR-091 / 報告 D12)經 agent 逐張審圖(紅框框住訊息框面板、訊息為 `儲存○○數據失敗: 資料自您載入後已被其他使用者或系統更動…` 之 eng + cht 原文)後, 比對 6 案全過. 管理員 session 金鑰之 token 字串須固定(`cc-token-admin-session`), 否則該列顯示於金鑰清單畫面使 E2E-CC-002 標準圖每次差 127~130 px(首次比對因此失敗, 已修正並只重產 E2E-CC-002 兩張).
 - **2026-10-23 sso-run02(e2e 隔離修正, 只改測試)**: 主控全套 759 過 / 2 敗(`e2e-concurrency` E2E-CC-003 eng + cht, 差 134 px)之成因為測試隔離缺陷, 非產品缺陷、標準圖正確未重產: `e2e-autoblock` 登記之 `1.2.3.203` 留在後端記憶體計數, 被 `ipDetectNew` 補登回 IP 清單(R-E2E-ISO, `rulebook_test.md`「測試資料(seed)」). 修正: `test/tools/e2e-setup.mjs` 新增 `cleanKpIpCallApi` / `cleanKpAccountLoginFailed`(自 autoblock 收斂); `e2e-autoblock` `afterCase` 先清記憶體計數再清 DB; `e2e-concurrency` `prepare` 先清計數再重設種子並以 `assertSeedOnly` 守門三表恰為固定種子. 驗證: 單一 mocha 行程依序跑 `e2e-autoblock` + `e2e-concurrency` 修前 6 綠 2 紅(`diff=134px`)、修後連跑 3 次各 24 / 24 綠; `e2e-concurrency` 單獨連跑 3 次各 6 / 6 綠; `api-concurrency` 連跑 20 次各 21 / 21 綠(同型隔離量測, 0 / 20 失敗); `test/pics` 416 張 sha256 前後 0 變動. 未動 `src/`、`server/`、標準圖、其他測試檔之斷言.
 - **2026-10-23 sso-run03(清單存檔不得新增 session 列; 源自 sso-verify01 註記 1)**: `updateTabItems` tokens 路徑加守門——送出列 `isApp !== 'y'` ∧ 庫內不存在 ∧ 不在 `baseline` / `baselineSession` 內 → 整次拒收(零寫入)回新語系鍵 `tokenSessionAddNotAllowed`(eng + cht「不可新增登入權杖」); 基準內而已撤銷者仍略過; 應用系統金鑰列新增、session 刪除 / 升級照舊. 規格見 ADR-092、R-CONC-06. 驗證: 修前紅——unit(修前版 server)SB-T16~T18 紅 / T19 對照綠, api(單一取鎖期間換入修改前版 `procCore.mjs` / `procLang.mjs`, sha256 回驗還原)CC-A-022~024 3 / 3 紅(`ok:true`); 修後 unit 全部 330 案全過(+4: SB-T16~T19)、api `api-concurrency` 24(+3)、`api-apptoken-perms` 20、`api-ormopts` 8、`api-doubleclick` 8、`api-httpendpoints` 12、`api-adduser` 13、`api-deleteuser` 3 全過, e2e `e2e-tokens` 14、`e2e-concurrency` 6 全過, `test/pics` 416 張 sha256 0 變動(`testPending` 1088 檔未增); `mocha --dry-run` 載入 768 案; 變異驗證 12 項全數被抓到(對照組全綠). 既有測試調整(保留意圖): `unit-ormWriteFail` A13 / A18、`unit-iterClientObj` IT-C-003 之新增 tokens 列改為應用系統金鑰列; A23 改以應用系統金鑰驗擁有者並斷言新增 session 列整批拒收. 未跑: 其餘 api 10 檔與 e2e 13 flow(與本改動無執行路徑關聯, 未改 `src/`), 全套由主控最末輪於凍結碼跑.
-- **未發布**: 版本號與 `script.txt` 未動, 發布由使用者; 下一 major 起後台必帶基準(README Upgrade Notes).
+- **2026-10-23 sso-run04(第 117 項改密碼後之 session 處置、第 116 項清單 redir 檢查範圍)**: 測試計數 unit 25 檔 369 case(+39: `unit-passwordSession` 21、`unit-usersRedir` 18)、api 18 檔 162 case(+6: `api-passwordsession`; `api-resetpassword` API-008 改斷言新規則)、e2e 15 flow 284 case(+2: `e2e-modifyuser` E2E-016 × 2 語系, 4 張新標準圖). 驗證: 修前紅——換入 HEAD 版 `server/procCore.mjs`(sha256 回驗還原): api 新增 6 案 5 紅(PSA-004 為對照組)、unit 第一版 17 案 11 紅; 換入 HEAD 版 `LayoutContentUsers.vue`: E2E-016 兩語系皆紅(儲存前斷言: 自助註冊者空 redir 格被標警示圖示); 修後綠——unit 全 369 過、api 全 162 過、受影響 e2e 7 檔 165 案全過(`e2e-resetpassword` 26、`e2e-changepassword` 20、`e2e-register` 38、`e2e-deleteuser` 10、`e2e-concurrency` 6、`e2e-modifyuser` 32、`e2e-adduser` 33), `test/pics` 既有 416 張 sha256 0 變動(僅新增 4 張)、`testPending` 1088 檔未增; 變異驗證: unit 層 server 15 項、redir 9 項全數被抓到(對照組全綠), 真後端 / 瀏覽器層之變異見報告; 外審 sol 6 條 + nemotron 3 條全採納(beam 兩次失敗), 見 R-SESS-01 / R-VAL-02. 未跑: `e2e-login`、`e2e-logout`、`e2e-autologin`、`e2e-autoblock`、`e2e-ips`、`e2e-tokens`、`e2e-init`、`e2e-stainfor`(與本改動無執行路徑關聯; 對照表見 `rulebook_test.md`「改動範圍 → 測試檔」), 全套由主控最末輪於凍結碼跑.
+- **未發布**: 版本號與 `script.txt` 未動, 發布由使用者; 下一 major 起後台必帶基準(README Upgrade Notes); sso-run04 之改動待下次發布(README 已增〈Upgrading from 1.1.13 and earlier〉).
