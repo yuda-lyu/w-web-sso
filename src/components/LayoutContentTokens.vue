@@ -376,6 +376,8 @@ import WAggridVue from 'w-aggrid-vue/src/components/WAggridVue.vue'
 import WTimeminute from 'w-component-vue/src/components/WTimeminute.vue'
 import { keysAppPerm, keysAppPermBase, keysAppPermHigh, getAppPerms, normAppPerms } from '../appPerms.mjs'
 import AppPermsTags from './AppPermsTags.vue'
+import contracts from '../writeContracts/index.mjs'
+import { baselineOfTokens, isSameSnapshot } from '../baselineOf.mjs'
 
 
 export default {
@@ -407,6 +409,7 @@ export default {
             headHeight: 100,
 
             firstLoading: true,
+            baselines: null, //載入時(及存檔成功後重新讀取時)畫面所見之列的基準 { baseline: 應用系統金鑰列〔嚴格整表比對〕, baselineSession: session 列〔逐列寬鬆比對〕 }, 存檔時送後端(多人同時編輯, 先動先贏); null 為未載入或算不出, 送出時被後端拒收
             errMsg: '', //清單載入失敗之訊息(getDataError), 有值時以訊息取代表格
             firstSetting: true,
             systemProcing: false, //程式端載入/重載清單資料期間為true, 用於排除非使用者操作之rowsChange
@@ -490,6 +493,7 @@ export default {
         vo.$fapi.getTokensList(token)
             .then((res) => {
                 // console.log(res)
+                vo.baselines = baselineOfTokens(res) //對畫面所見之同一快照自算基準(須在排序、變動之前; buildBaseline 不改輸入)
                 res = sortBy(res, 'timeCreate').reverse()
                 vo.tokens = res
                 vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
@@ -1119,8 +1123,9 @@ export default {
                 let lang = get(vo, '$store.state.lang', 'eng')
                 // console.log('token', token)
 
-                //updateTokensList (帶 lang, 後端 reject { key, msg } 之 msg 依 lang 翻譯)
-                await vo.$fapi.updateTokensList(token, lang, rows)
+                //updateTokensList (帶 lang, 後端 reject { key, msg } 之 msg 依 lang 翻譯), 第 4 參數帶載入時之基準:
+                //應用系統金鑰列嚴格整表比對, session 列(登入新增、續期、登出等系統頻繁增刪)逐列寬鬆比對; 不符整次拒收(零寫入, 回 saveStale 等語系鍵提示重新載入), 草稿保留(不清 isModified)
+                await vo.$fapi.updateTokensList(token, lang, rows, vo.baselines === null ? { baseline: null, baselineSession: null } : { baseline: vo.baselines.baseline, baselineSession: vo.baselines.baselineSession })
                     .catch((err) => {
                         errTemp = err
                     })
@@ -1133,6 +1138,23 @@ export default {
                     await vo.$dg.showCheckYes(`${vo.$t('tokenSaveTokensFail')}: ${msg}`)
                     return
                 }
+
+                //儲存成功 → 重新讀取 getTokensList 作為新基準(取自伺服端, 不以自己送出之值當基準: 寫入時 clearXSS、perms 去重排序等會改寫部分值, 且 session 列於此期間可能已續期或新增),
+                //畫面所見之列須與新基準來自同一快照 (規格 §8): 送出之列與伺服端列的契約欄位摘要全相同者保留現畫面(伺服器專有欄位如 timeUpdate 維持原呈現, 與既有行為相同),
+                //不同者(他人或系統於期間有更動)改以伺服端列取代; 重新讀取失敗則基準置 null(其後再存檔被後端拒收並提示重新載入, 不降級為不帶基準)
+                await vo.$fapi.getTokensList(token)
+                    .then((res) => {
+                        vo.baselines = baselineOfTokens(res)
+                        if (!isSameSnapshot(rows, res, contracts.tokens)) {
+                            res = sortBy(res, 'timeCreate').reverse()
+                            vo.tokens = res
+                            vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
+                        }
+                    })
+                    .catch((err) => {
+                        console.log('refresh getTokensList catch', err)
+                        vo.baselines = null
+                    })
 
                 //isModified
                 vo.isModified = false

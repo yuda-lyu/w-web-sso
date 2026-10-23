@@ -29,7 +29,6 @@ import pm2resolve from 'wsemi/src/pm2resolve.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
 import ds from '../src/schema/index.mjs'
-import ormWrite from './ormWrite.mjs'
 import wrapTimer from './wrapTimer.mjs'
 import { maskToken, safeText } from './srLog.mjs'
 
@@ -49,7 +48,11 @@ let FORWARDED_PORT_MAX = 65535
 function proc(woItems, p, opt = {}) {
 
     //params
+    //procOrm / withTabLocks: 取自 w-serv-orm 實例(與 procCore 同一組, 同表只由同一鎖管理器寫入, 規格 §12); 系統直寫 users / tokens / ips 一律在該表表鎖內、
+    //經 procOrm 且 mustExist(只改不增), 更新者記常數 'system' (R-CONC-01, R-CONC-04, 決策 D7)
     let {
+        procOrm,
+        withTabLocks,
         srLog,
         minForAccountLoginFailed,
         numForAccountLoginFailed,
@@ -61,6 +64,14 @@ function proc(woItems, p, opt = {}) {
         numForIpCallApi,
         minBlockForIpCallApi,
     } = opt
+
+    //check
+    if (!isfun(procOrm) || !isfun(withTabLocks)) {
+        throw new Error('procProtect needs procOrm and withTabLocks from the WServOrm instance')
+    }
+
+    //SYSTEM_ID: 無使用者可歸屬之系統寫入(計時器、自動封鎖)記於 userIdUpdate 之常數
+    let SYSTEM_ID = 'system'
 
 
     //logError: 封鎖寫入失敗之紀錄 (ADR-080); srLog 未給時略過, 同 blockAccountByToken 之 debug 守衛
@@ -174,57 +185,75 @@ function proc(woItems, p, opt = {}) {
     //blockAccount
     let blockAccount = async (account) => {
 
-        //getGenUserByAccount
+        //getGenUserByAccount, 取得使用者主鍵; 封鎖狀態於下方 [tokens, users] 鎖內重讀
         let u = await p.getGenUserByAccount(account)
 
         // //check, 不用檢測, 若resolve必定有, 若reject則由外部處理
         // if (!iseobj(u)) {
         // }
 
-        //getBlockedByUser
-        let b = await getBlockedByUser(u)
+        //[tokens, users] 鎖內: 重讀使用者(新鮮) → 判斷是否已封鎖 → 寫 timeBlocked → 撤銷 token, 同一把鎖完成 (S15):
+        //timeBlocked 為雙方欄位(後台可改、自動封鎖亦寫), 系統直寫須取表鎖, 持舊畫面之後台存檔才會被偵測而拒收 (V4); 讀到之使用者於寫入前不被刪除插隊 (X5)
+        await withTabLocks(['tokens', 'users'], async () => {
 
-        //check
-        if (b) {
-            return //已封鎖, 禁止重複封鎖
-        }
+            //帳號對應再驗: 失敗登入所針對之帳號於等鎖期間可能已被後台改名或停用, 該帳號已不屬於這位使用者則不封鎖(以鎖內新鮮狀態為準)
+            let usAcc = await woItems.users.select({ account, isActive: 'y' })
+            if (size(usAcc) !== 1 || get(usAcc[0], 'id', '') !== u.id) {
+                return
+            }
 
-        //timeBlocked, 依照minBlockForAccountLoginFailed(min)更新封鎖時間
-        let timeBlocked = ot().add(minBlockForAccountLoginFailed, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-        // console.log('timeBlocked', timeBlocked)
+            //重讀使用者, 已被刪除則無從封鎖(其 token 已於刪除時同鎖撤銷)
+            let us = await woItems.users.select({ id: u.id })
+            if (size(us) !== 1) {
+                return
+            }
 
-        //封鎖使用者, 須更新使用者timeBlocked; 逐筆檢查 (ADR-080)
-        let errBlock = null
-        await ormWrite(woItems.users, 'save', {
-            id: u.id,
-            timeBlocked,
+            //getBlockedByUser
+            let b = await getBlockedByUser(us[0])
+
+            //check
+            if (b) {
+                return //已封鎖, 禁止重複封鎖
+            }
+
+            //timeBlocked, 依照minBlockForAccountLoginFailed(min)更新封鎖時間
+            let timeBlocked = ot().add(minBlockForAccountLoginFailed, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+            // console.log('timeBlocked', timeBlocked)
+
+            //封鎖使用者, 須更新使用者timeBlocked; 經 procOrm 且 mustExist(只改不增), 更新者記 'system'; 逐筆檢查 (ADR-080)
+            let errBlock = null
+            await procOrm(SYSTEM_ID, 'users', 'save', [{
+                id: u.id,
+                timeBlocked,
+            }], { mustExist: true })
+                .catch((err) => {
+                    errBlock = err
+                })
+
+            //封鎖使用者, 須刪除該 user 名下所有 token (multi-session 強制全部登出)
+            //(原本走 p.getTokenByKV('userId', u.id) 取單筆, 但 ADR-001 接受同帳號多 active token,
+            //getTokenByKV 之 nts>=2 reject 'duplicate token' 對 multi-session user 必觸發 → token
+            //完全沒刪 → 帳號被鎖但既有 session 仍可用. 改用 select 直接取陣列後全部刪除,
+            //對齊 spec/流程_自動封鎖機制.md A32「強制登出」契約 — Round-3 audit B-01 fix.)
+            //撤銷與刪除 / 停用使用者共用 p.revokeTokensByUserIdLocked (持鎖版, 一次刪除並逐筆檢查); 封鎖寫入失敗仍撤銷 (依意圖 fail closed, ADR-080)
+            let errRevoke = null
+            await p.revokeTokensByUserIdLocked(u.id)
+                .catch((err) => {
+                    errRevoke = err
+                })
+
+            //check, 失敗記錄後 reject; 封鎖未寫入時, 下次登入失敗仍超過門檻即再嘗試封鎖
+            if (errBlock !== null || errRevoke !== null) {
+                logError({
+                    event: 'fun-blockAccount',
+                    userId: u.id,
+                    errBlock: errBlock !== null ? getErrorMessage(errBlock) : '',
+                    errRevoke: errRevoke !== null ? getErrorMessage(errRevoke) : '',
+                })
+                return Promise.reject(`failed to block account`)
+            }
+
         })
-            .catch((err) => {
-                errBlock = err
-            })
-
-        //封鎖使用者, 須刪除該 user 名下所有 token (multi-session 強制全部登出)
-        //(原本走 p.getTokenByKV('userId', u.id) 取單筆, 但 ADR-001 接受同帳號多 active token,
-        //getTokenByKV 之 nts>=2 reject 'duplicate token' 對 multi-session user 必觸發 → token
-        //完全沒刪 → 帳號被鎖但既有 session 仍可用. 改用 select 直接取陣列後全部刪除,
-        //對齊 spec/流程_自動封鎖機制.md A32「強制登出」契約 — Round-3 audit B-01 fix.)
-        //撤銷與刪除 / 停用使用者共用 p.revokeTokensByUserId (一次刪除並逐筆檢查); 封鎖寫入失敗仍撤銷 (依意圖 fail closed, ADR-080)
-        let errRevoke = null
-        await p.revokeTokensByUserId(u.id)
-            .catch((err) => {
-                errRevoke = err
-            })
-
-        //check, 失敗記錄後 reject; 封鎖未寫入時, 下次登入失敗仍超過門檻即再嘗試封鎖
-        if (errBlock !== null || errRevoke !== null) {
-            logError({
-                event: 'fun-blockAccount',
-                userId: u.id,
-                errBlock: errBlock !== null ? getErrorMessage(errBlock) : '',
-                errRevoke: errRevoke !== null ? getErrorMessage(errRevoke) : '',
-            })
-            return Promise.reject(`failed to block account`)
-        }
 
     }
 
@@ -372,55 +401,78 @@ function proc(woItems, p, opt = {}) {
             return Promise.reject(`invalid userId`)
         }
 
-        //getGenUserByUserId
+        //getGenUserByUserId, 取得使用者主鍵; 封鎖狀態於下方 [tokens, users] 鎖內重讀
         let u = await p.getGenUserByUserId(userId)
 
         // //check, 不用檢測, 若resolve必定有, 若reject則由外部處理
         // if (!iseobj(u)) {
         // }
 
-        //getBlockedByUser
-        let b = await getBlockedByUser(u)
+        //[tokens, users] 鎖內: 重讀使用者(新鮮) → 判斷是否已封鎖 → 寫 timeBlocked → 撤銷 token, 同一把鎖完成 (S16; 理由同 blockAccount)
+        await withTabLocks(['tokens', 'users'], async () => {
 
-        //check
-        if (b) {
-            return //已封鎖, 禁止重複封鎖
-        }
+            //重讀 token 並再驗身分: 鎖外判定其為使用者 token 與擁有者後, 等鎖期間後台存檔可能已將其升為應用系統金鑰(受信任, 不套用個人速率封鎖)、換擁有者, 或已被登出 / 撤銷;
+            //身分已與鎖外判定不符則不封鎖(以鎖內新鮮狀態為準)
+            let tn = null
+            await p.getTokenByKV('token', token)
+                .then((r) => {
+                    tn = r
+                })
+                .catch(() => {})
+            if (tn === null || get(tn, 'isApp', '') === 'y' || get(tn, 'userId', '') !== u.id) {
+                return
+            }
 
-        //timeBlocked, 依照minBlockForTokenCallApi(min)更新封鎖時間
-        let timeBlocked = ot().add(minBlockForTokenCallApi, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-        // console.log('timeBlocked', timeBlocked)
+            //重讀使用者, 已被刪除則無從封鎖(其 token 已於刪除時同鎖撤銷)
+            let us = await woItems.users.select({ id: u.id })
+            if (size(us) !== 1) {
+                return
+            }
 
-        //封鎖使用者, 須更新使用者timeBlocked; 逐筆檢查 (ADR-080)
-        let errBlock = null
-        await ormWrite(woItems.users, 'save', {
-            id: u.id,
-            timeBlocked,
+            //getBlockedByUser
+            let b = await getBlockedByUser(us[0])
+
+            //check
+            if (b) {
+                return //已封鎖, 禁止重複封鎖
+            }
+
+            //timeBlocked, 依照minBlockForTokenCallApi(min)更新封鎖時間
+            let timeBlocked = ot().add(minBlockForTokenCallApi, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+            // console.log('timeBlocked', timeBlocked)
+
+            //封鎖使用者, 須更新使用者timeBlocked; 經 procOrm 且 mustExist(只改不增), 更新者記 'system'; 逐筆檢查 (ADR-080)
+            let errBlock = null
+            await procOrm(SYSTEM_ID, 'users', 'save', [{
+                id: u.id,
+                timeBlocked,
+            }], { mustExist: true })
+                .catch((err) => {
+                    errBlock = err
+                })
+
+            //封鎖使用者, 須刪除該 user 名下所有 token (含所用 token; 與 blockAccount 同為 multi-session 強制全部登出, 共用 p.revokeTokensByUserIdLocked 持鎖版);
+            //原只刪所用 token, 封鎖期間該使用者其他裝置之既有登入照常可用, 與 spec E2E-005 及登入失敗封鎖不一致 (2026-10-11 改, ADR-080)
+            //封鎖寫入失敗仍撤銷 (依意圖 fail closed, ADR-080)
+            let errRevoke = null
+            await p.revokeTokensByUserIdLocked(u.id)
+                .catch((err) => {
+                    errRevoke = err
+                })
+
+            //check, 失敗記錄後 reject
+            if (errBlock !== null || errRevoke !== null) {
+                logError({
+                    event: 'fun-blockAccountByToken',
+                    userId: u.id,
+                    token: maskToken(token),
+                    errBlock: errBlock !== null ? getErrorMessage(errBlock) : '',
+                    errRevoke: errRevoke !== null ? getErrorMessage(errRevoke) : '',
+                })
+                return Promise.reject(`failed to block account by token`)
+            }
+
         })
-            .catch((err) => {
-                errBlock = err
-            })
-
-        //封鎖使用者, 須刪除該 user 名下所有 token (含所用 token; 與 blockAccount 同為 multi-session 強制全部登出, 共用 p.revokeTokensByUserId);
-        //原只刪所用 token, 封鎖期間該使用者其他裝置之既有登入照常可用, 與 spec E2E-005 及登入失敗封鎖不一致 (2026-10-11 改, ADR-080)
-        //封鎖寫入失敗仍撤銷 (依意圖 fail closed, ADR-080)
-        let errRevoke = null
-        await p.revokeTokensByUserId(u.id)
-            .catch((err) => {
-                errRevoke = err
-            })
-
-        //check, 失敗記錄後 reject
-        if (errBlock !== null || errRevoke !== null) {
-            logError({
-                event: 'fun-blockAccountByToken',
-                userId: u.id,
-                token: maskToken(token),
-                errBlock: errBlock !== null ? getErrorMessage(errBlock) : '',
-                errRevoke: errRevoke !== null ? getErrorMessage(errRevoke) : '',
-            })
-            return Promise.reject(`failed to block account by token`)
-        }
 
     }
 
@@ -739,7 +791,14 @@ function proc(woItems, p, opt = {}) {
 
     //blockIpByIp
     // blockIpByIp 由 timer 單一 caller 觸發, pmSeries 保證序列化, 無 race; 詳 audit F-052 verifier 結論
+    // (計時器之間互不競態, 但與後台 IP 清單存檔 / 計時器登錄新 IP 並行: 讀取與寫入整段在 ips 表鎖內, 規格 §7; S17 / S18)
     let blockIpByIp = async (ip) => {
+        return await withTabLocks(['ips'], () => _blockIpByIp(ip))
+    }
+
+
+    //_blockIpByIp, 須於 ips 表鎖內呼叫
+    let _blockIpByIp = async (ip) => {
         let errTemp = null
 
         //genTimeBlocked
@@ -785,8 +844,8 @@ function proc(woItems, p, opt = {}) {
             })
             // console.log('funNew', oip)
 
-            //insert
-            await woItems.ips.insert(oip)
+            //insert, 經 procOrm 戳記更新者 'system' (R-CONC-04)
+            await procOrm(SYSTEM_ID, 'ips', 'insert', [oip])
                 .catch((err) => {
                     errTemp = err
                 })
@@ -812,12 +871,12 @@ function proc(woItems, p, opt = {}) {
         let timeBlocked = genTimeBlocked()
         // console.log('timeBlocked', timeBlocked)
 
-        //封鎖ip, 須更新ip的timeBlocked; 逐筆檢查 (ADR-080)
+        //封鎖ip, 須更新ip的timeBlocked; 經 procOrm 且 mustExist(只改不增), 更新者記 'system'; 逐筆檢查 (ADR-080)
         let errSave = null
-        await ormWrite(woItems.ips, 'save', {
+        await procOrm(SYSTEM_ID, 'ips', 'save', [{
             id: oip.id,
             timeBlocked,
-        })
+        }], { mustExist: true })
             .catch((err) => {
                 errSave = err
             })
@@ -865,7 +924,8 @@ function proc(woItems, p, opt = {}) {
 
 
     //timer, 偵測新ip出現儲存至ips; 讀取或新增失敗由 wrapTimer 記錄(timer-error), 下一輪重試(原讀取失敗時重入鎖不釋放而永久停擺, ADR-085)
-    setInterval(wrapTimer('ipDetectNew', async () => {
+    //讀取已登錄 IP 清單、比對與新增整段在 ips 表鎖內(S19): 與後台 IP 清單存檔、自動封鎖寫入互斥; 載入後才登錄之 IP 使持舊畫面存檔者被拒(先動先贏), 不致被整表存檔刪除 (X4)
+    setInterval(wrapTimer('ipDetectNew', () => withTabLocks(['ips'], async () => {
 
         //getIpsList
         let oips = await p.getIpsList()
@@ -911,10 +971,12 @@ function proc(woItems, p, opt = {}) {
         })
         // console.log('oipsNew', oipsNew)
 
-        //insert
-        await woItems.ips.insert(oipsNew)
+        //insert, 經 procOrm 戳記更新者 'system' (R-CONC-04); 無新 IP 時不呼叫
+        if (size(oipsNew) > 0) {
+            await procOrm(SYSTEM_ID, 'ips', 'insert', oipsNew)
+        }
 
-    }, timerError), 2000)
+    }), timerError), 2000)
 
 
     //timer, 限制ip最大調用API次數

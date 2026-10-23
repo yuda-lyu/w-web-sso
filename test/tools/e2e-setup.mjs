@@ -172,6 +172,38 @@ async function deleteNonBaseSeed() {
 }
 
 
+//清空 server in-memory 之 IP 調用 API 計數 (kpIpCallApi) 與帳號登入失敗計數 (kpAccountLoginFailed).
+//e2e 與 server 為獨立進程, in-memory state 無法由測試直接清除, 透過 server 之 /api/cleanKpIpCallApi、/api/cleanKpAccountLoginFailed
+//(僅放行本機連入 + token 驗證; token 對應 settings.json 之 cleanKpIpCallApiForToken / cleanKpAccountLoginFailedForToken) 觸發.
+//為何須清: ips 表之資料不只來自測試寫庫, procProtect 之 ipDetectNew 計時器 (每 2 秒) 會把 kpIpCallApi 內「ips 表尚無」之 IP 補登記回表;
+//故「只清 DB」不足以讓 ips 表回到固定種子狀態: 計數內殘留之 IP (如 e2e-autoblock 以 X-Forwarded-For 登記之 1.2.3.x) 於數秒內被補登回剛重設之表,
+//使後續測試檔之 IP 清單畫面多出一列 (e2e-concurrency E2E-CC-003 全套失敗之成因). 清除順序: 先清計數, 再清 DB (反之則計時器可把殘留 IP 補登回已清空之表).
+//失敗只告警不拋錯 (沿用原 e2e-autoblock 行為: 後端不可達時由後續步驟顯現).
+let cleanKpIpCallApiForToken = '{cleanKpIpCallApiForToken}'
+let cleanKpAccountLoginFailedForToken = '{cleanKpAccountLoginFailedForToken}'
+
+async function callCleanApi(apiName, token) {
+    try {
+        let r = await fetch(`${apiUrl}/api/${apiName}?token=${encodeURIComponent(token)}`)
+        let j = await r.json()
+        if (j.state !== 'success') {
+            console.warn(`[${apiName}] server 回應非 success: ${JSON.stringify(j)}`)
+        }
+    }
+    catch (err) {
+        console.warn(`[${apiName}] 呼叫失敗: ${err.message}`)
+    }
+}
+
+async function cleanKpIpCallApi() {
+    await callCleanApi('cleanKpIpCallApi', cleanKpIpCallApiForToken)
+}
+
+async function cleanKpAccountLoginFailed() {
+    await callCleanApi('cleanKpAccountLoginFailed', cleanKpAccountLoginFailedForToken)
+}
+
+
 //後台左側選單之可見項目聯集（紅框目標；「已進入後台、選單依身分列出頁籤」之觀看區）：
 //技能 §7.2 清單列「進入頁面 → 當時可見之項目列的聯集」、§7.3-2 不框整欄空白。選單為 WListVertical，項目根元素為 WListItem
 //（inline style 帶 border-top-left-radius，無 class 可用）；範圍為 WDrawer 平移層 [ev-stable]（x≈0、寬≈229px 之 sidebar）。
@@ -184,4 +216,4 @@ function backstageMenuBox() {
 //typeIntoInput / typeIntoNthInput: Pattern D 真人輸入 (click → 驗焦點 → Backspace 清空 → insertText → 驗值, 重試 3 次), 對 Vue v-model 必用.
 //assertBaselineMatch: pixelmatch includeAA:false + threshold 0.1 + maxDiffPixels 100, fail 時三聯組存 ./testPending (永不覆蓋).
 //waitUntilExist: 偵測驅動等待 (預設 10000ms), 逾時 = 真實異常.
-export { startServersOnce, cleanup, launchBrowser, chromiumLaunchArgs, REGEN, captureStable, captureStableWithBox, composeBox, waitDrawerReady, assertBaselineMatch, baseUrl, apiUrl, maskRegions, overlayRegions, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput, typeIntoNthInput, waitUntilExist, backstageMenuBox }
+export { startServersOnce, cleanup, launchBrowser, chromiumLaunchArgs, REGEN, captureStable, captureStableWithBox, composeBox, waitDrawerReady, assertBaselineMatch, baseUrl, apiUrl, maskRegions, overlayRegions, resetToBaseSeed, deleteNonBaseSeed, cleanKpIpCallApi, cleanKpAccountLoginFailed, genTempSettings, restartBackend, typeIntoInput, typeIntoNthInput, waitUntilExist, backstageMenuBox }

@@ -169,9 +169,10 @@ describe('對外 HTTP 端點 API — getSsoUsersList / refreshToken (D14)', func
     })
 
 
-    it('getSsoUsersList: 對外清單不含憑證欄 tokenVerify (admin 與 app token 皆然); 後台 kpfun getUsersList 刻意保留 (ADR-068)', async function() {
+    it('getSsoUsersList: 對外清單不含憑證欄 tokenVerify (admin 與 app token 皆然); 後台 kpfun getUsersList 亦不回傳 (ADR-068, T3)', async function() {
         //ADR-068 C: 對外介接契約不輸出憑證欄 (password / tokenVerify), 避免憑證經使用者同步擴散至介接端;
-        //後台 kpfun 之整列存回依賴 tokenVerify (updateTabItems 以 ltdtmapping 補齊全欄), 故只在對外路由剝除
+        //T3 (多人同時編輯之寫入契約, 原則 8: 憑證類欄位只收回): 後台 kpfun getUsersList 同樣停止回傳 tokenVerify——
+        //原保留是因後台整列存回依賴它, 契約生效後 tokenVerify 屬伺服器專有欄位(存檔取庫內值, 不採用客戶端值), 前端不再需要
         await insertPendingUser()
 
         for (let caller of ['token-for-admin', 'token-for-app']) {
@@ -187,12 +188,16 @@ describe('對外 HTTP 端點 API — getSsoUsersList / refreshToken (D14)', func
             assert.strict.equal(JSON.stringify(body).includes(pendingTokenVerify), false, `回應不得含 tokenVerify 值 (${caller})`)
         }
 
-        //後台路徑 (kpfun getUsersList) 刻意保留 tokenVerify
+        //後台路徑 (kpfun getUsersList) 同樣不回傳 tokenVerify (T3), 且回應不含其值
         let r = await callFapi('getUsersList', ['token-for-admin'])
         assert.strict.equal(r.ok, true, `後台 getUsersList 應成功, 實際: ${JSON.stringify(r)}`)
         let pendingAdmin = r.val.find((u) => u.id === 'id-pending-tv')
         assert.strict.ok(pendingAdmin, '後台清單應含待驗證使用者')
-        assert.strict.equal(pendingAdmin.tokenVerify, pendingTokenVerify, '後台清單之 tokenVerify 應保留 (整列存回依賴)')
+        for (let u of r.val) {
+            assert.strict.equal('tokenVerify' in u, false, `後台清單不得含 tokenVerify 鍵, 違規 row: ${u.account}`)
+            assert.strict.equal('password' in u, false, `後台清單不得含 password 鍵, 違規 row: ${u.account}`)
+        }
+        assert.strict.equal(JSON.stringify(r.val).includes(pendingTokenVerify), false, '後台清單不得含 tokenVerify 值')
     })
 
 

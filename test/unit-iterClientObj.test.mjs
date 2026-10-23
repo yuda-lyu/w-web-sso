@@ -268,9 +268,19 @@ describe('R-OBJ-ITER-01 / R-KEY-01 統計與防護之使用端字串鍵', functi
                     },
                 },
                 users: {
+                    //select: 封鎖於 [tokens, users] 鎖內重讀使用者, 且 procOrm mustExist 以 { id: { $in } } 檢查存在 (R-CONC-01)
+                    //帳號封鎖另於鎖內以 { account, isActive } 再驗帳號仍屬該使用者(替身之主鍵為 u-<帳號>)
+                    select: async (find) => {
+                        if (find && typeof find.account === 'string') {
+                            return [{ id: `u-${find.account}`, account: find.account, timeBlocked: '' }]
+                        }
+                        let ids = (find && find.id && Array.isArray(find.id.$in)) ? find.id.$in : [find && find.id]
+                        return ids.map((id) => ({ id, account: String(id).replace(/^u-/, ''), timeBlocked: '' }))
+                    },
                     save: async (d) => {
-                        saves.push(cloneDeep(d))
-                        return [{ ok: 1, n: 1, nModified: 1 }]
+                        let rows = Array.isArray(d) ? d : [d]
+                        saves.push(...cloneDeep(rows))
+                        return rows.map(() => ({ ok: 1, n: 1, nModified: 1 }))
                     },
                 },
             }
@@ -279,6 +289,7 @@ describe('R-OBJ-ITER-01 / R-KEY-01 統計與防護之使用端字串鍵', functi
                 getGenUserByAccount: async (a) => ({ id: `u-${a}`, account: a, timeBlocked: '' }),
                 loginByAccountAndPassword: async () => Promise.reject('wrongPassword'),
                 revokeTokensByUserId: async () => {},
+                revokeTokensByUserIdLocked: async () => {}, //封鎖於表鎖內撤銷用持鎖版
                 ...extra,
             }
             let { pp, timers } = buildProtect(woItems, p, { srLog: mkSrLog(), ...optBig })
@@ -421,7 +432,7 @@ describe('R-OBJ-ITER-01 / R-KEY-01 統計與防護之使用端字串鍵', functi
         it('IT-C-003 權杖清單 / IP 清單新增列主鍵為原型鍵名: 可存', async function() {
             let env = mkEnv()
             let tkRows = [...env.tokens.kp.values()].map((r) => cloneDeep(r))
-            tkRows.push({ ...ds.tokens.funNew({ userId: 'u-z' }), id: 'constructor', token: 'tk-ctor', isApp: 'n', timeEnd: tFuture(), _isNew: true })
+            tkRows.push({ ...ds.tokens.funNew({ userId: 'u-z' }), id: 'constructor', token: 'tk-ctor', isApp: 'y', timeEnd: tFuture(), _isNew: true }) //應用系統金鑰列(清單存檔不得新增 session 列, ADR-092; 本案意圖為原型鍵名主鍵)
             await env.p.checkTokenAndUpdateTokensList('tk-admin', tkRows)
             assert.ok(env.tokens.kp.get('constructor'))
             let ipRows = [{ ...ds.ips.funNew({ ip: '10.0.0.7' }), id: '__proto__', timeBlocked: '', _isNew: true }]

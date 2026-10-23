@@ -52,14 +52,25 @@ function mkEnv(over = {}, extra = {}) {
                 return { n: 1, nInserted: 1, ok: 1 }
             },
             save: async (d) => {
-                saves.push(d)
-                return [{ ok: 1, n: 1, nModified: 1 }]
+                let rows = Array.isArray(d) ? d : [d]
+                saves.push(...rows)
+                return rows.map(() => ({ ok: 1, n: 1, nModified: 1 }))
             },
         },
         users: {
+            //select: 封鎖於 [tokens, users] 鎖內重讀使用者, 且 procOrm mustExist 以 { id: { $in } } 檢查存在 (R-CONC-01)
+            //帳號封鎖另於鎖內以 { account, isActive } 再驗帳號仍屬該使用者(替身之主鍵為 u-<帳號>)
+            select: async (find) => {
+                if (find && typeof find.account === 'string') {
+                    return [{ id: `u-${find.account}`, account: find.account, timeBlocked: '' }]
+                }
+                let ids = (find && find.id && Array.isArray(find.id.$in)) ? find.id.$in : [find && find.id]
+                return ids.map((id) => ({ id, account: String(id).replace(/^u-/, ''), timeBlocked: '' }))
+            },
             save: async (d) => {
-                saves.push(d)
-                return [{ ok: 1, n: 1, nModified: 1 }]
+                let rows = Array.isArray(d) ? d : [d]
+                saves.push(...rows)
+                return rows.map(() => ({ ok: 1, n: 1, nModified: 1 }))
             },
         },
     }
@@ -70,6 +81,7 @@ function mkEnv(over = {}, extra = {}) {
         getGenUserByAccount: async (a) => ({ id: `u-${a}`, account: a, timeBlocked: '' }),
         loginByAccountAndPassword: async () => Promise.reject('wrongPassword'),
         revokeTokensByUserId: async () => {},
+        revokeTokensByUserIdLocked: async () => {}, //封鎖於表鎖內撤銷用持鎖版
         ...extra,
     }
     let srLog = mkSrLog()

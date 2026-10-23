@@ -1,0 +1,106 @@
+# 規則帳本(分冊: 憑證 / 權限 / 來源 IP / 查詢欄位規則)
+
+本檔為規則帳本之分冊(2026-10-22 自 `sgud/rule/rulebook.md` 依類型拆出, 節號與標題不變、內容只搬不刪); 總索引見 `rulebook.md`.
+
+### R-SEC-01: 權杖(憑證)不得進入任何輸出——回應、reject 值、srLog、console(2026-09-24, ADR-068)
+
+- **規則**:
+  1. 對外 helper(`src/getUserByToken|getUserByUserId|getUsersByToken.mjs`, 核心 `src/fetchSsoMsg.mjs`):
+     - reject 只能是固定 key;
+     - console 只能經 `fetchSsoMsg` 之 `logFail` 印一行(範本之 origin + pathname、錯誤 name / code / status、key 形狀之 SSO msg);
+     - 代入一律 split / join + `encodeURIComponent`.
+  2. 後端寫 srLog / console 時:
+     - 權杖類值一律經 `maskToken`;
+     - 網址(含 referer)一律經 `maskUrl`;
+     - 以任意欄位查詢之值一律經 `maskKv`;
+     - 不得印整包 headers / query / request / 錯誤物件.
+  3. 對外介接輸出之使用者列一律經 `omitUserCredential`; 新增憑證欄時登錄於 procCore 之 `keysUserCredential`.
+  4. 新增或更名 helper key 時, 同步以下三處(同步點):
+     - `server/procLang.mjs`;
+     - README 對照表;
+     - 消費端 `server/wrapInjected.mjs` 之白名單(w-web-perm / w-web-api / w-web-task).
+- **理由**: 見 ADR-068(helper 之 reject 原含已代入權杖之網址; referer / 陣列 / 憑證欄查詢值三通道把權杖寫入 srLog).
+- **盤點指令**(以規則為軸, 不以單一站點為軸; 2026-09-24 kpfun `getUserInfor` 之 valueLog 即因只看 HTTP 路由而一度漏改):
+  - Grep `Promise\.reject\(` 於上列 helper 與核心 → 每筆參數為字面 key 或 `keyRequest` / `keyData` / `keyNoData` / `'noUserDataAfterConvert'`.
+  - Grep `console\.log` 於同上 → 只有 `src/fetchSsoMsg.mjs` 之 `logFail`.
+  - Grep `replaceAll\('\{` 於 `src/` → 0.
+  - Grep `srLog\.(info|warn|error)\(\{[^}]*\b(token|value|referer|url|href|query|headers|authorization)\b` 於 `server/` → 每筆該欄之值皆經遮罩函數.
+  - Grep `console\.log\([^)]*\b(req|headers|query|url|href|authorization|referer|token|value|valueUser)\b` 於 `server/` → 未註解者不得輸出上述原值.
+- **站點全集(2026-09-24)**:
+  - helper:
+    - `Promise.reject` 16 處, 皆為 key;
+    - console 1 處(`logFail`).
+  - server:
+    - `maskToken` 33 處(`WWebSso.mjs` 27、`procCore.mjs` 5、`procProtect.mjs` 1);
+    - `maskUrl` 1 處(verifyConn referer);
+    - `maskKv` 3 處(`getSsoUserInfor` HTTP 與 kpfun 之 valueLog、`_getGenUserByKV` DB 錯誤 console);
+    - `procProtect` 取不到 IP 時只印標頭名稱;
+    - `omitUserCredential` 1 處(`/api/getSsoUsersList`; 後台 kpfun `getUsersList` 刻意不套用, 見 ADR-068).
+
+### R-PERM-01: 需管理者之權限閘須同時宣告 app token 所需權限 `perm`(2026-09-25, ADR-069)
+
+- **規則**:
+  1. 凡以 `{ fun: funCheckAdmin }` 守門之呼叫點, 同一 opt 須帶 `perm: '<權限字串>'`; 只給 `fun` 者 app token 一律不通過(fail closed), 屬漏宣告.
+  2. 授權寫在 procCore 內之功能(如 `adminResetUserPassword` 以操作者 `isAdmin` 判斷), app 權限閘亦寫在 procCore(`checkToken(token, { perm })`), 因 app 之虛擬使用者恆為 `isAdmin='y'`.
+  3. `perm` 之值須為 `src/appPerms.mjs` 之 `keysAppPerm` 成員; 新增權限時同步: `keysAppPerm`(及是否列入 `keysAppPermHigh`)、`server/procLang.mjs` 之 `appPerm_<權限>`(eng + cht)、README 權限表、`api-apptoken-perms` 之 ops 與 `unit-appPerms` 之 PERM-U-001.
+  4. 自身權杖操作(`checkToken` / `refreshToken` / `logoutByToken` / kpfun `getUserByToken` / `checkTokenAndChangePassword`)不帶 `fun` 亦不帶 `perm`.
+- **理由**: ADR-005 之 bypass 使 app token 通過全部需管理者之閘(ADR-069 Context); 改為逐閘宣告後, 漏宣告者以 fail closed 收斂.
+- **盤點指令**:
+  - Grep `fun: funCheckAdmin` 於 `server/` → 每筆同行含 `perm: '`(兩者計數相等).
+  - Grep `perm: '` 於 `server/` → 值皆在 `keysAppPerm`.
+  - Grep `checkToken\(` 於 `server/` → 未帶 opt 者只能是上列自身權杖操作與 `adminResetUserPassword`(帶 `{ perm: 'writeUsers' }`).
+- **站點全集(2026-09-25)**: 17 閘 —— `WWebSso.mjs` 16(HTTP `getSsoUsersList`、`getSsoUserInfor` 兩分支; kpfun `getUserInfor`、`getUsersList`、`updateUsersList`、`getTokensList`、`updateTokensList`、`getIpsList`、`updateIpsList`、`getSta*` 6 支)+ `procCore.mjs` 1(`adminResetUserPassword`); 皆已套.
+
+### R-IP-01: 來源 IP 之取值——`X-Forwarded-For` 最左段須為合法 IP 才採用, 否則退回連線位址並限流記 warn; 合法 IP 原樣不改寫(2026-10-20, 主控第 93 項; 使用者裁示: SSO 不做防偽造)
+
+- **規則**:
+  1. 單一擁有者 `server/procProtect.mjs` 之 `getIpByHeaders(req)`(全套件唯一取「來源 IP」之處; `WWebSso` 之 `verifyConn` 呼叫): 取 `x-forwarded-for` 之**第一個非空段**(以 `,` 分段、各段 `trim` 後略過空段〔沿用 wsemi `sep`, 修改前即如此〕, 即最左).
+     - 無值(無標頭、空值、空白、僅逗號)→ 靜默退回連線位址, 不記 warn.
+     - 該段非空 → 以 `net.isIP`(回 4 或 6)驗證, 且長度不得超過 `FORWARDED_IP_MAX_LEN`(64; IPv6 文字最長 45 字元, 外加 zone 識別碼——`net.isIP` 對 zone 識別碼長度無上限, 2026-10-20 實測 `::1%` 加 15000 字元仍回 6, 單獨依 isIP 會放行萬字元「IP」). 通過 → **原字串採用、不改寫**(不剝 `::ffff:`、不改大小寫 / 壓縮、不去 zone; 否則 `ips` 表既有列——封鎖查詢 `getIpByKV('ip', ip)` 為精確字串比對——不再命中而回未封鎖). 不通過(`length`、`constructor`、`<img src=x>`、`unknown`、超長字串等)→ 不採用, 退回連線位址並記 warn. 只驗被選中的那一段, 後段不影響(首段合法則後段為任何內容皆採首段、不記 warn; 首段非 IP 不改取後段).
+     - **去 port(唯一之正規化; run02 裁示 1, 2026-10-20)**: 首段本身不是合法 IP 時, 若為 `IPv4:port`(`d.d.d.d:port`)或括號形式 `[IPv6]:port`, 取其 IP 部分(部分雲端閘道 / 反代於標頭帶來源 port; 不去 port 而退回連線位址, 多層反代下全部使用者會被視為同一閘道位址, 頻率限制與自動封鎖將誤封所有人). 判準: port 為 1~5 位十進位數字且 ≤ 65535; 去後之 IP 須 `isIP` 為 4(IPv4 形式)/ 6(括號形式)且長度 ≤ 64; 去後之 IP 仍**原樣**(不改大小寫、不剝 `::ffff:`、不去 zone). 去後仍非 IP(`256.1.1.1:80`、`[::g]:80`、`1.2.3.4:abc`、`1.2.3.4:65536`、`1.2.3.4:`、`1.2.3.4:80:90`)或非此兩種形式(`[::1]` 無 port、`[1.2.3.4]:80` 括號 IPv4)→ 才退回連線位址並記 warn(`len` / `preview` 為整段原值). 裸 IPv6 本身即合法(`2001:db8::1:80` 為合法 IPv6, 不視為帶 port, 原樣採用). port `0` 與前導零(`:0`、`:00080`)採納(輸出只取 IP, port 值不影響結果); 括號 IPv4(`[1.2.3.4]:80`)與 IPv4-mapped 帶 port 之裸形式(`::ffff:203.0.113.9:5678`)不屬兩種形式而退回連線位址(外審 agy-opus F-A1 提出、依裁示僅此兩種形式去 port, 不採); 裸 IPv6 帶 zone 者(`fe80::1%eth0:80`)`isIP` 為 6, 依「合法 IP 原樣」採用(不與括號形式對稱, 外審 agy-opus F-A2; zone 識別碼僅見於連結本地位址, 不採). **升級影響(外審 minimax MM-A-01)**: `ips` 表中修前版本以帶 port 之原字串登錄之列(如 `203.0.113.9:8080`, 含其封鎖列)不再被命中——新請求以去 port 後之 `203.0.113.9` 判定並由偵測計時器另登新列; 不遷移(各 port 為短暫連接埠, 列本身即屬登錄雜訊), README Upgrade Notes 載明, 建議管理端檢視並清除. 實作單一擁有者 `procProtect.mjs` 之 `pickForwardedIp(raw)`(回合法 IP 或空字串), `getIpByHeaders` 只呼叫它.
+  2. 退回順序: `req.info.remoteAddress` → `req.socket.remoteAddress` → `req.connection.remoteAddress`(空白 / 缺席者續往下; 連線位址由 Node 提供, 不再驗證); 皆無 → 空字串並維持原有 `can not get ip of user` 診斷. 因此非 IP 標頭之請求其封鎖與頻率限制一併改以連線位址計算(連線位址已被封鎖則這些請求被拒; 多個不同非 IP 標頭值共用連線位址之計數).
+  3. warn: `srLog.warn({ event: 'fun-getIpByHeaders', key: 'invalidForwardedFor', len, preview, ip, suppressed })`.
+     - 限流: 至多每 `FORWARDED_WARN_INTERVAL_MS`(10 秒)一筆, 期間被略過之次數於下一筆以 `suppressed` 帶出; 時鐘回撥(`Date.now()` 小於前次)時以現時重設窗口起點並略過本筆, 連續回撥亦不致每筆皆記.
+     - `len` 為被選中那一段之長度, `preview` 為其前 64 字元且控制字元(< 32、127)置換為 `?`(`srLog.safeText`, 與 `maskToken` 同一擁有者), `ip` 為實際採用之連線位址.
+     - 記錄失敗不得使取 IP 失敗: `srLog.warn` 同步拋錯或回傳被 reject 之 Promise 一律吞下(使用端以非 IP 標頭即可觸發此路徑, 記錄器故障不應放大為請求失敗). `srLog` 未給或無 `warn` 函式時略過(同 `logError` 之守衛).
+  4. 信任邊界(**使用者 2026-10-20 裁示**): 線上系統常有多層反向代理, 使用者 IP 由反代提供; 能經跳板自填者, 反代拿到的也是自填值, 此類防護屬防火牆 / 反代之責, **SSO 不做防偽造系統**. 故維持「取最左段」語意: 不預設不信任標頭、不改取最右(多層反代下最右為上一層代理 IP)、不提供 `trustProxy`. 部署時請由最外層受信任之代理**覆寫**(而非附加)該標頭. 本規則只做不改語意之衛生(格式驗證), 不解: 合法格式之自填(使他人 IP 遭計次封鎖、以標頭輪替規避 IP 封鎖、以大量互異合法 IP 填充 `ips` 表). 外審若提出取最右 / 預設不信任 / `trustProxy`, 依裁示不採.
+  5. 兩個本機放行端點(`/api/cleanKpIpCallApi`、`/api/cleanKpAccountLoginFailed`)取 socket 位址、不讀標頭, 不變.
+- **理由**: 修前(HEAD `4480264`, 經真後端)標頭首段原樣成為 `verifyConn` 之 `ip`——寫入 `verifyConn` log、`ips` 表(管理端顯示面)、`kpIpCallApi` 之鍵與統計之鍵. 非 IP 字串(含標記、超長)可任意登錄; 格式驗證使這類值不再進入任何持久面, 合法 IP 之行為完全不變.
+- **盤點指令**:
+  - `git grep -n -i -E "x-forwarded-for|remoteAddress|getIpByHeaders" -- server src` → 取值只在 `procProtect.getIpByHeaders`; `WWebSso.mjs` 之 `verifyConn`(呼叫 `pp.getIpByHeaders`)與兩個本機放行端點(自取 socket 位址, 註解載明不讀標頭); 其餘為註解 / JSDoc.
+  - 可執行版: `unit-sourceIp` 之 `SITE-IP-001`(除 `getIpByHeaders` 外 `server/` 不讀 `x-forwarded-for`)、`SITE-IP-002`(`pickForwardedIp` 以 `isIP` 驗證、不通過者回空字串, `pickForwardedIp` 與 `getIpByHeaders` 皆未對採用值做改寫, `getIpByHeaders` 不自行驗證).
+- **站點全集(2026-10-20)**: ①`procProtect.getIpByHeaders`——已套. ②`WWebSso` 之 `verifyConn`——經 `pp.getIpByHeaders`, 無自取. ③`/api/cleanKpIpCallApi`、`/api/cleanKpAccountLoginFailed` 之 `realIp`——取 socket 位址、不讀標頭, 刻意不套(本機放行判定不得受標頭影響). ④`staLogs` 之 IP 統計——讀 `verifyConn` log 之 `ip`(已為驗證後之值; 修前之歷史 log 仍可含任意字串, 統計端以 R-OBJ-ITER-01 / R-KEY-01 處理, 不依賴本規則).
+- **測試**: `test/unit-sourceIp.test.mjs`(IP-U-001～011 含 006b、SITE-IP-001～002 共 14 案; 真實 `procProtect` 工廠)、`test/api-sourceip.test.mjs`(IP-A-001～007, 經真後端 / 真 HTTP; 以臨時 settings 之 `logFd` 隔離統計 log): 非 IP 標頭 → `ips` 表與統計皆記連線位址、log 有限流之 warn 且超長值只留 64 字元預覽; 合法 IPv4 / IPv6 / `::ffff:` / 大寫 IPv6 原樣登錄; 以原字串寫入之封鎖列仍命中; 不同非 IP 標頭值共用連線位址之計數並封鎖該位址; 帶 port 者去 port 取 IP(IP-A-006: 同一 IP 不同 port 為同一 IP、不退回連線位址;IP-A-007: 帶 port 之請求以 IP 本身計次封鎖、封鎖列對帶 port 之請求命中、連線位址不受牽連). 既有 `api-iterclient` IT-A-001 / 003a / 003b 之前提(標頭值成為統計鍵)隨本規則改為「標頭值不成為統計鍵」: IT-A-001 改以臨時 logFd 內植入歷史 log 維持 R-OBJ-ITER-01 之端到端覆蓋, 原型鍵名防護由 `unit-iterClientObj` IT-K / IT-S / IT-P 與 IT-A-003c / d(權杖參數)守.
+- **修前紅(2026-10-20, 定稿測試對 HEAD `4480264` 之 `server/procProtect.mjs` + `server/srLog.mjs`; 腳本 `tmp/ledger/head-red.mjs`, 暫存區可能已清, 依此重建)**: unit 新兩檔 24 案中 21 案失敗(對照案 IP-U-001、IP-U-003、SITE-IP-001 原即通過); api 層 `api-sourceip` + `api-iterclient` 11 案中 6 案失敗(經真後端: IP-A-001 `ips` 表出現 `"length"`、IP-A-004 被刪之列復活、IP-A-005 非 IP 標頭未計入連線位址故不封鎖、IT-A-001 `length` 鍵計 6 而非 3、IT-A-003a / b 標頭值成為統計鍵), IP-A-002 / 003 與 IT-A-002 / 003c / d 為對照案原即通過.
+- **變異驗證(2026-10-20, 每項植入後還原並以 sha1 核對相同; 腳本 `tmp/ledger/mutate.mjs`、清單 `mutations-sso.mjs`, 暫存區可能已清, 依此重建〔副本已存於主控 `dnow/20261020151326/agent-out/run01-evidence/`〕; 23 項全數轉紅, 含 M16 / M17 計時器只處理第一鍵 → CNT-001 / 002 / 003 / 005 / 006)**: M1 移除格式驗證 → `unit-sourceIp` + IP-A-001 / IP-A-005; M1b 移除 zone 長度上限 → IP-U-002; M1c 上限邊界 `>` 改 `>=` → IP-U-001(64 字元合法); M2a 合法字串轉小寫 → IP-U-001 / SITE-IP-002 + IP-A-002; M2b 剝除 `::ffff:` → 同; M3 不記 warn → IP-U-002 / 004 / 006 + IP-A-001; M4 warn 不限流 → IP-U-006; M5 時鐘回撥不處理 → IP-U-006b; M6 改取最右段(違反裁示)→ IP-U-004; M7 吞錯改回外拋 → IP-U-008; M7b 不承接 reject → IP-U-008; M7c preview 不置換控制字元 → IP-U-009. 計數容器相關見 R-CNT-01. 白名單(查詢欄位名)未採, 無變異.
+- **外審(2026-10-20; sol `gpt-6.1-sol` max + minimax `minimax-m3.1-flash-free` xhigh)採納項**: `srLog.warn` 失敗不得中斷取 IP(規則 3)、時鐘回撥(規則 3)、preview 控制字元(規則 3)、長度邊界 63 / 64 / 65 與 `getIpByHeaders` 邊界輸入之測試、IP-A-001 改為以 1000 字元者打頭並依實際經過時間計 warn 上限、IP-A-004 窗口放大為 6 秒、IP-A-005(封鎖與合併計數之 HTTP 案)、`SITE-IP-002` 改取完整函式本體、`withFakeClock` 禁巢狀. 不採: 重複標頭陣列形態不記 warn(真 Node 以 `, ` 合併為字串, 陣列僅見手製請求物件)、取最右 / trustProxy(使用者裁示).
+
+### R-QKEY-01: 以使用端給定之欄位名查使用者, 欄位名須在白名單 `id / account / email / name`; 白名單外 reject 且不回顯; 查詢值之 log 一律遮罩(2026-10-20, 主控第 93 項 run02 裁示 2)
+
+- **規則**:
+  1. 單一擁有者 `server/procCore.mjs` 之 `getUserInfor(key, value)`: `key` 非字串或不在 `keysUserQuery`(`server/srLog.mjs` 匯出之 `['id', 'account', 'email', 'name']`, `maskKv` 同用)者 → `Promise.reject('invalidUserQueryKey')`, 不查資料庫. reject 值為固定 key(procLang 有 eng + cht), **不含 key 與 value 之任何內容**. 白名單以陣列比對(非物件鍵查詢): `constructor`、`__proto__`、`toString` 等一律在外.
+  2. 順序: 檢查置於 `checkToken` **之後**(未授權者先得 `tokenExpired`, 不得藉此回應探測白名單); 且置於 `WWebSso` 兩個入口(HTTP `/api/getSsoUserInfor`、kpfun `getUserInfor`)之 `srLog.info` **之後**——被拒之查詢仍留稽核痕跡(記 `key` 與已遮罩之 `value`), `maskKv` 對白名單外欄位之遮罩因此仍可由真後端觀察(`api-srlog-noleak` LOG-003).
+  3. HTTP `key=token` 在 `WWebSso` 上游分流至 `checkTokenAndGetUserByToken`, 不經欄位選擇器, 不受白名單影響; kpfun `getUserInfor` 無此分支, `key='token'` 屬白名單外 → 被拒(全庫無任何呼叫端以 kpfun 傳 `key='token'`).
+  4. `procCore._getGenUserByKV` 的 `srLog.debug`(`userNotFound` / `userDuplicate`)之 `valueUser` 以 `maskKv(keyUser, valueUser)` 遮罩(與同函式 console 一致); 內部呼叫端固定傳 `account` / `id`, 此為縱深防禦.
+  5. 對外 helper(`getUserByToken` / `getUserByUserId` / `getUsersByToken`)之網址範本檢查改為「恰一個完整參數」比對: `src/fetchSsoMsg.mjs` 之 `hasUrlParam(url, name, value)` ——參數名之前須為字串起點或 `?` `&` `"` 空白、參數值之後須為字串終點或 `& # "` 空白(以參數分隔字元定界; `"` 與空白供單元測試以 `data:` 網址〔佔位符在 JSON 字串內、無 `?`〕模擬 SSO), 且同名參數恰出現一次. 原 `indexOf('key=token')` 子字串檢查使 `key=tokenVerify`、`xkey=token`、`token={sysToken}x` 皆通過; 初版(run02 前半)改以「前後不得為參數字元 `[A-Za-z0-9_.~%-]`」排除, 外審(minimax MM-C-01 / 02、agy-opus F-C1 / F-C2)指出仍通過 `key=token+`〔server 實得 `token `〕、`key=token;x`、`a=key=token`、`&amp;key=token`、路徑 `/key=token`、片段 `#key=token`、重複參數 `key=token&key=id` 等偽陽性, 改為分隔字元定界 + 恰一個.
+  6. log 衛生(外審 minimax MM-B-01 / 02、MM-D-02 提出, 本輪採納): 使用端給定之欄位名 `key` 與識別欄之查詢值 `value`(白名單內者原樣記供追查)寫入 `srLog` 前一律經 `srLog.capText`: 控制字元(< 32、127)置換為 `?`(`safeText`), 長度超過 `LOG_TEXT_MAX`(256)者截斷並附 `...(len=N)`; 短字串原樣. 站點: `WWebSso` 兩入口 `srLog.info` 之 `key`、`maskKv` 識別欄分支、`procCore._getGenUserByKV` `srLog.debug` 之 `keyUser`. 非識別欄之值仍一律 `maskToken`(規則 4). (pino JSON 已跳脫控制字元, 不致換行注入; 此規則限制使用端可控之 log 量並與 `maskToken` 同一紀律.)
+- **理由**: 修前欄位名由呼叫者(管理者或具 `readUsers` 之應用系統金鑰)任意指定並直接作為資料庫選擇器鍵: ①誤用 `key=userId`(`users.userId` 為建立者主鍵欄)不報錯而查到建立者; ②可對憑證欄(`tokenVerify`、`password`)以值探測存在性; ③非識別欄之值可能即憑證, 需靠 log 遮罩補救(R-SEC-01). 全庫正式用法僅 `token`(上游分流)、`id`、`account`、`name`(srv.mjs 註解範例).
+- **盤點指令**:
+  - `git grep -n -E "checkTokenAndGetUserInfor|getUserInfor|_getGenUserByKV|getGenUserByKV\(" -- server` → 欄位名只在 `procCore.getUserInfor`(使用端給定)與內部固定常數呼叫(`account` / `id`).
+  - `git grep -n -E "indexOf\('(key|token|value)=" -- src` → 應為 0(helper 範本檢查一律經 `hasUrlParam`).
+  - 可執行版: `unit-queryKey` 之 `SITE-QK-001`(`getUserInfor` 先驗白名單後查庫、`keysUserQuery` 單一定義且與 `maskKv` 同源)、`SITE-QK-002`(`src/` 無 `indexOf('key=` 子字串檢查).
+- **站點全集(2026-10-20)**:
+
+| # | 站點 | 欄位名來源 | 判定 |
+|---|---|---|---|
+| Q1 | `procCore.getUserInfor`(`checkTokenAndGetUserInfor` 之唯一呼叫) | 使用端 | **已套**(單一擁有者) |
+| Q2 | `WWebSso` HTTP `/api/getSsoUserInfor` 之 `key !== 'token'` 分支 | 使用端 `query.key` | **已套**(經 Q1; `srLog.info` 在前) |
+| Q3 | `WWebSso` HTTP `key === 'token'` 分支 → `checkTokenAndGetUserByToken` | 固定語意(以權杖查) | 刻意不套(不經欄位選擇器) |
+| Q4 | `WWebSso` kpfun `getUserInfor` | 使用端 `key` | **已套**(經 Q1; `srLog.info` 在前) |
+| Q5 | `procCore._getGenUserByKV` / `getGenUserByKV` / `getGenUserByUserId` 之內部呼叫 | 程式常數(`account` / `id`) | 刻意不套(縱深防禦: debug 記錄遮罩, 規則 4) |
+| Q6 | `src/getUserByToken.mjs` / `getUserByUserId.mjs` / `getUsersByToken.mjs` 之範本檢查 | 部署端網址範本 | **已套**(`hasUrlParam`, 規則 5) |
+
+- **已知限制(外審 sol F-01、minimax MM-B-03 提出; 文件更正、程式不改)**: 規則 1 的「`key` 非字串 → `invalidUserQueryKey`」成立於 `procCore` 層(`unit-queryKey` QK-003). 對外兩入口(HTTP `/api/getSsoUserInfor`、kpfun `getUserInfor`)另有 run02 前即有之「入口一致性」守門 `_strictStr(token, key, value)`, 先於 `srLog.info` 與白名單: `token` / `key` / `value` 任一為空字串、陣列(Hapi 對重複 query 參數給陣列)或非字串者一律 `tokenExpired`、不留入口稽核紀錄. 對所有 `getSsoUserInfor` 輸入相同、未回顯值, 且 `api-getuserinfor` QK-A-006 守護此行為; 白名單 / `invalidUserQueryKey` 因此只對「字串、非空」之 `key` 於對外入口可見. README 同步載明.
+- **修前紅 / 變異(2026-10-20 run02; 腳本 `tmp/ledger/mutate.mjs`、清單 `mutations-run02.mjs`, 暫存區可能已清, 依此重建; 全部以 sha1 核對還原)**: 修前紅——定稿測試對未改程式(run01 狀態): `unit-sourceIp` IP-U-010 / SITE-IP-002、`unit-queryKey` QK-002～004 / QK-007 / SITE-QK-001 / 002、`unit-external-helpers` HLPU-002b 共 9 案失敗(對照案 IP-U-011、QK-001 / 005 / 006 原即通過); api 層之修前紅等同下列 R2-M1 / M8(變異後之程式即修前程式). 變異 45 項(`R2-M1`～`M46` 含 `M6b`、缺 `M33` / `M34`; 其中 M25～M31 取自外審 sol 第 1 輪〔中途因額度用盡而結束〕已產出之存活變異, M35～M39 取自 agy-opus 之測試缺口 T1 / T3 並與 M20 / M21 / M27 / M28 / M32 隨 `hasUrlParam` 重設計重寫, M40～M46 對應 minimax 提出之 log 衛生與 console 守護; 其對應測試缺口皆已補; 最終程式上全部重跑)**全數轉紅**: 去 port——M1 移除 → IP-U-010 + IP-A-006 / 007; M2 移除 65535 上限、M3 版本與形式不比對、M6 / M6b port 位數不限、M7 括號形式可無 port → IP-U-011(M7 另 IP-U-002); M4 去後轉小寫 → IP-U-010 + SITE-IP-002; M5 去後不驗長度 → IP-U-002 / 011 + SITE-IP-002; M25 上限 `<` / M26 括號形式 port 0 被拒 → IP-U-010. 白名單——M8 移除 → QK-002 / 003 / 004 + SITE-QK-001 + QK-A-002 / 003 + LOG-004; M9 大小寫不敏感、M10 回顯欄位名、M12 以 `in` 物件鍵查詢 → QK-002 等 + QK-A-002; M11 置於 `checkToken` 前 → QK-005 + QK-A-004; M17 / M18 HTTP / kpfun 白名單置於 `srLog.info` 前 → LOG-003; M19 procLang 缺 key → QK-004. 遮罩——M13 / M14 / M29 debug 記錄不遮罩或誤用 `maskToken` → QK-007; M15 `maskKv` 恆原樣 → QK-007 + LOG-003; M16 `maskKv` 與白名單不同源 → SITE-QK-001; M30 / M31 info 記錄遮罩了 token 而非 value → LOG-003. helper——M20 / M21 前後界移除、M27 後界放寬含 sub-delim、M28 前界放寬含 `/ # ; : = +`、M32 不要求同名參數恰一個 → HLPU-002b; M22～M24 退回 `indexOf` → HLPU-002b + SITE-QK-002. 去 port 正規式錨點——M35 / M36(IPv4:port 去 `^` / `$`)、M37 / M38(`[IPv6]:port` 去 `^` / `$`)→ IP-U-011. 遮罩補充——M39 `maskKv` 對欄位名大小寫 / 空白不敏感 → QK-007. log 衛生(規則 6)——M40 `capText` 不截斷、M46 不置換控制字元 → QK-009; M41 `maskKv` 識別欄分支不經 `capText` → QK-009 + SITE-QK-003 + LOG-005; M42 / M43 兩入口 `srLog.info` 之 `key` 原值 → SITE-QK-003 + LOG-005; M44 debug 記錄 `keyUser` 原值 → QK-009 + SITE-QK-003; M45 console 不遮罩 `valueUser` → QK-008. **揭露兩處測試自身缺口(變異存活後補)**: ①LOG-003 初版斷言「記錄存在」讀取整個整點 log 檔(含歷次執行), 且遮罩形式只露前後字元與長度、歷次相同, 故 M17 / M18 / M30 / M31 存活——改以 `time >= t0` 過濾本次記錄並比對 maskToken 公式(`k=min(4,floor(n/8))`)後轉紅; ②外審 sol 以窄替身重放發現 IPv6 括號形式 port 0 / 65535、`%` / `~` 界字元、識別欄之 duplicate debug 記錄、info 記錄遮罩對象等測試缺口, 已補.
+- **測試**: `test/unit-queryKey.test.mjs`(真實 `procCore` 工廠 + 記憶體資料表: 白名單內 4 欄可查、白名單外含原型鍵名 / 憑證欄 / `userId` / `isAdmin` / 空字串 / 非字串全被拒且不查庫、reject 值不含 key 與 value、未授權先得 `tokenExpired`、`_getGenUserByKV` debug 遮罩、站點守門)、`test/api-getuserinfor.test.mjs` 增案(真後端 HTTP + kpfun: 白名單外 `state=error` / `invalidUserQueryKey`、回應與 log 不含查詢值、白名單內仍可查、`key=token` HTTP 不受影響)、`test/api-srlog-noleak.test.mjs` LOG-003(探測改為斷言被拒且 log 仍遮罩)、`test/unit-external-helpers.test.mjs` 增案(`hasUrlParam` 邊界).
+

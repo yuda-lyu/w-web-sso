@@ -26,6 +26,10 @@ let settings = {
         name: '封鎖時間',
         type: 'STRING',
     },
+    userIdUpdate: { //最後修改者(伺服器專有, 由 procOrm 戳記; 系統計時器寫入記常數 'system', 見 rulebook_concurrency R-CONC-04)
+        name: '最新變更使用者主鍵',
+        type: 'STRING',
+    },
 }
 
 let funNew = (ndata = {}) => {

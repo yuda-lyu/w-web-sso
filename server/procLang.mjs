@@ -1013,6 +1013,10 @@ let kpLang = {
         eng: 'Invalid app token permissions.',
         cht: '應用系統金鑰權限設定無效。',
     },
+    tokenSessionAddNotAllowed: { //金鑰清單存檔不得新增登入權杖(session 列; ADR-092)
+        eng: 'Login tokens cannot be added. Nothing was saved.',
+        cht: '不可新增登入權杖，本次未儲存任何變更',
+    },
     //應用系統金鑰之各權限名稱, 鍵為 appPerm_<權限字串> (權限全集見 src/appPerms.mjs)
     appPerm_readUsers: {
         eng: 'Read users',
@@ -1322,6 +1326,20 @@ let kpLang = {
     saveWriteFail: { //清單儲存之寫入階段失敗, 部分變更可能已寫入 (ADR-080)
         eng: `Not all changes were written, and some may have taken effect. Please reload the page and check before making changes.`,
         cht: `資料寫入未全部完成，部分變更可能已生效，請重新整理頁面確認後再操作`,
+    },
+
+    //多人同時編輯之寫入契約(原則 10): 拒收鍵 baselineMismatch / rowNotFound / baselineFormat 由 procCore.getSaveRejectKey 轉為下列語系鍵, 一律提示重新載入; 拒收時零寫入
+    saveStale: { //載入後資料已被他人或系統更動(baselineMismatch)
+        eng: `The data has been changed by another user or the system since you loaded this page. Nothing was saved. Please reload the page and make your changes again.`,
+        cht: `資料自您載入後已被其他使用者或系統更動，本次未儲存任何變更，請重新載入頁面後再操作`,
+    },
+    saveRowNotFound: { //要修改或刪除之資料已不存在(rowNotFound)
+        eng: `Some of the data no longer exists (it may have been deleted by another user). Nothing was saved. Please reload the page and make your changes again.`,
+        cht: `部分資料已不存在（可能已被其他使用者刪除），本次未儲存任何變更，請重新載入頁面後再操作`,
+    },
+    saveBaselineFormat: { //前端送出之載入基準格式或版本不識(baselineFormat)
+        eng: `The page data version is not recognized. Nothing was saved. Please reload the page and make your changes again.`,
+        cht: `頁面資料版本無法辨識，本次未儲存任何變更，請重新載入頁面後再操作`,
     },
 
 }

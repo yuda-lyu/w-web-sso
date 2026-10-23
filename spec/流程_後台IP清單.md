@@ -83,7 +83,10 @@
 011                      token 無效 / 過期 / 非 admin:
 012                          reject  → errTemp 被設值  [LayoutContentIps.vue:721]
 013                  updateIpsList(rows)  [procCore.mjs:1927]
-014                      updateTabItems('ips', rows, 'id', {resetOrder:false}) 差異更新  [procCore.mjs:1914]
+014                      updateTabItems('ips', rows, 'id', {resetOrder:false, operatorId, optClient}) 差異更新  [procCore.mjs:updateTabItems]
+                             (2026-10-23 多人同時編輯: 前端第 4 參數帶載入時之基準 { baseline }; 於 ips 表鎖內新鮮讀取並比對, 基準不符整次拒收
+                              saveStale / saveBaselineFormat, 零寫入; 通過後刪除集合 = 基準內 − 送出, 只寫摘要不同之列, 更新者 userIdUpdate 記操作管理員;
+                              存檔成功後前端重新取清單作為新基準; 詳 流程_多人同時編輯.md, E2E-CC-003)
 015          檢查 errTemp  [LayoutContentIps.vue:725]
 016              非 null (後端 reject):
 017                  關 loading, 顯示 System message modal 儲存失敗訊息, return  [LayoutContentIps.vue:726-730]
@@ -101,6 +104,7 @@
 |---|---|---|---|
 | 儲存成功 | `ipSaveIpsSuccess` | `showCheckYes` 持久 modal（System message） | 管理員須點 OK 確認讀過 |
 | 儲存失敗（後端 reject） | `ipSaveIpsFail`（後接錯誤字串） | `showCheckYes` 持久 modal | 同上 |
+| 儲存失敗（載入後資料已被他人或系統更動／資料已不存在／基準格式不識；2026-10-23） | `ipSaveIpsFail` 接 `saveStale`／`saveRowNotFound`／`saveBaselineFormat`（文字見 `流程_多人同時編輯.md`） | `showCheckYes` 持久 modal | 整次拒收、零寫入、草稿保留、提示重新載入 |
 | 儲存失敗（寫入資料庫失敗，部分變更可能已生效） | `ipSaveIpsFail` 接 `saveWriteFail`（「資料寫入未全部完成，部分變更可能已生效，請重新整理頁面確認後再操作」/「Not all changes were written, and some may have taken effect. Please reload the page and check before making changes.」） | `showCheckYes` 持久 modal | UI 不可達：僅資料庫寫入例外（procOrm 整批錯誤或逐筆失敗）時發生，以 `test/unit-ormWriteFail.test.mjs` A6 驗證；procOrm 原文只寫 log，已寫入之列不回滾，IP 清單快取照清（ADR-080） |
 | 儲存失敗（列格式錯誤：rows 非陣列、主鍵非字串 / 表內重複 / 超過鍵長上限） | `ipSaveIpsFail` 接 `invalidRows`（「資料格式錯誤。」/「Invalid data format.」） | `showCheckYes` 持久 modal | UI 不可達：主鍵由伺服器產生、清單無新增列；僅直打 API 時發生。驗證階段拒絕，資料庫無任何變更（ADR-081；修改前 rows 非陣列者經比對成「全數刪除」、重複主鍵者後列覆蓋前列）；`test/unit-ormWriteFail.test.mjs` A18、A19、A21 |
 | 儲存失敗（欄位含會被 XSS 清除改寫之 HTML 標記，如 IP 欄輸入 `<x>`） | `ipSaveIpsFail` 接 `htmlMarkupNotAllowed`（「輸入內容含有不允許的 HTML 標記（如「<」後接英文字母），請移除後再試一次。」/「The input contains HTML markup that is not allowed (such as "<" followed by a letter). Please remove it and try again.」） | `showCheckYes` 持久 modal | UI 可達（IP 欄可編輯）；驗證階段拒絕，資料庫無任何變更（ADR-081；原為存成 `&lt;` 之形式，封鎖比對之 IP 隨之不符）；`test/unit-ormWriteFail.test.mjs` A12、A13、A22 |
@@ -116,6 +120,7 @@
 
 ## spec 規則摘要
 
+- **多人同時編輯**（2026-10-23，原則 10；跨清單共通規則與案例見 `流程_多人同時編輯.md`）：載入時以畫面所見之列自算有序基準，存檔時隨第 4 參數送出；後端於 `ips` 表鎖內新鮮讀取比對，不符整次拒收（`saveStale`／`saveRowNotFound`／`saveBaselineFormat`，皆提示重新載入，零寫入，草稿保留）；刪除集合＝基準內−送出，只寫契約欄位 `ip`、`timeBlocked`（`timeBlocked` 為雙方欄位：自動封鎖亦寫，故其被改動後持舊畫面者存檔即被拒）；自動偵測計時器登錄新 IP 亦屬「載入後他人新增」（記 `userIdUpdate='system'`），繁忙系統上舊畫面存檔較常需重新載入。不帶基準（app 權杖直呼、舊版頁面）本 major 允許，後者蓋前者，仍取表鎖、只改不增。
 - **權限**：`getIpsList` / `updateIpsList` 皆 admin-only（`funCheckAdmin`）。
 - **粒度**：操作結果（成功 / 失敗）一律 `showCheckYes` 持久 modal（須確認讀過、可做 e2e pixel + 語意斷言）；非預期例外才用 `$alert` toast。
 - **邊界**：`isError` 恆為 `''`，前端驗證攔截分支為死碼；無「手動新增」列。

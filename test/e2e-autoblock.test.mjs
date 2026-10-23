@@ -5,7 +5,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, launchBrowser, typeIntoNthInput, waitUntilExist } from './tools/e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, resetToBaseSeed, deleteNonBaseSeed, cleanKpIpCallApi, cleanKpAccountLoginFailed, assertBaselineMatch, launchBrowser, typeIntoNthInput, waitUntilExist } from './tools/e2e-setup.mjs'
 import { runBaselineCase, createBaselineGate, itemsUnionBox, pollUntil } from './tools/e2eLib.mjs'
 
 
@@ -42,10 +42,6 @@ let langs = ['eng', 'cht']
 let numForAccountLoginFailed = 3
 let numForTokenCallApi = 1000
 let numForIpCallApi = 12000
-
-//對應 settings.json 的 cleanKpIpCallApiForToken (呼叫 /api/cleanKpIpCallApi 須附帶之識別 token)
-let cleanKpIpCallApiForToken = '{cleanKpIpCallApiForToken}'
-let cleanKpAccountLoginFailedForToken = '{cleanKpAccountLoginFailedForToken}'
 
 
 function bp(lang, name) {
@@ -198,36 +194,8 @@ async function deleteIpRecord(ip) {
 }
 
 
-//清空 server in-memory 的 kpIpCallApi
-async function cleanKpIpCallApi() {
-    try {
-        let r = await fetch(`${apiUrl}/api/cleanKpIpCallApi?token=${encodeURIComponent(cleanKpIpCallApiForToken)}`)
-        let j = await r.json()
-        if (j.state !== 'success') {
-            console.warn(`[cleanKpIpCallApi] server 回應非 success: ${JSON.stringify(j)}`)
-        }
-    }
-    catch (err) {
-        console.warn(`[cleanKpIpCallApi] 呼叫失敗: ${err.message}`)
-    }
-}
-
-
-//清空 server in-memory 的 kpAccountLoginFailed (所有帳號的登入失敗計數)
-//e2e 與 server 為獨立進程, in-memory state 無法由測試直接清除, 透過 server 的
-///api/cleanKpAccountLoginFailed route (僅放行本機連入 + token 驗證) 觸發 pp.cleanKpAccountLoginFailed().
-async function cleanKpAccountLoginFailed() {
-    try {
-        let r = await fetch(`${apiUrl}/api/cleanKpAccountLoginFailed?token=${encodeURIComponent(cleanKpAccountLoginFailedForToken)}`)
-        let j = await r.json()
-        if (j.state !== 'success') {
-            console.warn(`[cleanKpAccountLoginFailed] server 回應非 success: ${JSON.stringify(j)}`)
-        }
-    }
-    catch (err) {
-        console.warn(`[cleanKpAccountLoginFailed] 呼叫失敗: ${err.message}`)
-    }
-}
+//清空 server in-memory 之 kpIpCallApi / kpAccountLoginFailed 之 helper 已收斂至 ./tools/e2e-setup.mjs (cleanKpIpCallApi / cleanKpAccountLoginFailed;
+//e2e-concurrency 亦須用, 原因見該處註解), 本檔 import 使用.
 
 
 //建立 chromium context 並僅對 localhost 連線注入 X-Forwarded-For header.
@@ -853,9 +821,13 @@ async function runCase(mode, lang, c, extra = {}) {
             await cleanKpAccountLoginFailed()
         },
         afterCase: async () => {
-            //deleteNonBaseSeed 清掉所有非 base seed 的 users + tokens 並 wipe ips 表.
-            //server in-memory rate-limit 計數 (kpIpCallApi / kpAccountLoginFailed) 不屬 DB rows, 不涵蓋,
-            //由下一案 prepare 之 cleanKpIpCallApi() + cleanKpAccountLoginFailed() 重置.
+            //收尾: 不留本案登記之虛擬 IP (1.2.3.x) 與測試帳號於 DB 及 server 記憶體, 不污染後續測試檔 (測試衛生).
+            //先清 server in-memory 計數 (kpIpCallApi / kpAccountLoginFailed), 再 deleteNonBaseSeed 清掉所有非 base seed 的 users + tokens 並 wipe ips 表:
+            //計數不清, procProtect 之 ipDetectNew 計時器 (每 2 秒) 會把計數內之 1.2.3.x 補登記回剛清空之 ips 表 (e2e-concurrency E2E-CC-003 全套失敗之成因);
+            //先清 DB 再清計數則計時器仍可於兩者之間補登, 故順序不可對調.
+            //下一案 prepare 仍各自重置 (單案 --grep 亦成立), 此處負責「最後一案之後」不殘留.
+            await cleanKpIpCallApi()
+            await cleanKpAccountLoginFailed()
             await deleteNonBaseSeed()
         },
         ...extra,

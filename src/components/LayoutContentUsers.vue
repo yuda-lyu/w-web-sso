@@ -423,6 +423,7 @@ import WInputCheckbox from 'w-component-vue/src/components/WInputCheckbox.vue'
 import WAggridVue from 'w-aggrid-vue/src/components/WAggridVue.vue'
 import WTimeminute from 'w-component-vue/src/components/WTimeminute.vue'
 import WButtonChip from 'w-component-vue/src/components/WButtonChip.vue'
+import { baselineOfUsers } from '../baselineOf.mjs'
 
 
 export default {
@@ -458,6 +459,7 @@ export default {
             headHeight: 100,
 
             firstLoading: true,
+            baseline: null, //載入時(及存檔成功後重新讀取時)畫面所見之列的有序基準 [[id, 列摘要]], 存檔時送後端比對(多人同時編輯, 先動先贏); null 為未載入或算不出, 送出時被後端拒收
             errMsg: '', //清單載入失敗之訊息(getDataError), 有值時以訊息取代表格
             firstSetting: true,
             systemProcing: false, //程式端載入/重載清單資料期間為true, 用於排除非使用者操作之rowsChange
@@ -573,6 +575,7 @@ export default {
         vo.$fapi.getUsersList(token)
             .then((res) => {
                 // console.log(res)
+                vo.baseline = baselineOfUsers(res) //對畫面所見之同一快照自算基準(須在排序、變動之前; buildBaseline 不改輸入)
                 res = sortBy(res, 'order')
                 vo.users = res
                 vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
@@ -1550,14 +1553,14 @@ export default {
                 let token = vo.userToken
                 let lang = get(vo, '$store.state.lang', 'eng')
 
-                //updateUsersList
-                await vo.$fapi.updateUsersList(token, lang, rows)
+                //updateUsersList, 第 4 參數帶載入時之基準: 載入後資料已被他人或系統更動者整次拒收(零寫入, 回 saveStale 等語系鍵提示重新載入), 草稿保留(不清 isModified)
+                await vo.$fapi.updateUsersList(token, lang, rows, { baseline: vo.baseline })
                     .catch((err) => {
                         errTemp = err
                     })
 
                 //check
-                //後端 reject (token 過期 / ckKey 衝突 / 密碼策略違反 / 自我鎖死等)
+                //後端 reject (token 過期 / ckKey 衝突 / 密碼策略違反 / 自我鎖死 / 基準不符等)
                 //改用 showCheckYes 強制 admin 點擊確認讀過訊息, 避免 transient toast 漏看
                 if (errTemp !== null) {
                     //hide loading 因 showCheckYes 是 modal, 等待期間 loading 會疊著
@@ -1570,14 +1573,17 @@ export default {
 
                 //儲存成功 → 重拉 getUsersList 同步 server-side data (新增使用者的 timeVerified
                 //在後端被填 now, 既有使用者的 audit fields 也在後端被覆寫, 須刷新前端表格)
+                //新基準取自伺服端重新讀取之列(不以自己送出之值當基準: 寫入時 clearXSS 等會改寫部分字串), 且與畫面所見之列來自同一快照 (規格 §8)
                 await vo.$fapi.getUsersList(token)
                     .then((res) => {
+                        vo.baseline = baselineOfUsers(res)
                         res = sortBy(res, 'order')
                         vo.users = res
                         vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
                     })
                     .catch((err) => {
                         console.log('refresh getUsersList catch', err)
+                        vo.baseline = null //重新讀取失敗: 舊基準已過期, 不沿用; 其後再存檔被後端拒收並提示重新載入(不降級為不帶基準)
                     })
 
                 //isModified

@@ -239,6 +239,8 @@ import WPopup from 'w-component-vue/src/components/WPopup.vue'
 import WInputCheckbox from 'w-component-vue/src/components/WInputCheckbox.vue'
 import WAggridVue from 'w-aggrid-vue/src/components/WAggridVue.vue'
 import WTimeminute from 'w-component-vue/src/components/WTimeminute.vue'
+import contracts from '../writeContracts/index.mjs'
+import { baselineOfIps, isSameSnapshot } from '../baselineOf.mjs'
 
 
 export default {
@@ -269,6 +271,7 @@ export default {
             headHeight: 100,
 
             firstLoading: true,
+            baseline: null, //載入時(及存檔成功後重新讀取時)畫面所見之列的有序基準 [[id, 列摘要]], 存檔時送後端比對(多人同時編輯, 先動先贏); null 為未載入或算不出, 送出時被後端拒收
             errMsg: '', //清單載入失敗之訊息(getDataError), 有值時以訊息取代表格
             firstSetting: true,
             systemProcing: false, //程式端載入/重載清單資料期間為true, 用於排除非使用者操作之rowsChange
@@ -329,6 +332,7 @@ export default {
         vo.$fapi.getIpsList(token)
             .then((res) => {
                 // console.log(res)
+                vo.baseline = baselineOfIps(res) //對畫面所見之同一快照自算基準(須在排序、變動之前; buildBaseline 不改輸入)
                 res = sortBy(res, 'ip').reverse()
                 vo.ips = res
                 vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
@@ -765,8 +769,9 @@ export default {
                 let lang = get(vo, '$store.state.lang', 'eng')
                 // console.log('token', token)
 
-                //updateIpsList (帶 lang, 後端 reject { key, msg } 之 msg 依 lang 翻譯)
-                await vo.$fapi.updateIpsList(token, lang, rows)
+                //updateIpsList (帶 lang, 後端 reject { key, msg } 之 msg 依 lang 翻譯), 第 4 參數帶載入時之基準:
+                //載入後資料已被他人或系統(計時器自動登錄新 IP、自動封鎖)更動者整次拒收(零寫入, 回 saveStale 等語系鍵提示重新載入), 草稿保留(不清 isModified)
+                await vo.$fapi.updateIpsList(token, lang, rows, { baseline: vo.baseline })
                     .catch((err) => {
                         errTemp = err
                     })
@@ -779,6 +784,23 @@ export default {
                     await vo.$dg.showCheckYes(`${vo.$t('ipSaveIpsFail')}: ${msg}`)
                     return
                 }
+
+                //儲存成功 → 重新讀取 getIpsList 作為新基準(取自伺服端, 不以自己送出之值當基準), 畫面所見之列須與新基準來自同一快照 (規格 §8):
+                //送出之列與伺服端列的契約欄位摘要全相同者保留現畫面(伺服器專有欄位維持原呈現, 與既有行為相同), 不同者改以伺服端列取代;
+                //重新讀取失敗則基準置 null(其後再存檔被後端拒收並提示重新載入, 不降級為不帶基準)
+                await vo.$fapi.getIpsList(token)
+                    .then((res) => {
+                        vo.baseline = baselineOfIps(res)
+                        if (!isSameSnapshot(rows, res, contracts.ips)) {
+                            res = sortBy(res, 'ip').reverse()
+                            vo.ips = res
+                            vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
+                        }
+                    })
+                    .catch((err) => {
+                        console.log('refresh getIpsList catch', err)
+                        vo.baseline = null
+                    })
 
                 //isModified
                 vo.isModified = false

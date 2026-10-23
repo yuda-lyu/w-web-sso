@@ -463,7 +463,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         console.log('WServOrm init failed', err)
         throw err
     }
-    let { woItems, procOrm } = wp
+    let { woItems, procOrm, withTabLocks, guardWrite } = wp //withTabLocks / guardWrite: 每表一鍵之表鎖(多人同時編輯之寫入契約, 原則 10), procCore 與 procProtect 共用同一組
 
     //getWebInfor
     let getWebInfor = () => {
@@ -540,8 +540,10 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         verifyEmailResultContent = fs.readFileSync(fpTpl, 'utf8')
     }
 
-    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl })
+    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl, withTabLocks, guardWrite })
     let pp = procProtect(woItems, p, {
+        procOrm, //系統直寫(自動封鎖、計時器登錄 IP)經 procOrm 且在表鎖內, 更新者記 'system'
+        withTabLocks,
         srLog, //app token 跳過速率封鎖時記 debug (ADR-052)
         minForAccountLoginFailed,
         numForAccountLoginFailed,
@@ -915,7 +917,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                     // console.log('us', us)
 
                     //對外介接契約不輸出憑證欄(ADR-068): 介接端常以本清單同步使用者, 憑證會擴散至其資料庫與 log;
-                    //只在對外路由剝除, 後台 kpfun getUsersList 之整列存回依賴 tokenVerify(updateTabItems 以 ltdtmapping 補齊全欄)
+                    //只在對外路由剝除(後台 kpfun getUsersList 同樣不回傳 tokenVerify, T3; 存檔時伺服器專有欄位取庫內值, 不再依賴前端整列存回)
                     us = us.map(p.omitUserCredential)
 
                     return us
@@ -1261,13 +1263,15 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 return rs
             },
 
-            updateUsersList: async (_t, token, lang, rows) => {
+            //optSave: 選用之第 4 參數 { baseline }(前端以 buildBaseline 對載入時畫面所見之列自算, 多人同時編輯之寫入契約 R-CONC-05); 未給即不帶基準(app 權杖直呼、已開啟之舊版頁面, 本 major 允許),
+            //格式 / 白名單由 procCore.parseSaveOpt 驗證, 不識者 reject saveBaselineFormat, 不降級為不帶基準; 此處只轉交, 不展開給 procOrm
+            updateUsersList: async (_t, token, lang, rows, optSave) => {
                 if (!_strictStr(token)) return Promise.reject('tokenExpired')
                 if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject('invalidRows')
                 srLog.info({ event: 'kpfun-updateUsersList', token: maskToken(token), lang })
                 //console.log('call updateUsersList...')
                 //內層 reject key 字串 (含 checkToken 之 tokenExpired) 直接透出回前端 (前端 $t 顯示)
-                let rs = await p.checkTokenAndUpdateUsersList(token, lang, rows, { fun: funCheckAdmin, perm: 'writeUsers' })
+                let rs = await p.checkTokenAndUpdateUsersList(token, lang, rows, { fun: funCheckAdmin, perm: 'writeUsers' }, optSave)
                 //console.log('call updateUsersList end')
                 return rs
             },
@@ -1281,12 +1285,13 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 return rs
             },
 
-            updateTokensList: async (_t, token, lang, rows) => {
+            //optSave: { baseline, baselineSession }(app 列嚴格整表基準、session 列逐列寬鬆基準; 見 users 同名參數說明)
+            updateTokensList: async (_t, token, lang, rows, optSave) => {
                 if (!_strictStr(token)) return Promise.reject('tokenExpired')
                 if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject('invalidRows')
                 srLog.info({ event: 'kpfun-updateTokensList', token: maskToken(token), lang })
                 //console.log('call updateTokensList...')
-                let rs = await p.checkTokenAndUpdateTokensList(token, rows, { fun: funCheckAdmin, perm: 'writeTokens' })
+                let rs = await p.checkTokenAndUpdateTokensList(token, rows, { fun: funCheckAdmin, perm: 'writeTokens' }, optSave)
                 //console.log('call updateTokensList end')
                 return rs
             },
@@ -1300,12 +1305,13 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 return rs
             },
 
-            updateIpsList: async (_t, token, lang, rows) => {
+            //optSave: { baseline }(見 users 同名參數說明)
+            updateIpsList: async (_t, token, lang, rows, optSave) => {
                 if (!_strictStr(token)) return Promise.reject('tokenExpired')
                 if (!isearr(rows) || !rows.every((r) => isestr(get(r, 'id', '')))) return Promise.reject('invalidRows')
                 srLog.info({ event: 'kpfun-updateIpsList', token: maskToken(token), lang })
                 //console.log('call updateIpsList...')
-                let rs = await p.checkTokenAndUpdateIpsList(token, rows, { fun: funCheckAdmin, perm: 'writeIps' })
+                let rs = await p.checkTokenAndUpdateIpsList(token, rows, { fun: funCheckAdmin, perm: 'writeIps' }, optSave)
                 //console.log('call updateIpsList end')
                 return rs
             },

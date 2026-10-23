@@ -33,8 +33,10 @@ async function insertFixtures() {
     app.isApp = 'y'
     app.perms = ['writeUsers', 'writeTokens', 'writeIps']
     app.timeEnd = TIME_END
+    //供刪除之金鑰列為應用系統金鑰列(isApp='y'): 不帶基準之清單儲存(此處 kpfun 直呼)只刪應用系統金鑰列, session 列(isApp 非 'y')不刪 (R-CONC-03, D3);
+    //管理員於後台刪除 session 列走帶基準之路徑(強制登出, e2e-tokens E2E-003 與 unit-saveBaseline SB-T06)
     let dels = ['del-a', 'del-b'].map((k) => {
-        let t = ds.tokens.funNew({ userId: 'id-for-viewer', isApp: 'n' })
+        let t = ds.tokens.funNew({ userId: 'id-for-viewer', isApp: 'y' })
         t.id = `id-ormopts-${k}`
         t.token = `ormopts-${k}`
         t.timeEnd = TIME_END
