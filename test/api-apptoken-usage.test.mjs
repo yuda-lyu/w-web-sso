@@ -552,11 +552,11 @@ describe('應用系統金鑰兩種用途與使用者身分驗證缺口 (ADR-095)
 
 
     //
-    // 舊列相容 (無用途欄 → 視同系統服務用途)
+    // 舊列相容 (無用途欄、升級前可用〔timeEnd 合法且未逾期〕 → 視同系統服務用途; 升級前已失效者維持失效, 見 api-apptoken-upgrade.test.mjs)
     //
-    it('LEGACY 升級前之應用系統金鑰列(無 appUsage / appName 欄、timeEnd 為過去值、擁有者為任意字串): 視同系統服務用途, 授權依 perms, 反查為應用系統身分(名稱 no name), refresh 拒絕, 不改密碼, 擁有者欄使用者被停用 / 刪除不撤銷; 用途值未登錄者一律不可用', async function() {
+    it('LEGACY 升級前可用之應用系統金鑰列(無 appUsage / appName 欄、timeEnd 為合法未逾期值、擁有者為任意字串): 視同系統服務用途, 授權依 perms, 反查為應用系統身分(名稱 no name), refresh 拒絕, 不改密碼, 擁有者欄使用者被停用 / 刪除不撤銷; 用途值未登錄者一律不可用', async function() {
         let legacy = mkAppToken('id-m-legacy', 'm-legacy', 'id-for-viewer', undefined, '', ['readStats'])
-        legacy.timeEnd = PAST
+        legacy.timeEnd = FUTURE
         let weird = mkAppToken('id-m-weird', 'm-weird', 'id-creator', 'service', 'weird', PERMS_ALL)
         await woItems.tokens.insert([legacy, weird])
         assert.strictEqual((await callFapi('getStaIp', ['m-legacy'])).ok, true, 'readStats 依 perms')
@@ -566,7 +566,7 @@ describe('應用系統金鑰兩種用途與使用者身分驗證缺口 (ADR-095)
         assert.deepStrictEqual([g.ok, g.val.id, g.val.name, g.val.isApp, g.val.isAdmin], [true, 'app:id-m-legacy', 'no name', 'y', 'y'])
         assert.strictEqual((await callFapi('refreshToken', ['m-legacy'])).err, 'tokenAppNoRefresh')
         assert.strictEqual((await callFapi('changeUserPassword', ['m-legacy', 'eng', 'pw-viewer', NEW_PW])).err, 'tokenUserOnly')
-        assert.strictEqual((await woItems.tokens.select({ id: 'id-m-legacy' }))[0].timeEnd, PAST, 'timeEnd 不被改寫')
+        assert.strictEqual((await woItems.tokens.select({ id: 'id-m-legacy' }))[0].timeEnd, FUTURE, 'timeEnd 不被改寫')
         let r = await saveUsers('token-for-admin', (rows) => {
             rows.find((u) => u.id === 'id-for-viewer').isActive = 'n'
         })
@@ -581,7 +581,7 @@ describe('應用系統金鑰兩種用途與使用者身分驗證缺口 (ADR-095)
         let sv = await callFapi('updateTokensList', ['token-for-admin', 'eng', rows])
         assert.strictEqual(sv.ok, true, JSON.stringify(sv))
         let l2 = (await woItems.tokens.select({ id: 'id-m-legacy' }))[0]
-        assert.strictEqual(l2.timeEnd, PAST)
+        assert.strictEqual(l2.timeEnd, FUTURE)
         assert.strictEqual(l2.appUsage === undefined || l2.appUsage === '', true, '未改之既有列不被寫入用途欄')
     })
 

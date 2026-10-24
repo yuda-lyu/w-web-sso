@@ -44,6 +44,9 @@ import { runBaselineCase, createBaselineGate, assertTextSpec, pageHasText, colle
 //   E2E-008-1..10:                              新增系統服務用途之應用系統金鑰 (名稱、用途、權限) (ADR-095)
 //   E2E-009-1..11:                              新增使用者用途之應用系統金鑰 (名稱、用途、綁定使用者) (ADR-095)
 //   E2E-010-1..3:                               勾選使用者用途金鑰刪除並儲存, 該金鑰即失效而所綁使用者之登入不受影響 (ADR-095)
+//   E2E-011-1..2:                               檢視升級前已失效之舊金鑰 (用途「已失效」、權限「不適用」、原到期時間) (ADR-095 補記, sso-run02;
+//                                               標準圖待主控授權產製: 授權前比對端對缺圖之圖鍵只記 [pending-baseline], 授權後以
+//                                               node test/e2e-tokens.test.mjs --baseline --names E2E-011 產製; 授權前實跑確認請務必設 E2E_BASELINE_OUT_DIR 導向 ./tmp)
 //
 // 所有 capture 透過真實 UI 互動推進: 鍵盤滑鼠輸入 / ag-grid cell checkbox 點擊 /
 // row selection checkbox 點擊 / 按鈕 SVG path 點擊。不使用 vm.method() / page.evaluate state mutation 抄捷徑.
@@ -113,6 +116,11 @@ let expectedSpecText = {
         eng: { mode: 'text', value: 'Save tokens successfully' },
         cht: { mode: 'text', value: '儲存金鑰數據成功' },
     },
+    //E2E-011: 已失效之舊列之用途 / 權限 / 到期欄文字於 capture 內逐格斷言 (見 captureViewRetiredKeys), 此處僅確認清單已載入
+    'E2E-011-view-retired-keys': {
+        eng: { mode: 'text', value: 'test-token-8' },
+        cht: { mode: 'text', value: 'test-token-8' },
+    },
 }
 
 
@@ -137,13 +145,14 @@ let userTokens = {}
 //7 個 seed tokens 列 — 固定 id 與 token 字串 (便於 UI 抓 row + 斷言), 不同 userId / isApp 以區分視覺.
 //登入 token (1~3) 之 timeEnd 用未來日期, 不同小時數讓 WTimeminute 顯示各異, 更利於視覺辨識; 應用系統金鑰 (4~7) 不給期限 (timeEnd 為空, ADR-095)
 //perms (ADR-069, 僅系統服務用途生效): 4 僅基本權限(E2E-005 授予讀金鑰) / 5 讀金鑰+讀統計(E2E-006 撤銷讀統計) / 6 全部權限(E2E-001 顯示「+N」收合、E2E-007 唯讀清單全勾選)
-//用途與名稱 (ADR-095): 4 為升級前之既有列(無用途欄與名稱欄, 視同系統服務用途, 顯示「系統服務用途」而名稱空白) / 5、6 為系統服務用途 / 7 為使用者用途(綁 base seed 之 id-for-viewer, E2E-010 刪除)
+//用途與名稱 (ADR-095): 4 為升級前之既有列(無用途欄與名稱欄; 升級前可用者, 即 timeEnd 為合法未逾期值〔固定遠期值, 顯示仍為「不設期限」, 圖不變〕,
+//  視同系統服務用途, 顯示「系統服務用途」而名稱空白; sso-run02 起 timeEnd 空者依升級前判定為已失效, 不可作為可用之既有列, 見 E2E-011) / 5、6 為系統服務用途 / 7 為使用者用途(綁 base seed 之 id-for-viewer, E2E-010 刪除)
 let permsAll = ['writeUsers', 'readTokens', 'writeTokens', 'readIps', 'writeIps', 'readStats']
 let testTokens = [
     { id: 'id-test-token-1', token: 'test-token-1', userId: 'id-user-a', isApp: 'n', perms: [], timeEnd: '2030-01-01T00:00:00.000+08:00' },
     { id: 'id-test-token-2', token: 'test-token-2', userId: 'id-user-b', isApp: 'n', perms: [], timeEnd: '2030-06-15T12:00:00.000+08:00' },
     { id: 'id-test-token-3', token: 'test-token-3', userId: 'id-user-c', isApp: 'n', perms: [], timeEnd: '2030-09-20T08:30:00.000+08:00' },
-    { id: 'id-test-token-4', token: 'test-token-4', userId: 'id-user-d', isApp: 'y', perms: [], timeEnd: '' },
+    { id: 'id-test-token-4', token: 'test-token-4', userId: 'id-user-d', isApp: 'y', perms: [], timeEnd: '2099-01-01T00:00:00.000+08:00' },
     { id: 'id-test-token-5', token: 'test-token-5', userId: 'id-user-e', isApp: 'y', appUsage: 'system', appName: 'svc-sync', perms: ['readTokens', 'readStats'], timeEnd: '' },
     { id: 'id-test-token-6', token: 'test-token-6', userId: 'id-user-f', isApp: 'y', appUsage: 'system', appName: 'svc-admin', perms: permsAll, timeEnd: '' },
     { id: 'id-test-token-7', token: 'test-token-7', userId: 'id-for-viewer', isApp: 'y', appUsage: 'user', appName: 'viewer-key', perms: [], timeEnd: '' },
@@ -319,6 +328,10 @@ let kpUiText = {
         kpUiText[lang].usageSystem = kpLang[lang].tokenAppUsageSystem
         kpUiText[lang].boundUser = kpLang[lang].tokenAppBoundUser
         kpUiText[lang].create = kpLang[lang].tokenAppCreate
+        //已失效之舊列 (ADR-095 補記, E2E-011)
+        kpUiText[lang].usageRetired = kpLang[lang].tokenAppUsageRetired
+        kpUiText[lang].permsRetired = kpLang[lang].tokenPermsRetired
+        kpUiText[lang].noExpire = kpLang[lang].tokenNoExpire
     }
 }
 
@@ -1140,6 +1153,150 @@ async function captureDeleteUserKey(page, lang) {
 }
 
 
+//E2E-011 檢視升級前已失效之舊金鑰 (ADR-095 補記; 純檢視, 無點擊步驟), 共 2 張
+//  前置另植 2 筆「已定案為已失效」之舊列 (等同升級後第一次啟動之遷移結果): test-token-8 (timeEnd 逾期)、test-token-9 (無到期時間); 本案結束即刪除
+//  1 retired-usage: 框住兩列於「用途」欄之儲存格 / 2 retired-expiry: 橫向捲動使權限欄貼齊左緣後, 框住兩列整列之可見部分 (權限欄「不適用」、到期欄原到期時間或空白)
+let RETIRED_SEEDS = [
+    { id: 'id-test-token-8', token: 'test-token-8', userId: 'id-user-g', timeEnd: '2020-01-01T00:00:00.000+08:00' },
+    { id: 'id-test-token-9', token: 'test-token-9', userId: 'id-user-h', timeEnd: '' },
+]
+
+async function insertRetiredSeed() {
+    let rows = RETIRED_SEEDS.map((r) => {
+        let o = ds.tokens.funNew({ userId: r.userId, isApp: 'y' })
+        o.id = r.id
+        o.token = r.token
+        o.isApp = 'y'
+        o.appUsage = 'retired'
+        o.appName = ''
+        o.perms = []
+        o.timeEnd = r.timeEnd
+        o.timeCreate = FIX_TIME
+        o.timeUpdate = FIX_TIME
+        return o
+    })
+    await woItems.tokens.insert(rows)
+}
+
+//量測型目標: 多列之「可見部分」聯集 (同 visibleRowBox, 夾在表格框內); 列須相鄰, 否則聯集會框入其間之他列而拋錯
+function visibleRowsBox(rowIdxs) {
+    let idxs = rowIdxs.map((x) => parseInt(x, 10)).sort((a, b) => a - b)
+    return {
+        label: `visibleRowsBox(${idxs.join(',')})`,
+        scroll: `.ag-pinned-left-cols-container .ag-row[row-index="${idxs[0]}"]`,
+        measure: async (page) => {
+            return page.evaluate((arr) => {
+                let root = document.querySelector('.ag-root-wrapper')
+                if (!root) {
+                    return null
+                }
+                let rr = root.getBoundingClientRect()
+                let parts = []
+                for (let idx of arr) {
+                    root.querySelectorAll(`.ag-row[row-index="${idx}"]`).forEach((row) => {
+                        let r = row.getBoundingClientRect()
+                        if (r.width > 0 && r.height > 0) {
+                            parts.push(r)
+                        }
+                    })
+                }
+                if (parts.length === 0) {
+                    return null
+                }
+                let left = Math.max(Math.min(...parts.map((r) => r.left)), rr.left)
+                let top = Math.max(Math.min(...parts.map((r) => r.top)), rr.top)
+                let right = Math.min(Math.max(...parts.map((r) => r.right)), rr.right)
+                let bottom = Math.min(Math.max(...parts.map((r) => r.bottom)), rr.bottom)
+                if (right <= left || bottom <= top) {
+                    return null
+                }
+                return { x: left, y: top, width: right - left, height: bottom - top }
+            }, idxs)
+        },
+    }
+}
+
+async function cellTextOf(page, rowIdx, colId) {
+    return await page.evaluate(({ i, c }) => {
+        let e = document.querySelector(`.ag-row[row-index="${i}"] .ag-cell[col-id="${c}"]`)
+        return e ? (e.innerText || '').trim() : null
+    }, { i: rowIdx, c: colId })
+}
+
+async function captureViewRetiredKeys(page, lang) {
+    let t = kpUiText[lang]
+    await loginAsAdminAndOpenTokensList(page, lang)
+    await waitUntilExist(page, 'retired seed test-token-8', () => document.body.innerText.includes('test-token-8'))
+    let idx = {}
+    for (let r of RETIRED_SEEDS) {
+        let i = await findRowIdxByTokenValue(page, r.token)
+        if (i === null) throw new Error(`seed token row not found: ${r.token}`)
+        idx[r.token] = i
+    }
+    if (Math.abs(parseInt(idx['test-token-8'], 10) - parseInt(idx['test-token-9'], 10)) !== 1) {
+        throw new Error(`已失效之兩列須相鄰才能一圖一框, 實際 row-index: ${JSON.stringify(idx)}`)
+    }
+
+    //語意(用途欄): 兩列皆為「已失效（升級前）」
+    for (let r of RETIRED_SEEDS) {
+        let txt = await cellTextOf(page, idx[r.token], 'appUsage')
+        assert.strictEqual(txt, t.usageRetired, `${r.token} 之用途欄應為「${t.usageRetired}」, 實際「${txt}」`)
+        //文字須完整顯示、不被欄寬截斷(innerText 於截斷時仍為完整字串, 故另量幾何: 儲存格內容寬度不得超過儲存格寬度; 標準圖缺席〔待授權〕時亦能攔下, 外審 sol F9)
+        let geo = await page.evaluate(({ i }) => {
+            let c = document.querySelector(`.ag-row[row-index="${i}"] .ag-cell[col-id="appUsage"]`)
+            return c ? { sw: c.scrollWidth, cw: c.clientWidth } : null
+        }, { i: idx[r.token] })
+        assert.ok(geo !== null && geo.sw <= geo.cw + 1, `${r.token} 之用途欄文字被截斷(內容寬 ${geo && geo.sw} > 儲存格寬 ${geo && geo.cw})`)
+        //已失效之列之「使用者主鍵」欄不顯示(擁有者欄僅作稽核, 非身分; 同系統服務用途)
+        let uid = await cellTextOf(page, idx[r.token], 'userId')
+        assert.strictEqual(uid, '', `${r.token} 之使用者主鍵欄應空白, 實際「${uid}」`)
+    }
+
+    //1 框住兩列於用途欄之儲存格 (純檢視, 無點擊步驟)
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(500)
+    let buf1 = await captureStableWithBox(page, RETIRED_SEEDS.map((r) => `.ag-row[row-index="${idx[r.token]}"] .ag-cell[col-id="appUsage"]`))
+
+    //橫向捲動使權限欄貼齊左緣 (其後之建立、到期時間欄一併入鏡; 使用者亦須如此操作)
+    await ensureColumnVisible(page, 'perms', 'start')
+
+    //語意(權限欄 / 到期欄): 權限「不適用」; 到期欄顯示原到期時間(逾期者)或空白(無到期時間), 兩者皆不得出現「不設期限」; 其餘應用系統金鑰列仍為「不設期限」
+    let expect8 = ot('2020-01-01T00:00:00.000+08:00').format('YYYY-MM-DD HH:mm:ss')
+    for (let r of RETIRED_SEEDS) {
+        let p = await cellTextOf(page, idx[r.token], 'perms')
+        assert.strictEqual(p, t.permsRetired, `${r.token} 之權限欄應為「${t.permsRetired}」, 實際「${p}」`)
+        let e = await cellTextOf(page, idx[r.token], 'timeEnd')
+        assert.strictEqual(e, r.token === 'test-token-8' ? expect8 : '', `${r.token} 之到期欄不符, 實際「${e}」`)
+        assert.ok(!String(e).includes(t.noExpire), `${r.token} 之到期欄不得顯示「${t.noExpire}」`)
+    }
+    for (let tk of ['test-token-5', 'test-token-6', 'test-token-7']) {
+        let i = await findRowIdxByTokenValue(page, tk)
+        if (i === null) throw new Error(`seed token row not found: ${tk}`)
+        let e = await cellTextOf(page, i, 'timeEnd')
+        assert.strictEqual(e, t.noExpire, `${tk} 之到期欄應仍為「${t.noExpire}」, 實際「${e}」`)
+    }
+
+    //2 橫向捲動後框住兩列整列之可見部分
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(500)
+    let buf2 = await captureStableWithBox(page, visibleRowsBox([idx['test-token-8'], idx['test-token-9']]))
+
+    return {
+        'E2E-011-1-retired-usage': buf1,
+        'E2E-011-2-retired-expiry': buf2,
+    }
+}
+
+//待授權之新標準圖 (rule 19): 缺檔時只記 [pending-baseline] 不比對 (語意斷言與端到端不變式照常執行); 授權產製後該檔存在即照常 pixel 比對
+async function matchPendingBaseline(buf, baselinePath, label) {
+    if (!fs.existsSync(baselinePath)) {
+        console.log(`[pending-baseline] ${label}: 標準圖待主控授權產製(sso-run02 E2E-011), 暫不比對`)
+        return
+    }
+    return await assertBaselineMatch(buf, baselinePath, label)
+}
+
+
 // ===================================================================
 // 案例宣告與案例管線 (產製端與比對端共用)
 // ===================================================================
@@ -1184,10 +1341,18 @@ let cases = [
         run: captureDeleteUserKey,
         stages: ['E2E-010-1-row-selected-before-save', 'E2E-010-2-delete-key-save-success', 'E2E-010-3-key-removed'],
     },
+    //E2E-011 (ADR-095 補記, sso-run02): extraSeed 為本案另植之已失效舊列; pendingBaseline 為標準圖待主控授權產製(授權前缺圖只記 [pending-baseline])
+    {
+        name: 'E2E-011-view-retired-keys',
+        run: captureViewRetiredKeys,
+        stages: ['E2E-011-1-retired-usage', 'E2E-011-2-retired-expiry'],
+        extraSeed: insertRetiredSeed,
+        pendingBaseline: true,
+    },
 ]
 
 //語意斷言已在截圖函式內 (成功 modal 仍顯示時) 完成之案例: 截圖後 modal 已關閉, 不再對已消失之文字做斷言, 最終態由 DB 不變式驗
-let semanticInCapture = ['E2E-005-grant-perms-save-success', 'E2E-006-revoke-perms-save-success', 'E2E-008-add-system-key-success', 'E2E-009-add-user-key-success', 'E2E-010-delete-user-key-save-success']
+let semanticInCapture = ['E2E-005-grant-perms-save-success', 'E2E-006-revoke-perms-save-success', 'E2E-008-add-system-key-success', 'E2E-009-add-user-key-success', 'E2E-010-delete-user-key-save-success', 'E2E-011-view-retired-keys']
 
 //應用系統權限案例 (ADR-069) 之前後檢查: pre 於操作前確認 app token 之起始能力, post 於寫檔 / 比對標準圖之前驗 DB 與端到端不變式
 //(app token 實際呼叫後台功能之成敗), 使標準圖缺漏或不符時仍先驗得流程本身. callFapi 部分只在比對端 (見檔頭說明).
@@ -1277,6 +1442,28 @@ let permsChecks = {
             assert.strictEqual(r2.ok, true, '所綁使用者之登入 token 仍可用')
         },
     },
+    //檢視已失效之舊列 (ADR-095 補記): 兩列仍在(不刪列)、仍為已失效; 端到端不變式: 兩把金鑰皆不可用(tokenExpired), 純檢視不改資料
+    'E2E-011-view-retired-keys': {
+        pre: async () => {
+            for (let r of RETIRED_SEEDS) {
+                let c = await callFapi('checkToken', [r.token])
+                assert.strictEqual(c.ok, false, `${r.token} 為已失效之舊列, 檢視前即不可用, 實際: ${JSON.stringify(c).slice(0, 200)}`)
+            }
+        },
+        post: async (ctx) => {
+            for (let r of RETIRED_SEEDS) {
+                let rs = await woItems.tokens.select({ id: r.id })
+                assert.strictEqual(rs.length, 1, `${r.id} 應仍在(純檢視不刪列)`)
+                assert.deepStrictEqual([rs[0].isApp, rs[0].appUsage, rs[0].timeEnd], ['y', 'retired', r.timeEnd], `${r.id} 不得被改動: ${JSON.stringify(rs[0])}`)
+            }
+            if (ctx.mode !== 'compare') return
+            for (let r of RETIRED_SEEDS) {
+                let c = await callFapi('checkToken', [r.token])
+                assert.strictEqual(c.ok, false, `${r.token} 檢視後仍不可用`)
+                assert.strictEqual(c.err, 'tokenExpired', `${r.token} 對外固定鍵應為 tokenExpired, 實際: ${c.err}`)
+            }
+        },
+    },
 }
 
 //DB 副作用斷言 (寫檔 / 比對之前)
@@ -1313,7 +1500,7 @@ async function runCase(mode, lang, c, extra = {}) {
         launch: launchBrowser,
         pathOf: bp,
         labelOf: (lg, key) => `tokens-${lg}-${key}`,
-        match: assertBaselineMatch,
+        match: c.pendingBaseline ? matchPendingBaseline : assertBaselineMatch,
         prepare: async () => {
             await deleteTestUsersAndTokens()
             await insertTestUsersAndTokensAndTestTokens()
@@ -1321,6 +1508,9 @@ async function runCase(mode, lang, c, extra = {}) {
         beforeRun: async (ctx) => {
             await resetAdminToken()
             await resetTestTokensSeed()
+            if (c.extraSeed) {
+                await c.extraSeed()
+            }
             let pc = permsChecks[c.name]
             if (ctx.mode === 'compare' && pc && pc.pre) {
                 await pc.pre()

@@ -1030,6 +1030,18 @@ let kpLang = {
         eng: 'System service',
         cht: '系統服務用途',
     },
+    tokenAppUsageRetired: { //升級前即不可用(已逾期、無到期時間、到期時間格式錯)之舊應用系統金鑰列, 升級遷移標為已失效 (ADR-095 補記); 用途欄顯示
+        eng: 'Invalid (legacy)', //用途欄寬 150px, 英文須短於約 19 字元以免截斷
+        cht: '已失效（升級前）',
+    },
+    tokenPermsRetired: { //已失效之舊列, 列表中取代權限框
+        eng: 'Not applicable',
+        cht: '不適用',
+    },
+    tokenAppLegacyMigrateFailed: { //升級遷移失敗(僅供啟動 log, 不回前端)
+        eng: 'Upgrade migration of legacy app tokens failed.',
+        cht: '應用系統金鑰升級遷移失敗。',
+    },
     tokenAppUsageUserDesc: {
         eng: 'Acts as one bound user with that user\'s permissions. It stops working when the user is disabled, blocked or expired.',
         cht: '代表所綁使用者本人，權限同該使用者；使用者停用、封鎖或帳號到期時即不可用。',

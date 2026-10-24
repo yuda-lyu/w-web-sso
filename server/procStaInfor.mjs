@@ -9,7 +9,7 @@ import mapKeys from 'lodash-es/mapKeys.js'
 import cache from 'wsemi/src/cache.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
 import * as s from '../src/plugins/mShare.mjs'
-import { getAppUsage, getAppId } from '../src/appUsage.mjs'
+import { getAppUsage, getAppId, keyAppUsageRetired } from '../src/appUsage.mjs'
 import staUserAccountLogin from './staLogs/staUserAccountLogin.callWorker.mjs'
 import staToken from './staLogs/staToken.callWorker.mjs'
 import staIp from './staLogs/staIp.callWorker.mjs'
@@ -126,7 +126,8 @@ function proc(woItems, p, opt = {}) {
         if (true) {
             let tsEnded = filter(ts, (t) => {
                 if (t.isApp === 'y') {
-                    return false //應用系統金鑰不給期限(ADR-095), 不計入已到期(既有列之 timeEnd 已不生效)
+                    //應用系統金鑰不給期限(ADR-095), 不計入已到期(既有列之 timeEnd 已不生效); 惟升級前即不可用之舊列(retired)已失效, 計入已到期而不計入有效 (ADR-095 補記)
+                    return getAppUsage(t) === keyAppUsageRetired
                 }
                 return s.getIsEnded(t)
             })

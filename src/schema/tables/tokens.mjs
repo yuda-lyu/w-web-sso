@@ -36,7 +36,7 @@ let settings = {
         name: '應用系統權限',
         type: 'TEXT',
     },
-    appUsage: { //應用系統金鑰之用途: 'user'(使用者用途, userId為所綁使用者) | 'system'(系統服務用途, userId只記建立者); 缺欄或''(既有列)視同'system'; 非應用系統金鑰為'' (ADR-095, src/appUsage.mjs)
+    appUsage: { //應用系統金鑰之用途: 'user'(使用者用途, userId為所綁使用者) | 'system'(系統服務用途, userId只記建立者) | 'retired'(升級前即不可用之舊列, 永不可用, 只由升級遷移寫入); 缺欄或''(升級前之既有列)於升級後第一次啟動由 procCore.migrateLegacyAppTokens 定案為'system'或'retired', 尚未定案者後端讀取時依升級前規則即時判定(未逾期視同'system'、否則已失效); 非應用系統金鑰為'' (ADR-095, src/appUsage.mjs)
         name: '應用系統金鑰用途',
         type: 'STRING',
     },

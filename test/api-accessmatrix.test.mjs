@@ -15,7 +15,7 @@ import { woItems } from '../g_mOrm.mjs'
 import ds from '../src/schema/index.mjs'
 import { startServersOnce, apiUrl, callFapi } from './tools/api-setup.mjs'
 import { resetToBaseSeed, deleteNonBaseSeed, restartBackend, genTempSettings } from './tools/e2e-setup.mjs'
-import { NEW_PW, callers, insertFixtures, httpApi, getRowsForSave } from './tools/apiAccess.mjs'
+import { NEW_PW, PERMS_ALL, callers, insertFixtures, httpApi, getRowsForSave } from './tools/apiAccess.mjs'
 
 
 let tally = { cells: 0, entries: 0, publicCells: 0 }
@@ -317,9 +317,12 @@ describe('後端存取矩陣 — 失效 token 子類: 未知字串 / 已逾期�
     this.timeout(600000)
 
     let PAST = '2020-01-01T00:00:00.000+08:00'
+    //retired: 升級前即不可用之舊應用系統金鑰列(appUsage='retired', ADR-095 補記 sso-run02; 權限全開仍一律不可用): 管理 / 查詢類入口拒絕(固定鍵 tokenExpired),
+    //refreshToken 維持 tokenAppNoRefresh(應用系統金鑰一律不可續期), 登出類同已逾期登入 token 為持有者清理自己之權杖(放行, 只刪本列); kind 設 none 使各入口之 after 沿用「無呼叫者」之判斷
     let dead = [
         { key: 'unknown', kind: 'none', token: 'no-such-token-0xdead', admin: false },
         { key: 'expired', kind: 'user', token: 'token-expired-admin', admin: true, userId: 'id-for-admin', account: 'ac-admin', pw: 'pw-admin' },
+        { key: 'retired', kind: 'none', token: 'mx-retired-key', admin: false },
     ]
 
     before(async function() {
@@ -350,8 +353,14 @@ describe('後端存取矩陣 — 失效 token 子類: 未知字串 / 已逾期�
                 let tk = ds.tokens.funNew({ userId: 'id-for-admin' })
                 tk.token = 'token-expired-admin'
                 tk.timeEnd = PAST
-                await woItems.tokens.insert([tk])
-                let ok = c.key === 'expired' && /logout/i.test(e.key)
+                let rk = ds.tokens.funNew({ userId: 'id-creator', isApp: 'y', perms: PERMS_ALL })
+                rk.id = 'id-mx-retired-key'
+                rk.token = 'mx-retired-key'
+                rk.appUsage = 'retired'
+                rk.appName = ''
+                rk.timeEnd = PAST
+                await woItems.tokens.insert([tk, rk])
+                let ok = (c.key === 'expired' || c.key === 'retired') && /logout/i.test(e.key)
                 let r = await e.run(c, ctx)
                 if (r.ok !== ok) {
                     miss.push(`[${c.key}] 預期${ok ? '通過' : '拒絕'}, 實際${r.ok ? '通過' : `拒絕(${r.err})`}`)
@@ -363,6 +372,9 @@ describe('後端存取矩陣 — 失效 token 子類: 未知字串 / 已逾期�
                         //(refreshToken / logoutByToken / logoutSsoUser)對「查無此權杖」回內部字串 'invalid token'(不經 checkToken 之收斂); 其餘入口與逾期登入 token 皆為 tokenExpired.
                         //此差異使呼叫者能區分「權杖不存在」與「已逾期」(列舉預言機, 權杖為 UUIDv7 128 bit 故實務利用空間小); 維持既有契約未改, 列 sso-run01 報告待裁示
                         let want = (c.key === 'unknown' && /refreshToken|logout/i.test(e.key)) ? 'invalid token' : 'tokenExpired'
+                        if (c.key === 'retired' && /refreshToken/i.test(e.key)) {
+                            want = 'tokenAppNoRefresh' //應用系統金鑰一律不可續期(不因已失效而改鍵)
+                        }
                         assert.strictEqual(r.err, want, '拒絕之對外鍵')
                     }
                     if (e.after) {

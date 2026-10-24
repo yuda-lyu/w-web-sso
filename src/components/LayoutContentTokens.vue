@@ -198,10 +198,17 @@
                             <span v-if="$ui.gv(props.row, 'isApp') === 'y'">{{ props.value }}</span>
                         </template>
                         <template v-else-if="props.key === 'perms'">
+                            <!-- 已失效之舊列(升級前即不可用, 升級遷移標為 retired)永不可用, 權限不適用, 僅供檢視與刪除 (ADR-095 補記) -->
+                            <div
+                                style="display:flex; align-items:center; height:100%; font-size:0.8rem; color:#888;"
+                                v-if="$ui.gv(props.row, 'isApp') === 'y' && $ui.gv(props.row, 'appUsage') === 'retired'"
+                            >
+                                {{$t('tokenPermsRetired')}}
+                            </div>
                             <!-- 使用者用途之權限即所綁使用者之權限, perms 不適用 (ADR-095) -->
                             <div
                                 style="display:flex; align-items:center; height:100%; font-size:0.8rem; color:#888;"
-                                v-if="$ui.gv(props.row, 'isApp') === 'y' && $ui.gv(props.row, 'appUsage') === 'user'"
+                                v-else-if="$ui.gv(props.row, 'isApp') === 'y' && $ui.gv(props.row, 'appUsage') === 'user'"
                             >
                                 {{$t('tokenPermsBoundUser')}}
                             </div>
@@ -304,8 +311,10 @@
                             </div>
                         </template>
                         <template v-else-if="props.key === 'timeEnd'">
+                            <!-- 已失效之舊列(retired): 顯示其原到期時間(純文字, 不可編輯; 無合法到期時間則留白), 說明為何已失效, 不顯示「不設期限」 (ADR-095 補記) -->
+                            <span v-if="$ui.gv(props.row, 'isApp') === 'y' && $ui.gv(props.row, 'appUsage') === 'retired'" style="font-size:0.8rem; color:#888;">{{ getRetiredTimeEndText(props.value) }}</span>
                             <!-- 應用系統金鑰不給期限 (ADR-095): 不顯示時間選擇器, 不可編輯期限 -->
-                            <span v-if="$ui.gv(props.row, 'isApp') === 'y'" style="font-size:0.8rem; color:#888;">{{$t('tokenNoExpire')}}</span>
+                            <span v-else-if="$ui.gv(props.row, 'isApp') === 'y'" style="font-size:0.8rem; color:#888;">{{$t('tokenNoExpire')}}</span>
                             <div v-else @click.stop.prevent @mousedown.stop.prevent style="display:flex; align-items:center;">
                                 <WTimeminute
                                     :style="`line-height:1.1rem;`"
@@ -422,7 +431,6 @@ import AppPermsTags from './AppPermsTags.vue'
 import AppTokenAddDialog from './AppTokenAddDialog.vue'
 import contracts from '../writeContracts/index.mjs'
 import { baselineOfTokens, isSameSnapshot } from '../baselineOf.mjs'
-
 
 export default {
     components: {
@@ -939,7 +947,18 @@ export default {
             if (v === 'system' || !isestr(v)) {
                 return vo.$t('tokenAppUsageSystem')
             }
+            if (v === 'retired') {
+                return vo.$t('tokenAppUsageRetired') //升級前即不可用之舊列(ADR-095 補記)
+            }
             return v
+        },
+
+        getRetiredTimeEndText: function(v) {
+            //已失效之舊列顯示其原到期時間; 無合法到期時間(缺欄、格式錯)留白
+            if (istimemsTZ(v)) {
+                return ot(v).format('YYYY-MM-DD HH:mm:ss')
+            }
+            return ''
         },
 
         getPermsTexts: function(row) {

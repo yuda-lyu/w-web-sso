@@ -541,6 +541,17 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     }
 
     let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl, withTabLocks, guardWrite })
+
+    //升級遷移 (ADR-095 補記): 啟動時對升級前建立之應用系統金鑰列一次性定案——升級前可用者視為系統服務用途(不設期限), 升級前即不可用者(已逾期、無 timeEnd、timeEnd 格式錯)標為已失效(retired), 不因「不設期限」而復活, 列不刪.
+    //冪等(已定案者不再處理); 不阻擋啟動——尚未定案之舊列(遷移進行中或失敗)讀取時依升級前規則判定, 永不比升級前更寬(已逾期者仍失效), 失敗者重啟後重試
+    p.migrateLegacyAppTokens()
+        .then((r) => {
+            logBoot('info', `應用系統金鑰升級遷移完成: 本次定案 ${r.marked} 筆(視為系統服務用途 ${r.system}、已失效 ${r.retired})`)
+        })
+        .catch((err) => {
+            logBoot('error', `應用系統金鑰升級遷移失敗(${err}): 尚未定案之舊列在重啟成功前依升級前規則判定(已逾期者仍失效, 未逾期者尚未改為不設期限)`)
+        })
+
     let pp = procProtect(woItems, p, {
         procOrm, //系統直寫(自動封鎖、計時器登錄 IP)經 procOrm 且在表鎖內, 更新者記 'system'
         withTabLocks,

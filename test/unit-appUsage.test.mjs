@@ -77,8 +77,10 @@ describe('procCore 之身分解析與用途語意 (ADR-095)', function() {
         env.tokens.kp.set('t-au', { ...env.tokens.get('t-au'), userId: 'u-none' })
         assert.strictEqual((await env.p.getUserByToken('tk-t-as')).id, 'app:t-as')
         assert.strictEqual(await errOf(env.p.getUserByToken('tk-t-au')) !== null, true)
-        //既有列(無用途欄、無名稱): 系統服務用途, 名稱 no name
+        //既有列(無用途欄、無名稱; 升級前可用者, 即 timeEnd 為合法且未逾期): 視同系統服務用途, 名稱 no name
+        //(尚未定案之舊列依升級前規則即時判定, 逾期 / 無 timeEnd 者已失效, 見 unit-appUpgrade.test.mjs)
         let lg = addApp(env, 't-lg', undefined, 'u-a')
+        lg.timeEnd = '2099-01-01T00:00:00.000+08:00'
         delete lg.appName
         assert.deepStrictEqual([(await env.p.getUserByToken('tk-t-lg')).id, (await env.p.getUserByToken('tk-t-lg')).name], ['app:t-lg', 'no name'])
     })

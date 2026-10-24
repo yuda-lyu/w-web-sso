@@ -47,7 +47,7 @@ import createLockSave from './lockSave.mjs'
 import ormWrite from './ormWrite.mjs'
 import { maskToken, maskKv, keysUserQuery, capText } from './srLog.mjs'
 import { hasAppPerm, isAppPermsValue, normAppPerms } from '../src/appPerms.mjs'
-import { getAppUsage, getAppId, isAppUsageValue, isAppIdLike } from '../src/appUsage.mjs'
+import { getAppUsage, getAppId, isAppUsageValue, isAppIdLike, isLegacyAppToken, classifyLegacyAppToken, keyAppUsageRetired } from '../src/appUsage.mjs'
 import contracts from '../src/writeContracts/index.mjs'
 
 
@@ -186,6 +186,10 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //lockSave: 清單儲存類(updateUsersList / updateTokensList / updateIpsList)之雙擊防護(後端, 見 lockSave.mjs, ADR-074):
     //同一操作者之同一儲存處理中再送出即 reject 'saveInProgress'
     let lockSave = createLockSave(cst)
+
+    //legacyPm: 進行中之升級遷移(migrateLegacyAppTokens)之 promise, 同時多次呼叫共用同一個; 無進行中為 null.
+    //讀取端(loadActor)不依賴遷移狀態: 尚未定案之舊列一律依升級前規則判定, 不在鎖內等待遷移(遷移持 tokens 表鎖, 等待它可與已持鎖之站點互鎖)
+    let legacyPm = null
 
     //throttle 紀錄: key → timestamp(ms), 用於 resendVerifyEmail / adminResetUserPassword
     //之 30s 內第二次重複觸發判定. 與 mutex 配合: mutex 確保同 key 序列化,
@@ -569,6 +573,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //- 使用者 token(isApp 非 'y'): { kind: 'user', id: 使用者主鍵, user: 最新使用者列(已去 password) }
     //- 應用系統金鑰・使用者用途: { kind: 'appUser', id: 所綁使用者主鍵, user: 所綁使用者最新列 }, 代表所綁使用者本人(tokens.userId 即所綁使用者)
     //- 應用系統金鑰・系統服務用途: { kind: 'appSystem', id: 'app:<tokens.id>', user: 虛擬使用者 }, 代表外部應用系統本身; tokens.userId 只記建立者, 此處完全不使用
+    //- 應用系統金鑰・已失效之舊列(appUsage='retired', 升級前即不可用): { kind: 'appRetired', id: 'app:<tokens.id>', user: null }, 永不可用(isActorLive 恆 false)
     //使用者不存在或已停用(isActive 非 'y')、用途值未登錄 → reject(權杖不可用); 不判逾期 / 封鎖 / 帳號到期 / 驗證, 由 isActorLive 判
     let loadActor = async (tk) => {
         let isApp = get(tk, 'isApp', '') === 'y'
@@ -581,6 +586,15 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
         //應用系統金鑰
         let usage = getAppUsage(tk)
+
+        //尚未定案之舊列(缺欄或 ''; 升級遷移尚未處理, 或啟動後才由外部直寫庫): 依升級前規則判定(classifyLegacyAppToken: 合法且未逾期之 timeEnd → 視同系統服務用途, 否則已失效),
+        //永遠不比升級前更寬——遷移進行中、遷移失敗或單元測試直接組 procCore 時, 已逾期者皆不因「不設期限」而復活, 升級前可用者照常可用(遷移成功後才定案為不設期限)
+        if (isLegacyAppToken(tk)) {
+            usage = classifyLegacyAppToken(tk, ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ'))
+        }
+        if (usage === keyAppUsageRetired) {
+            return { kind: 'appRetired', id: getAppId(tk), user: null }
+        }
         if (usage === 'user') {
             let u = await getGenUserByUserId(get(tk, 'userId', ''))
             return { kind: 'appUser', id: get(u, 'id', ''), user: u }
@@ -638,7 +652,11 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //- 使用者 token: 權杖未逾期, 且使用者目前可用(與登入同一判準 isUserUsable: 已驗證、帳號未到期、未被封鎖、未停用)
     //- 使用者用途: 不給期限(不看 timeEnd); 所綁使用者目前可用(同上), 隨其狀態即時失效、恢復
     //- 系統服務用途: 不給期限, 不隨建立者之狀態失效(由專案方於後台撤銷)
+    //- 已失效之舊列(升級前即不可用): 恆不可用
     let isActorLive = async (tk, actor) => {
+        if (actor.kind === 'appRetired') {
+            return false
+        }
         if (actor.kind === 'appSystem') {
             return true
         }
@@ -795,7 +813,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
         //userId, 呼叫統計(staToken)以此為「誰在呼叫」: 系統服務用途金鑰之 userId 欄為建立者(稽核用, 非身分; ADR-095),
         //統計改記其應用系統身分 app:<金鑰主鍵>, 否則其用量被合併到建立者名下 (外審 sol#11)
-        let userId = (get(tk, 'isApp', '') === 'y' && getAppUsage(tk) === 'system') ? getAppId(tk) : get(tk, 'userId', '')
+        let usageLog = getAppUsage(tk)
+        let userId = (get(tk, 'isApp', '') === 'y' && (usageLog === 'system' || usageLog === keyAppUsageRetired)) ? getAppId(tk) : get(tk, 'userId', '')
 
         //_checkTokenByObj
         let b = await _checkTokenByObj(tk, opt)
@@ -2692,7 +2711,15 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
         //list 包含過期 token 供 admin 判斷.
 
-        return ts
+        //尚未定案之舊應用系統金鑰列(缺欄或 ''; 遷移進行中 / 失敗 / 啟動後才直寫庫): 回傳即時判定之用途('system' 或 'retired', 與授權判定 loadActor 同一判準與同一伺服器時間),
+        //使後台顯示與統計(getTokensListCache)皆與授權一致, 不由前端以瀏覽器時間重新推算 (外審 sol F2 / F3 / F4); appUsage 為伺服器專有欄位, 不入寫入基準, 清單存檔不採用客戶端值, 故不影響存檔
+        let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+        return ts.map((t) => {
+            if (isLegacyAppToken(t)) {
+                return { ...t, appUsage: classifyLegacyAppToken(t, tn) }
+            }
+            return t
+        })
     }
 
 
@@ -2758,6 +2785,76 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
             return rows
         })
+    }
+
+
+    //migrateLegacyAppTokens (ADR-095 補記; 升級不得使已失效之應用系統金鑰復活, 原則 二.8 改版預設相容)
+    //升級前建立之應用系統金鑰列(isApp='y' 且 appUsage 缺欄 / null / ''; 兩種用途出現前之列)逐列一次性定案, 由伺服器於啟動時呼叫(WWebSso):
+    //- 升級前可用(timeEnd 為合法時間且現在 < timeEnd; 判準同升級前之 _checkTokenByObj, 見 classifyLegacyAppToken) → appUsage='system'(視為系統服務用途, 不設期限)
+    //- 升級前不可用(已逾期、無 timeEnd、timeEnd 格式錯) → appUsage='retired'(維持失效); 列保留不刪, 後台仍可檢視與刪除
+    //為何須在啟動時定案、不於讀取時推導: 「升級前已逾期」是升級當下的時間點事實, 事後無法由欄位推回(升級時未逾期者日後也會成為過去值), 且金鑰改為不設期限後 timeEnd 不再生效;
+    //定案後 appUsage 即為持久標記: 重啟只處理仍缺欄者(冪等, 第二次起零寫入), 已定案之列的 timeEnd 與其他欄位一律不動(含 isApp / perms / userId / token, 不刪列)
+    //寫入: [tokens] 表鎖內重讀庫內列(與 createAppToken / 清單存檔 / 續期 / 登出互斥), 經 procOrm 以 'system' 為更新者、只改不增(mustExist)、單批只寫 appUsage;
+    //  appUsage 屬 serverOnly 欄(src/writeContracts/tokens.mjs), 不入清單存檔之基準, 開啟中之清單不因遷移而過期; 寫入後清除權杖清單快取 (ADR-008)
+    //未定案之舊列(遷移進行中、失敗或尚未執行)讀取時依升級前規則判定(loadActor), 永不比升級前更寬: 失敗時已逾期者仍失效、未逾期者仍依其 timeEnd(尚未改為不設期限), 重啟後重試
+    //失敗(讀取 / 寫入 reject)記錄並 reject 固定鍵 tokenAppLegacyMigrateFailed; 已寫入之列保持定案
+    //回傳 { marked, system, retired }: 本次寫入之列數與分項
+    let migrateLegacyAppTokens = () => {
+
+        //進行中: 回同一個 promise(同時多次呼叫只做一次)
+        if (legacyPm !== null) {
+            return legacyPm
+        }
+
+        legacyPm = withTabLocks(['tokens'], async () => {
+
+            //庫內全表重讀(鎖內)
+            let ts = await woItems.tokens.select()
+
+            //逐列定案
+            let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+            let patch = []
+            let nSystem = 0
+            let nRetired = 0
+            each(ts, (tk) => {
+                let usage = classifyLegacyAppToken(tk, tn)
+                if (usage === '') {
+                    return
+                }
+                patch.push({ id: tk.id, appUsage: usage })
+                if (usage === keyAppUsageRetired) {
+                    nRetired++
+                }
+                else {
+                    nSystem++
+                }
+            })
+
+            //寫入, 只改不增(mustExist: 讀取之後、寫入之前列已被不共用本鎖之寫入者刪除時整批 reject 'rowNotFound', 不把已刪之列以只有 id 與用途之殘缺列新增回庫);
+            //權杖清單快取(統計所讀)不論寫入成敗皆於寫入階段後清除: 逐筆寫入可能部分已落地才 reject (ADR-080 同型; 外審 sol F5)
+            if (size(patch) > 0) {
+                try {
+                    await procOrm('system', 'tokens', 'save', patch, { mustExist: true })
+                }
+                finally {
+                    ocGetTokensList.clear('fun')
+                }
+            }
+
+            return { marked: size(patch), system: nSystem, retired: nRetired }
+        })
+            .then((r) => {
+                legacyPm = null
+                srLog.info({ event: 'fun-migrateLegacyAppTokens', marked: r.marked, system: r.system, retired: r.retired })
+                return r
+            })
+            .catch((err) => {
+                legacyPm = null
+                srLog.error({ event: 'fun-migrateLegacyAppTokens', key: 'tokenAppLegacyMigrateFailed', err: getErrorMessage(err) })
+                return Promise.reject('tokenAppLegacyMigrateFailed')
+            })
+
+        return legacyPm
     }
 
 
@@ -3051,6 +3148,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         checkTokenAndUpdateTokensList,
         createAppToken,
         checkTokenAndCreateAppToken,
+        migrateLegacyAppTokens, //升級遷移: 伺服器啟動時呼叫一次 (WWebSso)
 
         getIpsList,
         getIpsListCache,
