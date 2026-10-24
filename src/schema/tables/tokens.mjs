@@ -32,9 +32,17 @@ let settings = {
         name: '是否為應用系統',
         type: 'STRING',
     },
-    perms: { //權限字串陣列, 多元素即聯集; 僅isApp='y'時生效, 基本權限readUsers恆具備, 權限全集見src/appPerms.mjs (ADR-069)
+    perms: { //權限字串陣列, 多元素即聯集; 僅isApp='y'且為系統服務用途時生效, 基本權限readUsers恆具備, 權限全集見src/appPerms.mjs (ADR-069)
         name: '應用系統權限',
         type: 'TEXT',
+    },
+    appUsage: { //應用系統金鑰之用途: 'user'(使用者用途, userId為所綁使用者) | 'system'(系統服務用途, userId只記建立者); 缺欄或''(既有列)視同'system'; 非應用系統金鑰為'' (ADR-095, src/appUsage.mjs)
+        name: '應用系統金鑰用途',
+        type: 'STRING',
+    },
+    appName: { //應用系統金鑰之名稱, 系統服務用途之反查身分以此為名稱; 非應用系統金鑰為'' (ADR-095)
+        name: '應用系統金鑰名稱',
+        type: 'STRING',
     },
     timeCreate: {
         name: '創建時間',

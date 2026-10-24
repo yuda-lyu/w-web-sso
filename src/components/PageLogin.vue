@@ -251,7 +251,7 @@
                             </div>
                         </div>
 
-                        <div style="padding:5px 0px; text-align:center;" v-if="viewMode==='login' && showResendVerify">
+                        <div style="padding:5px 0px; text-align:center;" v-if="viewMode==='login' && allowUserRegistration && showResendVerify">
                             <div style="padding-top:10px;">
                                 <span style="font-size:0.85rem; color:rgba(80,60,40,0.7); cursor:pointer; text-decoration:underline;" @click="viewMode='resend'">{{$t('userRegistrationResendVerify')}}</span>
                             </div>
@@ -820,8 +820,8 @@ export default {
                     //(2) mUI 前端層 reject 之字串 (invalid redir / invalid user / invalid token / invalid $keyLS)
                     //    — 非字典 key, $t 查無會回原字串
                     if (err === 'userRegistrationNotVerified') {
-                        //未驗證帳號: 以 key 判斷 → 顯示「重寄驗證信」連結
-                        vo.showResendVerify = true
+                        //未驗證帳號: 以 key 判斷 → 顯示「重寄驗證信」連結; 重寄驗證信為自助註冊之附屬入口, 隨註冊開關(關閉時後端亦拒絕, 前端不顯示連結; S-6)
+                        vo.showResendVerify = vo.allowUserRegistration
                         vo.loginError = vo.$tErr(err)
                     }
                     else if (err === 'invalid redir') {

@@ -219,16 +219,26 @@ describe('改密碼後之 session 處置 (api, 真後端 / 真傳輸; R-SESS-01)
         assert.strictEqual((await woItems.users.select({ id: t.id }))[0].isForceChangePw, 'n', '改密碼解除強制變更(不變)')
     })
 
-    it('PSA-006 [app 權杖(擁有者為該使用者)呼叫 changeUserPassword] 無「目前 session」可保留 → 該使用者全部 session 失效, app 權杖本身不撤銷', async function() {
+    it('PSA-006 [使用者用途金鑰(綁該使用者)呼叫 changeUserPassword; ADR-095] 無「目前 session」可保留 → 該使用者全部 session 失效, 金鑰本身不撤銷; 系統服務用途金鑰(擁有者欄為該使用者)一律 tokenUserOnly, 不改密碼不撤銷', async function() {
         let t = await mkTarget('t6')
         let s1 = await login(t.account)
         let s2 = await login(t.account)
-        let r = await callFapi('changeUserPassword', [t.appToken, 'eng', PW, PW_NEW])
+        //系統服務用途(mkTarget 之擁有者金鑰無用途欄, 視同系統服務用途): 不綁使用者, 無本人可改
+        let rs = await callFapi('changeUserPassword', [t.appToken, 'eng', PW, PW_NEW])
+        assert.strictEqual(rs.ok, false, JSON.stringify(rs))
+        assert.strictEqual(rs.err, 'tokenUserOnly')
+        assert.strictEqual(await alive(s1), true, '被拒不撤銷任何權杖')
+        //使用者用途: 綁 t.id, 須舊密碼
+        let au = mkAppTokenFx(`au-${t.id}`, t.id, [])
+        au.appUsage = 'user'
+        await woItems.tokens.insert([au])
+        let r = await callFapi('changeUserPassword', [au.token, 'eng', PW, PW_NEW])
         assert.strictEqual(r.ok, true, JSON.stringify(r))
         assert.strictEqual(await alive(s1), false)
         assert.strictEqual(await alive(s2), false)
+        assert.strictEqual(await alive(au.token), true, '使用者用途金鑰本身不撤銷')
         assert.strictEqual(await alive(t.appToken), true)
-        assert.deepStrictEqual((await dbTokens(t.id)).map((x) => x.token), [t.appToken])
+        assert.deepStrictEqual((await dbTokens(t.id)).map((x) => x.token).sort(), [au.token, t.appToken].sort())
     })
 
 })

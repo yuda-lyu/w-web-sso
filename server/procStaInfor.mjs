@@ -7,7 +7,9 @@ import filter from 'lodash-es/filter.js'
 import sumBy from 'lodash-es/sumBy.js'
 import mapKeys from 'lodash-es/mapKeys.js'
 import cache from 'wsemi/src/cache.mjs'
+import isestr from 'wsemi/src/isestr.mjs'
 import * as s from '../src/plugins/mShare.mjs'
+import { getAppUsage, getAppId } from '../src/appUsage.mjs'
 import staUserAccountLogin from './staLogs/staUserAccountLogin.callWorker.mjs'
 import staToken from './staLogs/staToken.callWorker.mjs'
 import staIp from './staLogs/staIp.callWorker.mjs'
@@ -111,6 +113,9 @@ function proc(woItems, p, opt = {}) {
         let ending24h = 0
         if (true) {
             let tsEnding24h = filter(ts, (t) => {
+                if (t.isApp === 'y') {
+                    return false //應用系統金鑰不給期限(ADR-095), 不計入即將到期
+                }
                 return (t.timeEnd >= tn) && (t.timeEnd <= tnAft24h)
             })
             ending24h = size(tsEnding24h)
@@ -120,6 +125,9 @@ function proc(woItems, p, opt = {}) {
         let ended = 0
         if (true) {
             let tsEnded = filter(ts, (t) => {
+                if (t.isApp === 'y') {
+                    return false //應用系統金鑰不給期限(ADR-095), 不計入已到期(既有列之 timeEnd 已不生效)
+                }
                 return s.getIsEnded(t)
             })
             ended = size(tsEnded)
@@ -276,6 +284,15 @@ function proc(woItems, p, opt = {}) {
         kpUsername.count = 0 //預先給予count為0
         each(us, (u) => {
             kpUsername[u.id] = u.name
+        })
+
+        //系統服務用途之應用系統金鑰: log 之 userId 為其應用系統身分 app:<金鑰主鍵> (ADR-095, 外審 sol#11), 顯示金鑰名稱; 無名稱(升級前既有列)沿用身分字串
+        let ts = await p.getTokensListCache() //使用快取加速
+        each(ts, (t) => {
+            if (get(t, 'isApp', '') === 'y' && getAppUsage(t) === 'system') {
+                let name = get(t, 'appName', '')
+                kpUsername[getAppId(t)] = isestr(name) ? name : getAppId(t)
+            }
         })
 
         //add username

@@ -47,6 +47,7 @@ import createLockSave from './lockSave.mjs'
 import ormWrite from './ormWrite.mjs'
 import { maskToken, maskKv, keysUserQuery, capText } from './srLog.mjs'
 import { hasAppPerm, isAppPermsValue, normAppPerms } from '../src/appPerms.mjs'
+import { getAppUsage, getAppId, isAppUsageValue, isAppIdLike } from '../src/appUsage.mjs'
 import contracts from '../src/writeContracts/index.mjs'
 
 
@@ -564,62 +565,180 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     }
 
 
-    //_checkTokenByObj
-    let _checkTokenByObj = async (tk, opt = {}) => {
+    //loadActor: 由權杖列解析呼叫者身分 (ADR-095; 身分驗證責任之核心, 全部「本人」與管理入口皆經此):
+    //- 使用者 token(isApp 非 'y'): { kind: 'user', id: 使用者主鍵, user: 最新使用者列(已去 password) }
+    //- 應用系統金鑰・使用者用途: { kind: 'appUser', id: 所綁使用者主鍵, user: 所綁使用者最新列 }, 代表所綁使用者本人(tokens.userId 即所綁使用者)
+    //- 應用系統金鑰・系統服務用途: { kind: 'appSystem', id: 'app:<tokens.id>', user: 虛擬使用者 }, 代表外部應用系統本身; tokens.userId 只記建立者, 此處完全不使用
+    //使用者不存在或已停用(isActive 非 'y')、用途值未登錄 → reject(權杖不可用); 不判逾期 / 封鎖 / 帳號到期 / 驗證, 由 isActorLive 判
+    let loadActor = async (tk) => {
+        let isApp = get(tk, 'isApp', '') === 'y'
 
-        //timeEnd
-        let timeEnd = get(tk, 'timeEnd', '')
-
-        //check
-        if (!istimemsTZ(timeEnd)) {
-            // console.log(`tk`, tk)
-            console.log(`timeEnd`, timeEnd)
-            console.log(`invalid timeEnd`)
-            return Promise.reject(`invalid timeEnd`)
+        //使用者 token
+        if (!isApp) {
+            let u = await getGenUserByUserId(get(tk, 'userId', ''))
+            return { kind: 'user', id: get(u, 'id', ''), user: u }
         }
 
-        //isApp
-        let isApp = get(tk, 'isApp', '')
-        // console.log('isApp', isApp)
+        //應用系統金鑰
+        let usage = getAppUsage(tk)
+        if (usage === 'user') {
+            let u = await getGenUserByUserId(get(tk, 'userId', ''))
+            return { kind: 'appUser', id: get(u, 'id', ''), user: u }
+        }
+        if (usage === 'system') {
+            let name = get(tk, 'appName', '')
+            let u = {
+                id: getAppId(tk), //穩定(隨權杖列主鍵)且不與使用者主鍵相撞(後台清單拒收 'app:' 開頭之使用者主鍵)
+                account: 'no account',
+                name: isestr(name) ? name : 'no name', //金鑰名稱
+                email: 'no email',
+                description: 'no description',
+                from: 'no from',
+                redir: 'no redir',
+                isAdmin: 'y', //外部應用系統代表為系統管理員等級; 實際授權依 perms (ADR-069), 不依此欄
+                timeVerified: '2000-01-01T00:00:00.000+08:00', //應用系統代表為已驗證
+                timeExpired: '',
+                timeBlocked: '',
+                isActive: 'y',
+            }
+            return { kind: 'appSystem', id: u.id, user: u }
+        }
+        srLog.warn({ event: 'fun-checkToken', key: 'appTokenUsageInvalid', token: maskToken(get(tk, 'token', '')) })
+        return Promise.reject('invalid app token usage') //用途值未登錄: fail closed
+    }
+
+
+    //isUserUsable: 使用者目前可否使用(S-4), 與登入(loginByAccountAndPassword / createToken)同一判準:
+    //已驗證(timeVerified 為非空字串; 與登入同, 不要求 timemsTZ 格式, 否則舊格式之驗證時間可登入卻立即被判失效)、帳號未到期(現在 > timeExpired 才算到期)、未被封鎖(現在 <= timeBlocked 為封鎖中)、未被停用(isActive 非 'n')
+    //外審 sol#4: 原用 mShare.checkUserBasic(getIsVerified 要求 timemsTZ、isActive 須為 'y'), 與登入不一致
+    let isUserUsable = (u) => {
+        if (!iseobj(u)) {
+            return false
+        }
+        if (!isestr(get(u, 'timeVerified', ''))) {
+            return false
+        }
+        let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+        let timeExpired = get(u, 'timeExpired', '')
+        if (istimemsTZ(timeExpired) && tn > timeExpired) {
+            return false
+        }
+        let timeBlocked = get(u, 'timeBlocked', '')
+        if (istimemsTZ(timeBlocked) && tn <= timeBlocked) {
+            return false
+        }
+        if (get(u, 'isActive', '') === 'n') {
+            return false
+        }
+        return true
+    }
+
+
+    //isActorLive: 權杖此刻是否可用 (S-4 / S-3 / ADR-095):
+    //- 使用者 token: 權杖未逾期, 且使用者目前可用(與登入同一判準 isUserUsable: 已驗證、帳號未到期、未被封鎖、未停用)
+    //- 使用者用途: 不給期限(不看 timeEnd); 所綁使用者目前可用(同上), 隨其狀態即時失效、恢復
+    //- 系統服務用途: 不給期限, 不隨建立者之狀態失效(由專案方於後台撤銷)
+    let isActorLive = async (tk, actor) => {
+        if (actor.kind === 'appSystem') {
+            return true
+        }
+        if (actor.kind === 'user') {
+            let timeEnd = get(tk, 'timeEnd', '')
+            if (!istimemsTZ(timeEnd)) {
+                console.log(`timeEnd`, timeEnd)
+                console.log(`invalid timeEnd`)
+                return Promise.reject(`invalid timeEnd`)
+            }
+            let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
+            if (!(tn < timeEnd)) { //現在時間<到期時間, 代表尚未到期
+                return false
+            }
+        }
+        return isUserUsable(actor.user)
+    }
+
+
+    //funCheckAdmin: 管理入口之角色判斷(已驗證、未過期、未封鎖、isAdmin='y'、啟用), 與 WWebSso 傳入各管理入口者同一判準(mShare.checkUserAdmin);
+    //procCore 內自有權限閘(adminResetUserPassword)沿用, 使各管理入口對非管理員回相同錯誤鍵 (S-2)
+    let funCheckAdmin = (tk, u) => {
+        return s.checkUserAdmin(u)
+    }
+
+
+    //getTokenRowByToken: 以權杖字串取唯一權杖列, 查無或重複 reject
+    let getTokenRowByToken = async (token) => {
+
+        //tks
+        let tks = await woItems.tokens.select({ token })
+        //console.log(`...tokens.select`)
+
+        //ntks
+        let ntks = size(tks)
+
+        //check
+        if (ntks === 0) {
+            // console.log(`token`, token)
+            console.log(`invalid token`)
+            return Promise.reject(`invalid token`)
+        }
+
+        //check
+        if (ntks >= 2) {
+            // console.log(`token`, token)
+            console.log(`duplicate tokens`)
+            return Promise.reject(`duplicate tokens`)
+        }
+
+        return get(tks, 0, null)
+    }
+
+
+    //getActorByToken: 以權杖字串取呼叫者身分(loadActor), 且權杖此刻須可用(isActorLive): 否則 reject 'tokenExpired'
+    //供檢查權杖之後需操作者身分的站點使用(自身查詢、改密碼、清單存檔之操作者); 查他人之目標權杖亦經此 (S-4、S-5)
+    let getActorByToken = async (token) => {
+        let tk = await getTokenRowByToken(token)
+        let actor = await loadActor(tk)
+        let live = await isActorLive(tk, actor)
+        if (!live) {
+            return Promise.reject('tokenExpired')
+        }
+        return actor
+    }
+
+
+    //_checkTokenByObj
+    //opt.fun: 使用者(使用者 token、使用者用途)之角色判斷 fun(tk, u); opt.perm: 系統服務用途所需之權限(src/appPerms.mjs), 使用者用途不適用 perms
+    let _checkTokenByObj = async (tk, opt = {}) => {
 
         //fun
         let fun = get(opt, 'fun', null)
 
-        //perm, 權限閘所需之 app token 權限(src/appPerms.mjs); 僅作用於 app token, 使用者 token 仍以 fun 判斷
+        //perm, 權限閘所需之 app token 權限(src/appPerms.mjs); 僅作用於系統服務用途, 使用者 token 與使用者用途仍以 fun 判斷
         let perm = get(opt, 'perm', '')
 
-        //tn
-        let tn = ot().format('YYYY-MM-DDTHH:mm:ss.SSSZ')
-        // console.log('tn     ', tn)
-        // console.log('timeEnd', timeEnd)
-        // console.log('tn < timeEnd', tn < timeEnd)
+        //actor
+        let actor = await loadActor(tk)
 
-        let b1 = tn < timeEnd //現在時間<到期時間, 代表尚未到期
+        //live: 逾期(使用者 token)與使用者當前狀態(S-4)
+        let b1 = await isActorLive(tk, actor)
+        if (!b1) {
+            return false
+        }
+
         let b2 = true
-        //app token (isApp='y') 無使用者資訊故不執行 fun, 改依其 perms 判斷 (ADR-069, 取代 ADR-005 之一律視同 admin); 應僅由內部 token creation 路徑簽發, 不開放外部註冊.
-        if (isApp !== 'y') {
-            //token來自使用者
+        if (actor.kind !== 'appSystem') {
+            //token 代表使用者本人(使用者 token、使用者用途): 有給定驗證 fun 才執行(取得使用者資訊供驗證), perms 不適用
 
             if (isfun(fun)) {
-                //有給定驗證fun才執行取得使用者資訊供驗證
-
-                //userId
-                let userId = get(tk, 'userId', '')
-
-                //getGenUserByUserId
-                let u = await getGenUserByUserId(userId)
-
-                //fun
-                b2 = fun(tk, u)
+                b2 = fun(tk, actor.user)
                 if (ispm(b2)) {
                     b2 = await b2
                 }
-
             }
 
         }
         else {
-            //token來自應用系統
+            //token 代表外部應用系統(系統服務用途): 無使用者資訊故不執行 fun, 改依其 perms 判斷 (ADR-069, 取代 ADR-005 之一律視同 admin); 僅由 createAppToken 簽發, 不開放自助
 
             if (isestr(perm)) {
                 //權限閘有宣告所需權限: 依 perms 判斷(基本權限 readUsers 恆具備, 多元素為聯集)
@@ -631,7 +750,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             }
             //未給 fun 亦未給 perm: 僅驗 token 本身(checkToken / getUserByToken 等自身權杖操作)
 
-            //warn, 記錄缺權限之拒絕供稽核與介接排錯(對外仍統一回 tokenExpired, ADR-006)
+            //warn, 記錄缺權限之拒絕供稽核與介接排錯(對外仍統一回 tokenExpired, ADR-006); userId 為建立者(稽核), 不當身分使用
             if (!b2) {
                 srLog.warn({ event: 'fun-checkToken', key: 'appTokenPermDenied', token: maskToken(get(tk, 'token', '')), userId: get(tk, 'userId', ''), perm })
             }
@@ -674,8 +793,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         let tk = get(tks, 0, '')
         // console.log('tk', tk)
 
-        //userId
-        let userId = get(tk, 'userId', '')
+        //userId, 呼叫統計(staToken)以此為「誰在呼叫」: 系統服務用途金鑰之 userId 欄為建立者(稽核用, 非身分; ADR-095),
+        //統計改記其應用系統身分 app:<金鑰主鍵>, 否則其用量被合併到建立者名下 (外審 sol#11)
+        let userId = (get(tk, 'isApp', '') === 'y' && getAppUsage(tk) === 'system') ? getAppId(tk) : get(tk, 'userId', '')
 
         //_checkTokenByObj
         let b = await _checkTokenByObj(tk, opt)
@@ -797,6 +917,12 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         let tk = get(tks, 0, '')
         // console.log('tk', tk)
 
+        //應用系統金鑰不給期限, 無續期可言: 一律拒絕(固定錯誤鍵, ADR-095; 原會把 timeEnd 改為「現在＋登入效期」而縮短之, S-3)
+        if (get(tk, 'isApp', '') === 'y') {
+            srLog.warn({ event: 'fun-refreshToken', key: 'tokenAppNoRefresh', token: maskToken(token) })
+            return Promise.reject('tokenAppNoRefresh')
+        }
+
         //timeEnd
         let timeEnd = get(tk, 'timeEnd', '')
 
@@ -817,6 +943,15 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             console.log(`tn`, tn)
             console.log(`timeEnd`, timeEnd)
             console.log(`token expired`)
+            return Promise.reject(`tokenExpired`)
+        }
+
+        //使用者目前須可用(與登入同一判準, S-4): 不存在、停用、被手動封鎖、帳號到期或未驗證者不可續期
+        let live = await loadActor(tk)
+            .then((actor) => isActorLive(tk, actor))
+            .catch(() => false)
+        if (!live) {
+            console.log(`user is not available`)
             return Promise.reject(`tokenExpired`)
         }
 
@@ -1080,6 +1215,11 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //verifyEmail
     let verifyEmail = async (token) => {
 
+        //check allowUserRegistration, 驗證信連結為自助註冊之附屬入口, 隨註冊開關(關閉即一併拒絕, 固定鍵, 不看 token; S-6、原則 13)
+        if (!allowUserRegistration) {
+            return Promise.reject('userRegistrationNotAllowed')
+        }
+
         //check token
         if (!isestr(token)) {
             return Promise.reject('verifyEmailInvalidToken')
@@ -1130,6 +1270,11 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
     //resendVerifyEmail
     let resendVerifyEmail = async (lang, account, email) => {
+
+        //check allowUserRegistration, 重寄驗證信為自助註冊之附屬入口, 隨註冊開關(關閉即一併拒絕, 固定鍵; S-6、原則 13)
+        if (!allowUserRegistration) {
+            return Promise.reject('userRegistrationNotAllowed')
+        }
 
         //check
         if (!isestr(lang)) {
@@ -1290,8 +1435,16 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //checkTokenAndChangePassword
     let checkTokenAndChangePassword = async (token, lang, oldPassword, newPassword) => {
 
-        //checkToken
+        //checkToken (使用者 token 與使用者用途亦隨使用者當前狀態判定, S-4)
         await checkToken(token)
+
+        //actor, 改密碼之對象為權杖所代表之使用者本人: 使用者 token、使用者用途(所綁使用者, 須舊密碼)可; 系統服務用途不綁使用者, 無本人可改, 一律拒絕 (ADR-095)
+        let actor = await getActorByToken(token)
+        if (actor.kind === 'appSystem') {
+            srLog.warn({ event: 'fun-changePassword', key: 'tokenUserOnly', token: maskToken(token) })
+            return Promise.reject('tokenUserOnly')
+        }
+        let userId = actor.id
 
         //check
         if (!isestr(lang)) {
@@ -1302,10 +1455,6 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         if (!isestr(oldPassword)) {
             return Promise.reject('userChangePasswordFail')
         }
-
-        //getUserByToken
-        let uToken = await getUserByToken(token)
-        let userId = get(uToken, 'id', '')
 
         //序列化同 userId 之並行 change-password 請求: 防 lost update + 重複寄信.
         //第二次同 userId 進入時 mutex 序列化, 第二次因 password 已被第一次改, 走既有
@@ -1320,6 +1469,13 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                 //鎖內再驗呼叫所用之權杖仍有效 (外審 sol#1): 鎖外之 checkToken 通過後、等鎖期間該 session 可能已被同使用者另一個改密碼請求或管理員重設撤銷,
                 //被撤銷之權杖不得再改密碼(否則「保留發出請求之目前 session」不成立, 該請求還會撤銷對方保留之 session); checkToken 只讀不取鎖, 可在鎖內呼叫
                 await checkToken(token)
+
+                //鎖內重新解析權杖所代表之身分, 須與鎖外相同(外審 sol#3): 等鎖期間該權杖列若被改綁(帶基準存檔改 userId)或用途改變, 鎖內驗證之身分與下面寫入之對象即不同
+                //(解析失敗者如使用者已被刪, 照原路徑由後續讀取使用者之步驟拒絕, 沿用既有之對外鍵)
+                let actorNow = await getActorByToken(token).catch(() => null)
+                if (actorNow !== null && (actorNow.kind === 'appSystem' || actorNow.id !== userId)) {
+                    return Promise.reject('tokenExpired')
+                }
 
                 //getGenUserByUserId (with password)
                 let u = await _getGenUserByKV('id', userId, { deletePassword: false })
@@ -1439,8 +1595,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //
     //回傳: { state:'success' } (不含明文密碼, 避免操作者得知)
     //失敗 reject:
-    //  - token 無效 / 過期
-    //  - 操作者非 admin: 'forbidden'
+    //  - token 無效 / 過期 / 操作者非管理員(已驗證、未過期、未封鎖、isAdmin='y'、啟用, 同 funCheckAdmin) / 應用系統金鑰缺 writeUsers: 'tokenExpired' (S-2, 與其他管理入口同鍵)
     //  - userId 空: 'invalid userId'
     //  - 目標 user 不存在: 'user not found'
     //  - 對自己觸發: 'cannot reset self'
@@ -1449,8 +1604,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //寄信失敗 (SMTP 不通) 不視為錯誤, 密碼仍會寫入, 僅記 srLog.error
     let adminResetUserPassword = async (token, lang, targetUserId) => {
 
-        //checkToken, app token 須具 writeUsers(其虛擬使用者 isAdmin='y', 故不可只靠下方 isAdmin 判斷; ADR-069); 使用者 token 不受 perm 影響
-        await checkToken(token, { perm: 'writeUsers' })
+        //checkToken, 管理員判定與其他管理入口相同(funCheckAdmin: 已驗證、未過期、未封鎖、isAdmin='y'、啟用; 使用者用途依所綁使用者), 非管理員回相同錯誤鍵 tokenExpired (S-2);
+        //系統服務用途須具 writeUsers(其虛擬使用者 isAdmin='y', 故授權不看該欄; ADR-069)
+        await checkToken(token, { fun: funCheckAdmin, perm: 'writeUsers' })
 
         //check lang
         if (!isestr(lang)) {
@@ -1462,14 +1618,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             return Promise.reject('anUnexpectedErrorOccurred')
         }
 
-        //getUserByToken (操作者)
-        let uOperator = await getUserByToken(token)
-        let operatorId = get(uOperator, 'id', '')
-
-        //operator 必須為 admin
-        if (get(uOperator, 'isAdmin', '') !== 'y') {
-            return Promise.reject('adminResetPasswordForbidden')
-        }
+        //actor (操作者): 使用者 token / 使用者用途為使用者本人(id 為使用者主鍵), 系統服務用途為應用系統身分(id 為 app:<tokens.id>)
+        let actor = await getActorByToken(token)
+        let operatorId = actor.id
 
         //不可對自己觸發
         if (operatorId === targetUserId) {
@@ -1600,24 +1751,37 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
     //revokeTokensByUserId: 撤銷(刪除)使用者名下全部 token, 供刪除 / 停用使用者(updateTabItems)與登入失敗封鎖(procProtect.blockAccount)共用.
     //一次刪除該使用者全部 token 並逐筆檢查(ormWrite), 單筆失敗不中斷其餘筆, 有失敗即 reject 錯誤訊息(含失敗筆主鍵)供呼叫端記錄.
-    //冪等(已無 token 時刪 0 筆), resolve 回傳刪除之 token 數. 使用者設計上不持有 isApp='y' token, 故一併撤 (ADR-037).
+    //冪等(已無 token 時刪 0 筆), resolve 回傳刪除之 token 數.
+    //撤銷範圍 (ADR-095, 取代 ADR-037 之「名下一切權杖皆撤」): 該使用者之登入 token(isApp 非 'y'), 另依 opt.includeAppUser 含綁定該使用者之使用者用途金鑰(isApp='y' 且 appUsage='user');
+    //系統服務用途金鑰(含既有無用途欄之列)之 userId 只記建立者(稽核), 不是身分, 建立者被停用 / 刪除 / 封鎖時一律不撤銷.
+    //opt.includeAppUser: 預設 false(登入失敗封鎖、權杖呼叫超限封鎖: 使用者用途金鑰隨所綁使用者之封鎖狀態即時不可用、封鎖到期後恢復, 不刪除,
+    //免得他人以刻意登入失敗使整合金鑰被刪); 刪除 / 停用使用者(updateTabItems users 路徑)給 true: 所綁使用者已不存在或停用, 金鑰隨之撤銷(重新啟用後不恢復).
     //S09: 對外之 revokeTokensByUserId 自取 tokens 表鎖; 上游已持 tokens 鎖者(updateTabItems users 路徑、procProtect 封鎖, 皆在 [tokens, users] 鎖內)
     //須呼叫 revokeTokensByUserIdLocked(持鎖版), 不可重入 (規格 §7)
-    let revokeTokensByUserId = async (userId) => {
-        return await withTabLocks(['tokens'], () => revokeTokensByUserIdLocked(userId))
+    let revokeTokensByUserId = async (userId, opt = {}) => {
+        return await withTabLocks(['tokens'], () => revokeTokensByUserIdLocked(userId, opt))
     }
 
 
     //revokeTokensByUserIdLocked, 須於 tokens 表鎖內呼叫
-    let revokeTokensByUserIdLocked = async (userId) => {
+    let revokeTokensByUserIdLocked = async (userId, opt = {}) => {
 
         //check
         if (!isestr(userId)) {
             return Promise.reject(`invalid userId`)
         }
 
-        //ts
+        //includeAppUser
+        let includeAppUser = get(opt, 'includeAppUser') === true
+
+        //ts, 登入 token, 與(依 opt)綁定該使用者之使用者用途金鑰
         let ts = await woItems.tokens.select({ userId })
+        ts = filter(ts, (t) => {
+            if (get(t, 'isApp', '') !== 'y') {
+                return true
+            }
+            return includeAppUser && getAppUsage(t) === 'user'
+        })
 
         //check
         if (size(ts) === 0) {
@@ -1842,13 +2006,48 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                     //tokens 路徑: 清單存檔不得新增庫內不存在之 session 列(isApp 非 'y'; ADR-092), 不論帶不帶基準, 整次拒收(零寫入, 回固定語系鍵, 不回顯值):
                     //session 權杖只由登入產生, 後台清單本就無新增 session 列之入口 (ADR-042); 不帶基準時無從分辨「新增」與「載入後已被登出 / 自動封鎖撤銷之舊列」,
                     //送回舊列會使其復活而繞過撤銷. 例外: 帶基準而該列在 baselineSession 內者(載入時尚在, 其後被撤銷)不屬新增——管理員未動者下方略過、已動者拒收 saveStale.
-                    //應用系統金鑰列(isApp === 'y')新增、既有 session 列之刪除與升級為應用系統金鑰照舊.
                     if (woName === 'tokens') {
                         let idsBase = new Set(isBased ? [...po.baseline, ...po.baselineSession].map(([id]) => id) : [])
                         let rowSessionNew = rows.find((r) => get(r, 'isApp', '') !== 'y' && !nowById.has(r.id) && !idsBase.has(r.id))
                         if (rowSessionNew !== undefined) {
                             srLog.warn({ event: 'fun-updateTabItems-reject', key: 'tokenSessionAddNotAllowed', woName })
                             return Promise.reject('tokenSessionAddNotAllowed')
+                        }
+                    }
+
+                    //tokens 路徑 (ADR-095, 取代 ADR-042 / ADR-084 之「經清單鑄造」): 清單存檔只改不增、不改身分——
+                    //(a) 庫內不存在之應用系統金鑰列整次拒收 tokenAppAddNotAllowed: 應用系統金鑰只能經 createAppToken 鑄造(權杖字串由伺服端產生; 用途、綁定使用者與權限於鎖內驗證);
+                    //(b) 既有登入 token 不可升級為應用系統金鑰(isApp 由非 'y' 改 'y') → tokenSessionUpgradeNotAllowed: 登入 token 代表登入者本人且有期限, 升級會使其變成無期限之金鑰而不綁用途;
+                    //(c) 既有應用系統金鑰之權杖字串、userId(所綁使用者)、isApp、到期時間不可變更 → tokenAppLocked: 綁定決定其代表誰, 到期時間對應用系統金鑰無意義(不給期限);
+                    //    用途(appUsage)與名稱(appName)為伺服器專有欄位(契約 serverOnly), 存檔不採用客戶端值、不寫入; 可改者僅(系統服務用途之)權限.
+                    //全部於任何寫入之前判定, 零寫入; 對照庫內新鮮讀取之列(nowById), 與帶不帶基準無關
+                    if (woName === 'tokens') {
+                        let rowAppNew = rows.find((r) => get(r, 'isApp', '') === 'y' && !nowById.has(r.id))
+                        if (rowAppNew !== undefined) {
+                            srLog.warn({ event: 'fun-updateTabItems-reject', key: 'tokenAppAddNotAllowed', woName })
+                            return Promise.reject('tokenAppAddNotAllowed')
+                        }
+                        for (let row of rows) {
+                            let old = nowById.get(row.id)
+                            if (old === undefined) {
+                                continue
+                            }
+                            let oldIsApp = get(old, 'isApp', '') === 'y'
+                            let newIsApp = get(row, 'isApp', '') === 'y'
+                            if (!oldIsApp && newIsApp) {
+                                srLog.warn({ event: 'fun-updateTabItems-reject', key: 'tokenSessionUpgradeNotAllowed', woName })
+                                return Promise.reject('tokenSessionUpgradeNotAllowed')
+                            }
+                            if (oldIsApp) {
+                                let locked = !newIsApp ||
+                                    get(row, 'token', '') !== get(old, 'token', '') ||
+                                    get(row, 'userId', '') !== get(old, 'userId', '') ||
+                                    get(row, 'timeEnd', '') !== get(old, 'timeEnd', '')
+                                if (locked) {
+                                    srLog.warn({ event: 'fun-updateTabItems-reject', key: 'tokenAppLocked', woName })
+                                    return Promise.reject('tokenAppLocked')
+                                }
+                            }
                         }
                     }
 
@@ -1889,6 +2088,12 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                         if (errAccount !== null) {
                             return Promise.reject(errAccount)
                         }
+
+                        //新增列之使用者主鍵不得落在系統服務用途之保留前綴(app:): 該前綴為應用系統身分(getUserByToken 之 id)專用, 使用者主鍵與之相撞會使下游把應用系統誤認為該使用者 (ADR-095);
+                        //只檢查庫內不存在之新增列, 既有列不受影響(不使一列之既有資料問題擋住整份清單存檔, 同 ADR-094)
+                        if (rows.some((row) => !nowById.has(row.id) && isAppIdLike(row.id))) {
+                            return Promise.reject('invalidRows')
+                        }
                     }
 
                     //tokens 路徑: 本批有變動(或新增)之列須為未設定或已登錄權限字串之陣列, 任一列不合法則整批 reject 不寫入 (ADR-069).
@@ -1908,6 +2113,10 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                             }
                             if (!isAppPermsValue(perms)) {
                                 return Promise.reject('tokenPermsInvalid')
+                            }
+                            //使用者用途之權限即所綁使用者之權限, perms 不適用: 不得被設定 (ADR-095)
+                            if (old !== undefined && get(old, 'isApp', '') === 'y' && getAppUsage(old) === 'user' && size(normAppPerms(perms)) > 0) {
+                                return Promise.reject('tokenAppPermsNotForUser')
                             }
                         }
                     }
@@ -1958,14 +2167,15 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                             if (digestRow(sub, contract) === dg) {
                                 continue
                             }
-                            //管理員有動: 已不在庫內或庫內已變 → 拒收; 否則修改(含升級為應用系統金鑰)
+                            //管理員有動: 已不在庫內或庫內已變 → 拒收; 否則修改(升級為應用系統金鑰已於上方拒收, ADR-095)
                             if (!live || changedS.has(id)) {
                                 return Promise.reject('saveStale')
                             }
                             mods.push(subNorm.get(id))
                         }
 
-                        //基準之外之列(管理員新增): 已存在於庫內(他人載入後新增而撞 id)→ 拒收; 否則新增
+                        //基準之外之列(管理員送入而基準與庫內皆無): 上方已拒收(新增 session 列 tokenSessionAddNotAllowed、新增應用系統金鑰列 tokenAppAddNotAllowed),
+                        //此處僅剩「他人載入後新增而撞 id」之列(庫內已有、基準內無): 拒收
                         for (let [id] of subRaw) {
                             if (baseA.has(id) || baseS.has(id)) {
                                 continue
@@ -1973,16 +2183,15 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                             if (nowById.has(id)) {
                                 return Promise.reject('saveStale')
                             }
-                            adds.push(subNorm.get(id))
                         }
 
                     }
                     else if (woName === 'tokens') {
 
-                        //不帶基準(app 權杖直呼、已開啟之舊版頁面): 刪除與修改只處理應用系統金鑰列(庫內 isApp === 'y',
-                        //修改另含送出 isApp === 'y' 者, 即升級為應用系統金鑰); session 列(登入新增、續期改 timeEnd、登出或封鎖刪除, 系統頻繁增刪)
-                        //不刪、不以送入值覆蓋, 載入後才登入之 session 因而不被誤刪 (E1, D3). 新增列(送出而庫內無此 id)照常新增,
-                        //含直打 API 鑄造使用者 token 與應用系統金鑰(ADR-042, ADR-084); 此路徑無基準可辨是否為已被撤銷之 session, 該風險由帶基準之後台頁(X1)承擔防護
+                        //不帶基準(app 權杖直呼、已開啟之舊版頁面): 刪除與修改只處理應用系統金鑰列(庫內 isApp === 'y');
+                        //session 列(登入新增、續期改 timeEnd、登出或封鎖刪除, 系統頻繁增刪)
+                        //不刪、不以送入值覆蓋, 載入後才登入之 session 因而不被誤刪 (E1, D3). 新增列已於上方拒收(ADR-095), 升級為應用系統金鑰亦已拒收;
+                        //此路徑無基準可辨是否為已被撤銷之 session, 送回之舊 session 列由 ADR-092 之守門拒收
                         each(ltdtOld, (r) => {
                             if (isApp(r) && !subRaw.has(r.id)) {
                                 dels.push(r)
@@ -1991,7 +2200,6 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                         for (let [id, sub] of subNorm) {
                             let old = nowById.get(id)
                             if (old === undefined) {
-                                adds.push(sub)
                                 continue
                             }
                             if (!isApp(old) && !isApp(sub)) {
@@ -2125,14 +2333,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
                         //add
                         if (size(rowsAdd) > 0) {
-                            if (woName === 'tokens') {
-                                //tokens 之 userId 為令牌擁有者(非建立者): keepUserId 保留列上非空之擁有者, userIdUpdate 記操作者 (ADR-042, ADR-084; w-serv-orm 1.1.17);
-                                //擁有者為空者以操作者補, 不再寫成無擁有者之金鑰
-                                await procOrm(operatorId, woName, 'insert', rowsAdd, { keepUserId: true })
-                            }
-                            else {
-                                await procOrm(operatorId, woName, 'insert', rowsAdd)
-                            }
+                            //tokens 路徑不會有新增列(已於上方拒收, 應用系統金鑰只經 createAppToken 鑄造, ADR-095); 原 keepUserId 分組寫入(ADR-084)隨之移至 createAppToken
+                            await procOrm(operatorId, woName, 'insert', rowsAdd)
                         }
 
                         //mod
@@ -2155,7 +2357,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                     if (woName === 'users') {
                         for (let row of dels) {
                             let userId = get(row, 'id', '')
-                            await revokeTokensByUserIdLocked(userId)
+                            await revokeTokensByUserIdLocked(userId, { includeAppUser: true }) //刪除使用者: 其登入 token 與綁其之使用者用途金鑰皆撤銷, 系統服務用途金鑰不動 (ADR-095)
                                 .catch((err) => {
                                     srLog.error({ event: 'fun-updateTabItems-revokeTokenOnDelete', userId, err: getErrorMessage(err) })
                                 })
@@ -2165,7 +2367,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                                 continue
                             }
                             let userId = get(row, 'id', '')
-                            await revokeTokensByUserIdLocked(userId)
+                            await revokeTokensByUserIdLocked(userId, { includeAppUser: true }) //停用使用者: 同上 (停用後重新啟用不恢復已撤銷之金鑰)
                                 .catch((err) => {
                                     srLog.error({ event: 'fun-updateTabItems-revokeTokenOnDisable', userId, err: getErrorMessage(err) })
                                 })
@@ -2221,92 +2423,18 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
 
     //getUserByToken
+    //反查權杖所代表之身分(ADR-095), 權杖此刻須可用(使用者 token 未逾期; 使用者 token 與使用者用途之使用者目前可用, 與登入同一判準 S-4); 不可用 reject:
+    //- 使用者 token: 該使用者之資料, isApp='n'
+    //- 應用系統金鑰・使用者用途: 所綁使用者之實際資料, isApp='y'
+    //- 應用系統金鑰・系統服務用途: 應用系統身分, isApp='y'、isAdmin='y'; id 為 'app:<tokens.id>'(穩定, 不與使用者主鍵相撞), name 為金鑰名稱, 其餘欄位為佔位字串
     let getUserByToken = async (token) => {
 
-        //tks
-        let tks = await woItems.tokens.select({ token })
-        //console.log(`...tokens.select`)
+        //actor
+        let actor = await getActorByToken(token)
 
-        //ntks
-        let ntks = size(tks)
-
-        //check
-        if (ntks === 0) {
-            // console.log(`token`, token)
-            console.log(`invalid token`)
-            return Promise.reject(`invalid token`)
-        }
-
-        //check
-        if (ntks >= 2) {
-            // console.log(`token`, token)
-            console.log(`duplicate tokens`)
-            return Promise.reject(`duplicate tokens`)
-        }
-
-        //tk
-        let tk = get(tks, 0, null)
-        // console.log('tk', tk)
-
-        //isApp
-        let isApp = get(tk, 'isApp', '')
-        // console.log('isApp', isApp)
-
-        //u
-        let u = null
-        if (isApp !== 'y') {
-            //token來自使用者
-
-            //userId
-            let userId = get(tk, 'userId', '')
-            // console.log('userId', userId)
-
-            //getGenUserByUserId
-            u = await getGenUserByUserId(userId)
-
-        }
-        else {
-            //token來自應用系統, 另外提供虛擬使用者資訊
-
-            //userId
-            let userId = get(tk, 'userId', '')
-            // console.log('userId', userId)
-
-            //check
-            if (!isestr(userId)) {
-                // console.log(`tk`, tk)
-                console.log(`invalid userId from token`)
-                return Promise.reject(`invalid userId from token`)
-            }
-
-            // //timeEnd
-            // let timeEnd = get(tk, 'timeEnd', '')
-            // // console.log('timeEnd', timeEnd)
-
-            // //check
-            // if (!istimemsTZ(timeEnd)) {
-            //     console.log(`timeEnd`, timeEnd)
-            //     console.log(`invalid timeEnd`)
-            //     return Promise.reject(`invalid timeEnd`)
-            // }
-
-            //u
-            u = {
-                id: userId,
-                account: 'no account',
-                name: 'no name',
-                email: 'no email',
-                description: 'no description',
-                from: 'no from',
-                redir: 'no redir',
-                isAdmin: 'y', //應用系統代表為系統管理員
-                timeVerified: '2000-01-01T00:00:00.000+08:00', //應用系統代表為已驗證
-                timeExpired: '',
-                timeBlocked: '',
-                isActive: 'y',
-            }
-
-        }
+        //u, isApp
+        let u = actor.user
+        let isApp = actor.kind === 'user' ? 'n' : 'y'
 
         //uu
         let uu = {
@@ -2331,12 +2459,13 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
 
     //checkTokenAndGetUserByToken
+    //tokenSelf 為查詢方(驗有效與權限), tokenTarget 只用以解析對象; 目標權杖須此刻可用(未逾期, 使用者目前可用), 逾期、查無或不可用一律回 null (S-5; 對外為固定鍵 tokenNoPermission)
     let checkTokenAndGetUserByToken = async (tokenSelf, tokenTarget, opt = {}) => {
 
         //checkToken
         await checkToken(tokenSelf, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
-        //getUserByToken
+        //getUserByToken, 內含目標權杖之逾期與使用者狀態判定
         let u = await getUserByToken(tokenTarget).catch(() => null)
 
         return u
@@ -2501,9 +2630,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             lang = 'eng'
         }
 
-        //取操作者 id (用於 audit fields userId/userIdUpdate 與 self-lockout 檢查)
-        let uOperator = await getUserByToken(token)
-        let operatorId = get(uOperator, 'id', '')
+        //取操作者 id (用於 audit fields userId/userIdUpdate 與 self-lockout 檢查): 使用者 token / 使用者用途為使用者本人, 系統服務用途為 app:<tokens.id>
+        let actor = await getActorByToken(token)
+        let operatorId = actor.id
 
         //rows 來自使用端, 須為陣列才可走訪: 帶數字 length 之物件經 lodash each 會改走索引 0..length-1 (length 極大時空轉阻塞事件迴圈, 且真實鍵被略過) (R-OBJ-ITER-01);
         //資料通道入口 (WWebSso updateUsersList) 已以 isearr 守門, 此為縱深, 並使本函數單獨呼叫時亦與 updateTabItems 同回 invalidRows
@@ -2511,8 +2640,9 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             return Promise.reject('invalidRows')
         }
 
-        //自我保護僅適用於使用者操作者: app token 之操作者為虛擬使用者, users 表無其列, 無「自己」可刪除/降權/停用 (ADR-069)
-        let isAppOperator = get(uOperator, 'isApp', '') === 'y'
+        //自我保護適用於代表使用者本人之操作者(使用者 token、使用者用途——後者即所綁使用者, 不得刪除、降權、停用自己, 亦因此不能變更所綁使用者自己之 isActive; ADR-095);
+        //系統服務用途之操作者為應用系統身分, users 表無其列, 無「自己」可刪除/降權/停用 (ADR-069)
+        let isAppOperator = actor.kind === 'appSystem'
         if (!isAppOperator) {
 
             //自我鎖死保護: 若 rows 內含操作者自己, 且操作者把自己 isAdmin/isActive 改成非 'y', reject
@@ -2617,8 +2747,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         await checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
         //操作者 id (雙擊防護之占位 key)
-        let uOperator = await getUserByToken(token)
-        let operatorId = get(uOperator, 'id', '')
+        let actor = await getActorByToken(token)
+        let operatorId = actor.id
 
         //雙擊防護(後端): 同一操作者之權杖清單儲存處理中再送出即拒絕 (見 lockSave, ADR-074)
         return await lockSave('updateTokensList', operatorId, async () => {
@@ -2627,6 +2757,156 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             rows = await updateTokensList(rows, { operatorId, optClient })
 
             return rows
+        })
+    }
+
+
+    //maxAppNameLength: 應用系統金鑰名稱之字數上限
+    let maxAppNameLength = 60
+
+
+    //createAppToken (ADR-095, 取代經 updateTokensList 新增列之鑄造: ADR-042 / ADR-084)
+    //鑄造應用系統金鑰: 權杖字串與主鍵由伺服端產生(與登入 token 同源之 funNew), 用戶端不得指定; 用途、綁定使用者、名稱與權限於 [tokens, users] 表鎖內驗證後寫入
+    //(同鎖使「綁定者存在且啟用」之檢查與 insert 之間, 該使用者不會被刪除 / 停用而漏撤銷, 刪除與停用於同一組鎖內撤銷其使用者用途金鑰).
+    //data: { name: 金鑰名稱(必填, 1~60 字、不含 HTML 標記), usage: 'user' | 'system'(必填), userId: 使用者用途之所綁使用者主鍵(須存在且啟用; 系統服務用途不得給), perms: 系統服務用途之權限字串陣列(使用者用途不得給) }
+    //opt.operatorId: 操作者(使用者主鍵, 或系統服務用途操作者之 app:<tokens.id>)——寫入層稽核欄(建立者 userId / 更新者 userIdUpdate)記之;
+    //  使用者用途之 userId 為所綁使用者(身分), 系統服務用途之 userId 為建立者(稽核, 不得當身分使用); 不給期限(timeEnd 為 '')
+    //回傳 { id, token, appUsage, appName, userId, perms, timeCreate }; 驗證失敗 reject 固定語系鍵, 零寫入
+    let createAppToken = async (data, opt = {}) => {
+
+        //operatorId
+        let operatorId = get(opt, 'operatorId', '')
+
+        //data
+        if (!isPlainObject(data)) {
+            return Promise.reject('tokenAppUsageInvalid')
+        }
+
+        //name
+        let name = get(data, 'name', '')
+        if (!isestr(name)) {
+            return Promise.reject('tokenAppNameInvalid')
+        }
+        name = name.trim()
+        if (!isestr(name) || name.length > maxAppNameLength) {
+            return Promise.reject('tokenAppNameInvalid')
+        }
+        if (clearXSS(name) !== name) {
+            return Promise.reject('htmlMarkupNotAllowed') //procOrm 寫入時會改寫, 儲存值將與送入值不同 (ADR-081)
+        }
+
+        //usage
+        let usage = get(data, 'usage', '')
+        if (!isAppUsageValue(usage)) {
+            return Promise.reject('tokenAppUsageInvalid')
+        }
+
+        //userId, perms
+        let userId = ''
+        let perms = []
+        if (usage === 'user') {
+            userId = get(data, 'userId', '')
+            if (!isestr(userId)) {
+                return Promise.reject('tokenAppUserInvalid')
+            }
+            if (clearXSS(userId) !== userId) {
+                //procOrm 寫入時會把 userId 改寫為另一個字串(可能恰為另一位使用者之主鍵): 驗證所綁之使用者與實際寫入者不同, 一律拒絕 (外審 sol#1)
+                return Promise.reject('tokenAppUserInvalid')
+            }
+            let permsRaw = get(data, 'perms')
+            if (!(permsRaw === undefined || permsRaw === null || permsRaw === '' || (isarr(permsRaw) && size(permsRaw) === 0))) {
+                return Promise.reject('tokenAppPermsNotForUser') //使用者用途之權限即所綁使用者之權限, perms 不適用
+            }
+        }
+        else {
+            let userIdRaw = get(data, 'userId', '')
+            if (userIdRaw !== undefined && userIdRaw !== null && userIdRaw !== '') {
+                return Promise.reject('tokenAppUserNotForSystem') //系統服務用途不綁使用者
+            }
+            let permsRaw = get(data, 'perms')
+            if (!isAppPermsValue(permsRaw)) {
+                return Promise.reject('tokenPermsInvalid')
+            }
+            perms = normAppPerms(permsRaw)
+        }
+
+        //insert, [tokens, users] 表鎖內(依表名碼元序取鎖, 與 updateTabItems users 路徑同組)
+        let rejectKey = null
+        let errTemp = null
+        let isErr = false //以旗標判定失敗, 不以「錯誤值是否為真」: reject 值可能為 null / undefined (外審 sol#10; R-SESS-01 第 6 點同型)
+        let t = null
+        await withTabLocks(['tokens', 'users'], async () => {
+
+            //鎖內再驗操作者仍有權鑄造 (外審 sol#2): 鎖外 checkToken 通過後、等鎖期間操作者可能已被停用、降權或撤銷, 不得再鑄出永久之應用系統金鑰;
+            //checkToken 只讀不取鎖, 可於鎖內呼叫 (同 checkTokenAndChangePassword 之鎖內再驗)
+            if (isfun(get(opt, 'recheck'))) {
+                let okRe = await opt.recheck().then(() => true).catch(() => false)
+                if (!okRe) {
+                    rejectKey = 'tokenExpired'
+                    return
+                }
+            }
+
+            //使用者用途: 綁定者須存在且啟用
+            if (usage === 'user') {
+                let us = await woItems.users.select({ id: userId })
+                if (size(us) !== 1 || get(us, '0.isActive', '') !== 'y') {
+                    rejectKey = 'tokenAppUserInvalid'
+                    return
+                }
+            }
+
+            //t, 主鍵與權杖字串由 funNew 產生; 擁有者 userId: 使用者用途為所綁使用者, 系統服務用途為建立者(稽核)
+            t = ds.tokens.funNew({
+                userId: usage === 'user' ? userId : operatorId,
+                isApp: 'y',
+                appUsage: usage,
+                appName: name,
+                perms,
+            })
+            t.timeEnd = '' //不給期限
+
+            //keepUserId: tokens 之 userId 不被改寫為寫入參數 (w-serv-orm 1.1.17; ADR-084); userIdUpdate 記操作者
+            await procOrm(operatorId, 'tokens', 'insert', [t], { keepUserId: true })
+
+        })
+            .catch((err) => {
+                isErr = true
+                errTemp = err
+            })
+
+        //check
+        if (rejectKey !== null) {
+            return Promise.reject(rejectKey)
+        }
+        if (isErr) {
+            srLog.error({ event: 'fun-createAppToken', key: 'tokenAppCreateFailed', usage, err: getErrorMessage(errTemp) })
+            return Promise.reject('tokenAppCreateFailed')
+        }
+
+        //清除權杖清單快取 (ADR-008)
+        ocGetTokensList.clear('fun')
+
+        //info, 不記權杖字串
+        srLog.info({ event: 'fun-createAppToken', id: t.id, usage, operatorId })
+
+        return { id: t.id, token: t.token, appUsage: usage, appName: name, userId: t.userId, perms: t.perms, timeCreate: t.timeCreate }
+    }
+
+
+    //checkTokenAndCreateAppToken
+    //權限閘同 updateTokensList(管理者 / 具 writeTokens 之系統服務用途); 雙擊防護(後端): 同一操作者之鑄造處理中再送出即拒絕 (lockSave, ADR-074)
+    let checkTokenAndCreateAppToken = async (token, data, opt = {}) => {
+
+        //checkToken
+        await checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
+
+        //操作者 id
+        let actor = await getActorByToken(token)
+        let operatorId = actor.id
+
+        return await lockSave('createAppToken', operatorId, async () => {
+            return await createAppToken(data, { operatorId, recheck: () => checkToken(token, opt) })
         })
     }
 
@@ -2686,8 +2966,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         await checkToken(token, opt) //resolve僅回傳true, reject代表無效token或檢測token發生錯誤
 
         //操作者 id (雙擊防護之占位 key)
-        let uOperator = await getUserByToken(token)
-        let operatorId = get(uOperator, 'id', '')
+        let actor = await getActorByToken(token)
+        let operatorId = actor.id
 
         //雙擊防護(後端): 同一操作者之 IP 清單儲存處理中再送出即拒絕 (見 lockSave, ADR-074)
         return await lockSave('updateIpsList', operatorId, async () => {
@@ -2769,6 +3049,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         getTokensListCache,
         checkTokenAndGetTokensList,
         checkTokenAndUpdateTokensList,
+        createAppToken,
+        checkTokenAndCreateAppToken,
 
         getIpsList,
         getIpsListCache,

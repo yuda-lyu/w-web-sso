@@ -102,8 +102,14 @@ describe('改密碼後之 session 處置 (R-SESS-01, ADR-093)', function() {
         assert.deepStrictEqual(sessionIdsOf(env, 'u-a'), ['t-a3'])
     })
 
-    it('PS-U-006 [S2、S3] app 權杖(擁有者 u-a)呼叫 changeUserPassword → 無「目前 session」可保留, u-a 全部 session 被撤銷, app 權杖本身不撤銷', async function() {
+    it('PS-U-006 [S2、S3、ADR-095] 使用者用途金鑰(綁 u-a)呼叫 changeUserPassword → 無「目前 session」可保留, u-a 全部 session 被撤銷, 金鑰本身不撤銷; 系統服務用途金鑰(擁有者欄為 u-a)一律拒絕 tokenUserOnly, 三表零變動', async function() {
         let env = await mkEnv()
+        let before = snapTables(env)
+        //系統服務用途(無 appUsage 之既有列視同系統服務用途): 不綁使用者, 無本人可改
+        assert.strictEqual(await errOf(env.p.checkTokenAndChangePassword('tk-a-app', 'eng', PW_INIT, NEW_PW)), 'tokenUserOnly')
+        assert.deepStrictEqual(snapTables(env), before, '系統服務用途被拒, 三表零變動')
+        //使用者用途: 綁 u-a, 須舊密碼, 作用於所綁使用者
+        env.tokens.kp.set('t-a-app', { ...env.tokens.get('t-a-app'), appUsage: 'user' })
         await env.p.checkTokenAndChangePassword('tk-a-app', 'eng', PW_INIT, NEW_PW)
         assert.deepStrictEqual(sessionIdsOf(env, 'u-a'), [])
         assert.deepStrictEqual(appIdsOf(env, 'u-a'), ['t-a-app'])
@@ -131,7 +137,7 @@ describe('改密碼後之 session 處置 (R-SESS-01, ADR-093)', function() {
         let before = snapTables(env)
         assert.strictEqual(await errOf(env.p.adminResetUserPassword('tk-admin', 'eng', 'u-admin')), 'adminResetPasswordCannotResetSelf')
         assert.strictEqual(await errOf(env.p.adminResetUserPassword('tk-admin', 'eng', 'u-none')), 'adminResetPasswordUserNotFound')
-        assert.strictEqual(await errOf(env.p.adminResetUserPassword('tk-a1', 'eng', 'u-b')), 'adminResetPasswordForbidden', '非管理員')
+        assert.strictEqual(await errOf(env.p.adminResetUserPassword('tk-a1', 'eng', 'u-b')), 'tokenExpired', '非管理員: 與其他管理入口同鍵(S-2)')
         assert.deepStrictEqual(snapTables(env), before)
     })
 

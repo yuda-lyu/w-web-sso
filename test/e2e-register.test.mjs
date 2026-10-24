@@ -5,6 +5,7 @@ import map from 'lodash-es/map.js'
 import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
+import procLang from '../server/procLang.mjs'
 import { woItems } from '../g_mOrm.mjs'
 import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, apiUrl, assertBaselineMatch, resetToBaseSeed, deleteNonBaseSeed, genTempSettings, restartBackend, typeIntoInput, launchBrowser } from './tools/e2e-setup.mjs'
 //產製端與比對端同一案例管線 (2026-09-28 起, 規格詳 w-package-tools-e2e 之 README.md §2.1-2.2)
@@ -644,7 +645,20 @@ async function captureRegistrationNotAllowed(page, lang) {
     await page.waitForFunction(() => document.querySelectorAll('input').length >= 2, null, { timeout: 8000 })
     await page.waitForTimeout(500)
     await page.mouse.move(0, 0)
-    return await captureStableWithBox(page, '.sb')
+    let buf = await captureStableWithBox(page, '.sb')
+
+    //S-6 (ADR-095 同輪; 語意斷言, 不新增標準圖): 重寄驗證信為自助註冊之附屬入口, 註冊關閉時前端亦不顯示其連結——
+    //以未驗證帳號(base seed 之 ac-basic)登入, 顯示「未驗證」錯誤, 但不出現「重寄驗證信」連結(後端亦拒絕, 見 api-accessmatrix MX-REG-04)
+    let kp = procLang()[lang]
+    await resetToBaseSeed()
+    let inputs = page.locator('input')
+    await typeIntoInput(page, inputs.nth(0), 'ac-basic')
+    await typeIntoInput(page, inputs.nth(1), 'pw-basic')
+    await page.keyboard.press('Enter')
+    await page.getByText(kp.userRegistrationNotVerified, { exact: false }).first().waitFor({ state: 'visible', timeout: 15000 })
+    let nResend = await page.getByText(kp.userRegistrationResendVerify, { exact: true }).count()
+    assert.strictEqual(nResend, 0, `註冊關閉時未驗證帳號登入失敗後不應顯示「${kp.userRegistrationResendVerify}」連結, 實際 ${nResend} 個`)
+    return buf
 }
 
 

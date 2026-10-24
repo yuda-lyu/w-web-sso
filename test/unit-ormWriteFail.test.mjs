@@ -466,7 +466,8 @@ describe('updateTabItems - 清單儲存之寫入失敗 (ADR-080)', function() {
 
     it('A13 權杖清單與 IP 清單之新增列主鍵含 HTML 標記且與刪除同批: 同回 htmlMarkupNotAllowed, 資料庫無變更', async function() {
         let cases = [
-            { woName: 'tokens', idDel: 't-z1', rowNew: { ...mkToken('<x>t-new', 'tk-new', 'u-z'), isApp: 'y', perms: [] } }, //應用系統金鑰列(清單存檔不得新增 session 列, ADR-092; 本案意圖為主鍵標記判準)
+            //權杖清單存檔只改不增(ADR-095): 新增應用系統金鑰列於標記判準之前即整批拒收 tokenAppAddNotAllowed, 主鍵標記判準對權杖清單不再可達(應用系統金鑰主鍵由伺服端產生)
+            { woName: 'tokens', idDel: 't-z1', rowNew: { ...mkToken('<x>t-new', 'tk-new', 'u-z'), isApp: 'y', perms: [] }, expect: 'tokenAppAddNotAllowed' },
             { woName: 'ips', idDel: 'ip-2', rowNew: mkIp('<x>ip-new', '10.0.0.3') },
         ]
         for (let c of cases) {
@@ -477,7 +478,7 @@ describe('updateTabItems - 清單儲存之寫入失敗 (ADR-080)', function() {
             rows.push(c.rowNew)
             let err = await errOf(callOf[c.woName](env.p, rows))
             //ADR-081: 判準位於 updateTabItems 驗證階段, 三種清單同一路徑
-            assert.strictEqual(err, 'htmlMarkupNotAllowed', c.woName)
+            assert.strictEqual(err, c.expect || 'htmlMarkupNotAllowed', c.woName)
             assert.deepStrictEqual(snapTables(env), before, c.woName)
             assert.strictEqual(writesOf(t), 0, c.woName)
         }
@@ -486,7 +487,7 @@ describe('updateTabItems - 清單儲存之寫入失敗 (ADR-080)', function() {
     it('A14 對照(三清單): 主鍵含標記之既有列刪除或未變更、新增列主鍵為白名單標籤或不構成標記之 <: 照常寫入(判準同 w-serv-orm, 不多擋)', async function() {
         let cases = [
             { woName: 'users', mk: (id, s, order) => (order ? mkUser(id, `${s}user`, order) : mkUserNew(id, `${s}user`)), ord: [6, 7] },
-            { woName: 'tokens', mk: (id, s) => ({ ...mkToken(id, `tk-${s}`, 'u-y'), isApp: 'y', perms: [] }), ord: [] }, //應用系統金鑰列(不帶基準之儲存只刪 / 改此類列, R-CONC-03)
+            { woName: 'tokens', mk: (id, s) => ({ ...mkToken(id, `tk-${s}`, 'u-y'), isApp: 'y', perms: [] }), ord: [], noAdd: true }, //應用系統金鑰列(不帶基準之儲存只刪 / 改此類列, R-CONC-03); 權杖清單存檔只改不增(ADR-095), 僅驗刪除與未變更
             { woName: 'ips', mk: (id, s) => mkIp(id, `10.0.1.${s.length}`), ord: [] },
         ]
         for (let c of cases) {
@@ -499,14 +500,18 @@ describe('updateTabItems - 清單儲存之寫入失敗 (ADR-080)', function() {
             }
             //刪除排在最後之 <x>h、新增列接於尾端: users 之 order 依位置重編, <x>k 之 order 不變方屬未變更(見 A15)
             let rows = listRows(t).filter((r) => r.id !== '<x>h')
-            rows.push(c.mk('n<1', 'lll'), c.mk('<b>n</b>', 'bbbb'))
+            if (!c.noAdd) {
+                rows.push(c.mk('n<1', 'lll'), c.mk('<b>n</b>', 'bbbb'))
+            }
             let err = await errOf(callOf[c.woName](env.p, rows))
             //ADR-081: 刪除不經 clearXSS 故不檢查; 比對後屬未變更之列不寫入; 'n<1' 與白名單標籤 '<b>n</b>' 不會被 clearXSS 改寫 → 皆照常
             assert.strictEqual(err, null, c.woName)
             assert.strictEqual(t.get('<x>h'), undefined, c.woName)
             assert.ok(t.get('<x>k'), c.woName)
-            assert.ok(t.get('n<1'), c.woName)
-            assert.ok(t.get('<b>n</b>'), c.woName)
+            if (!c.noAdd) {
+                assert.ok(t.get('n<1'), c.woName)
+                assert.ok(t.get('<b>n</b>'), c.woName)
+            }
             if (c.woName === 'users') {
                 assert.deepStrictEqual(tokenIdsOf(env.tokens, '<x>h'), [])
             }
@@ -552,7 +557,7 @@ describe('updateTabItems - 清單儲存之寫入失敗 (ADR-080)', function() {
                 return { ...r, perms: ['readTokens'] }
             }
             if (r.id === 't-y1') {
-                return { ...r, token: '<x>tk-y1' }
+                return { ...r, timeCreate: '<x>2026-01-01' } //應用系統金鑰列之權杖字串不可變更(ADR-095), 以仍可修改之欄位 timeCreate 承載標記
             }
             return r
         })
@@ -566,9 +571,9 @@ describe('updateTabItems - 清單儲存之寫入失敗 (ADR-080)', function() {
     it('A18 新增列主鍵超過 LMDB 鍵長上限(UTF-8 1978 位元組)且與刪除同批(三清單): 回 invalidRows, 資料庫無變更; 恰為上限者照常寫入', async function() {
         let idLong = 'k'.repeat(1979)
         let idMax = `${'中'.repeat(659)}k` //659 x 3 + 1 = 1978 位元組
+        //權杖清單存檔只改不增(ADR-095), 新增列之主鍵鍵長判準對權杖清單不再可達(應用系統金鑰主鍵由伺服端產生), 本案只驗使用者與 IP 清單
         let cases = [
             { woName: 'users', idDel: 'u-x', mkNew: (id) => mkUserNew(id, 'luser') },
-            { woName: 'tokens', idDel: 't-z1', mkNew: (id) => ({ ...mkToken(id, 'tk-long', 'u-z'), isApp: 'y', perms: [] }) }, //應用系統金鑰列(清單存檔不得新增 session 列, ADR-092; 本案意圖為鍵長判準)
             { woName: 'ips', idDel: 'ip-2', mkNew: (id) => mkIp(id, '10.0.0.3') },
         ]
         for (let c of cases) {
@@ -642,23 +647,32 @@ describe('updateTabItems - 清單儲存之寫入失敗 (ADR-080)', function() {
         }
     })
 
-    it('A23 權杖清單新增列(鑄造應用系統金鑰, ADR-042): 擁有者 userId 為送入值, 不被 procOrm 之建立者戳記改寫(修改前為空字串); 新增使用者 token(session 列)整批拒收(ADR-092)', async function() {
+    it('A23 鑄造應用系統金鑰(createAppToken, ADR-095; 取代 ADR-084 之清單新增列): 使用者用途擁有者為所綁使用者、系統服務用途擁有者為建立者(操作者), 皆不被 procOrm 之建立者戳記改寫; 權杖清單存檔新增列(session 列 / 應用系統金鑰列)整批拒收', async function() {
         let env = await mkEnv()
         let rows = listRows(env.tokens)
-        //ADR-092(只收回、不放寬): 清單存檔不得新增 session 列, 原「鑄造使用者 token」之能力收回——同批含之則整批拒收, 同批之應用系統金鑰列亦不寫
+        //ADR-092(只收回、不放寬): 清單存檔不得新增 session 列——同批含之則整批拒收, 同批之應用系統金鑰列亦不寫
         let before = snapTables(env)
         let errU = await errOf(env.p.checkTokenAndUpdateTokensList('tk-admin', [...rows, { ...mkToken('t-new-u', 'tk-new-u', 'u-z'), perms: [] }, { ...mkToken('t-new-a0', 'tk-new-a0', 'id-app-new'), isApp: 'y', perms: [] }]))
         assert.strictEqual(errU, 'tokenSessionAddNotAllowed')
         assert.deepStrictEqual(snapTables(env), before)
-        rows.push({ ...mkToken('t-new-a1', 'tk-new-a1', 'id-app-new'), isApp: 'y', perms: ['readStats'] })
-        rows.push({ ...mkToken('t-new-a2', 'tk-new-a2', 'id-app-new'), isApp: 'y', perms: [] })
-        let err = await errOf(env.p.checkTokenAndUpdateTokensList('tk-admin', rows))
-        assert.strictEqual(err, null)
-        //ADR-084: tokens 之 userId 為擁有者; adjustData 於 insert 時把 userId 欄改寫為 procOrm 之 userId 參數(視為建立者), 故依擁有者分組寫入
-        assert.strictEqual(env.tokens.get('t-new-u'), undefined)
-        assert.strictEqual(env.tokens.get('t-new-a1').userId, 'id-app-new')
-        assert.strictEqual(env.tokens.get('t-new-a2').userId, 'id-app-new')
-        assert.deepStrictEqual(env.tokens.get('t-new-a1').perms, ['readStats'])
+        //ADR-095: 清單存檔只改不增, 應用系統金鑰列亦整批拒收(只能經 createAppToken 鑄造, 權杖字串由伺服端產生)
+        let errA = await errOf(env.p.checkTokenAndUpdateTokensList('tk-admin', [...rows, { ...mkToken('t-new-a1', 'tk-new-a1', 'id-app-new'), isApp: 'y', perms: ['readStats'] }]))
+        assert.strictEqual(errA, 'tokenAppAddNotAllowed')
+        assert.deepStrictEqual(snapTables(env), before)
+        //createAppToken: 系統服務用途(不綁使用者, 擁有者 userId 記建立者); 使用者用途(userId 為所綁使用者); 權杖字串與主鍵由伺服端產生
+        let a1 = await env.p.createAppToken({ name: 'sys-1', usage: 'system', perms: ['readStats'] }, { operatorId: 'u-admin' })
+        let a2 = await env.p.createAppToken({ name: 'usr-1', usage: 'user', userId: 'u-z' }, { operatorId: 'u-admin' })
+        assert.strictEqual(env.tokens.get(a1.id).userId, 'u-admin', '系統服務用途之擁有者為建立者')
+        assert.strictEqual(env.tokens.get(a2.id).userId, 'u-z', '使用者用途之擁有者為所綁使用者')
+        assert.strictEqual(env.tokens.get(a1.id).userIdUpdate, 'u-admin')
+        assert.strictEqual(env.tokens.get(a2.id).userIdUpdate, 'u-admin')
+        assert.deepStrictEqual(env.tokens.get(a1.id).perms, ['readStats'])
+        assert.deepStrictEqual(env.tokens.get(a2.id).perms, [])
+        assert.strictEqual(env.tokens.get(a1.id).appUsage, 'system')
+        assert.strictEqual(env.tokens.get(a2.id).appUsage, 'user')
+        assert.strictEqual(env.tokens.get(a1.id).appName, 'sys-1')
+        assert.strictEqual(env.tokens.get(a1.id).timeEnd, '', '不給期限')
+        assert.strictEqual(env.tokens.get(a1.id).token, a1.token)
         assert.strictEqual(env.tokens.get('t-x1').userId, 'u-x', '既有列不受影響')
     })
 

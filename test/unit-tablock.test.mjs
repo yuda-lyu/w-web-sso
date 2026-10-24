@@ -8,7 +8,7 @@
 // 站點編號見帳本 R-CONC-01 表(S10~S14 為 updateTabItems 之 users / tokens / ips 三路徑各自之刪除 / 新增 / 修改).
 
 import assert from 'assert'
-import { mkEnvSso, mkProtect, mkUser, mkToken, errOf, writesOf, writesAll, holdLocks, track, sleep, PW_INIT } from './tools/unitEnv.mjs'
+import { mkEnvSso, mkProtect, mkUser, errOf, writesOf, writesAll, holdLocks, track, sleep, PW_INIT } from './tools/unitEnv.mjs'
 import { baselineOfUsers } from '../src/baselineOf.mjs'
 
 
@@ -127,12 +127,43 @@ describe('19 個 server 寫入站點皆在表鎖內 (R-CONC-01, V14)', function(
         await assertWaits('S10 ips del', env3, ['ips'], ['ips'], () => env3.p.checkTokenAndUpdateIpsList('tk-admin', rowsI, {}, undefined))
     })
 
-    it('SITE-LOCK-S11 updateTabItems tokens 新增(鑄造應用系統金鑰, keepUserId)', async function() {
+    it('SITE-LOCK-S11 createAppToken(鑄造應用系統金鑰, keepUserId; ADR-095 取代 updateTabItems tokens 新增): [tokens, users] 兩把鎖任一被占用皆等待', async function() {
+        for (let held of [['tokens'], ['users']]) {
+            let env = mkEnvSso()
+            let st = await assertWaits(`S11 hold[${held}]`, env, held, ['tokens'], () => env.p.checkTokenAndCreateAppToken('tk-admin', { name: 'made', usage: 'user', userId: 'u-a' }, {}))
+            assert.strictEqual(env.tokens.get(st.value.id).userId, 'u-a')
+        }
+    })
+
+    it('SITE-LOCK-S11b createAppToken 鎖內再驗操作者(外審 sol#2): 鎖外通過後、等表鎖期間操作者被停用 → 放行後 tokenExpired, 不寫 tokens', async function() {
         let env = mkEnvSso()
-        let rows = await rowsOf(env, 'Tokens')
-        rows.push(mkToken('t-new', 'tk-new', 'id-app-new', { isApp: 'y', perms: ['readStats'] }))
-        await assertWaits('S11', env, ['tokens'], ['tokens'], () => env.p.checkTokenAndUpdateTokensList('tk-admin', rows, {}, undefined))
-        assert.strictEqual(env.tokens.get('t-new').userId, 'id-app-new')
+        let h = await holdLocks(env, ['tokens', 'users'])
+        let w0 = writesOf(env.tokens)
+        let t = track(Promise.resolve().then(() => env.p.checkTokenAndCreateAppToken('tk-admin', { name: 'made', usage: 'system', perms: ['readStats'] }, {})))
+        await sleep(80)
+        assert.ok(!t.state.done, '持鎖期間站點不得完成')
+        env.users.kp.set('u-admin', { ...env.users.get('u-admin'), isActive: 'n' }) //等鎖期間操作者被停用(直寫替身表, 模擬他人寫入)
+        h.release()
+        await h.done
+        await t.pm
+        assert.strictEqual(t.state.err, 'tokenExpired', '被停用之操作者不得再鑄造')
+        assert.strictEqual(writesOf(env.tokens), w0, '不得寫入 tokens')
+        assert.strictEqual(Array.from(env.tokens.kp.values()).filter((r) => r.appName === 'made').length, 0)
+    })
+
+    it('SITE-LOCK-S11c createAppToken 後端雙擊防護(lockSave): 同一操作者之鑄造處理中(含等表鎖)再送出 → 立即 saveInProgress 不排隊; 放行後第 1 次完成且只新增 1 把', async function() {
+        let env = mkEnvSso()
+        let h = await holdLocks(env, ['tokens', 'users'])
+        let data = { name: 'made', usage: 'system', perms: ['readStats'] }
+        let t1 = track(Promise.resolve().then(() => env.p.checkTokenAndCreateAppToken('tk-admin', data, {})))
+        await sleep(80)
+        let err2 = await env.p.checkTokenAndCreateAppToken('tk-admin', data, {}).then(() => null).catch((e) => e)
+        assert.strictEqual(err2, 'saveInProgress', '第 2 次須被占位拒絕, 不排隊')
+        h.release()
+        await h.done
+        await t1.pm
+        assert.ok(t1.state.ok, `第 1 次應完成, 實際 err=${String(t1.state.err)}`)
+        assert.strictEqual(Array.from(env.tokens.kp.values()).filter((r) => r.appName === 'made').length, 1)
     })
 
     it('SITE-LOCK-S12 updateTabItems users / ips 新增', async function() {
@@ -256,11 +287,7 @@ describe('站點之全部寫入皆發生在自己持有的表鎖內 (R-CONC-01; 
                 let rows = (await rowsOf(env, 'Ips')).filter((r) => r.id !== 'ip-2')
                 return () => env.p.checkTokenAndUpdateIpsList('tk-admin', rows, {}, undefined)
             }],
-            ['S11 tokens add', async (env) => {
-                let rows = await rowsOf(env, 'Tokens')
-                rows.push(mkToken('t-new', 'tk-new', 'id-app-new', { isApp: 'y', perms: ['readStats'] }))
-                return () => env.p.checkTokenAndUpdateTokensList('tk-admin', rows, {}, undefined)
-            }],
+            ['S11 createAppToken', async (env) => () => env.p.checkTokenAndCreateAppToken('tk-admin', { name: 'made', usage: 'user', userId: 'u-a' }, {})],
             ['S12 users add', async (env) => {
                 let rows = await rowsOf(env, 'Users')
                 rows.push({ ...mkUser('u-n', 'nuser', 5), password: 'Zq#8765Wm', _isNew: true })

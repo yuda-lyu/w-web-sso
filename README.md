@@ -11,9 +11,58 @@ A web service for SSO.
 ## Documentation
 To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-web-sso/WWebSso.html).
 
+## Security: token 入口與呼叫者(2026-10-24)
+
+後端以 token 授權之入口，依呼叫者之通過（✓）與拒絕（✗；對外一律固定鍵 `tokenExpired`，除註明者）整理如下。呼叫者：**無**＝未帶 token；**使用者**＝一般使用者之登入 token；**管理員**＝管理者之登入 token；**用途·使用者**＝使用者用途之應用系統金鑰（綁一般使用者／綁管理員，授權同所綁使用者之登入 token）；**用途·系統**＝系統服務用途之應用系統金鑰（依 `perms`；基本權限 `readUsers` 恆具備）。使用者目前之狀態（已驗證、未封鎖、帳號未到期、未停用）於每次使用時判定；系統服務用途不受建立者狀態影響。
+
+| 入口 | 無 | 使用者 | 管理員 | 用途·使用者(綁一般) | 用途·使用者(綁管理員) | 用途·系統(具 perm) | 用途·系統(缺 perm) |
+|---|---|---|---|---|---|---|---|
+| `checkToken`、`logoutByToken`、`logoutSsoUser`（HTTP／函數） | ✗ | ✓ 本人 | ✓ 本人 | ✓ 本 token | ✓ 本 token | ✓ 本 token | ✓ 本 token |
+| `refreshToken` | ✗ | ✓ | ✓ | ✗ `tokenAppNoRefresh` | ✗ `tokenAppNoRefresh` | ✗ `tokenAppNoRefresh` | ✗ `tokenAppNoRefresh` |
+| `getUserByToken`（查自己） | ✗ | ✓ | ✓ | ✓ 所綁使用者 | ✓ 所綁使用者 | ✓ 應用系統身分 | ✓ 應用系統身分 |
+| `changeUserPassword` | ✗ | ✓ 本人（須舊密碼） | ✓ 本人 | ✓ 所綁使用者（須舊密碼） | ✓ 所綁使用者 | ✗ `tokenUserOnly` | ✗ `tokenUserOnly` |
+| 讀使用者：`/api/getSsoUserInfor`（`key=id\|account\|email\|name\|token`）、`/api/getSsoUsersList`、`getUserInfor`、`getUsersList`（`readUsers`） | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ |
+| 寫使用者：`updateUsersList`、`adminResetUserPassword`（`writeUsers`） | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ |
+| 金鑰：`getTokensList`（`readTokens`）；`updateTokensList`、`createAppToken`（`writeTokens`） | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ |
+| IP：`getIpsList`（`readIps`）；`updateIpsList`（`writeIps`） | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ |
+| 統計：`getStaUserSummary`、`getStaTokenSummary`、`getStaIpSummary`、`getStaUserAccountLogin`、`getStaToken`、`getStaIp`（`readStats`） | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ |
+
+- 公開入口（不讀 token）：靜態頁、`getWebInfor`、`checkUserPassword`、`loginByAccountAndPassword`、`[sys:getFuncList]`；`createUser`、`verifyEmail`（HTTP 連結與函數）、`resendVerifyEmail` 另受 `allowUserRegistration` 開關約束（關閉時一律回 `userRegistrationNotAllowed`）。
+- 失效之 token（未知字串、已逾期之登入 token）一律同於「無」（對外 `tokenExpired`）；**例外**：登出入口讓持有者清理自己已逾期之登入 token。
+- 本表以 `test/api-accessmatrix.test.mjs` 逐格驗證（token 入口 27 個 × 呼叫者 7 類，另失效 token 子類與公開入口），修改任何入口之授權時須同步更新該檔之 `entries`。已知另輪處理：`[sys:getTableTags]`、`[sys:polling]` 兩個系統函數目前不要求 token。
+
 ## Upgrade Notes
 
 ### Upgrading from 1.1.13 and earlier
+
+**應用系統金鑰之兩種用途與反查身分（行為變更，ADR-095）**：應用系統金鑰（`isApp='y'`）依用途分為兩種，tokens 表新增 `appUsage`（`user`／`system`）與 `appName`（金鑰名稱）兩欄（既有資料不需遷移）：
+
+| | 使用者用途（`appUsage='user'`） | 系統服務用途（`appUsage='system'`） |
+|---|---|---|
+| 代表 | 所綁定之一位既有啟用使用者本人（`userId` 即所綁使用者，可綁管理員） | 外部應用系統本身，不綁使用者（`userId` 僅記建立者供稽核） |
+| 授權 | 同該使用者之登入權杖（含管理入口之管理者判準），不適用 `perms` | 依 `perms`（ADR-069，預設只有 `readUsers`） |
+| 可用性 | 每次使用即時依所綁使用者目前狀態判定（存在、啟用、未封鎖、帳號未到期、已驗證），不符即不可用，狀態恢復後可再用 | 不隨建立者之停用、刪除、封鎖而失效；由管理員於後台撤銷 |
+| `getUserByToken`／`/api/getSsoUserInfor?key=token` 回傳 | 所綁使用者之真實資料，`isApp='y'` | 應用系統身分：`id=app:<金鑰主鍵>`、`name=金鑰名稱`、`isApp='y'`、`isAdmin='y'`，其餘為占位字串 |
+| `changeUserPassword` | 可（仍須舊密碼，作用於所綁使用者） | 不可（`tokenUserOnly`） |
+
+- **對下游專案（w-web-perm／w-web-api／w-web-task 等）之反查變更**：系統服務用途金鑰過去反查回之 `id` 為金鑰擁有者欄（建立者）之使用者主鍵，與真實使用者主鍵相同而無法區分；本版起為 `app:<金鑰主鍵>`（後台清單拒收 `app:` 開頭之使用者主鍵，故不與任何使用者相撞）且 `name` 為金鑰名稱。下游若以反查之 `id` 對應自家資料（角色、權限、稽核），須改以 `app:` 前綴辨識應用系統身分。使用者用途金鑰反查回所綁使用者本人（與其登入權杖同一身分，另帶 `isApp='y'`）。
+- **反查之目標權杖須此刻可用**：以 `key=token` 反查之目標權杖已逾期、查無，或其使用者目前不可用（停用、封鎖、帳號到期、未驗證），一律回固定鍵（`tokenNoPermission`），不分原因。
+- **不設期限、不續期**：兩種用途皆不給到期時間（後台列表顯示「不設期限」）；對應用系統金鑰呼叫 `refreshToken` 一律拒收（`tokenAppNoRefresh`）。升級前既有之應用系統金鑰列（無用途欄）視同系統服務用途，不改庫；**其中 `timeEnd` 已過期而未被刪除之舊列，因應用系統金鑰不再判定到期而恢復可用**，升級前請於後台金鑰清單檢視並刪除不再需要者。
+- **新增方式改為 `createAppToken`（後台「金鑰清單」之「新增應用系統金鑰」鈕）**：填名稱（1～60 字）、選用途；使用者用途須選一位啟用中之使用者，系統服務用途勾選權限；權杖字串由伺服端產生。金鑰清單存檔（`updateTokensList`）**不再能新增應用系統金鑰**（`tokenAppAddNotAllowed`），**不再能把登入權杖勾選升級為應用系統金鑰**（`tokenSessionUpgradeNotAllowed`；後台「是否為應用系統金鑰」欄改為唯讀），應用系統金鑰之金鑰字串、所綁使用者、用途、名稱、到期時間建立後不可變更（`tokenAppLocked`），使用者用途不可帶 `perms`（`tokenAppPermsNotForUser`）；清單存檔仍可修改系統服務用途之權限與刪除金鑰。**直打 API 以清單鑄造應用系統金鑰之舊用法須改為呼叫 `createAppToken`**。
+- **停用或刪除使用者時之撤銷範圍**：撤銷該使用者之登入權杖與**綁定該使用者之使用者用途金鑰**（刪列，重新啟用後不恢復，須重新核發）；系統服務用途金鑰（含建立者欄為該使用者者）不撤銷。使用者被封鎖（含自動封鎖）、帳號到期、未驗證時，使用者用途金鑰不刪列，只是即時不可用，狀態恢復後可再用。
+- **對外查詢之授權判準**：以使用者用途金鑰呼叫對外查詢、後台入口者，授權同所綁使用者（綁一般使用者者不具管理服務）；使用者用途金鑰綁管理員時，同樣受「不得停用／降權／刪除自己」之保護（作用於所綁管理員）。
+- 保留字：使用者主鍵不得以 `app:` 開頭（後台清單新增使用者時拒收，`invalidRows`）。**既有使用者若主鍵已以 `app:` 開頭，其與系統服務用途金鑰之應用系統身分同名**（`app:<金鑰主鍵>`），下游依 `id` 對應資料時會混同；升級前請檢查 `users` 表並更換此類主鍵（正常產生之主鍵為 UUID，不會如此）。
+- 登出（`logoutByToken`、`logoutSsoUser`）為持有者清理自己權杖之入口：**已逾期之登入權杖仍可登出（只刪本權杖、不回任何資料、不行使任何能力）**，其餘各入口對逾期、使用者不可用之權杖一律回 `tokenExpired`。
+- 統計之「權杖調用」以系統服務用途金鑰之應用系統身分記錄（顯示金鑰名稱），不再併入建立者名下。
+
+**登入權杖之即時有效性（行為變更，S-4）**：登入權杖（session 權杖）原只檢查到期時間；本版起每次使用另依其使用者目前狀態判定（與登入同一判準：已驗證、帳號未到期、未被封鎖、啟用），不符即與到期同樣回 `tokenExpired`。**未驗證信箱、被封鎖、帳號到期或已停用使用者所持有之既有登入權杖因此立即失效**（原可使用至權杖到期）；狀態恢復後權杖照常可用（未被撤銷者）。
+
+**後台重設他人密碼之管理者判準（S-2，語系鍵移除）**：`adminResetUserPassword` 原僅判 `isAdmin==='y'` 並對非管理者回 `adminResetPasswordForbidden`；本版起與其他管理入口同一判準（`funCheckAdmin`：已驗證、帳號未到期、未被封鎖、啟用、管理者），非管理者、狀態不符或權杖無效一律回 `tokenExpired`。語系鍵 `adminResetPasswordForbidden` 已移除，呼叫端若以該鍵判斷須改判 `tokenExpired`。
+
+**自助註冊關閉時之驗證入口（S-6）**：`allowUserRegistration` 為 `false`（預設）時，`verifyEmail`（HTTP 驗證連結與 kpfun）與 `resendVerifyEmail` 一律回 `userRegistrationNotAllowed`（驗證連結失效、不寄信、不改資料）；登入頁之「重寄驗證信」連結同步隱藏。已開啟註冊之部署不受影響。
+
+- 新增語系鍵：`tokenAppAddNotAllowed`、`tokenSessionUpgradeNotAllowed`、`tokenAppLocked`、`tokenAppPermsNotForUser`、`tokenAppUsageInvalid`、`tokenAppNameInvalid`、`tokenAppUserInvalid`、`tokenAppUserNotForSystem`、`tokenAppCreateFailed`、`tokenAppNoRefresh`、`tokenUserOnly` 及後台畫面用之文字鍵（eng／cht）；移除 `adminResetPasswordForbidden`。
+- 本節取代 1.1.12 節中「金鑰清單新增列僅限應用系統金鑰」「將既有 session 列升級為應用系統金鑰」之敘述。
 
 **改密碼後之 session 處置（行為變更）**：依 OWASP ASVS「改密碼後提供終止其他所有 session」，本版起改密碼會撤銷該使用者的登入權杖（session 權杖，`isApp` 非 `'y'`）：
 

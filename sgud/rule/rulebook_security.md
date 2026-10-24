@@ -70,6 +70,32 @@
 - **修前紅**: 換入 HEAD 版 `server/procCore.mjs`(sha256 回驗還原): `api-passwordsession` 6 案 5 紅(PSA-001、002、003、005、006; PSA-004 為驗證未過不撤銷之對照組, 修前後皆綠); `unit-passwordSession` 17 案 11 紅(修前版 server).
 - **變異驗證(2026-10-23, 外審修補後最終版)**: unit 層 15 項全數被抓到(對照組 45 案全綠; 在 `tmp` 內之 repo 子集副本施作, 逐項還原並驗 sha256): S1 拿掉管理員重設之撤銷、S2 拿掉自行改密碼之撤銷、S3 撤銷到目前 session、S4 撤銷到 app 權杖、S5 / S6 撤銷失敗被吞(仍寫密碼)、S7 驗證未過即撤銷、S8～S11 表鎖只取單表(各站點 × users / tokens)、S12 保留者比對欄位錯、S13 / S14 失敗判定回退為 `errRevoke !== null`(reject(null) 被當成功)、S15 拿掉鎖內再驗呼叫權杖. S1～S4 另於真後端(`api-passwordsession` + `api-resetpassword`)重驗, 結果見報告(sso-run04-修正報告.md).
 
+### R-APPTOK-01: 應用系統金鑰之兩種用途——「權杖代表誰」只經 `loadActor` / `getActorByToken` 解析、即時判準與登入同謂詞、金鑰只經 `createAppToken` 鑄造、不給期限不續期(2026-10-24, sso-run01; ADR-095; 使用者裁示, 存取管控表 S-1~S-6)
+
+- **規則**:
+  1. **身分單一咽喉**: 凡需要「這個權杖代表誰」(本人入口、管理入口之操作者、稽核欄、改密碼對象、反查身分)一律經 `getActorByToken(token)`(= `loadActor` + `isActorLive`); **不得直接讀 `tokens.userId` 當身分**——系統服務用途金鑰之 `userId` 只記建立者(稽核), 建立者被停用 / 刪除 / 為空皆不影響; 使用者用途之 `userId` 才是所綁使用者. 允許直接讀 `tk.userId` 之處僅: `loadActor`(解析用)、log 欄位、`refreshToken` 之稽核操作者(只對登入 token, 應用系統金鑰已先拒)、`tokenAppLocked` 之比對、`createAppToken` 之輸入驗證.
+  2. **即時判準(S-4)**: 登入 token = 未逾期且 `isUserUsable(使用者)`; 使用者用途 = 不看 `timeEnd` 且所綁使用者 `isUserUsable`; 系統服務用途 = 恆可用. `isUserUsable` 與登入(`loginByAccountAndPassword` / `createToken` 鎖內重讀)同謂詞——`timeVerified` 為非空字串(**不要求 timemsTZ 格式**)、`tn > timeExpired` 才算到期、`tn <= timeBlocked` 為封鎖中、`isActive === 'n'` 為停用——**不得改回 `mShare.checkUserBasic`**(其 `getIsVerified` 要求 timemsTZ、`isActive` 須為 `'y'`, 舊格式驗證時間者可登入卻立即被判失效, 外審 sol#4). 管理入口之管理員判準 `funCheckAdmin`(= `checkUserAdmin`)維持原樣.
+  3. **授權**: 使用者 token 與使用者用途以 `fun(tk, 使用者)` 判斷、perms 不適用; 系統服務用途以 `perm` 判斷(只給 `fun` 未宣告 `perm` 者 fail closed, 沿 R-PERM-01); 用途值未登錄 fail closed.
+  4. **鑄造唯一入口 `createAppToken`**: 權杖字串與主鍵伺服端產生; 於 `[tokens, users]` 表鎖內驗證(綁定者存在且啟用、綁定值不含會被 XSS 清除改寫之標記)並**再驗操作者仍有權**(`recheck`)再寫入; `lockSave('createAppToken', 操作者)` 雙擊防護; 失敗以旗標判定. 清單存檔(`updateTabItems` tokens 路徑)只改不增: 新增應用系統金鑰列 → `tokenAppAddNotAllowed`、升級登入 token → `tokenSessionUpgradeNotAllowed`、改字串 / 綁定者 / 啟用旗標 / 期限 → `tokenAppLocked`、使用者用途設 perms → `tokenAppPermsNotForUser`; 皆整批零寫入.
+  5. **撤銷範圍**: 刪除 / 停用使用者(清單存檔)撤銷其登入 token 與綁其之使用者用途金鑰(`revokeTokensByUserIdLocked(userId, { includeAppUser: true })`); 自動封鎖只撤登入 token(預設); 系統服務用途金鑰(含 `userId` 欄為該使用者之既有列)一律不撤銷. 測試以直寫庫改狀態(不經清單存檔、故不撤銷)驗「即時失效 / 恢復」, 經清單存檔驗「撤銷範圍」, 兩者分開.
+  6. **不給期限**: 應用系統金鑰不看 `timeEnd`; `refreshToken` 一律 `tokenAppNoRefresh`; 統計之「已到期」「24 小時內到期」不計應用系統金鑰.
+  7. **本人入口僅限代表使用者本人者**: `changeUserPassword` 對系統服務用途回 `tokenUserOnly`; 鎖內重新解析身分須與鎖外相同.
+  8. **S-2 / S-5 / S-6**: `adminResetUserPassword` 以 `funCheckAdmin` 授權、對外同為 `tokenExpired`(`adminResetPasswordForbidden` 已移除); `key=token` 查他人之目標權杖須此刻可用(逾期 / 查無 / 其使用者不可用 → 固定鍵 `tokenNoPermission`); `allowUserRegistration` 非 true 時 `verifyEmail`(HTTP、函數)與 `resendVerifyEmail` 固定拒絕 `userRegistrationNotAllowed`.
+  9. **保留前綴 `app:`**: 後台清單新增使用者之主鍵不得以 `app:` 開頭(`invalidRows`); 呼叫統計以 `app:<金鑰主鍵>` 記系統服務用途之呼叫者.
+  10. **登出入口刻意不判逾期與使用者狀態**(持有者清理自己之權杖: 只刪本權杖、不回資料、不行使能力); 以 `api-accessmatrix` MX-DEAD 鎖定此例外.
+- **理由**: 原實作以 `tokens.userId` 當身分, 且 `isAdmin='y'` 之虛擬使用者混用建立者 id, 使系統服務金鑰之反查與建立者無法區分、建立者被停用即波及、`isApp` 勾選可把登入 token 升級為永久金鑰; 即時判準只看權杖到期, 被封鎖 / 到期 / 未驗證者之既有 token 照常可用. 單一咽喉使「新增入口時忘記用途判斷」變成缺少一個函數呼叫而非一整套判斷.
+- **盤點指令**:
+  - Grep `get\(tk, 'userId'|get\(tks, '0\.userId'` 於 `server/` → 命中皆為上列允許之處(`loadActor` 2、log 欄位 2、`refreshToken` 稽核 1、`tokenAppLocked` 比對 1〔`get(row, 'userId'`〕、`createAppToken` 輸入 2、`procProtect` 封鎖站點 2〔限 `isApp !== 'y'` 之登入 token〕).
+  - Grep `getActorByToken\(|loadActor\(|isActorLive\(` 於 `server/procCore.mjs` → 站點: `_checkToken` / `_checkTokenByObj`(2)、`_refreshToken`(1, 經 loadActor + isActorLive)、`checkTokenAndChangePassword`(外 1 + 鎖內 1)、`adminResetUserPassword`、`getUserByToken`、`checkTokenAndUpdateUsersList` / `TokensList` / `IpsList`、`checkTokenAndCreateAppToken`.
+  - Grep `checkUserBasic` 於 `server/` → 0 命中(不得回用於即時判準).
+  - Grep `kpfun`／`path: '/api/` 於 `server/WWebSso.mjs` → 受 token 入口全集 27 個(= `test/api-accessmatrix.test.mjs` 之 `entries`; 新增入口須同時補 entries).
+- **站點全集(2026-10-24)**: token 入口 27 個 × 呼叫者 7 類 = 189 格, 另失效 token 子類(未知字串、已逾期登入 token)27 × 2 = 54 格; 公開入口(1.2 前段)與註冊開關格見 `api-accessmatrix` 尾端統計行. 刻意未測: `[sys:getTableTags]`、`[sys:polling]`(現全公開, 排程第 128 項 C4 另輪)、通訊路由 ulctr / slc / dwgfn / dwgf / dw(未註冊監聽)、`/api/cleanKp*`(固定權杖 + 本機白名單, 不屬 token 呼叫者)、UI 頁面格(由 e2e 覆蓋).
+- **測試**: `api-accessmatrix`(入口 × 呼叫者全矩陣 + 失效 token 子類 + 公開入口 + 註冊關閉)、`api-apptoken-usage`(ST 狀態即時失效 / 恢復 × 4 種身分、舊格式驗證時間、不看 timeEnd; REV 撤銷範圍; S-2、S-5; SELF 自我保護與 `app:` 前綴; LIST 清單存檔規則; MINT 鑄造驗證、雙擊、同鎖; LEGACY 舊列相容; SESSION 不變)、`unit-appUsage`(AU-01~23)、`unit-tablock`(S11 / S11b / S11c)、`unit-saveBaseline` / `unit-ormWriteFail` / `unit-writeContract` 之改寫、`e2e-tokens`(E2E-008~010 + 既有案例之改寫)、`e2e-register` E2E-017(S-6 前端).
+- **驗證結果(2026-10-24 sso-run01; 全文見 `C:\opensrcOper\dnow\20261024130755\agent-out\sso-run01-修正報告.md`)**:
+  - **修前紅**(以 `tmp/sso-run01/swap.mjs` 暫時換入 HEAD 版 `server/procCore.mjs`、`procLang.mjs`、`procStaInfor.mjs`、`WWebSso.mjs`, 跑完回驗 sha256 還原): `unit-appUsage` + `unit-tablock` 25 過 / **18 敗**; `api-accessmatrix` 33 過 / **28 敗**; `api-apptoken-usage` 3 過 / **36 敗**(失敗皆為斷言差異: 封鎖 / 到期 / 未驗證者之 token 全數仍可用、`fapi.createAppToken not found`、`isApp` 升級照常成功等, 非環境錯誤). 修後: unit 全 389 過、api 全 262 過、`e2e-tokens` 18 / 18.
+  - **變異驗證**(單點變異, 還原後 sha256 相符): M1 使用者用途不判所綁使用者當前狀態(`isActorLive` 對 `appUser` 恆真)→ `unit-appUsage` AU-11 敗、`api-apptoken-usage` ST 6 格敗(封鎖 / 到期 / 未驗證 × AU-U / AU-A; 停用格因取使用者時即過濾 `isActive` 而另有一道防線, 未被單獨抓到屬預期); M2 撤銷範圍含系統服務用途(`return includeAppUser`)→ AU-16 敗、api REV 3 案敗; M3 `refreshToken` 不拒應用系統金鑰 → AU-14 敗、`api-accessmatrix` MX[HTTP / kpfun refreshToken] 敗(使用者用途得 `invalid timeEnd` 而非 `tokenAppNoRefresh`); M4 S-6 前端: **單拿掉一處不被抓到**(`showResendVerify = vo.allowUserRegistration` 與模板 `allowUserRegistration &&` 為互為備援之兩道, 單變異 E2E-017 仍綠, 屬刻意備援), 兩處同時還原為 HEAD 版 `PageLogin.vue` → `e2e-register` E2E-017 eng + cht 皆敗(語意斷言「註冊關閉時不應顯示重寄驗證信連結, 實際 1 個」).
+  - **外審**: sol 15 條逐條核對(13 屬實 / 部分屬實並處置、1 誤報、1 既存缺口待裁示), 見報告〈五〉; nemotron、beam 額度用盡未審.
+
 ### R-IP-01: 來源 IP 之取值——`X-Forwarded-For` 最左段須為合法 IP 才採用, 否則退回連線位址並限流記 warn; 合法 IP 原樣不改寫(2026-10-20, 主控第 93 項; 使用者裁示: SSO 不做防偽造)
 
 - **規則**:

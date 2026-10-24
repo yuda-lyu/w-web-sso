@@ -6,7 +6,8 @@ import { fetchSsoMsg, convertUser, hasUrlParam } from './fetchSsoMsg.mjs'
 
 
 async function getUsersByToken(url, tokenSelf, opt = {}) {
-    //供外部系統於伺服端直接調用; tokenSelf 為 app token(等同管理者, ADR-005)時不可於瀏覽器端呼叫
+    //供外部系統於伺服端直接調用; tokenSelf 為應用系統金鑰, 不可於瀏覽器端呼叫: 使用者用途須綁管理員(授權同所綁使用者); 系統服務用途依 perms(基本權限 readUsers 即可查, ADR-069、ADR-095;
+    //原載「app token 等同管理者, ADR-005」不成立, 已由 ADR-069 取代)
     //url: http://localhost:11007/api/getSsoUsersList?token={sysToken}
     //失敗一律 reject 固定 key(不含網址與權杖), 呼叫端應映射為自家 key 後再回前端, 見 spec/設計要點與取捨.md ADR-068
 

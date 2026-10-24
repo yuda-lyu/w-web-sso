@@ -31,7 +31,7 @@ let expected = {
     tokens: {
         fields: ['token', 'userId', 'isApp', 'perms', 'timeCreate', 'timeEnd'],
         dual: ['timeEnd'],
-        serverOnly: ['timeUpdate', 'userIdUpdate'],
+        serverOnly: ['timeUpdate', 'userIdUpdate', 'appUsage', 'appName'], //appUsage / appName: 應用系統金鑰之用途與名稱, 只由 createAppToken 鑄造時寫入, 其後不可變更 (ADR-095)
         orderKey: undefined,
     },
     ips: {

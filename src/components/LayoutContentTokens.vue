@@ -107,6 +107,26 @@
 
                 </template>
 
+                <template v-if="isEditable">
+
+                    <!-- 新增應用系統金鑰 (ADR-095): 權杖字串由伺服端產生, 清單存檔不再新增列; 沿用本功能列既有圓鈕色票(#fff / hover #f2f2f2 / 圖示 #444 / #222) -->
+                    <WButtonCircle
+                        :paddingStyle="{v:6,h:6}"
+                        :tooltip="$t('tokenAddApp')"
+                        :icon="mdiKeyPlus"
+                        :backgroundColor="'#fff'"
+                        :backgroundColorHover="'#f2f2f2'"
+                        :iconColor="'#444'"
+                        :iconColorHover="'#222'"
+                        :iconColorFocus="'#222'"
+                        :shadow="false"
+                        @click="onClickAddAppBtn"
+                    ></WButtonCircle>
+
+                    <div style="padding-left:4px;"></div>
+
+                </template>
+
                 <template v-if="isEditable && hasItemsCheck">
 
                     <WButtonCircle
@@ -164,18 +184,33 @@
                 >
                     <template v-slot:cell-render="props">
                         <template v-if="props.key === 'userId'">
-                            <span v-if="$ui.gv(props.row, 'isApp') !== 'y'">{{ props.value }}</span>
+                            <!-- 使用者主鍵: 登入 token 為登入者, 使用者用途為所綁使用者; 系統服務用途之 userId 只記建立者(稽核), 不是身分, 不顯示 (ADR-095) -->
+                            <span v-if="$ui.gv(props.row, 'isApp') !== 'y' || $ui.gv(props.row, 'appUsage') === 'user'">{{ props.value }}</span>
                         </template>
                         <template v-else-if="props.key === 'isApp'">
-                            <input type="checkbox" :checked="props.value === 'y'" @click="$dg.toggleItemIsAppById($ui.gv(props.row, 'id'))" :disabled="!isEditable" />
+                            <!-- 是否為應用系統金鑰: 唯讀(登入 token 不可升級為應用系統金鑰, 應用系統金鑰不可改回; ADR-095), 新增走「新增應用系統金鑰」 -->
+                            <input type="checkbox" :checked="props.value === 'y'" disabled />
+                        </template>
+                        <template v-else-if="props.key === 'appUsage'">
+                            <span v-if="$ui.gv(props.row, 'isApp') === 'y'">{{ getUsageText(props.row.appUsage) }}</span>
+                        </template>
+                        <template v-else-if="props.key === 'appName'">
+                            <span v-if="$ui.gv(props.row, 'isApp') === 'y'">{{ props.value }}</span>
                         </template>
                         <template v-else-if="props.key === 'perms'">
-                            <!-- 應用系統權限僅適用於 app token (ADR-069); 點擊開啟清單, 編輯模式可勾選, 關閉清單時寫回該列 -->
+                            <!-- 使用者用途之權限即所綁使用者之權限, perms 不適用 (ADR-095) -->
+                            <div
+                                style="display:flex; align-items:center; height:100%; font-size:0.8rem; color:#888;"
+                                v-if="$ui.gv(props.row, 'isApp') === 'y' && $ui.gv(props.row, 'appUsage') === 'user'"
+                            >
+                                {{$t('tokenPermsBoundUser')}}
+                            </div>
+                            <!-- 應用系統權限僅適用於系統服務用途 (ADR-069); 點擊開啟清單, 編輯模式可勾選, 關閉清單時寫回該列 -->
                             <div
                                 style="display:flex; align-items:center; height:100%;"
                                 @click.stop.prevent
                                 @mousedown.stop.prevent
-                                v-if="$ui.gv(props.row, 'isApp') === 'y'"
+                                v-else-if="$ui.gv(props.row, 'isApp') === 'y'"
                             >
                                 <WPopup
                                     style="flex:1; min-width:0px;"
@@ -269,7 +304,9 @@
                             </div>
                         </template>
                         <template v-else-if="props.key === 'timeEnd'">
-                            <div @click.stop.prevent @mousedown.stop.prevent style="display:flex; align-items:center;">
+                            <!-- 應用系統金鑰不給期限 (ADR-095): 不顯示時間選擇器, 不可編輯期限 -->
+                            <span v-if="$ui.gv(props.row, 'isApp') === 'y'" style="font-size:0.8rem; color:#888;">{{$t('tokenNoExpire')}}</span>
+                            <div v-else @click.stop.prevent @mousedown.stop.prevent style="display:flex; align-items:center;">
                                 <WTimeminute
                                     :style="`line-height:1.1rem;`"
                                     :value="cellTimeForInput(props.value)"
@@ -304,7 +341,7 @@
                                     :style="`line-height:1.1rem;`"
                                     :value="cellTimeForInput(props.value)"
                                     @input="handleCellTimeInput('timeUpdate', $ui.gv(props.row, 'id'), $event)"
-                                    :editable="isEditable"
+                                    :editable="false"
                                     :textEmpty="$t('selectDate')"
                                     :funRenderYear="timePickerRenders.funRenderYear"
                                     :funRenderMonth="timePickerRenders.funRenderMonth"
@@ -350,11 +387,17 @@
             {{$t('waitingData')}}
         </div>
 
+        <!-- 新增應用系統金鑰對話框: 成功後重新載入清單(新列使既有基準過時) -->
+        <AppTokenAddDialog
+            :show.sync="showAdd"
+            @created="onCreatedApp"
+        ></AppTokenAddDialog>
+
     </div>
 </template>
 
 <script>
-import { mdiShieldKeyOutline, mdiCloudUploadOutline, mdiTrashCanOutline, mdiTableHeadersEye } from '@mdi/js/mdi.js'
+import { mdiShieldKeyOutline, mdiCloudUploadOutline, mdiTrashCanOutline, mdiTableHeadersEye, mdiKeyPlus } from '@mdi/js/mdi.js'
 import ot from 'dayjs'
 import get from 'lodash-es/get.js'
 import set from 'lodash-es/set.js'
@@ -376,6 +419,7 @@ import WAggridVue from 'w-aggrid-vue/src/components/WAggridVue.vue'
 import WTimeminute from 'w-component-vue/src/components/WTimeminute.vue'
 import { keysAppPerm, keysAppPermBase, keysAppPermHigh, getAppPerms, normAppPerms } from '../appPerms.mjs'
 import AppPermsTags from './AppPermsTags.vue'
+import AppTokenAddDialog from './AppTokenAddDialog.vue'
 import contracts from '../writeContracts/index.mjs'
 import { baselineOfTokens, isSameSnapshot } from '../baselineOf.mjs'
 
@@ -390,6 +434,7 @@ export default {
         WAggridVue,
         WTimeminute,
         AppPermsTags,
+        AppTokenAddDialog,
     },
     props: {
         drawer: {
@@ -403,6 +448,9 @@ export default {
             mdiCloudUploadOutline,
             mdiTrashCanOutline,
             mdiTableHeadersEye,
+            mdiKeyPlus,
+
+            showAdd: false, //新增應用系統金鑰對話框
 
             panelWidth: 100,
             panelHeight: 100,
@@ -422,6 +470,8 @@ export default {
                 'token',
                 'userId',
                 'isApp',
+                'appUsage',
+                'appName',
                 'perms',
                 'timeCreate',
                 'timeEnd',
@@ -431,6 +481,8 @@ export default {
                 'token',
                 'userId',
                 'isApp',
+                'appUsage',
+                'appName',
                 'perms',
                 'timeCreate',
                 'timeEnd',
@@ -440,6 +492,8 @@ export default {
                 'token',
                 'userId',
                 'isApp',
+                'appUsage',
+                'appName',
                 'perms',
                 'timeCreate',
                 'timeEnd',
@@ -465,9 +519,6 @@ export default {
 
         let vo = this
 
-        //註冊至$dg供使用
-        vo.$dg.toggleItemIsAppById = vo.toggleItemIsAppById
-
         //firstSetting
         if (vo.firstSetting) {
             // console.log('webInfor', vo.webInfor)
@@ -485,26 +536,8 @@ export default {
 
         }
 
-        //token
-        let token = vo.userToken
-        // console.log('token', token)
-
-        //getTokensList
-        vo.$fapi.getTokensList(token)
-            .then((res) => {
-                // console.log(res)
-                vo.baselines = baselineOfTokens(res) //對畫面所見之同一快照自算基準(須在排序、變動之前; buildBaseline 不改輸入)
-                res = sortBy(res, 'timeCreate').reverse()
-                vo.tokens = res
-                vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
-            })
-            .catch((err) => {
-                console.log(err)
-                vo.errMsg = vo.$t('getDataError')
-            })
-            .finally(() => {
-                vo.firstLoading = false
-            })
+        //loadTokens
+        vo.loadTokens()
 
     },
     computed: {
@@ -589,6 +622,8 @@ export default {
                 'token': vo.$t('token'),
                 'userId': vo.$t('userId'),
                 'isApp': vo.$t('isApp'),
+                'appUsage': vo.$t('tokenAppUsage'),
+                'appName': vo.$t('tokenAppName'),
                 'perms': vo.$t('tokenPerms'),
                 'timeCreate': vo.$t('tokenTimeCreate'),
                 'timeEnd': vo.$t('tokenTimeEnd'),
@@ -684,7 +719,10 @@ export default {
                 let kpHeadCheckBox = {}
                 if (vo.isEditable) {
                     kpCellEditable = {
-                        'token': true,
+                        'token': (params) => {
+                            //應用系統金鑰之權杖字串由伺服端產生、不可變更 (ADR-095); 登入 token 維持既有行為
+                            return get(params, 'data.isApp', '') !== 'y'
+                        },
                         'userId': (params) => {
                             // console.log('params', params)
 
@@ -739,6 +777,8 @@ export default {
                         'token': 300,
                         'userId': 300,
                         'isApp': 100,
+                        'appUsage': 150,
+                        'appName': 180,
                         'perms': 260,
                         'timeCreate': 220,
                         'timeEnd': 220,
@@ -749,6 +789,7 @@ export default {
                         'token': 'text',
                         'userId': 'text',
                         'isApp': 'text',
+                        'appName': 'text',
                         'timeCreate': 'text',
                         'timeEnd': 'text',
                         'timeUpdate': 'text',
@@ -758,6 +799,7 @@ export default {
                     kpHeadCheckBox,
                     kpHeadFilter: {
                         'perms': false, //儲存值為權限字串陣列, 顯示為各語系名稱, 文字過濾比對的是前者, 與所見不符故不提供
+                        'appUsage': false, //儲存值為 user / system(既有列為空), 顯示為各語系用途名稱, 文字過濾比對的是前者, 與所見不符故不提供
                     },
                     kpHeadSort: {
                         'perms': false, //陣列值無有意義之排序
@@ -832,62 +874,72 @@ export default {
 
         },
 
-        toggleItemByKeyAndId: function(key, id) {
-            // console.log('toggleItemByKeyAndId', key, id)
-
+        loadTokens: function() {
+            //載入(及新增金鑰後重新載入)清單: 基準取自同一快照 (多人同時編輯之寫入契約)
             let vo = this
 
-            //check
-            if (!isestr(id)) {
-                vo.$alert(`${vo.$t('userEditNoUserId')}`, { type: 'error' })
-                return
-            }
+            //token
+            let token = vo.userToken
+            // console.log('token', token)
 
-            //rows
-            let rows = get(vo, 'opt.rows', [])
-
-            //find
-            let r = null
-            let kr = null
-            each(rows, (v, k) => {
-                if (get(v, 'id', '') === id) {
-                    r = v
-                    kr = k
-                    return false //跳出
-                }
-            })
-
-            //check
-            if (!iseobj(r)) {
-                vo.$alert(`${vo.$t('userEditNoUserData')}`, { type: 'error' })
-                return
-            }
-
-            //v
-            let _v = get(r, key, 'n')
-            let v = _v === 'y' ? 'n' : 'y'
-            // console.log(key, v)
-
-            //set
-            set(vo, `opt.rows[${kr}].${key}`, v)
-            // console.log('vo.opt.rows[kr]', cloneDeep(vo.opt.rows[kr]))
-
-            //refresh
-            vo.refresh()
-
-            //isModified
-            vo.isModified = true
+            //getTokensList
+            return vo.$fapi.getTokensList(token)
+                .then((res) => {
+                    // console.log(res)
+                    vo.errMsg = '' //曾載入失敗者(表格被訊息取代)於重新載入成功後恢復表格
+                    vo.baselines = baselineOfTokens(res) //對畫面所見之同一快照自算基準(須在排序、變動之前; buildBaseline 不改輸入)
+                    res = sortBy(res, 'timeCreate').reverse()
+                    vo.tokens = res
+                    vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
+                })
+                .catch((err) => {
+                    console.log(err)
+                    vo.errMsg = vo.$t('getDataError')
+                })
+                .finally(() => {
+                    vo.firstLoading = false
+                })
 
         },
 
-        toggleItemIsAppById: function(id) {
-            // console.log('toggleItemIsAppById', id)
+        reloadTokens: function() {
+            //新增應用系統金鑰成功後: 伺服端多了一列, 既有基準已過時; 重新載入並以新快照為基準 (新增前已要求無未儲存之修改, 故無草稿可失)
+            let vo = this
+            vo.isModified = false
+            return vo.loadTokens()
+        },
 
+        onCreatedApp: async function() {
+            //新增對話框成功後: 全頁 loading 下等重新載入完成(期間不可編輯), 再開成功訊息框(開框前先關 loading); 載入失敗時 loadTokens 已以錯誤訊息取代表格
+            let vo = this
+            vo.$ui.updateLoading(true)
+            await vo.reloadTokens()
+            vo.$ui.updateLoading(false)
+            await vo.$dg.showCheckYes(vo.$t('tokenAppCreateSuccess'), { type: 'success' })
+        },
+
+        onClickAddAppBtn: async function() {
             let vo = this
 
-            //toggleItemByKeyAndId
-            vo.toggleItemByKeyAndId('isApp', id)
+            //有未儲存之修改時不開啟: 新增後須重新載入清單(新基準), 未儲存之草稿會隨之捨棄
+            if (vo.isModified) {
+                await vo.$dg.showCheckYes(vo.$t('tokenAddAppSaveFirst'))
+                return
+            }
 
+            vo.showAdd = true
+        },
+
+        getUsageText: function(v) {
+            //用途顯示名稱: user 為使用者用途; system 與既有列(空)為系統服務用途 (ADR-095)
+            let vo = this
+            if (v === 'user') {
+                return vo.$t('tokenAppUsageUser')
+            }
+            if (v === 'system' || !isestr(v)) {
+                return vo.$t('tokenAppUsageSystem')
+            }
+            return v
         },
 
         getPermsTexts: function(row) {

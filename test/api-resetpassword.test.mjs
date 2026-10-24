@@ -144,11 +144,13 @@ describe('ResetPassword API — adminResetUserPassword 拒絕情境 (API-001/003
         assert.strict.equal(r.err, 'adminResetPasswordCannotResetSelf', `錯誤訊息應為 'adminResetPasswordCannotResetSelf', 實際: ${r.err}`)
     })
 
-    it('API-004-forbidden-non-admin: 非 admin 呼叫, reject "forbidden"', async function() {
+    it('API-004-forbidden-non-admin: 非 admin 呼叫, reject "tokenExpired"(管理員判定同其他管理入口, S-2; 原回 adminResetPasswordForbidden)', async function() {
         let attackerToken = userTokens[testUsers.attacker.id]
         let r = await callFapi('adminResetUserPassword', [attackerToken, 'eng', testUsers.targetEng.id])
         assert.strict.equal(r.ok, false, `預期 reject, 實際 resolve: ${JSON.stringify(r)}`)
-        assert.strict.equal(r.err, 'adminResetPasswordForbidden', `錯誤訊息應為 'adminResetPasswordForbidden', 實際: ${r.err}`)
+        assert.strict.equal(r.err, 'tokenExpired', `錯誤訊息應為 'tokenExpired', 實際: ${r.err}`)
+        let g = await callFapi('getUsersList', [attackerToken])
+        assert.strict.equal(g.err, r.err, '與其他管理入口同一錯誤鍵')
     })
 
     it('API-005-user-not-found: admin 對不存在 userId 觸發, reject "user not found"', async function() {

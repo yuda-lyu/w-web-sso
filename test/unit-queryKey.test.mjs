@@ -78,24 +78,31 @@ describe('以使用端給定之欄位名查使用者——白名單 id / account
             'ID', 'Id', 'Account', 'EMAIL', 'Name', 'id ', ' id', 'account\n', 'id.x', 'a.b', '$ne', '$where', 'id,account', 'id=x', 'idx', 'accounts',
             'x'.repeat(5000),
         ]
+        //checkToken 本身會讀使用者(使用者當前狀態判定, S-4), 先量一次 checkToken 之查詢數, 其後白名單外之查詢不得再多查
+        let n0 = env.users.calls.select
+        await env.p.checkToken('tk-admin')
+        let perCheck = env.users.calls.select - n0
         for (let key of bad) {
             let nSel = env.users.calls.select
             let r = await run(() => env.p.checkTokenAndGetUserInfor('tk-admin', key, 'zuser'))
             assert.strictEqual(r.ok, false, key.slice(0, 20))
             assert.strictEqual(r.v, 'invalidUserQueryKey', key.slice(0, 20))
-            //spec: 白名單外不進資料庫(不作為選擇器鍵)
-            assert.strictEqual(env.users.calls.select, nSel, `${key.slice(0, 20)} 不應查庫`)
+            //spec: 白名單外不進資料庫(不作為選擇器鍵): 除 checkToken 之使用者狀態查詢外無其他查詢
+            assert.strictEqual(env.users.calls.select - nSel, perCheck, `${key.slice(0, 20)} 不應查庫`)
         }
     })
 
     it('QK-003 欄位名非字串(型別錯誤)亦 reject invalidUserQueryKey, 不查資料庫', async function() {
         let env = mkEnv()
+        let n0 = env.users.calls.select
+        await env.p.checkToken('tk-admin')
+        let perCheck = env.users.calls.select - n0 //checkToken 本身會讀使用者(使用者當前狀態判定, S-4)
         for (let key of [undefined, null, 1, true, {}, ['id'], () => 'id', Symbol.iterator]) {
             let nSel = env.users.calls.select
             let r = await run(() => env.p.checkTokenAndGetUserInfor('tk-admin', key, 'zuser'))
             assert.strictEqual(r.ok, false, String(key))
             assert.strictEqual(r.v, 'invalidUserQueryKey', String(key))
-            assert.strictEqual(env.users.calls.select, nSel)
+            assert.strictEqual(env.users.calls.select - nSel, perCheck)
         }
     })
 

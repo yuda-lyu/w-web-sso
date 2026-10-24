@@ -22,7 +22,7 @@ import { resetToBaseSeed, deleteNonBaseSeed, restartBackend, genTempSettings } f
 let TIME_END = '2030-01-01T00:00:00.000+08:00'
 let logFd = './logs' //與 settings.json 之 logFd 一致
 let APP_TOKEN = 'ormopts-app'
-let APP_USER_ID = 'id-ormopts-app' //應用系統金鑰之虛擬使用者 id(users 表無此列, procCore getUserByToken)
+let APP_USER_ID = 'app:id-ormopts-app' //系統服務用途應用系統金鑰之身分 id(app:<tokens.id>, users 表無此列; ADR-095, procCore getUserByToken)
 
 
 //fixture: 具三項寫入權限之應用系統金鑰、兩筆供刪除之使用者 token、一筆 ip

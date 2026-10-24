@@ -1118,6 +1118,10 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
             return b
         },
+        //身分驗證責任(跨套件原則, 見自有套件庫主控之 dspec「使用者身分驗證原則」): 框架(w-converhp、w-serv-hapi、w-serv-webdata)不驗證token, 一律由本套件負責.
+        //本套件為token簽發方且資料通道不開表操作(useDbOrm:false): verifyConn只做IP封鎖與頻率, getUserIdByToken固定回空字串(不以本體token決定執行身分);
+        //故kpFunExt各函數一律以明確之token參數自行驗證(含管理員與細部權限), 查詢他人時以tokenSelf驗查詢方、tokenTarget只解析對象(checkTokenAndGetUserByToken);
+        //不帶token之公開入口只限列名者(登入、自助註冊〔須開啟〕、驗證信、重寄驗證信〔隨註冊開關〕、網站顯示資訊、密碼政策預檢), 新增函數不得省略token驗證.
         getUserIdByToken: async (token) => { //可使用async或sync函數
             return '' //不檢核, 查找與變更數據皆由kpFunExt內各函數各自檢核
         },
@@ -1294,6 +1298,15 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
                 let rs = await p.checkTokenAndUpdateTokensList(token, rows, { fun: funCheckAdmin, perm: 'writeTokens' }, optSave)
                 //console.log('call updateTokensList end')
                 return rs
+            },
+
+            //createAppToken: 鑄造應用系統金鑰(ADR-095); data: { name, usage: 'user' | 'system', userId(使用者用途), perms(系統服務用途) }, 權杖字串由伺服端產生並於回傳值給予;
+            //權限閘同 updateTokensList(管理者或具 writeTokens 之系統服務用途金鑰); 後台清單存檔不再新增列
+            createAppToken: async (_t, token, lang, data) => {
+                if (!_strictStr(token)) return Promise.reject('tokenExpired')
+                srLog.info({ event: 'kpfun-createAppToken', token: maskToken(token), lang })
+                let r = await p.checkTokenAndCreateAppToken(token, data, { fun: funCheckAdmin, perm: 'writeTokens' })
+                return r
             },
 
             getIpsList: async (_t, token) => {

@@ -191,7 +191,7 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         let cur = await loadUsers()
         let rApp = await saveUsers(editRow(cur.rows, 'id-cc-b', (r) => ({ ...r, name: 'by-app' })), undefined, 'cc-app-w') //不帶基準
         assert.strict.equal(rApp.ok, true, JSON.stringify(rApp))
-        assert.strict.equal((await woItems.users.select({ id: 'id-cc-b' }))[0].userIdUpdate, 'id-cc-app-w', '更新者為 app 權杖之虛擬使用者')
+        assert.strict.equal((await woItems.users.select({ id: 'id-cc-b' }))[0].userIdUpdate, 'app:id-cc-app-w', '更新者為系統服務用途金鑰之應用系統身分(app:<tokens.id>, ADR-095)')
         let r = await saveUsers(editRow(a.rows, 'id-cc-a', (x) => ({ ...x, name: 'A-edit' })), { baseline: a.baseline })
         assert.strict.equal(r.err, 'saveStale')
     })
@@ -209,10 +209,13 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         assert.strict.equal(r.err, 'saveStale')
         assert.ok((await woItems.users.select({ id: 'id-cc-a' }))[0].timeBlocked !== '', '封鎖不被舊值解除')
 
+        //tokens: 應用系統金鑰不給期限、不可續期(ADR-095), timeEnd 之雙方欄位性質只剩 session 列——session 列被系統續期後, 管理員有動該列(刪除)而庫內已變 → 整次拒收(選項 P)
         let t = await loadTokens()
-        let rf = await callFapi('refreshToken', ['cc-app-1'])
+        let rfApp = await callFapi('refreshToken', ['cc-app-1'])
+        assert.strict.equal(rfApp.err, 'tokenAppNoRefresh', '應用系統金鑰拒絕續期')
+        let rf = await callFapi('refreshToken', ['token-for-viewer'])
         assert.strict.equal(rf.ok, true, JSON.stringify(rf))
-        let r2 = await saveTokens(editRow(t.rows, 'id-cc-app-2', (x) => ({ ...x, perms: ['readIps'] })), optT(t))
+        let r2 = await saveTokens(t.rows.filter((x) => x.id !== 'id-for-token-for-viewer'), optT(t))
         assert.strict.equal(r2.err, 'saveStale')
     })
 
@@ -442,18 +445,18 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         assert.ok(serial.includes(ids), `最終 ${ids} 須為串行結果之一(後存者刪除先存者新增之列)`)
     })
 
-    it('CC-A-021 [E2E-003 行為不變、選項 P] 管理員刪除 session 列(強制登出): 該 token 失效; 升級 session 列為應用系統金鑰: 以 fields 寫入', async function() {
+    it('CC-A-021 [E2E-003 行為不變、選項 P、ADR-095] 管理員刪除 session 列(強制登出): 該 token 失效; 升級 session 列為應用系統金鑰: 整次拒收 tokenSessionUpgradeNotAllowed, 零寫入', async function() {
         let a = await loadTokens()
         let r = await saveTokens(a.rows.filter((x) => x.id !== 'id-cc-sess-a'), optT(a))
         assert.strict.equal(r.ok, true, JSON.stringify(r))
         let chk = await callFapi('checkToken', ['cc-sess-a'])
         assert.strict.equal(chk.ok, false)
         let b = await loadTokens()
+        let snap = await snapshot()
         let r2 = await saveTokens(editRow(b.rows, 'id-for-token-for-basic', (x) => ({ ...x, isApp: 'y', perms: ['readStats'] })), optT(b))
-        assert.strict.equal(r2.ok, true, JSON.stringify(r2))
-        let t = (await woItems.tokens.select({ id: 'id-for-token-for-basic' }))[0]
-        assert.strict.equal(t.isApp, 'y')
-        assert.deepStrictEqual(t.perms, ['readStats'])
+        assert.strict.equal(r2.ok, false, JSON.stringify(r2))
+        assert.strict.equal(r2.err, 'tokenSessionUpgradeNotAllowed')
+        assert.deepStrictEqual(await snapshot(), snap, '零寫入')
     })
 
     //CC-A-022~024: 清單存檔不得新增庫內不存在之 session 列(isApp !== 'y'; ADR-092). 修改前: 以 app 權杖直呼、不帶基準時, 已撤銷之 session 列被當新增寫回而復活(繞過自動封鎖)
@@ -492,21 +495,24 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         assert.strict.equal(chk.ok, false, '已撤銷之 token 仍失效')
     })
 
-    it('CC-A-024 [ADR-092 不變] app 權杖新增應用系統金鑰列與升級 session 列(不帶基準)、管理員新增 app 列與刪除 session 列(帶基準)照常; 同批混入新 session 列則整批拒收', async function() {
+    it('CC-A-024 [ADR-092 不變、ADR-095] 清單存檔只改不增: app 權杖(不帶基準)與管理員(帶基準)新增應用系統金鑰列、升級 session 列一律整批拒收且零寫入(鑄造只經 createAppToken); 管理員(帶基準)刪除 session 列照常; 同批混入新 session 列仍回 tokenSessionAddNotAllowed', async function() {
         let a = await loadTokens()
+        let snap0 = await snapshot()
         let appNew = (key) => mkTokenFx(key, `id-cc-${key}`, { isApp: 'y', perms: [] })
-        //不帶基準(app 權杖): 新增 app 列 + 升級 sess-a
-        let r1 = await saveTokens([...editRow(a.rows, 'id-cc-sess-a', (x) => ({ ...x, isApp: 'y', perms: ['readStats'] })), appNew('minted-1')], undefined, 'cc-app-w')
-        assert.strict.equal(r1.ok, true, JSON.stringify(r1))
-        assert.strict.equal((await woItems.tokens.select({ id: 'id-cc-minted-1' }))[0].isApp, 'y')
-        assert.strict.equal((await woItems.tokens.select({ id: 'id-cc-sess-a' }))[0].isApp, 'y')
-        //帶基準(管理員): 新增 app 列 + 刪除 session 列 id-for-token-for-basic
+        //不帶基準(app 權杖): 新增 app 列 / 升級 sess-a 皆拒
+        let r1 = await saveTokens([...a.rows, appNew('minted-1')], undefined, 'cc-app-w')
+        assert.strict.equal(r1.err, 'tokenAppAddNotAllowed', JSON.stringify(r1))
+        let r1b = await saveTokens(editRow(a.rows, 'id-cc-sess-a', (x) => ({ ...x, isApp: 'y', perms: ['readStats'] })), undefined, 'cc-app-w')
+        assert.strict.equal(r1b.err, 'tokenSessionUpgradeNotAllowed', JSON.stringify(r1b))
+        assert.deepStrictEqual(await snapshot(), snap0, '零寫入')
+        //帶基準(管理員): 新增 app 列拒; 刪除 session 列 id-for-token-for-basic 照常
         let b = await loadTokens()
-        let r2 = await saveTokens([...b.rows.filter((x) => x.id !== 'id-for-token-for-basic'), appNew('minted-2')], optT(b))
-        assert.strict.equal(r2.ok, true, JSON.stringify(r2))
-        assert.strict.equal((await woItems.tokens.select({ id: 'id-cc-minted-2' })).length, 1)
+        let r2 = await saveTokens([...b.rows, appNew('minted-2')], optT(b))
+        assert.strict.equal(r2.err, 'tokenAppAddNotAllowed', JSON.stringify(r2))
+        let r2b = await saveTokens(b.rows.filter((x) => x.id !== 'id-for-token-for-basic'), optT(b))
+        assert.strict.equal(r2b.ok, true, JSON.stringify(r2b))
         assert.deepStrictEqual(await woItems.tokens.select({ id: 'id-for-token-for-basic' }), [], '帶基準刪除 session 列照常')
-        //同批混入新 session 列: 整批拒收, 其中合法之新 app 列亦不寫
+        //同批混入新 session 列: 整批拒收(session 列新增之鍵先於 app 列新增判定)
         let c = await loadTokens()
         let snap = await snapshot()
         let r3 = await saveTokens([...c.rows, appNew('minted-3'), mkTokenFx('minted-sess', 'id-cc-a')], optT(c))

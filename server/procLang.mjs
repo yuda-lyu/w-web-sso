@@ -1017,6 +1017,108 @@ let kpLang = {
         eng: 'Login tokens cannot be added. Nothing was saved.',
         cht: '不可新增登入權杖，本次未儲存任何變更',
     },
+    //應用系統金鑰之用途與名稱欄、新增對話框 (ADR-095)
+    tokenAppUsage: {
+        eng: 'Usage',
+        cht: '用途',
+    },
+    tokenAppUsageUser: {
+        eng: 'User purpose',
+        cht: '使用者用途',
+    },
+    tokenAppUsageSystem: {
+        eng: 'System service',
+        cht: '系統服務用途',
+    },
+    tokenAppUsageUserDesc: {
+        eng: 'Acts as one bound user with that user\'s permissions. It stops working when the user is disabled, blocked or expired.',
+        cht: '代表所綁使用者本人，權限同該使用者；使用者停用、封鎖或帳號到期時即不可用。',
+    },
+    tokenAppUsageSystemDesc: {
+        eng: 'Acts as an external application system with the permissions granted below. It is not bound to a user.',
+        cht: '代表外部應用系統本身，權限依下方勾選；不綁定使用者。',
+    },
+    tokenAppName: {
+        eng: 'Name',
+        cht: '名稱',
+    },
+    tokenPermsBoundUser: { //使用者用途之權限即所綁使用者之權限, 列表中取代權限框
+        eng: 'Same as the bound user',
+        cht: '同所綁使用者',
+    },
+    tokenNoExpire: { //應用系統金鑰不給期限, 列表中取代時間選擇器
+        eng: 'No expiry',
+        cht: '不設期限',
+    },
+    tokenAddApp: {
+        eng: 'Add app token',
+        cht: '新增應用系統金鑰',
+    },
+    tokenAddAppSaveFirst: {
+        eng: 'Please save your changes first, then add an app token.',
+        cht: '請先儲存目前變更，再新增應用系統金鑰。',
+    },
+    tokenAppBoundUser: {
+        eng: 'Bound user',
+        cht: '綁定使用者',
+    },
+    tokenAppBoundUserEmpty: {
+        eng: 'There is no active user to bind.',
+        cht: '尚無可綁定之啟用使用者。',
+    },
+    tokenAppCreate: {
+        eng: 'Create',
+        cht: '建立',
+    },
+    tokenAppCreateSuccess: {
+        eng: 'App token added successfully',
+        cht: '新增應用系統金鑰成功',
+    },
+    //應用系統金鑰之用途與鑄造 (ADR-095): 清單存檔只改不增、不改身分; 新增走 createAppToken
+    tokenAppAddNotAllowed: { //金鑰清單存檔不得新增應用系統金鑰, 須經「新增應用系統金鑰」
+        eng: 'App tokens cannot be added by saving the list. Use "Add app token" instead. Nothing was saved.',
+        cht: '不可經儲存清單新增應用系統金鑰，請改用「新增應用系統金鑰」，本次未儲存任何變更',
+    },
+    tokenSessionUpgradeNotAllowed: { //登入權杖不可升級為應用系統金鑰
+        eng: 'A login token cannot be upgraded to an app token. Use "Add app token" instead. Nothing was saved.',
+        cht: '登入權杖不可升級為應用系統金鑰，請改用「新增應用系統金鑰」，本次未儲存任何變更',
+    },
+    tokenAppLocked: { //應用系統金鑰之權杖字串、綁定使用者、用途、到期時間不可變更
+        eng: 'The token string, bound user, usage and end time of an app token cannot be changed. Nothing was saved.',
+        cht: '應用系統金鑰之金鑰、綁定使用者、用途與到期時間不可變更，本次未儲存任何變更',
+    },
+    tokenAppPermsNotForUser: { //使用者用途之權限即所綁使用者之權限, 不適用 perms
+        eng: 'Permissions do not apply to a user-purpose app token; it has the permissions of the bound user.',
+        cht: '使用者用途之應用系統金鑰不適用權限設定，其權限即所綁使用者之權限。',
+    },
+    tokenAppUsageInvalid: {
+        eng: 'Invalid app token usage.',
+        cht: '應用系統金鑰用途無效。',
+    },
+    tokenAppNameInvalid: {
+        eng: 'Please enter a valid app token name (1 to 60 characters).',
+        cht: '請輸入有效的應用系統金鑰名稱（1 至 60 字）。',
+    },
+    tokenAppUserInvalid: { //使用者用途之綁定使用者須存在且啟用
+        eng: 'The bound user does not exist or is not active.',
+        cht: '所綁使用者不存在或未啟用。',
+    },
+    tokenAppUserNotForSystem: { //系統服務用途不綁使用者
+        eng: 'A system-service app token is not bound to a user.',
+        cht: '系統服務用途之應用系統金鑰不綁定使用者。',
+    },
+    tokenAppCreateFailed: { //鑄造寫入失敗(原文僅記 log)
+        eng: 'Failed to create the app token.',
+        cht: '新增應用系統金鑰失敗。',
+    },
+    tokenAppNoRefresh: { //應用系統金鑰不給期限, 無續期可言
+        eng: 'App tokens have no expiry and cannot be refreshed.',
+        cht: '應用系統金鑰不設期限，無須也無法續期。',
+    },
+    tokenUserOnly: { //此操作僅限代表使用者本人之權杖(登入權杖、使用者用途金鑰)
+        eng: 'This operation is only available to a login token or a user-purpose app token.',
+        cht: '此操作僅限登入權杖或使用者用途之應用系統金鑰。',
+    },
     //應用系統金鑰之各權限名稱, 鍵為 appPerm_<權限字串> (權限全集見 src/appPerms.mjs)
     appPerm_readUsers: {
         eng: 'Read users',
@@ -1276,10 +1378,6 @@ let kpLang = {
     adminResetPasswordCannotResetSelf: {
         eng: `Cannot reset your own password via this action`,
         cht: `不可對自己重設密碼`,
-    },
-    adminResetPasswordForbidden: {
-        eng: `Forbidden: admin permission required`,
-        cht: `權限不足：須具管理員身分`,
     },
     adminResetPasswordUserNotFound: {
         eng: `User not found`,

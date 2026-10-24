@@ -92,9 +92,10 @@ describe('外部查詢 helper — getUserByToken / getUsersByToken / getUserByUs
         })
 
         it('HLP-UBT-003-app-token-as-target-virtual-user: 目標為 app token → 虛擬使用者 (isApp=y / isAdmin=y / isActive=y)', async function() {
-            //spec 契約: app token 於 getUserByToken 走 bypass, 虛擬 user 之 isAdmin='y' / isActive='y' 為固定值
+            //spec 契約(ADR-095): 系統服務用途(既有無用途欄之列視同系統服務用途)於 getUserByToken 回應用系統身分, id 為 app:<tokens.id>(不取 tokens.userId),
+            //isAdmin='y' / isActive='y' 為固定值
             let u = await getUserByToken(urlByToken, SYS_ADMIN, SYS_APP)
-            assert.strict.equal(u.id, 'id-for-app')
+            assert.strict.equal(u.id, 'app:id-for-token-for-app')
             assert.strict.equal(u.isApp, 'y')
             assert.strict.equal(u.isAdmin, 'y')
             assert.strict.equal(u.isActive, 'y')

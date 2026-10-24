@@ -175,7 +175,7 @@ describe('R-OBJ-ITER-01 / R-KEY-01 統計與防護之使用端字串鍵', functi
             { id: 'constructor', name: 'UserCtor' },
             { id: 'u1', name: 'User1' },
         ]
-        let mkSta = () => procStaInfor({}, { getUsersListCache: async () => users }, { srLog: mkSrLog(), logFd: fdLog })
+        let mkSta = () => procStaInfor({}, { getUsersListCache: async () => users, getTokensListCache: async () => [] }, { srLog: mkSrLog(), logFd: fdLog })
 
         it('IT-P-001 getStaIp: IP 為 length 時該桶明細不被略過、各桶不出現索引假鍵(0..length-1)', async function() {
             clearCache()
@@ -230,7 +230,7 @@ describe('R-OBJ-ITER-01 / R-KEY-01 統計與防護之使用端字串鍵', functi
                 { id: 'u1', name: 'count' }, //名稱為保留字
                 { id: 'length', name: 'UserLen' },
             ]
-            let sta = procStaInfor({}, { getUsersListCache: async () => users }, { srLog: mkSrLog(), logFd: fdLog })
+            let sta = procStaInfor({}, { getUsersListCache: async () => users, getTokensListCache: async () => [] }, { srLog: mkSrLog(), logFd: fdLog })
             let rs = await sta.getStaToken()
             let d = rs.find((r) => r.time === label).data
             //spec(R-KEY-01 規則 3): count 為該桶總筆數; 名稱為 count 之 u1(4 筆)併入總數, 不另列
@@ -429,12 +429,15 @@ describe('R-OBJ-ITER-01 / R-KEY-01 統計與防護之使用端字串鍵', functi
             assert.ok(env2.users.kp.get('n1'))
         })
 
-        it('IT-C-003 權杖清單 / IP 清單新增列主鍵為原型鍵名: 可存', async function() {
+        it('IT-C-003 權杖清單既有列 / IP 清單新增列主鍵為原型鍵名: 可存', async function() {
             let env = mkEnv()
+            //權杖清單存檔只改不增(ADR-095, 應用系統金鑰只經 createAppToken 鑄造且主鍵由伺服端產生), 原型鍵名主鍵之權杖列以「既有列(庫內已有)之修改」驗證
+            let tCtor = { ...ds.tokens.funNew({ userId: 'u-z' }), id: 'constructor', token: 'tk-ctor', isApp: 'y', timeEnd: '' }
+            env.tokens.kp.set('constructor', tCtor)
             let tkRows = [...env.tokens.kp.values()].map((r) => cloneDeep(r))
-            tkRows.push({ ...ds.tokens.funNew({ userId: 'u-z' }), id: 'constructor', token: 'tk-ctor', isApp: 'y', timeEnd: tFuture(), _isNew: true }) //應用系統金鑰列(清單存檔不得新增 session 列, ADR-092; 本案意圖為原型鍵名主鍵)
+            tkRows.find((r) => r.id === 'constructor').perms = ['readIps']
             await env.p.checkTokenAndUpdateTokensList('tk-admin', tkRows)
-            assert.ok(env.tokens.kp.get('constructor'))
+            assert.deepStrictEqual(env.tokens.kp.get('constructor').perms, ['readIps'])
             let ipRows = [{ ...ds.ips.funNew({ ip: '10.0.0.7' }), id: '__proto__', timeBlocked: '', _isNew: true }]
             await env.p.checkTokenAndUpdateIpsList('tk-admin', ipRows)
             assert.ok(env.ips.kp.get('__proto__'))

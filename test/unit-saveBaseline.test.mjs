@@ -529,23 +529,44 @@ describe('金鑰清單存檔 (tokens; 選項 P: app 列嚴格整表比對、sess
         assert.ok(env.tokens.get('t-admin'))
     })
 
-    it('SB-T07 [E2E-002 升級] 管理員將 session 列勾為應用系統金鑰: 以 fields 寫入; 他人已先升級同一列 → app 層不符而拒收', async function() {
+    it('SB-T07 [ADR-095 升級路徑關閉] 管理員將 session 列勾為應用系統金鑰: 帶或不帶基準皆整次拒收 tokenSessionUpgradeNotAllowed, 零寫入; 應用系統金鑰列反向改回登入權杖亦拒收 tokenAppLocked', async function() {
         let env = mkEnvSso()
         let a = await loadTokens(env)
-        let b = await loadTokens(env)
-        await saveTokens(env, mapRows(a.rows, 't-a1', (x) => ({ ...x, isApp: 'y', perms: ['readStats'] })), { baseline: a.baseline, baselineSession: a.baselineSession })
-        assert.strictEqual(env.tokens.get('t-a1').isApp, 'y')
-        assert.deepStrictEqual(env.tokens.get('t-a1').perms, ['readStats'])
-        let err = await errOf(saveTokens(env, mapRows(b.rows, 't-a1', (x) => ({ ...x, isApp: 'y', perms: ['readIps'] })), { baseline: b.baseline, baselineSession: b.baselineSession }))
-        assert.strictEqual(err, 'saveStale')
-        assert.deepStrictEqual(env.tokens.get('t-a1').perms, ['readStats'])
+        let snap = snapTables(env)
+        for (let opt of [{ baseline: a.baseline, baselineSession: a.baselineSession }, undefined]) {
+            let err = await errOf(saveTokens(env, mapRows(a.rows, 't-a1', (x) => ({ ...x, isApp: 'y', perms: ['readStats'] })), opt))
+            assert.strictEqual(err, 'tokenSessionUpgradeNotAllowed', `基準[${opt !== undefined}]`)
+            assert.deepStrictEqual(snapTables(env), snap, '零寫入')
+        }
+        //反向: 應用系統金鑰改回登入權杖(isApp 'n')亦不可
+        for (let opt of [{ baseline: a.baseline, baselineSession: a.baselineSession }, undefined]) {
+            let err = await errOf(saveTokens(env, mapRows(a.rows, 't-app1', (x) => ({ ...x, isApp: 'n' })), opt))
+            assert.strictEqual(err, 'tokenAppLocked', `基準[${opt !== undefined}]`)
+            assert.deepStrictEqual(snapTables(env), snap, '零寫入')
+        }
     })
 
-    it('SB-T13 [外審 beam#1 核對] 載入後某 session 列被他人升級為應用系統金鑰: 持舊畫面者要刪除或修改該列 → app 層多出一列, 整次拒收(不靜默略過)', async function() {
+    it('SB-T07b [ADR-095 身分欄鎖定] 應用系統金鑰列之權杖字串、userId、到期時間不可變更(tokenAppLocked, 零寫入); 用途 appUsage / 名稱 appName 為伺服器專有欄位, 客戶端值不寫入', async function() {
+        let env = mkEnvSso()
+        env.tokens.kp.set('t-app1', { ...env.tokens.get('t-app1'), appUsage: 'system', appName: 'name-orig', timeEnd: '' })
+        let a = await loadTokens(env)
+        let snap = snapTables(env)
+        for (let [k, v] of [['token', 'tk-changed'], ['userId', 'u-other'], ['timeEnd', '2031-01-01T00:00:00.000+08:00']]) {
+            let err = await errOf(saveTokens(env, mapRows(a.rows, 't-app1', (x) => ({ ...x, [k]: v })), { baseline: a.baseline, baselineSession: a.baselineSession }))
+            assert.strictEqual(err, 'tokenAppLocked', k)
+            assert.deepStrictEqual(snapTables(env), snap, `${k}: 零寫入`)
+        }
+        //appUsage / appName: 客戶端送 user / 改名 + 改 perms → perms 寫入, 用途與名稱維持庫內值
+        await saveTokens(env, mapRows(a.rows, 't-app1', (x) => ({ ...x, appUsage: 'user', appName: 'name-hacked', perms: ['readStats'] })), { baseline: a.baseline, baselineSession: a.baselineSession })
+        assert.deepStrictEqual(env.tokens.get('t-app1').perms, ['readStats'])
+        assert.strictEqual(env.tokens.get('t-app1').appUsage, 'system')
+        assert.strictEqual(env.tokens.get('t-app1').appName, 'name-orig')
+    })
+
+    it('SB-T13 [外審 beam#1 核對] 載入後某 session 列被他人變為應用系統金鑰(模擬: 直寫庫): 持舊畫面者要刪除或修改該列 → app 層多出一列, 整次拒收(不靜默略過)', async function() {
         let env = mkEnvSso()
         let a = await loadTokens(env)
-        let cur = await loadTokens(env)
-        await saveTokens(env, mapRows(cur.rows, 't-a1', (x) => ({ ...x, isApp: 'y', perms: ['readStats'] })), optOf(cur)) //他人升級
+        env.tokens.kp.set('t-a1', { ...env.tokens.get('t-a1'), isApp: 'y', perms: ['readStats'] }) //他人變更(清單存檔已不可升級, ADR-095, 以直寫庫模擬)
         assert.strictEqual(env.tokens.get('t-a1').isApp, 'y')
         let snap = snapTables(env)
         //持舊畫面者: 刪除該列
@@ -612,22 +633,25 @@ describe('金鑰清單存檔 (tokens; 選項 P: app 列嚴格整表比對、sess
         }
     })
 
-    it('SB-T09 [§6 新增] 帶基準新增列(鑄造應用系統金鑰, ADR-042): 擁有者為送入值、更新者為操作者; 與庫內既有 id 相撞者拒收', async function() {
+    it('SB-T09 [ADR-095 清單存檔只改不增] 帶或不帶基準新增應用系統金鑰列一律整次拒收 tokenAppAddNotAllowed, 零寫入(鑄造只經 createAppToken); 載入後他人新增同 id 者持舊畫面存檔亦拒收', async function() {
         let env = mkEnvSso()
         let a = await loadTokens(env)
+        let snap = snapTables(env)
         let rowNew = { ...mkToken('t-new', 'tk-new', 'id-app-new', { isApp: 'y', perms: ['readStats'] }) }
-        await saveTokens(env, [...a.rows, rowNew], { baseline: a.baseline, baselineSession: a.baselineSession })
-        assert.strictEqual(env.tokens.get('t-new').userId, 'id-app-new')
-        assert.strictEqual(env.tokens.get('t-new').userIdUpdate, 'u-admin')
-        //載入後他人新增同 id → 以「基準之外之列且庫內已存在」拒收
+        for (let opt of [{ baseline: a.baseline, baselineSession: a.baselineSession }, undefined]) {
+            let err = await errOf(saveTokens(env, [...a.rows, rowNew], opt))
+            assert.strictEqual(err, 'tokenAppAddNotAllowed', `基準[${opt !== undefined}]`)
+            assert.deepStrictEqual(snapTables(env), snap, '零寫入')
+        }
+        //載入後他人(createAppToken)新增: 持舊畫面者(基準不含該列)送出自己的版本 → app 層基準不符 saveStale
         let b = await loadTokens(env)
-        let a2 = { ...rowNew, id: 't-clash', token: 'tk-clash' }
-        await env.procOrm('u-x', 'tokens', 'insert', [{ ...a2, userId: 'x' }])
-        let err = await errOf(saveTokens(env, [...b.rows, { ...a2, userId: 'y' }], { baseline: b.baseline, baselineSession: b.baselineSession }))
-        assert.ok(err === 'saveStale' || err === 'saveNewRowExists', String(err))
+        let made = await env.p.createAppToken({ name: 'made', usage: 'system', perms: [] }, { operatorId: 'u-x' })
+        let err2 = await errOf(saveTokens(env, b.rows, { baseline: b.baseline, baselineSession: b.baselineSession }))
+        assert.strictEqual(err2, 'saveStale')
+        assert.ok(env.tokens.get(made.id), '他人新鑄造者不被刪')
     })
 
-    it('SB-T10 [§3 不帶基準、D3] 不帶基準: 只處理應用系統金鑰列; session 列不刪、不覆蓋; 新增列照常; 升級為 app 照常', async function() {
+    it('SB-T10 [§3 不帶基準、D3] 不帶基準: 只處理應用系統金鑰列; session 列不刪、不覆蓋; 升級已不可(ADR-095, 見 SB-T07)', async function() {
         let env = mkEnvSso()
         let a = await loadTokens(env)
         let r = await env.p.loginByAccountAndPassword('buser', PW_INIT) //載入後才登入
@@ -635,21 +659,23 @@ describe('金鑰清單存檔 (tokens; 選項 P: app 列嚴格整表比對、sess
         let tA1 = env.tokens.get('t-a1').timeEnd
         let rows = a.rows.filter((x) => x.id !== 't-app2' && x.id !== 't-b1') //送出不含 app2 與 b1
         rows = mapRows(rows, 't-a1', (x) => ({ ...x, timeEnd: '2031-01-01T00:00:00.000+08:00' })) //舊值覆寫 session 列
-        rows = mapRows(rows, 't-admin', (x) => ({ ...x, isApp: 'y', perms: ['readStats'] })) //升級
         await saveTokens(env, rows, undefined)
         assert.strictEqual(env.tokens.get('t-app2'), undefined, 'app 列未送出 → 刪除')
         assert.ok(env.tokens.get('t-b1'), 'session 列未送出 → 不刪')
         assert.ok([...env.tokens.kp.values()].some((t) => t.token === r.token), '載入後才登入之 session 不被刪 (E1)')
         assert.strictEqual(env.tokens.get('t-a1').timeEnd, tA1, 'session 列不以送入值覆蓋 (X7)')
-        assert.strictEqual(env.tokens.get('t-admin').isApp, 'y', '升級為應用系統金鑰照常')
+        assert.strictEqual(env.tokens.get('t-admin').isApp, 'n', '登入 token 維持登入 token')
     })
 
-    it('SB-T11 [V4] app 權杖 refreshToken(timeEnd, 雙方欄位)延長後, 持舊畫面存檔者被拒', async function() {
+    it('SB-T11 [V4 → ADR-095] 應用系統金鑰不給期限: refreshToken 一律拒絕 tokenAppNoRefresh, timeEnd 不被改(不再有「app 列因續期而變動」使持舊畫面存檔者被拒之情境)', async function() {
         let env = mkEnvSso()
         let a = await loadTokens(env)
-        await env.p.refreshToken('tk-app1')
-        let err = await errOf(saveTokens(env, mapRows(a.rows, 't-app2', (x) => ({ ...x, perms: ['readIps'] })), { baseline: a.baseline, baselineSession: a.baselineSession }))
-        assert.strictEqual(err, 'saveStale')
+        let tEnd = env.tokens.get('t-app1').timeEnd
+        let err = await errOf(env.p.refreshToken('tk-app1'))
+        assert.strictEqual(err, 'tokenAppNoRefresh')
+        assert.strictEqual(env.tokens.get('t-app1').timeEnd, tEnd, 'timeEnd 不變')
+        await saveTokens(env, mapRows(a.rows, 't-app2', (x) => ({ ...x, perms: ['readIps'] })), { baseline: a.baseline, baselineSession: a.baselineSession })
+        assert.deepStrictEqual(env.tokens.get('t-app2').perms, ['readIps'], '舊畫面之基準仍相符, 可存')
     })
 
     it('SB-T12 [§4 perms 驗證於鎖內] 不合法 perms → tokenPermsInvalid; 帶基準時未動之毀損值列不驗; 合法者去重排序儲存', async function() {
@@ -733,20 +759,18 @@ describe('金鑰清單存檔 (tokens; 選項 P: app 列嚴格整表比對、sess
         assert.strictEqual(env.tokens.get('t-new-sess'), undefined)
     })
 
-    it('SB-T19 [ADR-092 不變] 新增應用系統金鑰列(帶或不帶基準)、刪除 session 列(帶基準)、升級 session 列為應用系統金鑰(帶或不帶基準)照常', async function() {
+    it('SB-T19 [ADR-092 不變、ADR-095] 刪除 session 列(帶基準)、既有 session 列原樣送回(不帶基準)、修改應用系統金鑰之權限(帶或不帶基準)照常; 新增與升級已於 SB-T07 / SB-T09 改為拒收', async function() {
         let env = mkEnvSso()
-        //不帶基準: 新增 app 列 + 升級既有 session 列 + 既有 session 列原樣送回
+        //不帶基準: 既有 session 列原樣送回 + 修改既有應用系統金鑰之 perms
         let a = await loadTokens(env)
-        let rowsA = [...mapRows(a.rows, 't-a1', (x) => ({ ...x, isApp: 'y', perms: ['readStats'] })), mkToken('t-new-1', 'tk-new-1', 'id-app-n1', { isApp: 'y', perms: [] })]
-        await saveTokens(env, rowsA, undefined)
-        assert.strictEqual(env.tokens.get('t-new-1').userId, 'id-app-n1')
-        assert.strictEqual(env.tokens.get('t-a1').isApp, 'y')
+        await saveTokens(env, mapRows(a.rows, 't-app1', (x) => ({ ...x, perms: ['readStats'] })), undefined)
+        assert.deepStrictEqual(env.tokens.get('t-app1').perms, ['readStats'])
         assert.ok(env.tokens.get('t-b1'), '原樣送回之既有 session 列不動')
-        //帶基準: 新增 app 列 + 刪除 session 列(升級見 SB-T07)
+        //帶基準: 刪除 session 列 + 修改既有應用系統金鑰之 perms
         let b = await loadTokens(env)
-        let rowsB = [...b.rows.filter((x) => x.id !== 't-b1'), mkToken('t-new-2', 'tk-new-2', 'id-app-n2', { isApp: 'y', perms: [] })]
+        let rowsB = mapRows(b.rows.filter((x) => x.id !== 't-b1'), 't-app2', (x) => ({ ...x, perms: ['readIps'] }))
         await saveTokens(env, rowsB, optOf(b))
-        assert.strictEqual(env.tokens.get('t-new-2').userId, 'id-app-n2')
+        assert.deepStrictEqual(env.tokens.get('t-app2').perms, ['readIps'])
         assert.strictEqual(env.tokens.get('t-b1'), undefined, '帶基準刪除 session 列(強制登出)照常')
         assert.ok(env.tokens.get('t-admin'), '他列不受影響')
     })
@@ -767,11 +791,11 @@ describe('系統直寫: 只改不增、稽核、與表鎖', function() {
     })
 
     it('SB-S02 [X5-b] verifyEmail / resendVerifyEmail / changePassword / adminResetPassword 讀到使用者後該列被刪除: 拒絕且不新增殘缺列', async function() {
-        //nth: 第幾次回傳含該列之 select 之後刪除(changePassword 先於鎖外以 getUserByToken 讀一次該使用者, 第 2 次才是鎖內之讀取)
+        //nth: 第幾次回傳含該列之 select 之後刪除(changePassword 於鎖內讀取前, 另讀該使用者 4 次: 鎖外 checkToken、getActorByToken, 鎖內再驗之 checkToken、鎖內重新解析身分之 getActorByToken〔皆為使用者當前狀態判定, S-4〕, 第 5 次才是鎖內之讀取)
         let cases = [
             ['verifyEmail', 'u-v', (env) => env.p.verifyEmail('tv-1'), 'verifyEmailFailed', 1],
             ['resendVerifyEmail', 'u-v', (env) => env.p.resendVerifyEmail('eng', 'vuser', 'vuser@example.com'), 'userRegistrationResendFailed', 1],
-            ['changePassword', 'u-a', (env) => env.p.checkTokenAndChangePassword('tk-a1', 'eng', PW_INIT, 'New@5678'), 'userChangePasswordFail', 2],
+            ['changePassword', 'u-a', (env) => env.p.checkTokenAndChangePassword('tk-a1', 'eng', PW_INIT, 'New@5678'), 'userChangePasswordFail', 5],
             ['adminResetPassword', 'u-b', (env) => env.p.adminResetUserPassword('tk-admin', 'eng', 'u-b'), 'adminResetPasswordFailed', 1],
         ]
         for (let [name, id, fn, key, nth] of cases) {

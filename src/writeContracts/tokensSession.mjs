@@ -5,6 +5,6 @@ export default {
     table: 'tokens',
     pk: 'id',
     fields: ['token', 'userId', 'isApp', 'perms', 'timeCreate', 'timeEnd'],
-    serverOnly: ['timeUpdate', 'userIdUpdate'],
+    serverOnly: ['timeUpdate', 'userIdUpdate', 'appUsage', 'appName'], //同 tokens.mjs: 只由 createAppToken 寫入, 不入基準 (ADR-095)
     scope: (r) => r.isApp !== 'y',
 }

@@ -6,7 +6,8 @@ import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
 import procLang from '../server/procLang.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, launchBrowser, waitUntilExist } from './tools/e2e-setup.mjs'
+import { mdiKeyPlus } from '@mdi/js/mdi.js'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, launchBrowser, waitUntilExist, typeIntoInput } from './tools/e2e-setup.mjs'
 import { callFapi } from './tools/api-setup.mjs' //僅 mocha 端之端到端不變式(app token 實際可否呼叫)使用; regen 端不呼叫, 不建立連線
 //產製端與比對端同一案例管線 (2026-09-27 起, 規格詳 w-package-tools-e2e 之 README.md §2.1-2.2)
 import { runBaselineCase, createBaselineGate, assertTextSpec, pageHasText, collectDomText, waitGridIdle, gridContentBox, itemsUnionBox } from './tools/e2eLib.mjs'
@@ -32,17 +33,17 @@ import { runBaselineCase, createBaselineGate, assertTextSpec, pageHasText, colle
 //
 // 標準圖存放：test/pics/tokens/tokens-{lang}-{number}-{name}.png
 //
-// 涵蓋 7 個案例 (× 2 lang = 50 baselines; E2E-002 多階段 3 張、E2E-003 2 張、E2E-005 / E2E-006 各 7 張、E2E-007 4 張):
-//   E2E-001-list-loaded:                        進 Tokens list 顯示初始檢視態 (seed 6 列, 含應用系統權限欄)
-//   E2E-002-1-isapp-toggled-before-save:        toggle isApp 後、Save 前的 isApp cell 觸發態 (stage1)
-//   E2E-002-2-save-success-modal:               toggle isApp → Save → 成功 modal (stage2)
-//   E2E-002-3-toggle-isapp-result-row:          modal 關閉後 isApp 已切換的結果列 (stage3)
+// 涵蓋 9 個案例 (× 2 lang; E2E-002 已廢止〈ADR-095: 登入 token 不可升級為應用系統金鑰, 原「勾選 isApp 升級」路徑關閉, 編號保留不再使用, 其 6 張標準圖已刪〉):
+//   E2E-001-list-loaded:                        進 Tokens list 顯示初始檢視態 (seed 7 列, 含用途、名稱、應用系統權限欄)
 //   E2E-003-1-row-selected-before-save:         勾選目標列後、刪除/Save 前之已選取列觸發態 (stage1)
 //   E2E-003-2-delete-row-save-success:          勾選某列刪除 → Save → 成功 modal (stage2)
 //   E2E-004-token-expired-save-fail:            Save 前 admin token 過期 → 後端 reject → fail modal
 //   E2E-005-1..7:                               應用系統金鑰授予「讀金鑰」權限 → 儲存 (ADR-069)
 //   E2E-006-1..7:                               應用系統金鑰撤銷「讀統計」權限 → 儲存 (ADR-069)
 //   E2E-007-1..4:                               非編輯模式檢視應用系統權限清單 (唯讀) (ADR-069)
+//   E2E-008-1..10:                              新增系統服務用途之應用系統金鑰 (名稱、用途、權限) (ADR-095)
+//   E2E-009-1..11:                              新增使用者用途之應用系統金鑰 (名稱、用途、綁定使用者) (ADR-095)
+//   E2E-010-1..3:                               勾選使用者用途金鑰刪除並儲存, 該金鑰即失效而所綁使用者之登入不受影響 (ADR-095)
 //
 // 所有 capture 透過真實 UI 互動推進: 鍵盤滑鼠輸入 / ag-grid cell checkbox 點擊 /
 // row selection checkbox 點擊 / 按鈕 SVG path 點擊。不使用 vm.method() / page.evaluate state mutation 抄捷徑.
@@ -74,12 +75,7 @@ let expectedSpecText = {
         eng: { mode: 'text', value: 'test-token-1' },
         cht: { mode: 'text', value: 'test-token-1' },
     },
-    //E2E-002: 儲存成功 modal 文字 tokenSaveTokensSuccess
-    'E2E-002-toggle-isapp-save-success': {
-        eng: { mode: 'text', value: 'Save tokens successfully' },
-        cht: { mode: 'text', value: '儲存金鑰數據成功' },
-    },
-    //E2E-003: 同 002, 共用 tokenSaveTokensSuccess
+    //E2E-003: 儲存成功 modal 文字 tokenSaveTokensSuccess
     'E2E-003-delete-row-save-success': {
         eng: { mode: 'text', value: 'Save tokens successfully' },
         cht: { mode: 'text', value: '儲存金鑰數據成功' },
@@ -103,6 +99,20 @@ let expectedSpecText = {
         eng: { mode: 'text', value: 'Basic permission, always granted' },
         cht: { mode: 'text', value: '基本權限，恆具備' },
     },
+    //E2E-008 / E2E-009: 新增應用系統金鑰成功 modal 文字 tokenAppCreateSuccess (ADR-095; 於 capture 內 modal 仍顯示時斷言)
+    'E2E-008-add-system-key-success': {
+        eng: { mode: 'text', value: 'App token added successfully' },
+        cht: { mode: 'text', value: '新增應用系統金鑰成功' },
+    },
+    'E2E-009-add-user-key-success': {
+        eng: { mode: 'text', value: 'App token added successfully' },
+        cht: { mode: 'text', value: '新增應用系統金鑰成功' },
+    },
+    //E2E-010: 刪除後儲存成功 modal 文字 tokenSaveTokensSuccess
+    'E2E-010-delete-user-key-save-success': {
+        eng: { mode: 'text', value: 'Save tokens successfully' },
+        cht: { mode: 'text', value: '儲存金鑰數據成功' },
+    },
 }
 
 
@@ -124,18 +134,43 @@ let testUsers = {
 
 let userTokens = {}
 
-//6 個 seed tokens 列 — 固定 id 與 token 字串 (便於 UI 抓 row + 斷言), 不同 userId / isApp 以區分視覺.
-//timeEnd 用未來日期, 不同小時數讓 WTimeminute 顯示各異, 更利於視覺辨識
-//perms (ADR-069, 僅 isApp='y' 生效): 4 僅基本權限(E2E-005 授予讀金鑰) / 5 讀金鑰+讀統計(E2E-006 撤銷讀統計) / 6 全部權限(E2E-001 顯示「+N」收合、E2E-007 唯讀清單全勾選)
+//7 個 seed tokens 列 — 固定 id 與 token 字串 (便於 UI 抓 row + 斷言), 不同 userId / isApp 以區分視覺.
+//登入 token (1~3) 之 timeEnd 用未來日期, 不同小時數讓 WTimeminute 顯示各異, 更利於視覺辨識; 應用系統金鑰 (4~7) 不給期限 (timeEnd 為空, ADR-095)
+//perms (ADR-069, 僅系統服務用途生效): 4 僅基本權限(E2E-005 授予讀金鑰) / 5 讀金鑰+讀統計(E2E-006 撤銷讀統計) / 6 全部權限(E2E-001 顯示「+N」收合、E2E-007 唯讀清單全勾選)
+//用途與名稱 (ADR-095): 4 為升級前之既有列(無用途欄與名稱欄, 視同系統服務用途, 顯示「系統服務用途」而名稱空白) / 5、6 為系統服務用途 / 7 為使用者用途(綁 base seed 之 id-for-viewer, E2E-010 刪除)
 let permsAll = ['writeUsers', 'readTokens', 'writeTokens', 'readIps', 'writeIps', 'readStats']
 let testTokens = [
     { id: 'id-test-token-1', token: 'test-token-1', userId: 'id-user-a', isApp: 'n', perms: [], timeEnd: '2030-01-01T00:00:00.000+08:00' },
     { id: 'id-test-token-2', token: 'test-token-2', userId: 'id-user-b', isApp: 'n', perms: [], timeEnd: '2030-06-15T12:00:00.000+08:00' },
     { id: 'id-test-token-3', token: 'test-token-3', userId: 'id-user-c', isApp: 'n', perms: [], timeEnd: '2030-09-20T08:30:00.000+08:00' },
-    { id: 'id-test-token-4', token: 'test-token-4', userId: 'id-user-d', isApp: 'y', perms: [], timeEnd: '2030-11-05T15:45:00.000+08:00' },
-    { id: 'id-test-token-5', token: 'test-token-5', userId: 'id-user-e', isApp: 'y', perms: ['readTokens', 'readStats'], timeEnd: '2030-12-31T23:00:00.000+08:00' },
-    { id: 'id-test-token-6', token: 'test-token-6', userId: 'id-user-f', isApp: 'y', perms: permsAll, timeEnd: '2030-08-08T09:15:00.000+08:00' },
+    { id: 'id-test-token-4', token: 'test-token-4', userId: 'id-user-d', isApp: 'y', perms: [], timeEnd: '' },
+    { id: 'id-test-token-5', token: 'test-token-5', userId: 'id-user-e', isApp: 'y', appUsage: 'system', appName: 'svc-sync', perms: ['readTokens', 'readStats'], timeEnd: '' },
+    { id: 'id-test-token-6', token: 'test-token-6', userId: 'id-user-f', isApp: 'y', appUsage: 'system', appName: 'svc-admin', perms: permsAll, timeEnd: '' },
+    { id: 'id-test-token-7', token: 'test-token-7', userId: 'id-for-viewer', isApp: 'y', appUsage: 'user', appName: 'viewer-key', perms: [], timeEnd: '' },
 ]
+
+//mkTestTokenRows: 由 testTokens 產生 tokens 列 (固定 timeCreate / timeUpdate; 無用途欄者不寫用途與名稱, 即升級前之既有列)
+function mkTestTokenRows() {
+    return testTokens.map((r) => {
+        let o = ds.tokens.funNew({ userId: r.userId, isApp: r.isApp })
+        o.id = r.id
+        o.token = r.token
+        o.isApp = r.isApp
+        o.perms = [...r.perms]
+        o.timeEnd = r.timeEnd
+        o.timeCreate = FIX_TIME
+        o.timeUpdate = FIX_TIME
+        if (r.appUsage === undefined) {
+            delete o.appUsage
+            delete o.appName
+        }
+        else {
+            o.appUsage = r.appUsage
+            o.appName = r.appName
+        }
+        return o
+    })
+}
 
 
 async function insertTestUsersAndTokensAndTestTokens() {
@@ -180,17 +215,7 @@ async function insertTestUsersAndTokensAndTestTokens() {
     await woItems.tokens.insert([t])
 
     //testTokens seed — 固定 token 字串方便 UI row 定位
-    let tokenRows = testTokens.map((r) => {
-        let o = ds.tokens.funNew({ userId: r.userId, isApp: r.isApp })
-        o.id = r.id
-        o.token = r.token
-        o.isApp = r.isApp
-        o.perms = [...r.perms]
-        o.timeEnd = r.timeEnd
-        o.timeCreate = FIX_TIME
-        o.timeUpdate = FIX_TIME
-        return o
-    })
+    let tokenRows = mkTestTokenRows()
     await woItems.tokens.insert(tokenRows)
 
     //統一所有 tokens (含 base seed) 之 timeCreate / timeUpdate 為固定值, 避免「Created time」/「Last update time」
@@ -254,27 +279,16 @@ async function forceExpireAdminToken() {
 }
 
 
-//重設 testTokens seed (case E2E-002/003/004 在 it 內可能變動 tokens, 須回到 seed 狀態).
-//只刪 id-test-token-* 前綴 (避免動到 admin token / base seed tokens), 然後重新插入 testTokens.
+//重設 testTokens seed (case E2E-003/004/008~010 在 it 內可能變動 tokens, 須回到 seed 狀態).
+//只刪 id-test-token-* 前綴與案例新鑄造之金鑰 (E2E-008 / E2E-009 之 id-new-key-*; 避免動到 admin token / base seed tokens), 然後重新插入 testTokens.
 async function resetTestTokensSeed() {
     let all = await woItems.tokens.select().catch(() => [])
     for (let _tk of all) {
-        if ((_tk.id || '').startsWith('id-test-token-')) {
+        if ((_tk.id || '').startsWith('id-test-token-') || (_tk.appName === NEW_KEY_NAME_SYS || _tk.appName === NEW_KEY_NAME_USR)) {
             await woItems.tokens.del({ id: _tk.id }).catch(() => {})
         }
     }
-    let tokenRows = testTokens.map((r) => {
-        let o = ds.tokens.funNew({ userId: r.userId, isApp: r.isApp })
-        o.id = r.id
-        o.token = r.token
-        o.isApp = r.isApp
-        o.perms = [...r.perms]
-        o.timeEnd = r.timeEnd
-        o.timeCreate = FIX_TIME
-        o.timeUpdate = FIX_TIME
-        return o
-    })
-    await woItems.tokens.insert(tokenRows)
+    await woItems.tokens.insert(mkTestTokenRows())
 }
 
 
@@ -297,8 +311,26 @@ let kpUiText = {
         kpUiText[lang].permsHead = kpLang[lang].tokenPerms
         kpUiText[lang].permReadTokens = kpLang[lang].appPerm_readTokens
         kpUiText[lang].permReadStats = kpLang[lang].appPerm_readStats
+        //新增應用系統金鑰對話框 (ADR-095)
+        kpUiText[lang].usersList = kpLang[lang].mmUsersList
+        kpUiText[lang].addApp = kpLang[lang].tokenAddApp
+        kpUiText[lang].appName = kpLang[lang].tokenAppName
+        kpUiText[lang].usageUser = kpLang[lang].tokenAppUsageUser
+        kpUiText[lang].usageSystem = kpLang[lang].tokenAppUsageSystem
+        kpUiText[lang].boundUser = kpLang[lang].tokenAppBoundUser
+        kpUiText[lang].create = kpLang[lang].tokenAppCreate
     }
 }
+
+//新增金鑰案例之名稱與所綁使用者(base seed 之 id-for-viewer: 帳號 ac-viewer、名稱 viewer)
+let NEW_KEY_NAME_SYS = 'svc-demo'
+let NEW_KEY_NAME_USR = 'user-demo'
+let NEW_KEY_BOUND_TEXT = 'ac-viewer (viewer)'
+//新鑄造之金鑰其權杖字串與建立 / 更新時間為不可固定之值(伺服端產生、取當下時間): 結果列截圖前先於資料庫改為固定值並重新進入清單 (見 fixNewKeyAndReenter)
+let NEW_KEY_FIXED_TOKEN = 'new-key-fixed-token'
+let FIX_TIME_NEW = '2026-06-01T00:00:00.000+08:00' //固定之建立 / 更新時間, 晚於其他列之 FIX_TIME 使新列排於最上
+//新鑄造後(尚未固定值前)清單最上列(新列, 依建立時間由新到舊排序)之權杖儲存格, 其字串為伺服端產生之隨機值: 供成功訊息截圖遮蔽
+let SEL_NEW_ROW_TOKEN_CELL = '.ag-row[row-index="0"] .ag-cell[col-id="token"]'
 
 
 //輔助: 用 Backspace 清空 input.value, 不碰剪貼簿 / 不用 Ctrl+A 組合鍵
@@ -329,8 +361,9 @@ async function locateMdiButton(page, dPath) {
 
 
 //ag-grid 視窗虛擬化讓非可視欄不在 DOM. 透過掃描 scrollLeft 找到該欄能渲染的位置.
-async function ensureColumnVisible(page, colId) {
-    let ok = await page.evaluate(async (cid) => {
+//align: 'center'(預設)使該欄標頭置於捲動區中央; 'start' 使其左緣貼齊捲動區左緣 (其右側連續欄位須一併入鏡時用, 如權限欄與其後之建立、到期時間欄)
+async function ensureColumnVisible(page, colId, align = 'center') {
+    let ok = await page.evaluate(async ({ cid, align }) => {
         let body = document.querySelector('.ag-center-cols-viewport')
         if (!body) return false
         let sw = body.scrollWidth, cw = body.clientWidth
@@ -344,15 +377,20 @@ async function ensureColumnVisible(page, colId) {
             if (header) {
                 let r = header.getBoundingClientRect()
                 let bbox = body.getBoundingClientRect()
-                let center = bbox.x + bbox.width / 2
-                let headerCenter = r.x + r.width / 2
-                body.scrollLeft = pos + (headerCenter - center)
+                if (align === 'start') {
+                    body.scrollLeft = pos + (r.x - bbox.x)
+                }
+                else {
+                    let center = bbox.x + bbox.width / 2
+                    let headerCenter = r.x + r.width / 2
+                    body.scrollLeft = pos + (headerCenter - center)
+                }
                 await new Promise(r => setTimeout(r, 120))
                 return true
             }
         }
         return false
-    }, colId)
+    }, { cid: colId, align })
     if (!ok) throw new Error(`column not findable in any scroll position: ${colId}`)
     await page.waitForTimeout(300)
 }
@@ -403,23 +441,6 @@ async function checkRowSelectionByRowIdx(page, rowIdx) {
     await cb.waitFor({ state: 'visible', timeout: 5000 })
     await cb.check()
     await page.waitForTimeout(400)
-}
-
-
-//Toggle 指定 row 的 isApp checkbox (透過 cell-render template 內 input[type=checkbox]
-//的 click handler 觸發 toggleItemIsAppById → isModified=true).
-//note: 該 checkbox 不是 selection checkbox; 是 isApp 欄位內的 cell-render checkbox.
-async function clickIsAppCheckboxByRowIdx(page, rowIdx) {
-    await ensureColumnVisible(page, 'isApp')
-    let cellSel = `.ag-row[row-index="${rowIdx}"] .ag-cell[col-id="isApp"]`
-    let cell = page.locator(cellSel)
-    await cell.scrollIntoViewIfNeeded()
-    let cbSel = `${cellSel} input[type="checkbox"]`
-    let cb = page.locator(cbSel).first()
-    await cb.waitFor({ state: 'visible', timeout: 5000 })
-    //click (不是 check/uncheck — toggle 由 @click handler 主導, 不靠 checked attribute)
-    await cb.click()
-    await page.waitForTimeout(500)
 }
 
 
@@ -622,69 +643,8 @@ async function captureListLoaded(page, lang) {
 }
 
 
-//E2E-002 toggle isApp checkbox 後 Save 成功 → 多階段截圖（3 張）:
-//  stage1 (E2E-002-1-isapp-toggled-before-save): toggle 後、Save 前截「isApp cell 已切換」觸發態 (框 isApp cell)
-//  stage2 (E2E-002-2-save-success-modal): waitCheckYes 後、點 OK 前截成功 modal (框 WDialog 內層 panel)
-//  stage3 (E2E-002-3-toggle-isapp-result-row): 點 OK 關閉 modal → 等 grid idle → 框被切換 isApp 的那一列
-//note: 流程文件描述為「修改任一欄位」, 此 case 用 isApp checkbox toggle 作為「修改」代表
-//(同 ips 改用 ip 文字欄修改的工程取捨). 走的是同一個 saveTokens + updateTokensList 路徑
-//(toggleItemIsAppById → isModified=true → Save 按鈕顯示).
-//note: saveTokens 成功後前端直接以 vo.tokens=cloneDeep(rows) 更新, 不 refetch getTokensList,
-//      故 modal 關閉後 grid 即已呈現 toggle 後狀態, 無需等 newValue 出現.
-async function captureToggleIsappSaveSuccess(page, lang) {
-    await loginAsAdminAndOpenTokensList(page, lang)
-
-    //找 test-token-1 的列 row-index (seed 為 isApp='n', toggle 後變 'y')
-    let rowIdx = await findRowIdxByTokenValue(page, 'test-token-1')
-    if (rowIdx === null) throw new Error(`seed token row not found: test-token-1`)
-
-    await clickIsAppCheckboxByRowIdx(page, parseInt(rowIdx, 10))
-
-    //[多階段 stage1] toggle 後、Save 前截「isApp cell 已切換」觸發態 — 框 isApp cell
-    //ensureColumnVisible 已在 clickIsAppCheckboxByRowIdx 內呼叫, 此處 isApp 欄必在視口
-    await page.mouse.move(0, 0)
-    await page.waitForTimeout(500)
-    let bufToggled = await captureStableWithBox(page, `.ag-row[row-index="${rowIdx}"] .ag-cell[col-id="isApp"]`)
-
-    await clickSave(page)
-    await waitCheckYes(page, lang) //success modal 出現
-
-    //[多階段 stage2 語意斷言] modal 仍顯示時 (點 OK 之前) 斷言成功 modal 文字出現 —
-    //此為成功 modal 文字的正確時機 (post-capture 時 modal 已 dismiss, 文字不在頁面).
-    {
-        let exp = expectedSpecText['E2E-002-toggle-isapp-save-success'][lang].value
-        let found = await pageHasText(page, exp)
-        if (!found) {
-            let dump = await collectDomText(page)
-            assert.fail(`預期成功 modal 含 "${exp}" (E2E-002-2-save-success-modal), 實際: ${dump}`)
-        }
-    }
-
-    //[多階段 stage2] waitCheckYes 後、點 OK 前截「儲存成功 modal」— 框 WDialog 內層 panel
-    let bufModal = await captureStableWithBox(page, SEL_MODAL)
-
-    //關閉 modal (點 OK) → 等 modal 消失與 ag-grid idle
-    await closeCheckYesAndWaitGridIdle(page, lang)
-
-    //重新找 test-token-1 的 row-index (儲存後排序可能變動)
-    let finalRowIdx = await findRowIdxByTokenValue(page, 'test-token-1')
-    if (finalRowIdx === null) throw new Error(`test-token-1 not found in grid after save`)
-
-    //[多階段 stage3] 框被切換 isApp 的那一列 (pinned-left + center 兩容器聯集, 同 adduser canonical 截圖)
-    //聚焦驗證標的: test-token-1 的 isApp 欄已切換並顯示於清單
-    let bufRow = await captureStableWithBox(page, [
-        `.ag-pinned-left-cols-container .ag-row[row-index="${finalRowIdx}"]`,
-        `.ag-center-cols-container .ag-row[row-index="${finalRowIdx}"]`,
-    ])
-
-    //多階段回傳 dict (baselineName → buf); 數字前綴使檔名排序 ≡ 流程階段順序:
-    //  1 toggle 後 save 前之 isApp cell 觸發態 → 2 儲存成功 modal (綠勾) → 3 grid 中被切換 isApp 的 test-token-1 列
-    return {
-        'E2E-002-1-isapp-toggled-before-save': bufToggled,
-        'E2E-002-2-save-success-modal': bufModal,
-        'E2E-002-3-toggle-isapp-result-row': bufRow,
-    }
-}
+//E2E-002 已廢止(編號保留不再使用): 原「勾選 isApp 把登入 token 升級為應用系統金鑰並儲存」之路徑自 ADR-095 起關閉
+//(前端 isApp 欄唯讀、後端清單存檔拒收 tokenSessionUpgradeNotAllowed, 見 api-apptoken-usage LIST); 取而代之者為 E2E-008 / E2E-009 之「新增應用系統金鑰」.
 
 
 //E2E-003 勾選某列刪除後 Save 成功 → 多階段截圖（2 張）:
@@ -728,10 +688,11 @@ async function captureDeleteRowSaveSuccess(page, lang) {
 async function captureTokenExpiredSaveFail(page, lang) {
     await loginAsAdminAndOpenTokensList(page, lang)
 
-    //先 toggle isApp 讓 isModified=true (否則 Save 按鈕不顯示)
+    //先勾選 test-token-3 並刪除讓 isModified=true (否則 Save 按鈕不顯示; 原以勾選 isApp 修改, ADR-095 起 isApp 欄唯讀, 改以刪除列為「修改」代表)
     let rowIdx = await findRowIdxByTokenValue(page, 'test-token-3')
     if (rowIdx === null) throw new Error(`seed token row not found: test-token-3`)
-    await clickIsAppCheckboxByRowIdx(page, parseInt(rowIdx, 10))
+    await checkRowSelectionByRowIdx(page, parseInt(rowIdx, 10))
+    await clickTrash(page)
 
     //儲存前讓 admin token 過期 (模擬「修改完之後 token 才過期」場景)
     await forceExpireAdminToken()
@@ -768,6 +729,8 @@ async function capturePermsChangeSave(page, lang, o) {
 
     let rowIdx = await findRowIdxByTokenValue(page, tokenStr)
     if (rowIdx === null) throw new Error(`seed token row not found: ${tokenStr}`)
+    //ADR-095 起表格多「用途」「名稱」兩欄, 1280 寬時應用系統權限欄於捲軸歸位時在可視範圍外: 先橫向捲動帶入(使用者亦須如此操作)
+    await ensureColumnVisible(page, 'perms')
     let trig = permsTriggerSel(rowIdx)
     await assertInViewport(page, trig)
 
@@ -802,6 +765,7 @@ async function capturePermsChangeSave(page, lang, o) {
     await closeCheckYesAndWaitGridIdle(page, lang)
     let finalRowIdx = await findRowIdxByTokenValue(page, tokenStr)
     if (finalRowIdx === null) throw new Error(`${tokenStr} not found in grid after save`)
+    await ensureColumnVisible(page, 'perms') //關閉 modal 時捲軸已歸位(closeCheckYesAndWaitGridIdle), 再橫向捲動帶入
     let trigFinal = permsTriggerSel(finalRowIdx)
     await assertInViewport(page, trigFinal)
 
@@ -866,6 +830,7 @@ async function captureViewPermsReadonly(page, lang) {
 
     let rowIdx = await findRowIdxByTokenValue(page, 'test-token-6')
     if (rowIdx === null) throw new Error(`seed token row not found: test-token-6`)
+    await ensureColumnVisible(page, 'perms') //同 E2E-005: 應用系統權限欄須橫向捲動帶入
     let trig = permsTriggerSel(rowIdx)
     await assertInViewport(page, trig)
 
@@ -901,17 +866,288 @@ async function captureViewPermsReadonly(page, lang) {
 
 
 // ===================================================================
+// 新增 / 刪除應用系統金鑰 (ADR-095): E2E-008 / E2E-009 / E2E-010
+// ===================================================================
+
+//功能列「新增應用系統金鑰」鈕 (圖示 mdiKeyPlus; 可點層為最近之 tabindex 容器, 同 locateMdiButton)
+function addBtnLoc(page) {
+    return page.locator(`svg path[d="${mdiKeyPlus}"]`).locator('xpath=ancestor::div[@tabindex][1]')
+}
+
+async function clickAddBtn(page) {
+    let p = await locateMdiButton(page, mdiKeyPlus)
+    await page.mouse.click(p.x, p.y)
+    await page.mouse.move(0, 0)
+}
+
+//新增對話框面板 (WConfirm → WDialog 內層 panel; 同時只開一個對話框時唯一)
+function addDlgLoc(page) {
+    return page.locator(SEL_MODAL).first()
+}
+
+//對話框內以標籤文字取該欄位區塊 (標籤 div 之父層即含標籤與控制項之區塊)
+function addDlgBlockLoc(page, labelText) {
+    return addDlgLoc(page).locator(`text="${labelText}"`).first().locator('xpath=ancestor::div[1]')
+}
+
+//對話框內某選項 / 項目之文字(點選處)與其整列(可點層為 WInputRadio / WInputCheckbox 每項之 inline-block 容器)
+function addDlgItemLoc(page, text) {
+    return addDlgLoc(page).locator(`text="${text}"`).first()
+}
+function addDlgItemRowLoc(page, text) {
+    return addDlgItemLoc(page, text).locator('xpath=ancestor::div[contains(@style,"inline-block")][1]')
+}
+
+//「建立」鈕(對話框頁腳之 WButtonChip, 文字 tokenAppCreate)
+function addDlgCreateBtnLoc(page, lang) {
+    return addDlgLoc(page).locator('div[tabindex]').filter({ hasText: kpUiText[lang].create }).last()
+}
+
+
+//新鑄造之金鑰其權杖字串與建立 / 更新時間為不可固定之值(伺服端產生、取當下時間): 於成功訊息點確認後, 先於資料庫將該列改為固定值,
+//再經真實 UI 離開並重新進入金鑰清單(點「使用者清單」再點「金鑰清單」)讓畫面載入固定值, 其後之結果列截圖才可重現 (測試環境呈現, 正式環境無)
+async function fixNewKeyAndReenter(page, lang, appName) {
+    let t = kpUiText[lang]
+    let rows = (await woItems.tokens.select()).filter((r) => r.appName === appName)
+    assert.strictEqual(rows.length, 1, `新鑄造之金鑰「${appName}」應恰 1 列, 實際 ${rows.length}`)
+    await woItems.tokens.save({ id: rows[0].id, token: NEW_KEY_FIXED_TOKEN, timeCreate: FIX_TIME_NEW, timeUpdate: FIX_TIME_NEW })
+
+    await page.locator(`text="${t.usersList}"`).first().click()
+    await page.waitForTimeout(1500)
+    await page.locator(`text="${t.tokensList}"`).first().click()
+    await page.locator(`text="${t.editMode}"`).first().waitFor({ state: 'visible', timeout: 60000 })
+    await waitGridIdle(page, { minCells: 1, requireSelector: '.ag-header-cell[col-id="token"]', requireScrollLeftZero: true, timeout: 60000 })
+    await waitUntilExist(page, `fixed new key ${NEW_KEY_FIXED_TOKEN}`, (s) => document.body.innerText.includes(s), { arg: NEW_KEY_FIXED_TOKEN, timeout: 30000 })
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(1500)
+}
+
+
+//量測型目標: 某列之「可見部分」(固定欄與捲動欄之列聯集, 夾在表格框內). 橫向捲動後該列之捲動欄矩形左端落在視窗外(整列寬 > 視窗),
+//直接取 rowBoxSel 聯集會使紅框左緣被夾到圖緣而蓋住側欄, 故夾在表格框內; 固定欄與捲動欄之列重疊為凍結欄設計, 不屬被蓋住(不需 coverCheck:'off')
+function visibleRowBox(rowIdx) {
+    return {
+        label: `visibleRowBox(${rowIdx})`,
+        scroll: `.ag-pinned-left-cols-container .ag-row[row-index="${rowIdx}"]`,
+        measure: async (page) => {
+            return page.evaluate((idx) => {
+                let root = document.querySelector('.ag-root-wrapper')
+                if (!root) {
+                    return null
+                }
+                let rr = root.getBoundingClientRect()
+                let parts = []
+                root.querySelectorAll(`.ag-row[row-index="${idx}"]`).forEach((row) => {
+                    let r = row.getBoundingClientRect()
+                    if (r.width > 0 && r.height > 0) {
+                        parts.push(r)
+                    }
+                })
+                if (parts.length === 0) {
+                    return null
+                }
+                let left = Math.max(Math.min(...parts.map((r) => r.left)), rr.left)
+                let top = Math.max(Math.min(...parts.map((r) => r.top)), rr.top)
+                let right = Math.min(Math.max(...parts.map((r) => r.right)), rr.right)
+                let bottom = Math.min(Math.max(...parts.map((r) => r.bottom)), rr.bottom)
+                if (right <= left || bottom <= top) {
+                    return null
+                }
+                return { x: left, y: top, width: right - left, height: bottom - top }
+            }, rowIdx)
+        },
+    }
+}
+
+
+//開啟新增對話框並輸入名稱, 回傳 { buf1: 點擊前框新增鈕, buf2: 對話框面板(兼任「輸入名稱」之點擊前), buf3: 名稱已輸入 }
+async function openAddDlgAndTypeName(page, lang, name) {
+    let t = kpUiText[lang]
+    //1 點擊前: 框新增鈕整顆
+    let buf1 = await captureStableWithBox(page, addBtnLoc(page))
+    await clickAddBtn(page)
+    await addDlgLoc(page).waitFor({ state: 'visible', timeout: 5000 })
+    await addDlgItemLoc(page, t.usageSystem).waitFor({ state: 'visible', timeout: 5000 })
+    //2 點擊後: 框對話框面板(同時為「輸入名稱」之點擊前圖, 名稱欄在其內, §7.1 相鄰兼任)
+    let buf2 = await captureStableWithBox(page, SEL_MODAL)
+    await typeIntoInput(page, addDlgLoc(page).locator('input').first(), name)
+    //3 點擊後: 框名稱欄(標籤 + 輸入框)
+    let buf3 = await captureStableWithBox(page, itemsUnionBox(addDlgBlockLoc(page, t.appName), { fit: true }))
+    return { buf1, buf2, buf3 }
+}
+
+
+//E2E-008 新增系統服務用途之應用系統金鑰 (名稱 svc-demo、權限「讀統計」), 共 10 張
+//  1 click-add-btn / 2 add-dialog / 3 name-typed / 4 click-usage-system / 5 usage-system-selected / 6 check-read-stats / 7 read-stats-checked / 8 click-create / 9 create-success-modal / 10 created-row
+async function captureAddSystemKey(page, lang) {
+    let t = kpUiText[lang]
+    await loginAsAdminAndOpenTokensList(page, lang)
+    let { buf1, buf2, buf3 } = await openAddDlgAndTypeName(page, lang, NEW_KEY_NAME_SYS)
+
+    //4 點擊前: 框「系統服務用途」選項整列
+    let buf4 = await captureStableWithBox(page, itemsUnionBox(addDlgItemRowLoc(page, t.usageSystem), { fit: true }))
+    await addDlgItemLoc(page, t.usageSystem).click()
+    await addDlgItemLoc(page, t.permReadStats).waitFor({ state: 'visible', timeout: 5000 })
+
+    //5 點擊後: 框對話框面板(用途已選, 權限清單出現)
+    let buf5 = await captureStableWithBox(page, SEL_MODAL)
+
+    //6 點擊前: 框權限清單中「讀統計」整列
+    let buf6 = await captureStableWithBox(page, itemsUnionBox(addDlgItemRowLoc(page, t.permReadStats), { fit: true }))
+    await addDlgItemLoc(page, t.permReadStats).click()
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(400)
+    let st = await addDlgLoc(page).evaluate((el) => Array.from(el.querySelectorAll('input[type="checkbox"]')).filter((x) => x.checked && !x.disabled).length)
+    assert.strictEqual(st, 1, `勾選讀統計後對話框內應恰 1 項可選權限已勾選, 實際 ${st}`)
+
+    //7 點擊後: 框對話框面板(「讀統計」已勾選)
+    let buf7 = await captureStableWithBox(page, SEL_MODAL)
+
+    //8 點擊前: 框「建立」鈕整顆
+    let buf8 = await captureStableWithBox(page, addDlgCreateBtnLoc(page, lang))
+    await addDlgCreateBtnLoc(page, lang).click()
+    await waitCheckYes(page, lang)
+    await assertSuccessModalText(page, lang, 'E2E-008-add-system-key-success')
+
+    //9 點擊後: 框成功 modal(同時為「確認」之點擊前圖, 確認鈕在其內, §7.1 相鄰兼任); 背景清單中新列之權杖字串為伺服端產生之隨機值(不可固定), 以黑塊遮蔽該儲存格 (unfixable-values-masking)
+    let buf9 = await captureStableWithBox(page, SEL_MODAL, { mask: [SEL_NEW_ROW_TOKEN_CELL] })
+
+    //點確認 → 固定新列不可固定之值並重新進入清單 → 10 框新列
+    await closeCheckYesAndWaitGridIdle(page, lang)
+    await fixNewKeyAndReenter(page, lang, NEW_KEY_NAME_SYS)
+    let rowIdx = await findRowIdxByTokenValue(page, NEW_KEY_FIXED_TOKEN)
+    if (rowIdx === null) throw new Error(`new key row not found: ${NEW_KEY_FIXED_TOKEN}`)
+    //權限與「不設期限」於 1280 寬之初始位置不在可視範圍(用途、名稱欄之後), 橫向捲動使權限欄貼齊捲動區左緣(其後之建立、到期時間欄一併入鏡)再框新列 (使用者亦須如此操作)
+    await ensureColumnVisible(page, 'perms', 'start')
+    let buf10 = await captureStableWithBox(page, visibleRowBox(rowIdx))
+
+    return {
+        'E2E-008-1-click-add-btn': buf1,
+        'E2E-008-2-add-dialog': buf2,
+        'E2E-008-3-name-typed': buf3,
+        'E2E-008-4-click-usage-system': buf4,
+        'E2E-008-5-usage-system-selected': buf5,
+        'E2E-008-6-check-read-stats': buf6,
+        'E2E-008-7-read-stats-checked': buf7,
+        'E2E-008-8-click-create': buf8,
+        'E2E-008-9-create-success-modal': buf9,
+        'E2E-008-10-created-row': buf10,
+    }
+}
+
+
+//E2E-009 新增使用者用途之應用系統金鑰 (名稱 user-demo、綁定使用者 ac-viewer), 共 11 張
+//  1 click-add-btn / 2 add-dialog / 3 name-typed / 4 click-usage-user / 5 usage-user-selected / 6 click-bound-user / 7 bound-user-list / 8 bound-user-selected / 9 click-create / 10 create-success-modal / 11 created-row
+async function captureAddUserKey(page, lang) {
+    let t = kpUiText[lang]
+    await loginAsAdminAndOpenTokensList(page, lang)
+    let { buf1, buf2, buf3 } = await openAddDlgAndTypeName(page, lang, NEW_KEY_NAME_USR)
+
+    //4 點擊前: 框「使用者用途」選項整列
+    let buf4 = await captureStableWithBox(page, itemsUnionBox(addDlgItemRowLoc(page, t.usageUser), { fit: true }))
+    await addDlgItemLoc(page, t.usageUser).click()
+    await addDlgBlockLoc(page, t.boundUser).waitFor({ state: 'visible', timeout: 5000 })
+
+    //5 點擊後: 框對話框面板(用途已選, 所綁使用者欄出現)
+    let buf5 = await captureStableWithBox(page, SEL_MODAL)
+
+    //6 點擊前: 框所綁使用者下拉(標籤 + 下拉)
+    let selBlock = addDlgBlockLoc(page, t.boundUser)
+    let buf6 = await captureStableWithBox(page, itemsUnionBox(selBlock, { fit: true }))
+    await selBlock.locator('xpath=.//div[@tabindex][1]').click().catch(async () => {
+        await selBlock.click()
+    })
+    let list = page.locator('.WPopperFix').filter({ hasText: NEW_KEY_BOUND_TEXT }).locator(':scope > div').first()
+    await list.waitFor({ state: 'visible', timeout: 5000 })
+
+    //7 點擊後: 框展開之使用者清單浮層(同時為「選取使用者」之點擊前圖, 項目在其內, §7.1 相鄰兼任)
+    let buf7 = await captureStableWithBox(page, itemsUnionBox(list, { fit: true }))
+    await list.locator(`text="${NEW_KEY_BOUND_TEXT}"`).first().click()
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(500)
+
+    //8 點擊後: 框對話框面板(所綁使用者已選)
+    let buf8 = await captureStableWithBox(page, SEL_MODAL)
+    assert.ok(await pageHasText(page, NEW_KEY_BOUND_TEXT), '所綁使用者選取後下拉應顯示所選使用者')
+
+    //9 點擊前: 框「建立」鈕整顆
+    let buf9 = await captureStableWithBox(page, addDlgCreateBtnLoc(page, lang))
+    await addDlgCreateBtnLoc(page, lang).click()
+    await waitCheckYes(page, lang)
+    await assertSuccessModalText(page, lang, 'E2E-009-add-user-key-success')
+
+    //10 點擊後: 框成功 modal; 背景新列之權杖字串為不可固定之值, 同 E2E-008-9 遮蔽
+    let buf10 = await captureStableWithBox(page, SEL_MODAL, { mask: [SEL_NEW_ROW_TOKEN_CELL] })
+
+    //點確認 → 固定新列不可固定之值並重新進入清單 → 11 框新列
+    await closeCheckYesAndWaitGridIdle(page, lang)
+    await fixNewKeyAndReenter(page, lang, NEW_KEY_NAME_USR)
+    let rowIdx = await findRowIdxByTokenValue(page, NEW_KEY_FIXED_TOKEN)
+    if (rowIdx === null) throw new Error(`new key row not found: ${NEW_KEY_FIXED_TOKEN}`)
+    //同 E2E-008-10: 橫向捲動使權限欄貼齊捲動區左緣, 方能看到「同所綁使用者」與「不設期限」
+    await ensureColumnVisible(page, 'perms', 'start')
+    let buf11 = await captureStableWithBox(page, visibleRowBox(rowIdx))
+
+    return {
+        'E2E-009-1-click-add-btn': buf1,
+        'E2E-009-2-add-dialog': buf2,
+        'E2E-009-3-name-typed': buf3,
+        'E2E-009-4-click-usage-user': buf4,
+        'E2E-009-5-usage-user-selected': buf5,
+        'E2E-009-6-click-bound-user': buf6,
+        'E2E-009-7-bound-user-list': buf7,
+        'E2E-009-8-bound-user-selected': buf8,
+        'E2E-009-9-click-create': buf9,
+        'E2E-009-10-create-success-modal': buf10,
+        'E2E-009-11-created-row': buf11,
+    }
+}
+
+
+//E2E-010 勾選使用者用途金鑰(test-token-7, 綁 id-for-viewer)刪除並儲存, 共 3 張 (序列同 E2E-003; 差異在目標列為應用系統金鑰與端到端不變式: 該金鑰失效而所綁使用者之登入不受影響)
+//  1 row-selected-before-save / 2 delete-key-save-success / 3 key-removed
+async function captureDeleteUserKey(page, lang) {
+    await loginAsAdminAndOpenTokensList(page, lang)
+    let rowIdx = await findRowIdxByTokenValue(page, 'test-token-7')
+    if (rowIdx === null) throw new Error(`seed token row not found: test-token-7`)
+    await checkRowSelectionByRowIdx(page, parseInt(rowIdx, 10))
+
+    //1 勾選後、刪除 / 儲存前: 框該列(pinned-left + center 聯集)
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(500)
+    let buf1 = await captureStableWithBox(page, [
+        `.ag-pinned-left-cols-container .ag-row[row-index="${rowIdx}"]`,
+        `.ag-center-cols-container .ag-row[row-index="${rowIdx}"]`,
+    ])
+
+    await clickTrash(page)
+    await clickSave(page)
+    await waitCheckYes(page, lang)
+    await assertSuccessModalText(page, lang, 'E2E-010-delete-user-key-save-success')
+
+    //2 點擊後: 框成功 modal
+    let buf2 = await captureStableWithBox(page, SEL_MODAL)
+
+    //點確認 → 3 框表格(標頭 + 可見資料列; 該金鑰已不在清單)
+    await closeCheckYesAndWaitGridIdle(page, lang)
+    let buf3 = await captureStableWithBox(page, gridContentBox(SEL_GRID))
+
+    return {
+        'E2E-010-1-row-selected-before-save': buf1,
+        'E2E-010-2-delete-key-save-success': buf2,
+        'E2E-010-3-key-removed': buf3,
+    }
+}
+
+
+// ===================================================================
 // 案例宣告與案例管線 (產製端與比對端共用)
 // ===================================================================
 
 //stages: 多階段案例之圖鍵 (與 spec 視覺項、寫檔名、比對名一致; 產出與宣告不符即報錯). 單張案例之圖鍵即案例鍵.
 let cases = [
     { name: 'E2E-001-list-loaded', run: captureListLoaded },
-    {
-        name: 'E2E-002-toggle-isapp-save-success',
-        run: captureToggleIsappSaveSuccess,
-        stages: ['E2E-002-1-isapp-toggled-before-save', 'E2E-002-2-save-success-modal', 'E2E-002-3-toggle-isapp-result-row'],
-    },
+    //E2E-002 已廢止(編號保留不再使用, ADR-095): 見上方註記
     {
         name: 'E2E-003-delete-row-save-success',
         run: captureDeleteRowSaveSuccess,
@@ -933,10 +1169,25 @@ let cases = [
         run: captureViewPermsReadonly,
         stages: ['E2E-007-1-click-edit-mode', 'E2E-007-2-view-mode', 'E2E-007-3-click-perms', 'E2E-007-4-perms-list-readonly'],
     },
+    {
+        name: 'E2E-008-add-system-key-success',
+        run: captureAddSystemKey,
+        stages: ['E2E-008-1-click-add-btn', 'E2E-008-2-add-dialog', 'E2E-008-3-name-typed', 'E2E-008-4-click-usage-system', 'E2E-008-5-usage-system-selected', 'E2E-008-6-check-read-stats', 'E2E-008-7-read-stats-checked', 'E2E-008-8-click-create', 'E2E-008-9-create-success-modal', 'E2E-008-10-created-row'],
+    },
+    {
+        name: 'E2E-009-add-user-key-success',
+        run: captureAddUserKey,
+        stages: ['E2E-009-1-click-add-btn', 'E2E-009-2-add-dialog', 'E2E-009-3-name-typed', 'E2E-009-4-click-usage-user', 'E2E-009-5-usage-user-selected', 'E2E-009-6-click-bound-user', 'E2E-009-7-bound-user-list', 'E2E-009-8-bound-user-selected', 'E2E-009-9-click-create', 'E2E-009-10-create-success-modal', 'E2E-009-11-created-row'],
+    },
+    {
+        name: 'E2E-010-delete-user-key-save-success',
+        run: captureDeleteUserKey,
+        stages: ['E2E-010-1-row-selected-before-save', 'E2E-010-2-delete-key-save-success', 'E2E-010-3-key-removed'],
+    },
 ]
 
 //語意斷言已在截圖函式內 (成功 modal 仍顯示時) 完成之案例: 截圖後 modal 已關閉, 不再對已消失之文字做斷言, 最終態由 DB 不變式驗
-let semanticInCapture = ['E2E-002-toggle-isapp-save-success', 'E2E-005-grant-perms-save-success', 'E2E-006-revoke-perms-save-success']
+let semanticInCapture = ['E2E-005-grant-perms-save-success', 'E2E-006-revoke-perms-save-success', 'E2E-008-add-system-key-success', 'E2E-009-add-user-key-success', 'E2E-010-delete-user-key-save-success']
 
 //應用系統權限案例 (ADR-069) 之前後檢查: pre 於操作前確認 app token 之起始能力, post 於寫檔 / 比對標準圖之前驗 DB 與端到端不變式
 //(app token 實際呼叫後台功能之成敗), 使標準圖缺漏或不符時仍先驗得流程本身. callFapi 部分只在比對端 (見檔頭說明).
@@ -977,17 +1228,60 @@ let permsChecks = {
             assert.deepStrictEqual(rs[0].perms, permsAll, `非編輯模式之操作不得改變 id-test-token-6 之 perms, 實際: ${JSON.stringify(rs[0].perms)}`)
         },
     },
+    //新增系統服務用途金鑰 (ADR-095): DB 列(用途、名稱、擁有者為建立者之 admin、不給期限、權限)與端到端不變式(新金鑰實際只能讀統計, 反查為應用系統身分)
+    'E2E-008-add-system-key-success': {
+        pre: null,
+        post: async (ctx) => {
+            let rs = (await woItems.tokens.select()).filter((r) => r.appName === NEW_KEY_NAME_SYS)
+            assert.strictEqual(rs.length, 1, `應新增恰 1 把「${NEW_KEY_NAME_SYS}」, 實際 ${rs.length}`)
+            let r = rs[0]
+            assert.deepStrictEqual([r.isApp, r.appUsage, r.userId, r.timeEnd, r.perms], ['y', 'system', testUsers.admin.id, '', ['readStats']], `新金鑰之列不符: ${JSON.stringify(r)}`)
+            assert.strictEqual(r.token, NEW_KEY_FIXED_TOKEN, '權杖字串已固定(fixNewKeyAndReenter)')
+            if (ctx.mode !== 'compare') return
+            let sta = await callFapi('getStaIp', [r.token])
+            assert.strictEqual(sta.ok, true, `新金鑰具讀統計, 實際: ${JSON.stringify(sta).slice(0, 200)}`)
+            let lst = await callFapi('getTokensList', [r.token])
+            assert.strictEqual(lst.ok, false, '新金鑰未授予讀金鑰, 不應可讀金鑰清單')
+            let who = await callFapi('getUserByToken', [r.token])
+            assert.deepStrictEqual([who.ok, who.val.id, who.val.name, who.val.isApp], [true, `app:${r.id}`, NEW_KEY_NAME_SYS, 'y'], `反查應為應用系統身分: ${JSON.stringify(who).slice(0, 200)}`)
+        },
+    },
+    //新增使用者用途金鑰 (ADR-095): DB 列(綁 id-for-viewer、無 perms)與端到端不變式(反查為所綁使用者, 一般使用者之管理服務不可用)
+    'E2E-009-add-user-key-success': {
+        pre: null,
+        post: async (ctx) => {
+            let rs = (await woItems.tokens.select()).filter((r) => r.appName === NEW_KEY_NAME_USR)
+            assert.strictEqual(rs.length, 1, `應新增恰 1 把「${NEW_KEY_NAME_USR}」, 實際 ${rs.length}`)
+            let r = rs[0]
+            assert.deepStrictEqual([r.isApp, r.appUsage, r.userId, r.timeEnd, r.perms], ['y', 'user', 'id-for-viewer', '', []], `新金鑰之列不符: ${JSON.stringify(r)}`)
+            if (ctx.mode !== 'compare') return
+            let who = await callFapi('getUserByToken', [r.token])
+            assert.deepStrictEqual([who.ok, who.val.id, who.val.account, who.val.isApp, who.val.isAdmin], [true, 'id-for-viewer', 'ac-viewer', 'y', 'n'], `反查應為所綁使用者: ${JSON.stringify(who).slice(0, 200)}`)
+            let lst = await callFapi('getUsersList', [r.token])
+            assert.strictEqual(lst.ok, false, '綁一般使用者之金鑰不應可用管理服務')
+        },
+    },
+    //刪除使用者用途金鑰 (ADR-095): 金鑰列已刪、該金鑰失效; 所綁使用者之登入 token 不受影響
+    'E2E-010-delete-user-key-save-success': {
+        pre: async () => {
+            let who = await callFapi('getUserByToken', ['test-token-7'])
+            assert.strictEqual(who.ok, true, `刪除前 test-token-7 應可用, 實際: ${JSON.stringify(who).slice(0, 200)}`)
+        },
+        post: async (ctx) => {
+            assert.strictEqual((await woItems.tokens.select({ id: 'id-test-token-7' })).length, 0, 'id-test-token-7 應已被刪除')
+            assert.strictEqual((await woItems.tokens.select({ id: 'id-for-token-for-viewer' })).length, 1, '所綁使用者之登入 token 不受影響')
+            if (ctx.mode !== 'compare') return
+            let r1 = await callFapi('checkToken', ['test-token-7'])
+            assert.strictEqual(r1.ok, false, '刪除後 test-token-7 應立即失效')
+            let r2 = await callFapi('checkToken', ['token-for-viewer'])
+            assert.strictEqual(r2.ok, true, '所綁使用者之登入 token 仍可用')
+        },
+    },
 }
 
 //DB 副作用斷言 (寫檔 / 比對之前)
 async function assertDbSideEffects(name) {
-    if (name === 'E2E-002-toggle-isapp-save-success') {
-        //toggle 後 DB 該列 isApp 應從 'n' 變 'y'
-        let rs = await woItems.tokens.select({ id: 'id-test-token-1' }).catch(() => [])
-        assert.strict.equal(rs.length, 1, `id-test-token-1 應存在`)
-        assert.strict.equal(rs[0].isApp, 'y', `id-test-token-1 之 isApp 應已 toggle 為 'y', 實際: ${rs[0].isApp}`)
-    }
-    else if (name === 'E2E-003-delete-row-save-success') {
+    if (name === 'E2E-003-delete-row-save-success') {
         //刪除後 DB 該列應不存在
         let rs = await woItems.tokens.select({ id: 'id-test-token-2' }).catch(() => [])
         assert.strict.equal(rs.length, 0, `id-test-token-2 應已被刪除, 實際: ${rs.length} 筆`)
@@ -997,9 +1291,9 @@ async function assertDbSideEffects(name) {
         assert.strict.equal(seedRows.length, testTokens.length - 1, `其他 seed tokens 列應仍在, 實際: ${seedRows.length} 筆 (預期 ${testTokens.length - 1})`)
     }
     else if (name === 'E2E-004-token-expired-save-fail') {
-        //token 過期 reject → DB 不應變動 (id-test-token-3 之 isApp 仍為原值 'n')
+        //token 過期 reject → DB 不應變動 (id-test-token-3 已於畫面勾選刪除但未寫入, 仍存在且 isApp 為原值 'n')
         let rs = await woItems.tokens.select({ id: 'id-test-token-3' }).catch(() => [])
-        assert.strict.equal(rs.length, 1, `id-test-token-3 應仍存在`)
+        assert.strict.equal(rs.length, 1, `id-test-token-3 應仍存在(畫面之刪除未寫入)`)
         assert.strict.equal(rs[0].isApp, 'n', `token 過期 reject 後 id-test-token-3 之 isApp 不應變動 (預期 'n', 實際: ${rs[0].isApp})`)
         //seed tokens 數量不變 (同上, 只篩 id-test-token-* 前綴)
         let all = await woItems.tokens.select().catch(() => [])

@@ -71,11 +71,14 @@ let seedUsers = [
     { id: 'id-cc-ua', account: 'cc-ua', name: 'CC UserA', email: 'cc-ua@test.com' },
     { id: 'id-cc-ub', account: 'cc-ub', name: 'CC UserB', email: 'cc-ub@test.com' },
 ]
-//金鑰清單: 兩支應用系統金鑰 + 一支 session 金鑰(固定到期時間)
+//金鑰清單: 兩支應用系統金鑰 + 兩支 session 金鑰(固定到期時間)
+//(2026-10-24 ADR-095: 應用系統金鑰之金鑰字串建立後不可變更〔畫面該格唯讀、後端 tokenAppLocked〕, 故使用者於畫面改之格為 session 金鑰之字串;
+// 「他人」更動之列仍為應用系統金鑰〔直寫庫: 應用系統金鑰列嚴格整表比對, 此即舊畫面存檔被整次拒收之依據〕. 原載「畫面改應用系統金鑰之字串」不成立.)
 let seedTokens = [
     { id: 'id-cc-app1', token: 'cc-token-app1', userId: 'id-cc-owner1', isApp: 'y', perms: [], timeEnd: '2030-01-01T00:00:00.000+08:00' },
     { id: 'id-cc-app2', token: 'cc-token-app2', userId: 'id-cc-owner2', isApp: 'y', perms: ['readStats'], timeEnd: '2030-06-15T12:00:00.000+08:00' },
     { id: 'id-cc-sess1', token: 'cc-token-sess1', userId: 'id-cc-ua', isApp: 'n', perms: [], timeEnd: '2030-09-20T08:30:00.000+08:00' },
+    { id: 'id-cc-sess2', token: 'cc-token-sess2', userId: 'id-cc-ub', isApp: 'n', perms: [], timeEnd: '2030-10-20T08:30:00.000+08:00' },
 ]
 //IP 清單
 let seedIps = [
@@ -397,22 +400,22 @@ let pages = {
         headerCol: 'token',
         editCol: 'token',
         rowCol: 'token',
-        rowText: 'cc-token-app1',
-        valueFirst: 'cc-token-app1-edited',
+        rowText: 'cc-token-sess1',
+        valueFirst: 'cc-token-sess1-edited',
         rowCol2: 'token',
-        rowText2: 'cc-token-app2-ext', //他人更動後之值(重新載入後才見到)
-        valueSecond: 'cc-token-app2-edited',
+        rowText2: 'cc-token-sess2',
+        valueSecond: 'cc-token-sess2-edited',
         failKey: 'tokenSaveTokensFail',
         okKey: 'tokenSaveTokensSuccess',
         other: async () => {
-            //他人於載入後改了另一支應用系統金鑰之字串(應用系統金鑰列為嚴格整表比對)
+            //他人(系統)於載入後改了應用系統金鑰之字串(應用系統金鑰列為嚴格整表比對; 畫面上無此入口, 以直寫庫代之)
             await woItems.tokens.save({ id: 'id-cc-app2', token: 'cc-token-app2-ext' })
         },
         otherSeen: 'cc-token-app2-ext',
-        dbFirst: async () => (await woItems.tokens.select({ id: 'id-cc-app1' }))[0].token,
-        dbSecond: async () => (await woItems.tokens.select({ id: 'id-cc-app2' }))[0].token,
+        dbFirst: async () => (await woItems.tokens.select({ id: 'id-cc-sess1' }))[0].token,
+        dbSecond: async () => (await woItems.tokens.select({ id: 'id-cc-sess2' }))[0].token,
         dbOther: async () => (await woItems.tokens.select({ id: 'id-cc-app2' }))[0].token,
-        origFirst: 'cc-token-app1',
+        origFirst: 'cc-token-sess1',
     },
     ips: {
         menuKey: 'ipsList',

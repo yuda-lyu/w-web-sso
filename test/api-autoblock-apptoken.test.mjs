@@ -69,19 +69,20 @@ describe('api-autoblock-apptoken — app token 豁免 token 調用次數封鎖 (
 
     //APP-002 (對照組): 使用者 token 同法超過上限 → 封鎖使用者並刪 token → checkToken 不再為 true
     it('APP-002-user-token-exceeds-limit-blocked (control)', async function() {
-        let before = await checkToken('token-for-basic')
-        assert.strict.equal(before, true, '前置: token-for-basic 應有效')
+        //對照組改用已驗證使用者之權杖: id-for-basic 為未驗證使用者, 其權杖自 S-4(使用者 token 隨使用者當前狀態判定, 與登入同一判準)起不可用
+        let before = await checkToken('token-for-viewer')
+        assert.strict.equal(before, true, '前置: token-for-viewer 應有效')
 
-        await hammer('token-for-basic', NUM + 3)
+        await hammer('token-for-viewer', NUM + 3)
         await delay(3000)
 
-        let after = await checkToken('token-for-basic')
+        let after = await checkToken('token-for-viewer')
         assert.strict.notEqual(after, true, '使用者 token 超過 numForTokenCallApi 後應失效 (封鎖機制確有觸發)')
 
-        let tks = await woItems.tokens.select({ token: 'token-for-basic' })
-        assert.strict.equal(tks.length, 0, 'tokens 表之 token-for-basic 應被刪除 (流程_自動封鎖機制 B14)')
+        let tks = await woItems.tokens.select({ token: 'token-for-viewer' })
+        assert.strict.equal(tks.length, 0, 'tokens 表之 token-for-viewer 應被刪除 (流程_自動封鎖機制 B14)')
 
-        let us = await woItems.users.select({ id: 'id-for-basic' })
+        let us = await woItems.users.select({ id: 'id-for-viewer' })
         assert.strict.equal(us.length, 1)
         assert.strict.ok(us[0].timeBlocked, 'users.timeBlocked 應被設定 (B13)')
     })

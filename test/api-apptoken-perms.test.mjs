@@ -2,11 +2,12 @@
 //
 // 依據: spec/設計要點與取捨.md ADR-069 (取代 ADR-005 之「app token 一律視同 admin」)
 //   - tokens.perms 為權限字串陣列, 多元素即聯集; 基本權限 readUsers 恆具備(預設只提供查使用者)
-//   - 權限閘(17 個): 對外 HTTP getSsoUsersList / getSsoUserInfor(key=token、key=id)與後台 kpfun getUserInfor / getUsersList → readUsers;
+//   - 權限閘(18 個, 含 ADR-095 新增之 createAppToken → writeTokens): 對外 HTTP getSsoUsersList / getSsoUserInfor(key=token、key=id)與後台 kpfun getUserInfor / getUsersList → readUsers;
 //     updateUsersList / adminResetUserPassword → writeUsers; getTokensList → readTokens; updateTokensList → writeTokens;
 //     getIpsList → readIps; updateIpsList → writeIps; getSta* 六支 → readStats
 //   - app token 缺權限 → 與非 admin 使用者同一對外 key 'tokenExpired'(ADR-006), 且不得有任何寫入副作用; srLog 記 appTokenPermDenied(含 perm)
-//   - 使用者 token 不受 perms 影響: admin 全通過, 非 admin 全拒(adminResetUserPassword 維持 adminResetPasswordForbidden)
+//   - 使用者 token 不受 perms 影響: admin 全通過, 非 admin 全拒(adminResetUserPassword 之管理員判定同其他管理入口, 非管理員同回 tokenExpired, S-2)
+//   - 本檔之 app 呼叫者皆為系統服務用途(無 appUsage 之既有列視同系統服務用途, ADR-095); 使用者用途見 api-accessmatrix
 //   - 寫入 tokens.perms 須為未設定或已登錄權限字串之陣列(否則 reject 'tokenPermsInvalid'), 儲存時去重並依全集排序
 // 作法: 真後端(11007)。以 envOverride 令 SMTP 連 127.0.0.1:1(連線拒絕), adminResetUserPassword 寄信必敗而不外寄(寄信失敗不阻斷, 既有契約).
 //   每案例前重置 base seed + 本檔 fixture, 案例後只刪非 base seed(對齊其他 api 檔).
@@ -121,7 +122,7 @@ async function getRowsForSave(tableName) {
 }
 
 
-//17 個權限閘; after(c, ok) 驗寫入副作用: 應通過者須已寫入, 應拒者不得有任何寫入
+//18 個權限閘; after(c, ok) 驗寫入副作用: 應通過者須已寫入, 應拒者不得有任何寫入
 let ops = [
     {
         key: 'HTTP getSsoUsersList',
@@ -201,6 +202,16 @@ let ops = [
         },
     },
     {
+        key: 'kpfun createAppToken',
+        perm: 'writeTokens',
+        run: (c) => callFapi('createAppToken', [c.token, 'eng', { name: `by-${c.key}`, usage: 'system', perms: [] }]),
+        checkOk: (r) => assert.ok(typeof r.val.token === 'string' && r.val.token.length > 0),
+        after: async (c, ok) => {
+            let ts = (await woItems.tokens.select()).filter((t) => t.appName === `by-${c.key}`)
+            assert.strict.equal(ts.length, ok ? 1 : 0, '鑄造成功才寫入')
+        },
+    },
+    {
         key: 'kpfun getIpsList',
         perm: 'readIps',
         run: (c) => callFapi('getIpsList', [c.token]),
@@ -238,7 +249,7 @@ function expectOf(c, op) {
         return { ok: true }
     }
     if (c.kind === 'viewer') {
-        return { ok: false, err: op.key === 'kpfun adminResetUserPassword' ? 'adminResetPasswordForbidden' : 'tokenExpired' }
+        return { ok: false, err: 'tokenExpired' } //含 adminResetUserPassword: 管理員判定與其他管理入口相同(funCheckAdmin), 同回 tokenExpired (S-2)
     }
     if (c.expect.includes(op.perm)) {
         return { ok: true }
@@ -260,7 +271,7 @@ function readLogsSince(t0) {
 }
 
 
-describe('應用系統金鑰權限閘 — 17 個權限閘 × 13 種呼叫者 (ADR-069)', function() {
+describe('應用系統金鑰權限閘 — 18 個權限閘 × 13 種呼叫者 (ADR-069)', function() {
     this.timeout(180000)
 
     before(async function() {
@@ -327,8 +338,9 @@ describe('應用系統金鑰權限閘 — 17 個權限閘 × 13 種呼叫者 (AD
         assert.strict.equal(r2.ok, true, `kpfun checkToken: ${JSON.stringify(r2)}`)
         let r3 = await callFapi('getUserByToken', ['perm-app-base'])
         assert.strict.equal(r3.ok, true, `kpfun getUserByToken: ${JSON.stringify(r3)}`)
-        assert.strict.equal(r3.val.id, 'id-perm-app-base')
+        assert.strict.equal(r3.val.id, 'app:id-perm-app-base', '系統服務用途之反查身分 id 為 app:<tokens.id>(ADR-095), 不取 tokens.userId')
         assert.strict.equal(r3.val.isApp, 'y')
+        assert.strict.equal(r3.val.isAdmin, 'y')
     })
 
 
@@ -421,24 +433,34 @@ describe('應用系統金鑰權限閘 — 17 個權限閘 × 13 種呼叫者 (AD
     })
 
 
-    it('PERM-A-008-mint: admin 於金鑰清單新增應用系統金鑰列(鑄造, ADR-042): 擁有者為送入之虛擬 id, 該金鑰依其權限可用且可取得虛擬使用者資訊(修改前擁有者被改寫為空字串而回 invalid userId from token)', async function() {
+    it('PERM-A-008-mint: admin 鑄造系統服務用途金鑰(createAppToken, ADR-095; 取代 ADR-042 / ADR-084 之經清單新增列): 權杖字串由伺服端產生, 擁有者為建立者, 該金鑰依其權限可用且反查為應用系統身分; 經清單新增列一律拒收', async function() {
+        //清單存檔新增應用系統金鑰列: 整次拒收(ADR-095), 零寫入
         let rows = await getRowsForSave('tokens')
         let t = ds.tokens.funNew({ userId: 'id-perm-minted', isApp: 'y' })
         t.id = 'id-perm-minted'
         t.token = 'perm-minted'
-        t.isApp = 'y'
         t.perms = ['readStats']
         t.timeEnd = TIME_END
         rows.push(t)
-        let r = await callFapi('updateTokensList', ['token-for-admin', 'eng', rows])
+        let rej = await callFapi('updateTokensList', ['token-for-admin', 'eng', rows])
+        assert.strict.equal(rej.ok, false)
+        assert.strict.equal(rej.err, 'tokenAppAddNotAllowed')
+        assert.strict.equal((await woItems.tokens.select({ id: 'id-perm-minted' })).length, 0, '零寫入')
+        //createAppToken
+        let r = await callFapi('createAppToken', ['token-for-admin', 'eng', { name: 'mint-name', usage: 'system', perms: ['readStats'] }])
         assert.strict.equal(r.ok, true, JSON.stringify(r))
-        let ts = await woItems.tokens.select({ id: 'id-perm-minted' })
-        assert.strict.equal(ts[0].userId, 'id-perm-minted', '擁有者為送入值(ADR-084)')
-        //虛擬使用者資訊經 getUserByToken(需擁有者); 權限閘依 perms
-        let u = await httpApi('getSsoUserInfor', { token: 'perm-minted', key: 'token', value: 'perm-minted' })
+        assert.ok(typeof r.val.token === 'string' && r.val.token.length > 0 && r.val.token !== 'perm-minted', '權杖字串由伺服端產生')
+        let ts = await woItems.tokens.select({ id: r.val.id })
+        assert.strict.equal(ts[0].userId, 'id-for-admin', '系統服務用途之擁有者欄為建立者(稽核, 不當身分)')
+        assert.strict.equal(ts[0].appUsage, 'system')
+        assert.strict.equal(ts[0].appName, 'mint-name')
+        assert.strict.equal(ts[0].timeEnd, '', '不給期限')
+        //應用系統身分經 getUserByToken; 權限閘依 perms
+        let u = await httpApi('getSsoUserInfor', { token: r.val.token, key: 'token', value: r.val.token })
         assert.strict.equal(u.ok, true, JSON.stringify(u))
-        assert.strict.equal(u.val.id, 'id-perm-minted')
-        let sta = await callFapi('getStaIp', ['perm-minted'])
+        assert.strict.equal(u.val.id, `app:${r.val.id}`)
+        assert.strict.equal(u.val.name, 'mint-name')
+        let sta = await callFapi('getStaIp', [r.val.token])
         assert.strict.equal(sta.ok, true, `readStats 應通過: ${JSON.stringify(sta.err)}`)
     })
 
