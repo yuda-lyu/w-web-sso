@@ -97,7 +97,7 @@
   - Grep `classifyLegacyAppToken|isLegacyAppToken|migrateLegacyAppTokens` 於 `server/ src/` → 判準單一定義於 `src/appUsage.mjs`; 使用處僅 `procCore.loadActor`(授權即時判定)、`procCore.getTokensList`(清單回傳即時判定之用途)、`procCore.migrateLegacyAppTokens`(定案)、`WWebSso`(啟動呼叫一次); `src/components/` 與 `src/*.vue` 內 **0 命中**(前端不得自行推算, 見第 11 點); Grep `Date\.parse` 於 `src/appUsage.mjs` → 僅判準內之時刻比較一處.
   - Grep `getAppUsage\(` 於 `server/` → 授權判定(`loadActor`)先經 `isLegacyAppToken` 分流; 其餘(`_checkToken` log 身分、`procStaInfor` 命名 / 已到期)只用於顯示與統計.
   - Grep `kpfun`／`path: '/api/` 於 `server/WWebSso.mjs` → 受 token 入口全集 27 個(= `test/api-accessmatrix.test.mjs` 之 `entries`; 新增入口須同時補 entries).
-- **站點全集(2026-10-24)**: token 入口 27 個 × 呼叫者 7 類 = 189 格, 另失效 token 子類(未知字串、已逾期登入 token; sso-run02 增已失效之舊應用系統金鑰〔retired, perms 全開〕)27 × 3 = 81 格(原 54); 公開入口(1.2 前段)與註冊開關格見 `api-accessmatrix` 尾端統計行. 刻意未測: `[sys:getTableTags]`、`[sys:polling]`(現全公開, 排程第 128 項 C4 另輪)、通訊路由 ulctr / slc / dwgfn / dwgf / dw(未註冊監聽)、`/api/cleanKp*`(固定權杖 + 本機白名單, 不屬 token 呼叫者)、UI 頁面格(由 e2e 覆蓋).
+- **站點全集(2026-10-24)**: token 入口 27 個 × 呼叫者 7 類 = 189 格, 另失效 token 子類(未知字串、已逾期登入 token; sso-run02 增已失效之舊應用系統金鑰〔retired, perms 全開〕)27 × 3 = 81 格(原 54); 公開入口(1.2 前段)與註冊開關格見 `api-accessmatrix` 尾端統計行. 刻意未測: `[sys:getTableTags]`、`[sys:polling]`(2026-10-25 起由 `api-sysfuncs` 逐格驗證, 見 R-SYS-01)、通訊路由 ulctr / slc / dwgfn / dwgf / dw(未註冊監聽)、`/api/cleanKp*`(固定權杖 + 本機白名單, 不屬 token 呼叫者)、UI 頁面格(由 e2e 覆蓋).
 - **測試**: `api-accessmatrix`(入口 × 呼叫者全矩陣 + 失效 token 子類 + 公開入口 + 註冊關閉)、`api-apptoken-usage`(ST 狀態即時失效 / 恢復 × 4 種身分、舊格式驗證時間、不看 timeEnd; REV 撤銷範圍; S-2、S-5; SELF 自我保護與 `app:` 前綴; LIST 清單存檔規則; MINT 鑄造驗證、雙擊、同鎖; LEGACY 升級前可用之舊列相容; SESSION 不變)、`unit-appUsage`(AU-01~23)、**`unit-appUpgrade`(UP-01~19: 判準、定案與資料、升級前後可用性 = 升級前舊碼之判定、冪等、時間流逝、表鎖、失敗不放寬、未定案即時判定、已失效列各入口、後台處置、與鑄造共存、統計)、`api-apptoken-upgrade`(UPG-01~06: 真後端重啟之定案、可用性 HTTP + kpfun、後台清單、重啟冪等、清單處置)**、`unit-tablock`(S11 / S11b / S11c)、`unit-saveBaseline` / `unit-ormWriteFail` / `unit-writeContract` 之改寫、`e2e-tokens`(E2E-008~010 + 既有案例之改寫)、`e2e-register` E2E-017(S-6 前端).
 - **驗證結果(2026-10-24 sso-run01; 全文見 `C:\opensrcOper\dnow\20261024130755\agent-out\sso-run01-修正報告.md`)**:
   - **修前紅**(以 `tmp/sso-run01/swap.mjs` 暫時換入 HEAD 版 `server/procCore.mjs`、`procLang.mjs`、`procStaInfor.mjs`、`WWebSso.mjs`, 跑完回驗 sha256 還原): `unit-appUsage` + `unit-tablock` 25 過 / **18 敗**; `api-accessmatrix` 33 過 / **28 敗**; `api-apptoken-usage` 3 過 / **36 敗**(失敗皆為斷言差異: 封鎖 / 到期 / 未驗證者之 token 全數仍可用、`fapi.createAppToken not found`、`isApp` 升級照常成功等, 非環境錯誤). 修後: unit 全 389 過、api 全 262 過、`e2e-tokens` 18 / 18.
@@ -106,6 +106,31 @@
   - **sso-run02(第 11 點; 全文見 `C:\opensrcOper\dnow\20261024130755\agent-out\sso-run02-修正報告.md`)**:
     - **修前紅**(`tmp/sso-run02/mutate.mjs` 之 `head` 模式暫時換入 HEAD 版 `procCore` / `WWebSso` / `procStaInfor` / `procLang` / `appUsage` / `LayoutContentTokens.vue`, 跑完 sha256 回驗還原): `api-apptoken-upgrade` 0 過 / **6 敗**(UPG-02 `l-past(逾期) true !== false`、UPG-03 `l-past: 統計 true !== false` 為實質缺陷——升級前已逾期之金鑰升級後可用; 其餘因啟動時未定案而逾時); `unit-appUpgrade` 於 HEAD 載入即失敗(`classifyLegacyAppToken` 不存在).
     - **變異驗證**(單點變異, 還原後 sha256 相符): m1 判準不判退役(逾期者一律 `system`, 即「拿掉已逾期舊列維持失效」)→ `unit-appUpgrade` / `unit-appUsage` 13 敗(UP-01、UP-10~15…); m2 遷移不寫入 → 9 敗; m3 拿掉讀取時即時判定 → UP-14 / 15 / 15b / 15c 4 敗; m4 已失效列視為可用 → 10 敗; m5 只標已失效、不持久標記未逾期者 → 7 敗(UP-10、UP-12、UP-13…); m6 遷移不取 `tokens` 表鎖 → UP-14 敗; m7 統計不計已失效 → UP-19 敗; m8 `WWebSso` 不呼叫遷移(接線)→ `api-apptoken-upgrade` 6 / 6 敗; m9 後台到期欄對已失效列顯示「不設期限」→ `e2e-tokens` E2E-011 eng + cht 敗.
+
+### R-SYS-01: 框架系統函數之身分關卡——`sysFuncsPublic` 顯式設定、只列未登入之前端確實必需且無敏感內容者; `getUserIdByToken` 恆回空 ⇒ 未列者對任何呼叫者恆拒(2026-10-25, sso-run01; ADR-096; 跨套件原則 使用者身分驗證原則.md 二.7、二.8)
+
+- **規則**:
+  1. `server/WWebSso.mjs` 傳給 `WServHapiServer` 之選項須**顯式**含 `sysFuncsPublic`, 不依賴框架預設(預設三者皆公開, 二.8); 現值 `['[sys:getFuncList]', '[sys:polling]']`.
+  2. 列入須同時滿足: ① 未登入之前端頁面開機流程確實必需(以真瀏覽器擷取證明; 不列則頁面不可用); ② 回傳內容無敏感資料、不改變使用者資料. `[sys:polling]` 另以「無同步表(`tableNamesSync: []`)且不使用廣播(恆回空陣列)」為前提——新增同步表或廣播內容之前必須重評; **前提含嵌入者**: `WWebSso` 回傳之實例可經 `getInstWConverServer().broadcast(...)` 推送內容並送到所有匿名輪詢者, 嵌入端不得以此推送非公開內容(README Upgrade Notes 已載).
+  3. 本套件 `getUserIdByToken` 恆回空字串(ADR-083; 各 kpfun 自行以明確 token 參數驗證)⇒ **未列入者對任何呼叫者(含帶有效 token 者)恆被拒絕, 不得因無法區分登入前後而放寬**; 開機呼叫(`[sys:getFuncList]`、`[sys:getTableTags]`)之 `__sysToken__` 登入前後皆為空字串(框架用戶端先於前端取得 token 開機), 故頁面資料內容一律經 kpfun 以明確 token 參數取得(開機本身仍依賴 `[sys:polling]` 與 `[sys:getFuncList]` 成功, 但不依賴 `[sys:getTableTags]`).
+  4. `getUserIdByToken` 不得改為回真實使用者 id(1.1.15 行為不變; 且輪詢之 clientId 與身分綁定, 匿名 → 登入之切換會被拒; 登入頁匿名仍須 `[sys:polling]`), **亦不得拋錯或 reject**(框架對拋錯 / reject 一律拒絕該次呼叫, 含列於 `sysFuncsPublic` 者與全部 kpfun). 日後若要用真實身分, 前端須在取得 token 後重建用戶端(新 clientId).
+  5. 框架升版新增前端會呼叫之系統函數時, 先以真瀏覽器擷取確認其作用, 再決定列入與否, 並同步 `api-sysfuncs`、README Security 入口表與本條站點全集.
+  6. `sysFuncsPublic` 只管三個系統函數, 不管 kpfun; 設定值 `null` / `undefined` / 鍵名打錯 ⇒ 框架退回全公開(fail-open), `[]` ⇒ 全須身分(本套件即全拒), 非陣列或未知名稱 ⇒ 建構拋錯(後端起不來). 「公開」不表示可省略框架封裝鍵(缺 `__sysToken__` → `invalid token`、缺或非陣列 `__sysInputArgs__` → `invalid input`).
+- **理由**: 預設全公開使 `[sys:getTableTags]`(同步表時間戳)與 `[sys:polling]`(廣播)對匿名者開放(C4); 但 sso 之登入頁匿名, 且框架用戶端開機必經 `[sys:polling]`(第一輪完成才取函數清單), 故只能收窄到確實必需者(E1 實測: 只公開 `[sys:getFuncList]` ⇒ 前端永遠停在「Connecting...」).
+- **盤點指令**:
+  - Grep `sysFuncsPublic` 於 `server/ src/` → 僅 `server/WWebSso.mjs` 一處設定(含註解); `src/` 0 命中(前端無對應設定, 傳播靠升級 `w-serv-hapi` 並重建).
+  - Grep `broadcast\(` 於 `server/` → 0 命中(`src/` 之 `broadcast` 為 `mUI.mjs` 內無關之 Vue 輔助函數); Grep `tableNamesSync|useDbOrm|getUserIdByToken` 於 `server/WWebSso.mjs` → `[]` / `false` / 恆 `return ''`. 以上五項由 `unit-sysfuncs-premise` SP-01~05 靜態守護.
+  - 發布產物: Grep `sysFuncsPublic:` 於 `dist/w-web-sso.umd.js` → 含設定(umd 內嵌之框架版本 ≥ 1.1.16 才認得該選項; 以 `invalid opt.sysFuncsPublic` 檢核碼存在確認).
+  - Grep `"version"` 於 `node_modules/w-serv-hapi/package.json`、`w-serv-webdata`、`w-serv-broadcast` → 1.1.8 / 1.1.16 / 1.1.12 以上(`package.json` 之 `w-serv-hapi` ≥ `^1.1.8`).
+  - 真瀏覽器擷取(暫存腳本, 作法見 `experience.md`「系統函數逐一確認」): 預載攔截 `chromium.launch`, 解碼 `/api/main` 請求本體(XHR 二進位本體 `postDataBuffer()` 為 null, 改於頁面端攔截 `XMLHttpRequest.send`), 彙整情境 × 函數 × `__sysToken__` 狀態 × 回應; 情境: 登入頁冷載入、申請帳號畫面、登入失敗、未驗證使用者之重寄驗證信畫面、驗證信結果頁(HTTP)、管理員登入後後台各頁.
+- **站點全集(2026-10-25)**: 系統函數 3 個——`[sys:polling]` 公開(必需; 恆空)、`[sys:getFuncList]` 公開(必需; 僅名稱)、`[sys:getTableTags]` 拒絕(不需要; 無同步表); 通訊路由 `ulctr`/`slc`/`dwgfn`/`dwgf`/`dw` 未註冊監聽(前端不呼叫, 呼叫即拒). 前端擷取所見之其餘請求皆為 kpfun(`getWebInfor`、`loginByAccountAndPassword`、`checkToken`、`getUserByToken`、`getUsersList`、`getTokensList`、`getIpsList`、`getSta*`、`changeUserPassword` 等), 不屬本條.
+- **測試**: `api-sysfuncs`(SF-01 `[sys:getFuncList]` × 7 類 + 未知 / 已逾期 token、SF-02 `[sys:polling]` × 同呼叫者 × 新 / 舊協定 + 同一 clientId 之 token 序列 + 非法 clientId、SF-03 `[sys:getTableTags]` × 同呼叫者恆拒、SF-04 token 值形態與封裝鍵缺漏〔公開 / 非公開皆然〕、SF-05 真 `WServHapiClient` 一開始即帶管理員 token 開機、SF-06 真用戶端貼近 `src/main.js`〔先空後帶 token〕)、`unit-sysfuncs-premise`(SP-01~05)、各 `e2e-*` 之登入流程(輪詢被拒則前端停在連線中, 全部轉紅)、`api-accessmatrix` 公開入口 MX-PUB-02.
+- **驗證結果(2026-10-25 sso-run01; 全文見 `C:\opensrcOper\dnow\20261025111555\agent-out\sso-run01-修正報告.md`; 證據 `spec/evidence/2026-10-25-sysfuncs/`)**:
+  - **修前紅**: M1(註解掉 `sysFuncsPublic` = 框架預設 = 修前行為): `api-sysfuncs` 2 過 / 4 敗(SF-03 無 token 格收到 `success`〔`{ mode: 'syncKpTable', data: {} }`〕).
+  - **變異**(暫改一處 → 跑測試 → 立即還原; 還原後 sha256 相符): M1 預設 / M4 明列三者 / M6 `null` ⇒ SF-03、04、05、06 紅; M2 只列 getFuncList ⇒ SF-02、05、06 紅; M3 只列 polling ⇒ SF-01、05、06 紅; M5 `[]` ⇒ SF-01、02、05、06 紅; U1 `broadcast(` 呼叫 ⇒ SP-01; U2 `tableNamesSync` 非空 ⇒ SP-02; U3 / U4 `getUserIdByToken` 回非空 / 拋錯 ⇒ SP-03; U5 明列三者(靜態)⇒ SP-04.
+  - **真瀏覽器實驗**: E1 只列 getFuncList ⇒ 前端停在「Connecting...」; E3 只列 polling ⇒ 同; E2 / 最終 ⇒ 登入頁、申請帳號、登入失敗、重寄畫面、後台各頁照常, 0 筆主控台錯誤; 真舊版框架用戶端(1.1.7 / 1.1.15 / 1.1.10)對最終後端開機正常.
+  - **修後綠**: unit 全 415、api 全 275、e2e 全 15 檔 290 案(`e2e-concurrency` E2E-CC-003 cht 一次性計時器相位失敗已改偵測等待, 見 `rulebook_test.md` R-E2E-ISO ④); 既有標準圖 0 改變.
+  - **外審**: sol(`gpt-6.1-sol` max)35 條 + claude-api(`claude-opus-5-5` xhigh)34 條, 合併 38 列、誤報 0, 全數處置.
 
 ### R-IP-01: 來源 IP 之取值——`X-Forwarded-For` 最左段須為合法 IP 才採用, 否則退回連線位址並限流記 warn; 合法 IP 原樣不改寫(2026-10-20, 主控第 93 項; 使用者裁示: SSO 不做防偽造)
 

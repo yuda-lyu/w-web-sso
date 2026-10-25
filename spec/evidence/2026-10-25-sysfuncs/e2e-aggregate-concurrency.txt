@@ -1,0 +1,33 @@
+回應總數 270
+
+## 系統函數([sys:*]): 送出數 × 結果 × __sysToken__ 狀態
+[sys:getFuncList]  送出 12
+    結果 success: 12
+    __sysToken__: empty=12
+[sys:getTableTags]  送出 12
+    結果 error:permission denied: 12
+    __sysToken__: empty=12
+[sys:polling]  送出 96
+    結果 array(0): 96
+    __sysToken__: empty=12, nonempty=84
+
+## 其餘函數(kpfun): 送出數 / 結果
+checkToken  12  success=12
+getIpsList  8  success=8
+getStaIp  12  success=12
+getStaIpSummary  12  success=12
+getStaToken  12  success=12
+getStaTokenSummary  12  success=12
+getStaUserAccountLogin  12  success=12
+getStaUserSummary  12  success=12
+getTokensList  8  success=8
+getUserByToken  12  success=12
+getUsersList  8  success=8
+getWebInfor  12  success=12
+updateIpsList  6  error:saveStale=2; success=4
+updateTokensList  6  error:saveStale=2; success=4
+updateUsersList  6  error:saveStale=2; success=4
+
+## 非函數回應(HTTP 頁 / 錯誤)
+
+[sys:*] 函數名全集: ["[sys:getFuncList]","[sys:getTableTags]","[sys:polling]"]

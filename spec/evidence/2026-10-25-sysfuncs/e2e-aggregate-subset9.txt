@@ -1,0 +1,43 @@
+回應總數 2631
+
+## 系統函數([sys:*]): 送出數 × 結果 × __sysToken__ 狀態
+[sys:getFuncList]  送出 175
+    結果 success: 175
+    __sysToken__: empty=175
+[sys:getTableTags]  送出 175
+    結果 error:permission denied: 175
+    __sysToken__: empty=175
+[sys:polling]  送出 1070
+    結果 array(0): 1055
+    __sysToken__: empty=516, nonempty=554
+
+## 其餘函數(kpfun): 送出數 / 結果
+checkToken  86  success=80; error:tokenExpired=6
+createAppToken  4  success=4
+createUser  8  success=2; error:userRegistrationEmailFormatInvalid=2; error:userRegistrationAccountExists=2; error:userRegistrationEmailExists=2
+getIpsList  20  success=20
+getStaIp  64  error:tokenExpired=6; success=58
+getStaIpSummary  64  error:tokenExpired=6; success=58
+getStaToken  64  error:tokenExpired=6; success=58
+getStaTokenSummary  64  error:tokenExpired=6; success=58
+getStaUserAccountLogin  64  error:tokenExpired=6; success=58
+getStaUserSummary  64  error:tokenExpired=6; success=58
+getTokensList  44  success=44
+getUserByToken  86  success=84
+getUsersList  18  success=18
+getWebInfor  175  success=175
+loginByAccountAndPassword  54  success=31; error:failedLoginForCatch=8; error:loginAccountExpired=2; error:userRegistrationNotVerified=12
+logoutByToken  8  success=8
+resendVerifyEmail  10  success=2; error:userRegistrationResendInvalidEmail=4; error:userRegistrationAlreadyVerified=2; error:userRegistrationResendFailed=2
+updateIpsList  12  error:saveStale=2; success=8; error:tokenExpired=2
+updateTokensList  16  success=12; error:tokenExpired=2; error:saveStale=2
+updateUsersList  6  error:saveStale=2; success=4
+
+## 非函數回應(HTTP 頁 / 錯誤)
+200 text/html; charset=utf-8 /api/verifyEmail: 8
+200  /api/main: 8
+500  /api/main: 2
+200 application/json; charset=utf-8 /api/checkToken: 160
+200  /api/checkToken: 120
+
+[sys:*] 函數名全集: ["[sys:getFuncList]","[sys:getTableTags]","[sys:polling]"]

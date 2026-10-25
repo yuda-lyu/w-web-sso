@@ -6,7 +6,7 @@
 //   - 使用者身分驗證原則.md 二之一: AU 能用之服務＝所綁使用者以自己之使用者 token 能用者(含改自己密碼), 不給期限不能續期; AS＝管理員之服務, 依 perms 收窄(ADR-069), 無「本人」之服務(不得改密碼)
 // 作法: 真後端(11007)。每格(入口 × 呼叫者)前重置 base seed 並重建本檔 fixture(logout 類入口會刪 token, 故不共用), 每格後驗副作用(通過者須已生效、拒絕者不得有任何寫入)。
 //   SMTP 導向 127.0.0.1:1(連線拒絕): 重設密碼寄信必敗而不外寄(寄信失敗不阻斷, 既有契約)。
-// 不在本檔(刻意不測, 見報告輸入空間統計): `[sys:getTableTags]`、`[sys:polling]`(現全公開, 排程第 128 項〔C4〕另輪)、通訊路由 ulctr/slc/dwgfn/dwgf/dw(未註冊監聽, e2e/api 無從呼叫)、
+// 不在本檔(刻意不測, 見報告輸入空間統計): `[sys:getTableTags]`、`[sys:polling]`(2026-10-25 起由 api-sysfuncs.test.mjs 逐格驗證, ADR-096)、通訊路由 ulctr/slc/dwgfn/dwgf/dw(未註冊監聽, e2e/api 無從呼叫)、
 //   `/api/cleanKp*`(固定權杖＋本機白名單, 不屬 token 呼叫者; api-httpendpoints / e2e 輔助已覆蓋)、UI 頁面格(1.1, 由 e2e 覆蓋)。
 //   使用者狀態即時失效 / 恢復、鑄造驗證、清單存檔規則、舊列相容見 api-apptoken-usage.test.mjs。
 
@@ -429,7 +429,7 @@ describe('後端存取矩陣 — 公開入口(1.2 前段): 呼叫者攜帶之 to
         let r3 = await callFapi('loginByAccountAndPassword', ['eng', 'ac-viewer', 'pw-viewer'])
         assert.strictEqual(r3.ok, true)
         assert.ok(r3.val.token)
-        //[sys:getFuncList] 由 w-serv-webdata 之資料通道提供, api-setup 的 client 初始化即以它於無 token 下取得函數清單(callFapi 能呼叫上列函數即證明公開可呼叫)
+        //[sys:getFuncList] 由 w-serv-webdata 之資料通道提供, api-setup 的 client 初始化即以它於無 token 下取得函數清單(callFapi 能呼叫上列函數即證明公開可呼叫); 7 類呼叫者逐格見 api-sysfuncs SF-01
     })
 
     it('MX-PUB-03 createUser / verifyEmail(HTTP、函數) / resendVerifyEmail: 註冊開啟時可呼叫(7 類呼叫者之 HTTP 格以 Authorization 標頭攜帶 token)', async function() {

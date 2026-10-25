@@ -51,6 +51,11 @@ function getFapi() {
         instClient.on('error', (err) => {
             //連線錯誤不直接 reject, 因 init 過程可能短暫 ws 重連
             //getServerMethods 還是會在連上後觸發
+            //開機流程於 getServerMethods 之後呼叫 [sys:getTableTags], 本套件不列入 sysFuncsPublic 故必回 permission denied (預期, ADR-096; api-sysfuncs SF-03 / SF-05 守護)
+            if (err === 'permission denied') {
+                console.log('[api-setup] WServHapiClient: [sys:getTableTags] permission denied (expected, ADR-096)')
+                return
+            }
             console.log('[api-setup] WServHapiClient error (init phase, will retry):', err && err.message || err)
         })
     })

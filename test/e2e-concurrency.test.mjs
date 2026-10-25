@@ -8,7 +8,7 @@ import { woItems } from '../g_mOrm.mjs'
 import { buildBaseUsers, buildBaseTokens } from '../g_initialData.mjs'
 import procLang from '../server/procLang.mjs'
 import { startServersOnce, cleanup, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, cleanKpIpCallApi, assertBaselineMatch, launchBrowser, waitUntilExist } from './tools/e2e-setup.mjs'
-import { runBaselineCase, createBaselineGate, pageHasText, collectDomText, waitGridIdle } from './tools/e2eLib.mjs'
+import { runBaselineCase, createBaselineGate, pageHasText, collectDomText, waitGridIdle, pollUntil } from './tools/e2eLib.mjs'
 
 
 //
@@ -300,6 +300,12 @@ async function openList(page, lang, menuKey, headerCol) {
     await page.waitForTimeout(3000)
     await waitUntilExist(page, `backstage ${t.statistics} 文字`, (s) => document.body.innerText.includes(s), { arg: t.statistics, timeout: 60000 })
     await page.locator(`text="${t[menuKey]}"`).first().waitFor({ state: 'visible', timeout: 60000 })
+    //IP 清單: 本案管理員瀏覽器流量所登記之 127.0.0.1 由後端 ipDetectNew 計時器(每 2 秒)補登進 ips 表(標準圖之既有第一列), 須先等其入庫再開啟清單;
+    //否則登入後約 2 秒內開清單時計時器尚未補登, 清單少一列(2026-10-25 sso-run01 全套中 E2E-CC-003 cht 差 340px 一次, 同案重跑 10 案 0 敗: 計時器相位之時序賭注).
+    //瀏覽器外之後端計時器結果以偵測驅動等待(pollUntil)取代時序假設
+    if (menuKey === 'ipsList') {
+        await pollUntil('ips 表出現 127.0.0.1(後端 ipDetectNew 補登)', async () => (await woItems.ips.select({ ip: '127.0.0.1' })).length > 0, { timeout: 60000 })
+    }
     await page.locator(`text="${t[menuKey]}"`).first().click()
     await page.locator(`text="${t.editMode}"`).first().waitFor({ state: 'visible', timeout: 60000 })
     let editChecked = await page.evaluate((label) => {

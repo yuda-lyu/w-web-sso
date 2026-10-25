@@ -1,0 +1,139 @@
+[
+  {
+    "id": "M1",
+    "desc": "註解掉 sysFuncsPublic(改回框架預設)",
+    "test": "test/api-sysfuncs.test.mjs",
+    "passing": 2,
+    "failing": 4,
+    "failed": [
+      "SF-03",
+      "SF-04",
+      "SF-05",
+      "SF-06"
+    ],
+    "exit": 4
+  },
+  {
+    "id": "M2",
+    "desc": "只列 ['[sys:getFuncList]']",
+    "test": "test/api-sysfuncs.test.mjs",
+    "passing": 3,
+    "failing": 3,
+    "failed": [
+      "SF-02",
+      "SF-05",
+      "SF-06"
+    ],
+    "exit": 3
+  },
+  {
+    "id": "M3",
+    "desc": "只列 ['[sys:polling]']",
+    "test": "test/api-sysfuncs.test.mjs",
+    "passing": 3,
+    "failing": 3,
+    "failed": [
+      "SF-01",
+      "SF-05",
+      "SF-06"
+    ],
+    "exit": 3
+  },
+  {
+    "id": "M4",
+    "desc": "明列三者",
+    "test": "test/api-sysfuncs.test.mjs",
+    "passing": 2,
+    "failing": 4,
+    "failed": [
+      "SF-03",
+      "SF-04",
+      "SF-05",
+      "SF-06"
+    ],
+    "exit": 4
+  },
+  {
+    "id": "M5",
+    "desc": "空陣列 []",
+    "test": "test/api-sysfuncs.test.mjs",
+    "passing": 2,
+    "failing": 4,
+    "failed": [
+      "SF-01",
+      "SF-02",
+      "SF-05",
+      "SF-06"
+    ],
+    "exit": 4
+  },
+  {
+    "id": "M6",
+    "desc": "null(框架退回全公開)",
+    "test": "test/api-sysfuncs.test.mjs",
+    "passing": 2,
+    "failing": 4,
+    "failed": [
+      "SF-03",
+      "SF-04",
+      "SF-05",
+      "SF-06"
+    ],
+    "exit": 4
+  },
+  {
+    "id": "U1",
+    "desc": "加入 broadcast 呼叫(前提被破壞)",
+    "test": "test/unit-sysfuncs-premise.test.mjs",
+    "passing": 4,
+    "failing": 1,
+    "failed": [
+      "SP-01"
+    ],
+    "exit": 1
+  },
+  {
+    "id": "U2",
+    "desc": "tableNamesSync: ['users'](新增同步表)",
+    "test": "test/unit-sysfuncs-premise.test.mjs",
+    "passing": 4,
+    "failing": 1,
+    "failed": [
+      "SP-02"
+    ],
+    "exit": 1
+  },
+  {
+    "id": "U3",
+    "desc": "getUserIdByToken 回非空('u')",
+    "test": "test/unit-sysfuncs-premise.test.mjs",
+    "passing": 4,
+    "failing": 1,
+    "failed": [
+      "SP-03"
+    ],
+    "exit": 1
+  },
+  {
+    "id": "U4",
+    "desc": "getUserIdByToken 拋錯",
+    "test": "test/unit-sysfuncs-premise.test.mjs",
+    "passing": 4,
+    "failing": 1,
+    "failed": [
+      "SP-03"
+    ],
+    "exit": 1
+  },
+  {
+    "id": "U5",
+    "desc": "明列三者(靜態)",
+    "test": "test/unit-sysfuncs-premise.test.mjs",
+    "passing": 4,
+    "failing": 1,
+    "failed": [
+      "SP-04"
+    ],
+    "exit": 1
+  }
+]

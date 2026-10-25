@@ -1,0 +1,88 @@
+## after|S1-login-cold
+   POST /api/main auth=Bearer-empty  x5
+   [sys:getFuncList]  send x1  sysToken={empty:1}
+        -> 200 {"state":"success","msg":"[array(26)]"}  x1
+   [sys:getTableTags]  send x1  sysToken={empty:1}
+        -> 200 {"state":"error","msg":"permission denied"}  x1
+   [sys:polling]  send x2  sysToken={empty:2}
+        -> 200 output=array(0)  x2
+        in {"clientId":"<id>","__sysToken__":"empty"}
+   getWebInfor  send x1  sysToken={empty:1}
+        -> 200 {"state":"success","msg":"{…}"}  x1
+## after|S2-register-view
+   POST /api/main auth=Bearer-empty  x6
+   [sys:getFuncList]  send x1  sysToken={empty:1}
+        -> 200 {"state":"success","msg":"[array(26)]"}  x1
+   [sys:getTableTags]  send x1  sysToken={empty:1}
+        -> 200 {"state":"error","msg":"permission denied"}  x1
+   [sys:polling]  send x3  sysToken={empty:3}
+        -> 200 output=array(0)  x3
+        in {"clientId":"<id>","__sysToken__":"empty"}
+   getWebInfor  send x1  sysToken={empty:1}
+        -> 200 {"state":"success","msg":"{…}"}  x1
+## after|S3-login-fail
+   POST /api/main auth=Bearer-empty  x7
+   [sys:getFuncList]  send x1  sysToken={empty:1}
+        -> 200 {"state":"success","msg":"[array(26)]"}  x1
+   [sys:getTableTags]  send x1  sysToken={empty:1}
+        -> 200 {"state":"error","msg":"permission denied"}  x1
+   [sys:polling]  send x3  sysToken={empty:3}
+        -> 200 output=array(0)  x3
+        in {"clientId":"<id>","__sysToken__":"empty"}
+   getWebInfor  send x1  sysToken={empty:1}
+        -> 200 {"state":"success","msg":"{…}"}  x1
+   loginByAccountAndPassword  send x1  sysToken={empty:1}
+        -> 200 {"state":"error","msg":"failedLoginForCatch"}  x1
+## after|S4-admin-login-backstage
+   POST /api/main auth=Bearer-empty  x12
+   POST /api/main auth=Bearer-nonempty  x18
+   [sys:getFuncList]  send x2  sysToken={empty:2}
+        -> 200 {"state":"success","msg":"[array(26)]"}  x2
+   [sys:getTableTags]  send x2  sysToken={empty:2}
+        -> 200 {"state":"error","msg":"permission denied"}  x2
+   [sys:polling]  send x12  sysToken={empty:3, nonempty(len=36):9}
+        -> 200 output=array(0)  x12
+        in {"clientId":"<id>","__sysToken__":"empty"}
+        in {"clientId":"<id>","__sysToken__":"nonempty(len=36)"}
+   checkToken  send x1  sysToken={empty:1}
+        -> 200 {"state":"success","msg":true}  x1
+   getIpsList  send x1  sysToken={nonempty(len=36):1}
+        -> 200 {"state":"success","msg":"[array(1)]"}  x1
+   getStaIp  send x1  sysToken={nonempty(len=36):1}
+        -> 200 {"state":"success","msg":"[array(169)]"}  x1
+   getStaIpSummary  send x1  sysToken={nonempty(len=36):1}
+        -> 200 {"state":"success","msg":"{…}"}  x1
+   getStaToken  send x1  sysToken={nonempty(len=36):1}
+        -> 200 {"state":"success","msg":"[array(169)]"}  x1
+   getStaTokenSummary  send x1  sysToken={nonempty(len=36):1}
+        -> 200 {"state":"success","msg":"{…}"}  x1
+   getStaUserAccountLogin  send x1  sysToken={nonempty(len=36):1}
+        -> 200 {"state":"success","msg":"[array(169)]"}  x1
+   getStaUserSummary  send x1  sysToken={nonempty(len=36):1}
+        -> 200 {"state":"success","msg":"{…}"}  x1
+   getTokensList  send x1  sysToken={nonempty(len=36):1}
+        -> 200 {"state":"success","msg":"[array(5)]"}  x1
+   getUserByToken  send x1  sysToken={empty:1}
+        -> 200 {"state":"success","msg":"{…}"}  x1
+   getUsersList  send x1  sysToken={nonempty(len=36):1}
+        -> 200 {"state":"success","msg":"[array(4)]"}  x1
+   getWebInfor  send x2  sysToken={empty:2}
+        -> 200 {"state":"success","msg":"{…}"}  x2
+   loginByAccountAndPassword  send x1  sysToken={empty:1}
+        -> 200 {"state":"success","msg":"{…}"}  x1
+## after|S5-verifyEmail-result
+   GET /api/verifyEmail auth=absent  x1
+   http: 200 text/html; charset=utf-8 /api/verifyEmail  x1
+## after|S6-resend-view
+   POST /api/main auth=Bearer-empty  x7
+   [sys:getFuncList]  send x1  sysToken={empty:1}
+        -> 200 {"state":"success","msg":"[array(26)]"}  x1
+   [sys:getTableTags]  send x1  sysToken={empty:1}
+        -> 200 {"state":"error","msg":"permission denied"}  x1
+   [sys:polling]  send x3  sysToken={empty:3}
+        -> 200 output=array(0)  x3
+        in {"clientId":"<id>","__sysToken__":"empty"}
+   getWebInfor  send x1  sysToken={empty:1}
+        -> 200 {"state":"success","msg":"{…}"}  x1
+   loginByAccountAndPassword  send x1  sysToken={empty:1}
+        -> 200 {"state":"error","msg":"userRegistrationNotVerified"}  x1

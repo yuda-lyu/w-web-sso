@@ -1,0 +1,38 @@
+## exp-e3|S1-login-cold
+   POST /api/main auth=Bearer-empty  x3
+   [sys:getFuncList]  send x1  sysToken={empty:1}
+        -> 200 {"state":"error","msg":"permission denied"}  x1
+   [sys:polling]  send x2  sysToken={empty:2}
+        -> 200 output=array(0)  x2
+        in {"clientId":"<id>","__sysToken__":"empty"}
+## exp-e3|S2-register-view
+   POST /api/main auth=Bearer-empty  x17
+   [sys:getFuncList]  send x1  sysToken={empty:1}
+        -> 200 {"state":"error","msg":"permission denied"}  x1
+   [sys:polling]  send x16  sysToken={empty:16}
+        -> 200 output=array(0)  x16
+        in {"clientId":"<id>","__sysToken__":"empty"}
+## exp-e3|S3-login-fail
+   POST /api/main auth=Bearer-empty  x17
+   [sys:getFuncList]  send x1  sysToken={empty:1}
+        -> 200 {"state":"error","msg":"permission denied"}  x1
+   [sys:polling]  send x16  sysToken={empty:16}
+        -> 200 output=array(0)  x16
+        in {"clientId":"<id>","__sysToken__":"empty"}
+## exp-e3|S4-admin-login-backstage
+   POST /api/main auth=Bearer-empty  x17
+   [sys:getFuncList]  send x1  sysToken={empty:1}
+        -> 200 {"state":"error","msg":"permission denied"}  x1
+   [sys:polling]  send x16  sysToken={empty:16}
+        -> 200 output=array(0)  x16
+        in {"clientId":"<id>","__sysToken__":"empty"}
+## exp-e3|S5-verifyEmail-result
+   GET /api/verifyEmail auth=absent  x1
+   http: 200 text/html; charset=utf-8 /api/verifyEmail  x1
+## exp-e3|S6-resend-view
+   POST /api/main auth=Bearer-empty  x17
+   [sys:getFuncList]  send x1  sysToken={empty:1}
+        -> 200 {"state":"error","msg":"permission denied"}  x1
+   [sys:polling]  send x16  sysToken={empty:16}
+        -> 200 output=array(0)  x16
+        in {"clientId":"<id>","__sysToken__":"empty"}

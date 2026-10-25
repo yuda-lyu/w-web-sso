@@ -1,0 +1,6 @@
+[e2e-setup] starting backend (port 11007)...
+[e2e-setup] backend ready
+[e2e-setup] starting frontend (port 8080), first compile ~15-30s...
+[e2e-setup] frontend ready
+[old-client] unauth(token 空): getServerMethods OK; getWebInfor keys=15; getUsersList=(未登入不呼叫); errorEvents=["permission denied"]
+[old-client] admin(token-for-admin): getServerMethods OK; getWebInfor keys=15; getUsersList=3 rows; errorEvents=["permission denied"]

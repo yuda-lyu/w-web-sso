@@ -1,0 +1,23 @@
+## exp-e1|S1-login-cold
+   POST /api/main auth=Bearer-empty  x3
+   http: 200 error="[sys:polling] permission denied"  x3
+   [sys:polling]  send x3  sysToken={empty:3}
+        in {"clientId":"<id>","__sysToken__":"empty"}
+## exp-e1|S2-register-view
+   POST /api/main auth=Bearer-empty  x19
+   http: 200 error="[sys:polling] permission denied"  x19
+   [sys:polling]  send x19  sysToken={empty:19}
+        in {"clientId":"<id>","__sysToken__":"empty"}
+## exp-e1|S3-login-fail
+   POST /api/main auth=Bearer-empty  x19
+   http: 200 error="[sys:polling] permission denied"  x19
+   [sys:polling]  send x19  sysToken={empty:19}
+        in {"clientId":"<id>","__sysToken__":"empty"}
+## exp-e1|S4-admin-login-backstage
+   POST /api/main auth=Bearer-empty  x19
+   http: 200 error="[sys:polling] permission denied"  x19
+   [sys:polling]  send x19  sysToken={empty:19}
+        in {"clientId":"<id>","__sysToken__":"empty"}
+## exp-e1|S5-verifyEmail-result
+   GET /api/verifyEmail auth=absent  x1
+   http: 200 text/html; charset=utf-8 /api/verifyEmail  x1

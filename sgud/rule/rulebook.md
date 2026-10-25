@@ -11,7 +11,7 @@
 | 測試配置全節 | `rulebook_test.md` | 測試配置全節: 執行入口、spec→測試檔對照、unit / api / e2e 各層、工具層、目錄與資產、seed、e2e 契約映射 |
 | 專案特有機制(含補充) | `rulebook_mechanism.md` | 專案特有機制(含補充): 統計頁確定性資料、XFF 本機注入、雙擊 / 並發契約、app token、email、語系、對外查詢 helper 等 |
 | R-VUE-01、R-VUE-02、R-UI-01、R-UI-02、R-UI-03 | `rulebook_ui.md` | R-VUE-01、R-VUE-02、R-UI-01、R-UI-02、R-UI-03 |
-| R-SEC-01、R-PERM-01、R-SESS-01、R-APPTOK-01、R-IP-01、R-QKEY-01 | `rulebook_security.md` | R-SEC-01、R-PERM-01、R-SESS-01(改密碼後之 session 處置, 2026-10-23 第 117 項)、R-APPTOK-01(應用系統金鑰兩種用途與身分驗證缺口 S-1~S-6, 2026-10-24 sso-run01)、R-IP-01、R-QKEY-01 |
+| R-SEC-01、R-PERM-01、R-SESS-01、R-APPTOK-01、R-SYS-01、R-IP-01、R-QKEY-01 | `rulebook_security.md` | R-SEC-01、R-PERM-01、R-SESS-01(改密碼後之 session 處置, 2026-10-23 第 117 項)、R-APPTOK-01(應用系統金鑰兩種用途與身分驗證缺口 S-1~S-6, 2026-10-24 sso-run01)、R-SYS-01(框架系統函數之身分關卡 `sysFuncsPublic`, 2026-10-25 sso-run01, ADR-096)、R-IP-01、R-QKEY-01 |
 | R-OBJ-ITER-01、R-KEY-01、R-CNT-01 | `rulebook_inputkeys.md` | R-OBJ-ITER-01、R-KEY-01、R-CNT-01 |
 | R-ORM-01、R-VAL-01、R-VAL-02、R-ORM-02、R-ORM-03 | `rulebook_orm.md` | R-ORM-01、R-VAL-01、R-VAL-02(後台使用者清單 redir 檢查範圍, 2026-10-23 第 116 項)、R-ORM-02、R-ORM-03 |
 | R-ERR-01、R-PKG-01 | `rulebook_runtime.md` | R-ERR-01、R-PKG-01 |

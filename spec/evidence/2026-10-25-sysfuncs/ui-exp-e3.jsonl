@@ -1,0 +1,12 @@
+{"label":"exp-e3","scenario":"S1-login-cold","url":"http://127.0.0.1:8080/?lang=eng","inputs":0,"pw":0,"text":"Connecting..."}
+{"label":"exp-e3","scenario":"S1-login-cold","consoleErrors":[]}
+{"label":"exp-e3","scenario":"S2-register-view","error":"locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('text=\"Register\"').first()\u001b[22m\n"}
+{"label":"exp-e3","scenario":"S2-register-view","consoleErrors":[]}
+{"label":"exp-e3","scenario":"S3-login-fail","error":"locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input').first()\u001b[22m\n"}
+{"label":"exp-e3","scenario":"S3-login-fail","consoleErrors":[]}
+{"label":"exp-e3","scenario":"S4-admin-login-backstage","error":"locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input').first()\u001b[22m\n"}
+{"label":"exp-e3","scenario":"S4-admin-login-backstage","consoleErrors":[]}
+{"label":"exp-e3","scenario":"S6-resend-view","error":"locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input').first()\u001b[22m\n"}
+{"label":"exp-e3","scenario":"S6-resend-view","consoleErrors":[]}
+{"label":"exp-e3","scenario":"S5-verifyEmail-result","url":"http://127.0.0.1:11007/api/verifyEmail?token=<masked>&lang=eng","inputs":0,"pw":0,"text":"Invalid or expired verification link."}
+{"label":"exp-e3","scenario":"S5-verifyEmail-result","consoleErrors":[]}

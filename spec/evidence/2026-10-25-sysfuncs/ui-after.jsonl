@@ -1,0 +1,16 @@
+{"label":"after","scenario":"S1-login-cold","url":"http://127.0.0.1:8080/?lang=eng","inputs":2,"pw":1,"text":"Single Sign-On System Account Password Log in Register English"}
+{"label":"after","scenario":"S1-login-cold","consoleErrors":[]}
+{"label":"after","scenario":"S2-register-view","url":"http://127.0.0.1:8080/?lang=eng","inputs":5,"pw":2,"text":"Single Sign-On System Account Password Confirm password Name Email Submit Back to login English"}
+{"label":"after","scenario":"S2-register-view","consoleErrors":[]}
+{"label":"after","scenario":"S3-login-fail","url":"http://127.0.0.1:8080/?lang=eng","inputs":2,"pw":1,"text":"Single Sign-On System Account Password Log in User account or password is incorrect Register English"}
+{"label":"after","scenario":"S3-login-fail","consoleErrors":[]}
+{"label":"after","scenario":"S4-after-login","url":"http://127.0.0.1:8080/?view=backstage&token=<masked>&lang=eng","inputs":2,"pw":0,"text":"Single Sign-On System A web service package for Single Sign-On. English admin Statistics Information Provides an overview of system usage and security metrics. User Information Total Users 4 Active Users 4 Blocked Users "}
+{"label":"after","scenario":"S4-page-Users list","url":"http://127.0.0.1:8080/?view=backstage&token=<masked>&lang=eng","inputs":17,"pw":0,"text":"Single Sign-On System A web service package for Single Sign-On. English admin Users list Provide a list of users, which can be added, edited, deleted, etc. Edit mode Account Password Name Email Description From Redirect "}
+{"label":"after","scenario":"S4-page-Tokens list","url":"http://127.0.0.1:8080/?view=backstage&token=<masked>&lang=eng","inputs":20,"pw":0,"text":"Single Sign-On System A web service package for Single Sign-On. English admin Tokens list Provide a list of tokens, which can be deleted, etc. Edit mode Token ID of the user For app Usage Name App permissions 01a17125-d3"}
+{"label":"after","scenario":"S4-page-Ips list","url":"http://127.0.0.1:8080/?view=backstage&token=<masked>&lang=eng","inputs":5,"pw":0,"text":"Single Sign-On System A web service package for Single Sign-On. English admin Ips list Provide a list of IPs, which can be blocked, etc. Edit mode IP Blocked time 127.0.0.1 Select date 00:00 Statistics information User i"}
+{"label":"after","scenario":"S4-admin-login-backstage","consoleErrors":[]}
+{"label":"after","scenario":"S6-after-unverified-login","url":"http://127.0.0.1:8080/?lang=eng","inputs":2,"pw":1,"text":"Single Sign-On System Account Password Log in Your account has not been verified. Please check your email and click the verification link. Resend verification email English"}
+{"label":"after","scenario":"S6-resend-view","url":"http://127.0.0.1:8080/?lang=eng","inputs":3,"pw":1,"text":"Single Sign-On System Account Password Email Send verification email Back to login English"}
+{"label":"after","scenario":"S6-resend-view","consoleErrors":[]}
+{"label":"after","scenario":"S5-verifyEmail-result","url":"http://127.0.0.1:11007/api/verifyEmail?token=<masked>&lang=eng","inputs":0,"pw":0,"text":"Invalid or expired verification link."}
+{"label":"after","scenario":"S5-verifyEmail-result","consoleErrors":[]}

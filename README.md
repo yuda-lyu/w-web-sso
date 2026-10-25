@@ -26,12 +26,33 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 | 金鑰：`getTokensList`（`readTokens`）；`updateTokensList`、`createAppToken`（`writeTokens`） | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ |
 | IP：`getIpsList`（`readIps`）；`updateIpsList`（`writeIps`） | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ |
 | 統計：`getStaUserSummary`、`getStaTokenSummary`、`getStaIpSummary`、`getStaUserAccountLogin`、`getStaToken`、`getStaIp`（`readStats`） | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ |
+| 系統函數 `[sys:getFuncList]`（只回函數名稱清單） | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 系統函數 `[sys:polling]`（前端連線輪詢；本套件無同步表、不廣播，恆回空陣列） | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 系統函數 `[sys:getTableTags]`（同步表時間戳；本套件無同步表） | ✗ `permission denied` | ✗ `permission denied` | ✗ `permission denied` | ✗ `permission denied` | ✗ `permission denied` | ✗ `permission denied` | ✗ `permission denied` |
 
-- 公開入口（不讀 token）：靜態頁、`getWebInfor`、`checkUserPassword`、`loginByAccountAndPassword`、`[sys:getFuncList]`；`createUser`、`verifyEmail`（HTTP 連結與函數）、`resendVerifyEmail` 另受 `allowUserRegistration` 開關約束（關閉時一律回 `userRegistrationNotAllowed`）。
+- 公開入口（不讀 token）：靜態頁、`getWebInfor`、`checkUserPassword`、`loginByAccountAndPassword`、`[sys:getFuncList]`、`[sys:polling]`；`createUser`、`verifyEmail`（HTTP 連結與函數）、`resendVerifyEmail` 另受 `allowUserRegistration` 開關約束（關閉時一律回 `userRegistrationNotAllowed`）。
+- 系統函數（框架提供，非本套件 kpfun）：本套件顯式設定 `sysFuncsPublic: ['[sys:getFuncList]', '[sys:polling]']`，只列未登入之登入頁確實需要且無敏感內容者（ADR-096）；`[sys:getTableTags]` 登入頁不需要，且本套件 `getUserIdByToken` 恆回空字串（各 kpfun 自行以明確 token 參數驗證），故對任何呼叫者（含帶有效 token 者）恆被拒絕。`[sys:polling]` 公開以「無同步表、不使用廣播（恆回空）」為前提。
 - 失效之 token（未知字串、已逾期之登入 token）一律同於「無」（對外 `tokenExpired`）；**例外**：登出入口讓持有者清理自己已逾期之登入 token。
-- 本表以 `test/api-accessmatrix.test.mjs` 逐格驗證（token 入口 27 個 × 呼叫者 7 類，另失效 token 子類與公開入口），修改任何入口之授權時須同步更新該檔之 `entries`。已知另輪處理：`[sys:getTableTags]`、`[sys:polling]` 兩個系統函數目前不要求 token。
+- 本表以 `test/api-accessmatrix.test.mjs` 逐格驗證（token 入口 27 個 × 呼叫者 7 類，另失效 token 子類與公開入口），修改任何入口之授權時須同步更新該檔之 `entries`；系統函數三列由 `test/api-sysfuncs.test.mjs` 逐格驗證（修改 `sysFuncsPublic` 時須同步）。
 
 ## Upgrade Notes
+
+### Upgrading from 1.1.15 and earlier
+
+**框架系統函數之身分關卡（行為變更，ADR-096）**：升級 `w-serv-hapi` 至 `^1.1.8`（連帶 `w-serv-webdata` 1.1.16、`w-serv-broadcast` 1.1.12），並重建前端（前端元件輪詢改帶 token 鍵）。框架預設三個系統函數皆公開；本版起本套件顯式設定 `sysFuncsPublic: ['[sys:getFuncList]', '[sys:polling]']`，只列未登入之登入頁確實需要且無敏感內容者。以真瀏覽器擷取登入頁、註冊畫面、重寄驗證信畫面與登入後各頁之請求，開機流程相同（第 3 欄為擷取所見）：
+
+| 系統函數 | 前端何時呼叫 | 回傳內容 | 決定 |
+|---|---|---|---|
+| `[sys:polling]` | 前端連線建立後以計時器輪詢（約 2 秒後首輪，其後約每 2 秒一次）；第一輪完成才會取函數清單並觸發前端函數綁定 | 恆為空陣列（本套件無同步表、不使用廣播）；不回資料、不改使用者資料（伺服端僅在記憶體登記該連線，約 10 秒無輪詢即解除） | **公開**：不列則前端永遠停在「Connecting...」，登入頁不可用（實測） |
+| `[sys:getFuncList]` | 輪詢通過後第一個 | 函數名稱字串清單（含管理函數之名稱；無資料） | **公開** |
+| `[sys:getTableTags]` | 函數綁定完成後立即送出（與 `getWebInfor` 並行，無人等待其結果） | 同步表時間戳；本套件無同步表（公開時回空物件） | **不公開**：登入頁不需要其結果；對任何呼叫者恆回 `permission denied` |
+
+- **`[sys:getTableTags]` 對任何呼叫者恆被拒絕**：本套件 `getUserIdByToken` 恆回空字串（各 kpfun 自行以明確 token 參數驗證，未改變），無從以身分放行；前端元件開機流程仍會呼叫一次（開機時尚無 token），被拒絕不影響已擷取之頁面（登入、申請帳號、重寄驗證信畫面與登入後後台各頁；瀏覽器主控台無錯誤）。依賴此函數取得同步表資訊者（本套件無同步表，預期無人）將收到 `permission denied`。`sysFuncsPublic` 只管這三個系統函數，不影響 kpfun。
+- **伺服端每個前端連線開機會多一則 `error` 事件**（內容 `{ msg: 'permission denied', func: '[sys:getTableTags]' }`；匿名者直接呼叫可超過此數）：範例 `srv.mjs` 之 `on('error')` 會 `console.log` 印出；未掛 `error` 監聽者時 `w-serv-hapi` 改以 `console.error` 輸出，故任何部署都會有輸出，屬預期。過濾請同時比對 `msg` 與 `func`，勿一律略過 `permission denied`。此事件不進 `srLog`。
+- **`[sys:polling]` 公開之前提是本套件不廣播**：`WWebSso` 回傳之實例可經 `getInstWConverServer().broadcast(...)` 推送內容，該內容會送到所有（含未登入）輪詢者；嵌入端不得以此推送非公開內容。
+- **已發布之舊版前端元件照常可用**：舊元件輪詢不帶 token 鍵，視為無身分，`[sys:polling]` 公開故放行；其 `[sys:getTableTags]` 同樣被拒。以真舊版框架用戶端（w-serv-hapi 1.1.7／w-serv-webdata 1.1.15／w-serv-broadcast 1.1.10）對本版後端開機實測（未登入與帶管理員 token 各一次）：開機完成、`getWebInfor` 與帶明確 token 之 `getUsersList` 可用，用戶端僅收到一則 `[sys:getTableTags]` 之 `permission denied` 事件（尚未以已發布之舊版建置檔跑整頁瀏覽器擷取）。
+- **下游專案**（w-web-perm／w-web-api／w-web-task 等）：本套件提供之 helper（`getUserByToken` 等）以 HTTP GET `/api/getSsoUserInfor` 反查，不經框架用戶端，不受影響；自行以框架用戶端連線本套件者，僅 `[sys:getFuncList]`、`[sys:polling]` 可用，且每次開機會收到一則 `[sys:getTableTags]` 之拒絕（未逐一檢視各下游之原始碼）。
+- 日後若新增同步表或廣播內容，須重新評估 `[sys:polling]` 之公開（`test/unit-sysfuncs-premise.test.mjs` 靜態守護此前提）。新增測試：`test/api-sysfuncs.test.mjs`（SF-01~06，`sysFuncsPublic` 之變異守護）、`test/unit-sysfuncs-premise.test.mjs`（SP-01~05）。
 
 ### Upgrading from 1.1.13 and earlier
 
