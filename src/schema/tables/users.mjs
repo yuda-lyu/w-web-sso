@@ -51,7 +51,7 @@ let settings = {
         type: 'STRING',
     },
     isAdmin: {
-        name: '是否為系統管理員',
+        name: '是否為系統管理者',
         type: 'STRING',
     },
     tokenVerify: {
