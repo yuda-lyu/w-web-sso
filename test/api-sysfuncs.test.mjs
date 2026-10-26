@@ -5,7 +5,7 @@
 //     本套件無同步表且不使用廣播故恆回空陣列); `[sys:getTableTags]` 登入頁不需要, 且 `getUserIdByToken` 恆回空字串, 故對任何呼叫者(含帶有效 token 者)恆被拒絕(permission denied)
 //   - w-serv-webdata 1.1.16: 框架預設三者皆公開(相容), 使用方須顯式設定; 未列者須 getUserIdByToken 得非空字串
 //   - 驗證依據(真瀏覽器擷取)見報告與 sgud/exp/experience.md: 登入頁冷載入 = [sys:polling] → [sys:getFuncList] → getServerMethods → getWebInfor 與 [sys:getTableTags] 並行送出
-// 作法: 真後端(11007), 以前端元件同款編碼(obj2u8arr)直打 POST /api/main; 另以真 WServHapiClient 帶有效管理員 token 走一次前端開機流程。
+// 作法: 真後端(11007), 以前端元件同款編碼(obj2u8arr)直打 POST /api/main; 另以真 WServHapiClient 帶有效系統管理者 token 走一次前端開機流程。
 //   每格前重置 base seed 並建 fixture(7 類呼叫者 + 未知 token + 已逾期 session token, 同 api-accessmatrix 之 callers)。
 // 「公開」= 不需有效身分, 不表示可省略框架封裝鍵: 缺 `__sysToken__` 鍵 → `invalid token`、缺 / 非陣列 `__sysInputArgs__` → `invalid input`(皆先於身分關卡, 對公開函數亦然; SF-04)。
 // 修改 `sysFuncsPublic` 時本檔須同步。變異(ADR-096 〈Consequences〉變異表; 每項各被下列案例抓到):
@@ -168,7 +168,7 @@ describe('框架系統函數之身分關卡 (ADR-096): sysFuncsPublic = [getFunc
         }
     })
 
-    it('SF-03 [sys:getTableTags]: 7 類呼叫者 + 未知 / 已逾期 token(含帶有效管理員 token)皆被拒絕 permission denied, 不回資料, 不回顯 token', async function() {
+    it('SF-03 [sys:getTableTags]: 7 類呼叫者 + 未知 / 已逾期 token(含帶有效系統管理者 token)皆被拒絕 permission denied, 不回資料, 不回顯 token', async function() {
         for (let c of allCallers) {
             let o = await callSys('[sys:getTableTags]', c.token)
             assert.strictEqual(o.state, 'error', `${c.key}: 須被拒絕, 實得 ${JSON.stringify(o).slice(0, 160)}`)
@@ -205,7 +205,7 @@ describe('框架系統函數之身分關卡 (ADR-096): sysFuncsPublic = [getFunc
         }
     })
 
-    it('SF-05 真前端用戶端(WServHapiClient, 一開始即帶有效管理員 token)開機: 輪詢與函數清單通過、getServerMethods 觸發、後端函數可用; 唯一之 error 事件為單一 [sys:getTableTags] 拒絕', async function() {
+    it('SF-05 真前端用戶端(WServHapiClient, 一開始即帶有效系統管理者 token)開機: 輪詢與函數清單通過、getServerMethods 觸發、後端函數可用; 唯一之 error 事件為單一 [sys:getTableTags] 拒絕', async function() {
         let st = bootClient(() => 'token-for-admin')
         try {
             await st.ready
@@ -228,7 +228,7 @@ describe('框架系統函數之身分關卡 (ADR-096): sysFuncsPublic = [getFunc
         }
     })
 
-    it('SF-06 真前端用戶端貼近 src/main.js: 開機時 token 為空, getServerMethods 後才取得管理員 token(登入): 輪詢跨空 → 有效 token 之切換仍通過, 無額外 error 事件', async function() {
+    it('SF-06 真前端用戶端貼近 src/main.js: 開機時 token 為空, getServerMethods 後才取得系統管理者 token(登入): 輪詢跨空 → 有效 token 之切換仍通過, 無額外 error 事件', async function() {
         let tok = ''
         let st = bootClient(() => tok)
         try {

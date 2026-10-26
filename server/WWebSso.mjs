@@ -54,7 +54,7 @@ import { defaultPasswordPolicy } from './defaultPasswordPolicy.mjs'
  * @param {String} [pathSettings='./settings.json'] 輸入設定檔案路徑字串，檔案為json5格式，非既存檔案則回退'./settings.json'，預設'./settings.json'
  * @param {Object} [optExt={}] 輸入額外設定物件，與設定檔內容合併且同名鍵以optExt為準，以下各鍵亦可直接寫於設定檔(各鍵之預設值與範例詳套件自帶settings.json)，預設{}
  * @param {Integer} [optExt.serverPort=11007] 輸入伺服器通訊port整數，預設11007
- * @param {Boolean} [optExt.useCheckUser] 已停用(w-serv-orm 1.1.9 已移除)，本套件不轉交；給予undefined、null、false以外之值即忽略並於啟動時記警告。寫入之授權由各功能自行負責(清單儲存須為管理者或具對應權限之應用系統金鑰，自助註冊為公開流程)
+ * @param {Boolean} [optExt.useCheckUser] 已停用(w-serv-orm 1.1.9 已移除)，本套件不轉交；給予undefined、null、false以外之值即忽略並於啟動時記警告。寫入之授權由各功能自行負責(清單儲存須為系統管理者或具對應權限之應用系統金鑰，自助註冊為公開流程)
  * @param {Function} [optExt.getUserById] 已停用(w-serv-orm 1.1.9 已移除)，本套件不轉交；給予undefined、null、false以外之值即忽略並於啟動時記警告
  * @param {Boolean} [optExt.useExcludeWhenNotAdmin] 已停用(w-serv-orm 1.1.9 已移除)，本套件不轉交；給予undefined、null、false以外之值即忽略並於啟動時記警告
  * @param {Object} [optExt.webName={}] 輸入站台名稱物件，至少包含語系eng與cht鍵的名稱，預設{}
@@ -165,7 +165,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     //警告只寫出被列出之鍵名, 理由文字不含其他鍵名(R-ORM-02)
     let ignoredOrmKeys = getIgnoredOrmKeys(opt)
     if (size(ignoredOrmKeys) > 0) {
-        logBoot('warn', `settings / optExt 之 ${ignoredOrmKeys.join('、')} 已忽略: w-serv-orm 1.1.9 起已移除此類使用者檢查設定, 本套件之寫入皆於各功能內以權杖授權(使用者須為管理者、應用系統金鑰須具對應權限), 自助註冊為公開流程, 請自設定移除`)
+        logBoot('warn', `settings / optExt 之 ${ignoredOrmKeys.join('、')} 已忽略: w-serv-orm 1.1.9 起已移除此類使用者檢查設定, 本套件之寫入皆於各功能內以權杖授權(使用者須為系統管理者、應用系統金鑰須具對應權限), 自助註冊為公開流程, 請自設定移除`)
     }
 
     //webName
@@ -1131,7 +1131,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         },
         //身分驗證責任(跨套件原則, 見自有套件庫主控之 dspec「使用者身分驗證原則」): 框架(w-converhp、w-serv-hapi、w-serv-webdata)不驗證token, 一律由本套件負責.
         //本套件為token簽發方且資料通道不開表操作(useDbOrm:false): verifyConn只做IP封鎖與頻率, getUserIdByToken固定回空字串(不以本體token決定執行身分);
-        //故kpFunExt各函數一律以明確之token參數自行驗證(含管理員與細部權限), 查詢他人時以tokenSelf驗查詢方、tokenTarget只解析對象(checkTokenAndGetUserByToken);
+        //故kpFunExt各函數一律以明確之token參數自行驗證(含系統管理者與細部權限), 查詢他人時以tokenSelf驗查詢方、tokenTarget只解析對象(checkTokenAndGetUserByToken);
         //不帶token之公開入口只限列名者(登入、自助註冊〔須開啟〕、驗證信、重寄驗證信〔隨註冊開關〕、網站顯示資訊、密碼政策預檢), 新增函數不得省略token驗證.
         getUserIdByToken: async (token) => { //可使用async或sync函數
             return '' //不檢核, 查找與變更數據皆由kpFunExt內各函數各自檢核
@@ -1320,7 +1320,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             },
 
             //createAppToken: 鑄造應用系統金鑰(ADR-095); data: { name, usage: 'user' | 'system', userId(使用者用途), perms(系統服務用途) }, 權杖字串由伺服端產生並於回傳值給予;
-            //權限閘同 updateTokensList(管理者或具 writeTokens 之系統服務用途金鑰); 後台清單存檔不再新增列
+            //權限閘同 updateTokensList(系統管理者或具 writeTokens 之系統服務用途金鑰); 後台清單存檔不再新增列
             createAppToken: async (_t, token, lang, data) => {
                 if (!_strictStr(token)) return Promise.reject('tokenExpired')
                 srLog.info({ event: 'kpfun-createAppToken', token: maskToken(token), lang })

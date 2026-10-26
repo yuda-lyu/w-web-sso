@@ -471,7 +471,7 @@ describe('doubleclick API E2E — backend mutex 並行序列化回歸', function
         assert.strict.equal(us.length, 1, `新使用者應只 1 筆, 實際 ${us.length}`)
         let u = us[0]
         assert.strict.equal(typeof u.timeVerified === 'string' && u.timeVerified !== '', true, `timeVerified 應為新增時自動填入之時間, 實際「${u.timeVerified}」(被清空即無法登入)`)
-        assert.strict.equal(u.userId, dc01Admin.id, `建立者應為操作之管理者, 實際「${u.userId}」`)
+        assert.strict.equal(u.userId, dc01Admin.id, `建立者應為操作之系統管理者, 實際「${u.userId}」`)
         assert.strict.equal(u.timeCreate !== '{New}' && u.timeCreate !== '', true, `建立時間不得為前端佔位字, 實際「${u.timeCreate}」`)
     }
 

@@ -78,7 +78,7 @@
     },
     resetPwEmContent: { //重設密碼通知信內容, 支援 {sender}/{name}/{account}/{newPassword} 置換
         eng: 'Dear {name},<br><br>The administrator has reset the password for your {sender} account.<br><br>Account: {account}<br>New password: <strong>{newPassword}</strong><br><br>Please log in with this password and immediately set your own new password upon login.<br><br>If you did not expect this change, please contact the administrator.<br><br>This is an automated notification.',
-        cht: '使用者 {name} 您好：<br><br>管理員已重設您於「{sender}」的密碼。<br><br>帳號：{account}<br>新密碼：<strong>{newPassword}</strong><br><br>請以此密碼登入後，立即變更為您自己的新密碼。<br><br>若非您預期之操作，請聯繫管理員。<br><br>此為系統自動通知信件。',
+        cht: '使用者 {name} 您好：<br><br>系統管理者已重設您於「{sender}」的密碼。<br><br>帳號：{account}<br>新密碼：<strong>{newPassword}</strong><br><br>請以此密碼登入後，立即變更為您自己的新密碼。<br><br>若非您預期之操作，請聯繫系統管理者。<br><br>此為系統自動通知信件。',
     },
     //註冊驗證結果頁之四則訊息(逐語系, 代入結果頁之 {message}), 各值可給文字或檔案路徑; 未給採內建語系文字. 部署方須點名系統時於此覆寫, 不改套件內建
     userRegistrationVerifySuccess: { //驗證成功

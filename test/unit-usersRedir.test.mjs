@@ -5,7 +5,7 @@
 //   - spec/流程_後台新增使用者.md E2E-008(新增列 redir 空攔下)
 //   - spec/流程_使用者創建帳密.md〈自助註冊者之 redir〉: 註冊流程不收 redir, 預設空字串(設計事實)
 //   - 原則 3「一列之既有資料問題不得擋住整份清單之存檔而無提示」
-// 規則: 管理員本次新增 / 由非空改為空者攔下(該列 redir 格警示); 載入時即為空之既有列不擋、不標警示; 基準有效而列不在其中且非新增者嚴格檢查;
+// 規則: 系統管理者本次新增 / 由非空改為空者攔下(該列 redir 格警示); 載入時即為空之既有列不擋、不標警示; 基準有效而列不在其中且非新增者嚴格檢查;
 //   基準算不出(null)時只檢查新增列(此時 baseline 亦為 null, 後端無基準之存檔一律拒收並提示重新載入; 外審 sol#4).
 // 前端元件 LayoutContentUsers.vue 以同一模組判定(UR-W01~W03 靜態守護接線); 基準以 Map 存於 Vue data(外審 sol#3: 純物件被 Vue 2 響應式處理會以 `__ob__` 鍵覆蓋同名主鍵之值).
 
@@ -37,7 +37,7 @@ describe('後台使用者清單 redir 檢查 (R-VAL-02)', function() {
         assert.deepStrictEqual(ids(redirErrIdsOfUsers(rows, redirOrigOfUsers(loaded()))), [])
     })
 
-    it('UR-U-002 管理員改他列欄位(redir 不動)、自助註冊者仍空 → 不攔下', function() {
+    it('UR-U-002 系統管理者改他列欄位(redir 不動)、自助註冊者仍空 → 不攔下', function() {
         let rows = loaded()
         rows[0].account = 'a-renamed'
         assert.deepStrictEqual(ids(redirErrIdsOfUsers(rows, redirOrigOfUsers(loaded()))), [])
@@ -61,7 +61,7 @@ describe('後台使用者清單 redir 檢查 (R-VAL-02)', function() {
         assert.deepStrictEqual(ids(redirErrIdsOfUsers(rows, redirOrigOfUsers(loaded()))), [])
     })
 
-    it('UR-U-006 自助註冊者列由管理員補上 redir → 合規; 補上後又改回空 → 與載入值相同, 視為未動, 不攔下', function() {
+    it('UR-U-006 自助註冊者列由系統管理者補上 redir → 合規; 補上後又改回空 → 與載入值相同, 視為未動, 不攔下', function() {
         let rows = loaded()
         rows[2].redir = REDIR
         assert.deepStrictEqual(ids(redirErrIdsOfUsers(rows, redirOrigOfUsers(loaded()))), [])
@@ -136,13 +136,13 @@ describe('後台使用者清單 redir 檢查 (R-VAL-02)', function() {
         assert.deepStrictEqual(ids(redirErrIdsOfUsers(rows, redirOrigOfUsers(loaded()))), ['s'])
     })
 
-    it('UR-U-013 基準隨存檔後重讀更新(外審 nemotron#3 補): 管理員補上 redir 並存檔成功後, 重讀之基準為有值; 其後再把該列清空 → 攔下(不再屬載入時即為空)', function() {
+    it('UR-U-013 基準隨存檔後重讀更新(外審 nemotron#3 補): 系統管理者補上 redir 並存檔成功後, 重讀之基準為有值; 其後再把該列清空 → 攔下(不再屬載入時即為空)', function() {
         //存檔成功後重讀: s 已有值
         let reloaded = loaded()
         reloaded[2].redir = REDIR
         let orig2 = redirOrigOfUsers(reloaded)
         let rows = loaded()
-        rows[2].redir = '' //管理員又把 s 清空
+        rows[2].redir = '' //系統管理者又把 s 清空
         assert.deepStrictEqual(ids(redirErrIdsOfUsers(rows, orig2)), ['s'])
         //對照: 未重讀(仍用載入時之舊基準)則視為載入時即為空, 不攔——元件於存檔成功後必重讀並更新基準(UR-W02)
         assert.deepStrictEqual(ids(redirErrIdsOfUsers(rows, redirOrigOfUsers(loaded()))), [])

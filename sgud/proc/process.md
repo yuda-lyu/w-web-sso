@@ -65,7 +65,7 @@
   - 新增寫入點: `save` / `del` 一律經 `ormWrite`(或 procOrm); 失敗之 key 新增時 eng + cht 齊備於 `procLang`, 並決定是否為後端專用鍵(結果頁 / 信件 → 加入 WWebSso `emTextKeys`, 見下「新增或修改寄信 / 語系文字」); 後續動作(寄信、節流、回成功)放在檢查之後; 以 `unit-ormWriteFail` 之 `mkTable` 注入逐筆與整批失敗各一案(先紅後綠); 依 R-ORM-01 盤點指令複核站點全集.
   - 升級 w-serv-orm / w-orm-lmdb: 依「自有套件升級之查核」取新舊 tarball 全量 diff(含其相依 wsemi、w-data-collector 之差異), 特別核對 procOrm(`getMapOrm` 之 `mapOrm` / `adjustData`、`getProc`)之 reject 條件與訊息、**寫入時對輸入之改寫(clearXSS、補主鍵)**、逐筆結果之形式(`ok` / `err` / `n` / `nDeleted` / `nModified`)、`getItemsFail` 之判準與所在套件; 上游新增之寫入時拒絕或改寫, 一律對照 R-VAL-01 前移至本套件之驗證階段(本套件無交易, 寫入中段之拒絕即部分寫入); 語意有改即跑 `unit-ormWriteFail`(以真實 procOrm 執行, 反映套件語意)與清單儲存及撤銷之 api 案例(`api-adduser` / `api-deleteuser` / `api-doubleclick` / `api-apptoken-perms`); 語意不變者載入檢查即可. 本套件之判準引用與上游同一 wsemi 實體, 升版後 `npm ls wsemi` 須只有一份.
   - 單元測試之 procOrm 以 `mkProcOrm(ds, woItems)`(getMapOrm → getProc, 與正式之 WServOrm 同樣不傳 opt)組出; 1.1.8 起兩者為各實例狀態, 不影響同行程內 `g_mOrm` 之正式實例(1.1.7 時期之 `loadMapOrm` 另載模組繞道已移除). 記憶體資料表 `mkTable` 之語意須與 w-orm-lmdb 一致(insert 既存略過、save 以 merge、鍵長 1978), 升級 w-orm-lmdb 時一併核對.
-  - 本套件不轉交 w-serv-orm 已移除之使用者檢查設定(R-ORM-02 / ADR-083 / ADR-085): `WServOrm` 與 `getProc` 一律不傳 opt; settings / optExt 之 `useCheckUser` / `getUserById` / `useExcludeWhenNotAdmin` 由 `server/getIgnoredOrmKeys.mjs` 逐鍵委派上游 `checkOptRemoved` 判定, 會被上游拒絕者忽略並於啟動時記警告(undefined / null / false 不列); 擋板不可拆——透傳即令舊設定使後端啟動失敗. 新增經 procOrm 之寫入點須先於 kpFunExt 授權(checkToken 之管理者 / 權限; 上游 procOrm 不做授權). 升級 w-serv-orm 時另核對 `src/checkOptRemoved.mjs` 仍在且接受集未變(`unit-ignoredOrmKeys` IOK-007), 與 adjustData 之 `userId` / `userIdUpdate` 戳記(R-ORM-03: 非建立者語意之 `userId` 欄, 如 tokens 擁有者, 新增時依該欄分組並以其值為參數, ADR-084).
+  - 本套件不轉交 w-serv-orm 已移除之使用者檢查設定(R-ORM-02 / ADR-083 / ADR-085): `WServOrm` 與 `getProc` 一律不傳 opt; settings / optExt 之 `useCheckUser` / `getUserById` / `useExcludeWhenNotAdmin` 由 `server/getIgnoredOrmKeys.mjs` 逐鍵委派上游 `checkOptRemoved` 判定, 會被上游拒絕者忽略並於啟動時記警告(undefined / null / false 不列); 擋板不可拆——透傳即令舊設定使後端啟動失敗. 新增經 procOrm 之寫入點須先於 kpFunExt 授權(checkToken 之系統管理者 / 權限; 上游 procOrm 不做授權). 升級 w-serv-orm 時另核對 `src/checkOptRemoved.mjs` 仍在且接受集未變(`unit-ignoredOrmKeys` IOK-007), 與 adjustData 之 `userId` / `userIdUpdate` 戳記(R-ORM-03: 非建立者語意之 `userId` 欄, 如 tokens 擁有者, 新增時依該欄分組並以其值為參數, ADR-084).
   - 測試行程直讀 LMDB 之跨行程舊快照已由 w-orm-lmdb 1.0.38 修復(2026-10-12, ADR-082; 寫交易外之讀取前重設讀交易), 直讀可見後端已提交之資料. 升級 w-orm-lmdb 時以 `spec/evidence/2026-10-12-worm-lmdb-cross-process-stale-read.mjs` 回歸(各情境應為 0), 並連跑 `api-apptoken-perms` 之 PERM-A-001(修復前 10 輪 6 輪失敗, 為此問題最靈敏之案例). 2026-10-14 升 1.0.39(ADR-087): 回歸 4 情境 × 100 次皆 0、PERM-A-001 連跑 10 輪皆 13 / 13.
 
 ## 跨套件改動須經業主同意
@@ -78,7 +78,7 @@
 
 - **關聯**: 引用方(如 `rddmanager_1_sso`)以建 e2e spec 時查得之缺陷回饋文件(例 `建議w-web-sso調整.md`); ADR-054、ADR-055 為先例.
 - **判斷**: 逐項以本套件源碼 + 實機(Playwright 雙語系)查證屬實再分類: 缺陷(待修)/ 設計事實(記錄備查)/ 待裁示(業主決定)/ 已修復; 因果鏈靜態不可證者以 spy 實測(如 `rowsChange` 觸發鏈). **每一項先展開所屬類別再修**(全域 §2.1-1/3): 投訴句只是類別的一個成員——列出該類別在本系統的全部入口(如「程式端重建表格 → rowsChange」有同步回填 / 存檔回填 / showKeys / genOpt 四入口)成表, 逐格看已蓋 / 未蓋, 並 grep 姊妹專案(perm / api)同機制之寫法; 只修投訴那格會在下一輪被同類別的另一格退回(殷鑑: 2026-09-07 只修 toggleTabKeys, 09-14 被編輯模式開關退回).
-- **處理**: 待裁示只呈報必須由業主決定者, 附選項與代價; 修復後 ADR 記錄並於回覆逐項標狀態; 已裁示者查裁決紀錄不重提(如 ADR-055 非管理者可進後台版面). **驗收以回報方原話之條件為準, 並在回報方之環境實測**: 回報方 e2e 為 1600×900, 本專案 e2e 為 Playwright 預設 1280×720——「全套 e2e 全綠」對回報方 viewport 之版面問題零證明力, 須另以探測腳本在 1600×900 量測驗收條件(如「末列完整可見」), 且 ADR 之驗證清單須逐項對應建議書條目, 缺一即該項未驗(殷鑑: ADR-054 第 4 項自陳「1600×900 為 no-op」仍標已修).
+- **處理**: 待裁示只呈報必須由業主決定者, 附選項與代價; 修復後 ADR 記錄並於回覆逐項標狀態; 已裁示者查裁決紀錄不重提(如 ADR-055 非系統管理者可進後台版面). **驗收以回報方原話之條件為準, 並在回報方之環境實測**: 回報方 e2e 為 1600×900, 本專案 e2e 為 Playwright 預設 1280×720——「全套 e2e 全綠」對回報方 viewport 之版面問題零證明力, 須另以探測腳本在 1600×900 量測驗收條件(如「末列完整可見」), 且 ADR 之驗證清單須逐項對應建議書條目, 缺一即該項未驗(殷鑑: ADR-054 第 4 項自陳「1600×900 為 no-op」仍標已修).
 
 ## 對外查詢 helper 之變更
 
@@ -122,12 +122,12 @@
   - 權限閘 `server/WWebSso.mjs` 各呼叫點之 `opt.perm`、`server/procCore.mjs` 之 `_checkTokenByObj` / `adminResetUserPassword` / `checkTokenAndUpdateUsersList`(app 操作者免自我保護)/ `updateTokensList`(perms 驗證)/ `updateTabItems`(陣列欄縮短);
   - 後台 `src/components/LayoutContentTokens.vue`、`src/components/AppPermsTags.vue`; 種子 `g_initialData.mjs` 之 `token-for-app`;
   - 測試 `unit-appPerms` / `api-apptoken-perms` / `e2e-tokens` E2E-005～007; ADR-069; rulebook R-PERM-01.
-- **判斷**: 業主 2026-09-25 裁示——權限以字串表示、`perms` 陣列多元素即聯集、預設只提供查使用者(`readUsers` 為基本權限恆具備); 同日另裁示「營運處置不需要, 安裝端仍然是測試資料, 尚未上線」, 故 README 與 ADR 不列輪替權杖 / 撤 session / 清 log 等步驟, 日後亦不再提出(除非業主告知已上線). 需管理者之新功能一律要決定歸屬哪個權限, 不得只給 `fun`.
+- **判斷**: 業主 2026-09-25 裁示——權限以字串表示、`perms` 陣列多元素即聯集、預設只提供查使用者(`readUsers` 為基本權限恆具備); 同日另裁示「營運處置不需要, 安裝端仍然是測試資料, 尚未上線」, 故 README 與 ADR 不列輪替權杖 / 撤 session / 清 log 等步驟, 日後亦不再提出(除非業主告知已上線). 需系統管理者之新功能一律要決定歸屬哪個權限, 不得只給 `fun`.
 - **處理**:
-  - 新增需管理者之功能: 依 R-PERM-01 宣告 `perm`, 並把該功能加入 `api-apptoken-perms` 之 ops 矩陣(先紅後綠).
-  - 新增權限字串: 同步 `keysAppPerm`(可取得管理者權限者另列 `keysAppPermHigh`)、`procLang` 之 `appPerm_<權限>`、README 權限表、兩測試檔; 後台清單由 `keysAppPerm` 自動列出, 不需改 UI.
+  - 新增需系統管理者之功能: 依 R-PERM-01 宣告 `perm`, 並把該功能加入 `api-apptoken-perms` 之 ops 矩陣(先紅後綠).
+  - 新增權限字串: 同步 `keysAppPerm`(可取得系統管理者權限者另列 `keysAppPermHigh`)、`procLang` 之 `appPerm_<權限>`、README 權限表、兩測試檔; 後台清單由 `keysAppPerm` 自動列出, 不需改 UI.
   - 陣列欄之寫入: w-orm-lmdb `save` 以 lodash `merge` 合併, 陣列不會縮短; 經 `updateTabItems` 者已處理, 其他路徑若以 `woItems.<表>.save` 直接寫陣列欄, 須先存 `null` 再存新值(或改寫為字串), 並以「由長改短」之案例驗證.
-  - 不改姊妹套件之消費端(其 helper 只用 `readUsers`, 不受影響); 若姊妹套件需要後台功能之權限, 由管理者於金鑰清單授予, 不在程式端放寬.
+  - 不改姊妹套件之消費端(其 helper 只用 `readUsers`, 不受影響); 若姊妹套件需要後台功能之權限, 由系統管理者於金鑰清單授予, 不在程式端放寬.
 
 ## 打包後之可用性(本套件 dist、被下游再打包)
 

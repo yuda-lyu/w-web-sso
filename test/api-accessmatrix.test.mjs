@@ -1,9 +1,9 @@
 //api-accessmatrix.test.mjs — 後端存取矩陣: 入口 × 呼叫者 (dspec w-web存取管控表.md 第一節 1.2, ADR-095)
 //
 // 依據:
-//   - C:\opensrcOper\dspec\w-web存取管控表.md 第一節 1.2「後端入口」之每一格(目標); 呼叫者 5 類: 無 token(無)、使用者 token 一般(U)、使用者 token 管理員(A)、
-//     應用系統 token・使用者用途(AU: 綁一般使用者 AU-U / 綁管理員 AU-A)、應用系統 token・系統服務用途(AS: 具所需 perm AS+ / 缺所需 perm AS-)
-//   - 使用者身分驗證原則.md 二之一: AU 能用之服務＝所綁使用者以自己之使用者 token 能用者(含改自己密碼), 不給期限不能續期; AS＝管理員之服務, 依 perms 收窄(ADR-069), 無「本人」之服務(不得改密碼)
+//   - C:\opensrcOper\dspec\w-web存取管控表.md 第一節 1.2「後端入口」之每一格(目標); 呼叫者 5 類: 無 token(無)、使用者 token 一般(U)、使用者 token 系統管理者(A)、
+//     應用系統 token・使用者用途(AU: 綁一般使用者 AU-U / 綁系統管理者 AU-A)、應用系統 token・系統服務用途(AS: 具所需 perm AS+ / 缺所需 perm AS-)
+//   - 使用者身分驗證原則.md 二之一: AU 能用之服務＝所綁使用者以自己之使用者 token 能用者(含改自己密碼), 不給期限不能續期; AS＝系統管理者之服務, 依 perms 收窄(ADR-069), 無「本人」之服務(不得改密碼)
 // 作法: 真後端(11007)。每格(入口 × 呼叫者)前重置 base seed 並重建本檔 fixture(logout 類入口會刪 token, 故不共用), 每格後驗副作用(通過者須已生效、拒絕者不得有任何寫入)。
 //   SMTP 導向 127.0.0.1:1(連線拒絕): 重設密碼寄信必敗而不外寄(寄信失敗不阻斷, 既有契約)。
 // 不在本檔(刻意不測, 見報告輸入空間統計): `[sys:getTableTags]`、`[sys:polling]`(2026-10-25 起由 api-sysfuncs.test.mjs 逐格驗證, ADR-096)、通訊路由 ulctr/slc/dwgfn/dwgf/dw(未註冊監聽, e2e/api 無從呼叫)、
@@ -22,7 +22,7 @@ let tally = { cells: 0, entries: 0, publicCells: 0 }
 let seq = 0
 
 
-//gate: 管理入口(需 perm): 使用者 token / 使用者用途依(所綁)使用者之管理員身分; 系統服務用途依 perms(readUsers 為基本權限恆具備)
+//gate: 管理入口(需 perm): 使用者 token / 使用者用途依(所綁)使用者之系統管理者身分; 系統服務用途依 perms(readUsers 為基本權限恆具備)
 function adminGate(perm) {
     return (c) => {
         if (c.kind === 'none') {

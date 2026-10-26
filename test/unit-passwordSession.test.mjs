@@ -1,11 +1,11 @@
 //unit-passwordSession.test.mjs — 改密碼後之 session 處置 (R-SESS-01; sso-run04 第 117 項; 使用者 2026-10-23 裁示, 依 OWASP ASVS「改密碼後提供終止其他所有 session」)
 //
 // 依據(規則來源):
-//   - 使用者原文:「管理員重設時撤銷對方全部 session; 自己改密碼時保留目前 session、撤銷其他 session」
+//   - 使用者原文:「系統管理者重設時撤銷對方全部 session; 自己改密碼時保留目前 session、撤銷其他 session」
 //   - spec/流程_後台重設使用者密碼.md〈改密碼後之 session 處置〉、spec/流程_使用者變更密碼.md 同節; spec/設計要點與取捨.md ADR-093
 //   - 規則帳本 sgud/rule/rulebook_security.md R-SESS-01
 // 規則(每個 it 的標題註明對應句):
-//   S1 管理員(或具 writeUsers 之 app 權杖)重設他人密碼 → 撤銷對方全部 session 權杖(isApp !== 'y')
+//   S1 系統管理者(或具 writeUsers 之 app 權杖)重設他人密碼 → 撤銷對方全部 session 權杖(isApp !== 'y')
 //   S2 使用者自行改密碼 → 保留發出此請求之目前 session, 撤銷該使用者其他所有 session 權杖
 //   S3 只撤銷 session 權杖: app 權杖(isApp === 'y', 含擁有者為該使用者者)不是 session, 不撤銷
 //   S4 密碼寫入與撤銷在 [tokens, users] 同一組表鎖內; 密碼變更必伴隨撤銷(撤銷失敗 → 密碼不變)
@@ -46,7 +46,7 @@ async function mkEnv() {
 
 describe('改密碼後之 session 處置 (R-SESS-01, ADR-093)', function() {
 
-    it('PS-U-001 [S1、S5] 管理員重設他人密碼 → 對方全部 session(t-a1、t-a2、t-a3)被撤銷, checkToken 皆拒; 對方之 app 權杖、他人 session、管理員自己之 session 不動', async function() {
+    it('PS-U-001 [S1、S5] 系統管理者重設他人密碼 → 對方全部 session(t-a1、t-a2、t-a3)被撤銷, checkToken 皆拒; 對方之 app 權杖、他人 session、系統管理者自己之 session 不動', async function() {
         let env = await mkEnv()
         let pw0 = env.users.get('u-a').password
         let r = await env.p.adminResetUserPassword('tk-admin', 'eng', 'u-a')
@@ -60,7 +60,7 @@ describe('改密碼後之 session 處置 (R-SESS-01, ADR-093)', function() {
         assert.deepStrictEqual(appIdsOf(env, 'u-a'), ['t-a-app'], '以對方為擁有者之 app 權杖不是 session, 不撤銷')
         assert.strictEqual(await errOf(env.p.checkToken('tk-a-app')), null, 'app 權杖仍可用')
         assert.ok(env.tokens.get('t-b1'), '他人(u-b)之 session 不動')
-        assert.ok(env.tokens.get('t-admin'), '管理員自己之 session 不動')
+        assert.ok(env.tokens.get('t-admin'), '系統管理者自己之 session 不動')
         assert.ok(env.tokens.get('t-app1') && env.tokens.get('t-app2') && env.tokens.get('t-appw'), '其他 app 權杖不動')
     })
 
@@ -132,16 +132,16 @@ describe('改密碼後之 session 處置 (R-SESS-01, ADR-093)', function() {
         assert.deepStrictEqual(snapTables(env), before)
     })
 
-    it('PS-U-009 [S6] 管理員重設: 對自己 / 目標不存在 → 拒絕, 不撤銷任何權杖', async function() {
+    it('PS-U-009 [S6] 系統管理者重設: 對自己 / 目標不存在 → 拒絕, 不撤銷任何權杖', async function() {
         let env = await mkEnv()
         let before = snapTables(env)
         assert.strictEqual(await errOf(env.p.adminResetUserPassword('tk-admin', 'eng', 'u-admin')), 'adminResetPasswordCannotResetSelf')
         assert.strictEqual(await errOf(env.p.adminResetUserPassword('tk-admin', 'eng', 'u-none')), 'adminResetPasswordUserNotFound')
-        assert.strictEqual(await errOf(env.p.adminResetUserPassword('tk-a1', 'eng', 'u-b')), 'tokenExpired', '非管理員: 與其他管理入口同鍵(S-2)')
+        assert.strictEqual(await errOf(env.p.adminResetUserPassword('tk-a1', 'eng', 'u-b')), 'tokenExpired', '非系統管理者: 與其他管理入口同鍵(S-2)')
         assert.deepStrictEqual(snapTables(env), before)
     })
 
-    it('PS-U-010 [S4] 撤銷失敗(tokens 刪除逐筆失敗) → 管理員重設整體拒絕且密碼不變(密碼變更必伴隨撤銷)', async function() {
+    it('PS-U-010 [S4] 撤銷失敗(tokens 刪除逐筆失敗) → 系統管理者重設整體拒絕且密碼不變(密碼變更必伴隨撤銷)', async function() {
         let env = await mkEnv()
         let pw0 = env.users.get('u-a').password
         env.tokens.fail.del.add('t-a2')
@@ -187,10 +187,10 @@ describe('改密碼後之 session 處置 (R-SESS-01, ADR-093)', function() {
         assert.deepStrictEqual(sessionIdsOf(env2, 'u-a'), ['t-a1'], '目前 session 仍在, 其他 session 已撤銷')
         assert.strictEqual(env2.mails.length, 0, '未寄「密碼已變更」信')
         assert.strictEqual(await errOf(env2.p.checkToken('tk-a2')), 'tokenExpired', '已撤銷者立即無效(外審 nemotron#1 補)')
-        assert.strictEqual(await errOf(env.p.checkToken('tk-a1')), 'tokenExpired', '管理員重設寫入失敗時 session 已先撤銷(fail closed, 使用者以原密碼重新登入)')
+        assert.strictEqual(await errOf(env.p.checkToken('tk-a1')), 'tokenExpired', '系統管理者重設寫入失敗時 session 已先撤銷(fail closed, 使用者以原密碼重新登入)')
     })
 
-    it('PS-U-013 [S4] 取鎖: 他人持有 tokens 表鎖時, 管理員重設與自行改密碼皆須等待(兩把鎖 [tokens, users] 任一被占用皆等待), 且等待期間 users / tokens 皆不先寫', async function() {
+    it('PS-U-013 [S4] 取鎖: 他人持有 tokens 表鎖時, 系統管理者重設與自行改密碼皆須等待(兩把鎖 [tokens, users] 任一被占用皆等待), 且等待期間 users / tokens 皆不先寫', async function() {
         for (let held of [['tokens'], ['users']]) {
             for (let [label, trigger] of [
                 ['adminReset', (env) => env.p.adminResetUserPassword('tk-admin', 'eng', 'u-a')],
@@ -242,8 +242,8 @@ describe('改密碼後之 session 處置 (R-SESS-01, ADR-093)', function() {
         assert.deepStrictEqual(sessionIdsOf(env, 'u-a'), [])
     })
 
-    it('PS-U-018 [S4] 競態(外審 nemotron#2 補): 管理員重設與同一使用者自行改密碼並行(兩者 kmx 鍵不同, 僅靠表鎖序列化)——兩種次序之終態皆守不變式, 後寫者勝', async function() {
-        //次序一: 自行改密碼先取得鎖(成功, 保留 t-a1) → 管理員重設後取得鎖: 密碼為重設值(isForceChangePw y)、t-a1 亦被撤銷, 無任何 session
+    it('PS-U-018 [S4] 競態(外審 nemotron#2 補): 系統管理者重設與同一使用者自行改密碼並行(兩者 kmx 鍵不同, 僅靠表鎖序列化)——兩種次序之終態皆守不變式, 後寫者勝', async function() {
+        //次序一: 自行改密碼先取得鎖(成功, 保留 t-a1) → 系統管理者重設後取得鎖: 密碼為重設值(isForceChangePw y)、t-a1 亦被撤銷, 無任何 session
         let env = await mkEnv()
         let h = await holdLocks(env, ['tokens'])
         let pmChange = track(Promise.resolve().then(() => env.p.checkTokenAndChangePassword('tk-a1', 'eng', PW_INIT, NEW_PW)))
@@ -259,7 +259,7 @@ describe('改密碼後之 session 處置 (R-SESS-01, ADR-093)', function() {
         assert.strictEqual(verifyPassword(NEW_PW, env.users.get('u-a').password, mkOpt().salt), false, '自行改之密碼被重設覆寫')
         assert.deepStrictEqual(sessionIdsOf(env, 'u-a'), [], '重設撤銷全部 session(含自行改密碼時保留之 t-a1)')
 
-        //次序二: 管理員重設先取得鎖 → 自行改密碼後取得鎖: 鎖內驗舊密碼已不符, 被拒, 不撤銷(已無 session 可撤), 密碼為重設值
+        //次序二: 系統管理者重設先取得鎖 → 自行改密碼後取得鎖: 鎖內驗舊密碼已不符, 被拒, 不撤銷(已無 session 可撤), 密碼為重設值
         let env2 = await mkEnv()
         let h2 = await holdLocks(env2, ['tokens'])
         let pmReset2 = track(Promise.resolve().then(() => env2.p.adminResetUserPassword('tk-admin', 'eng', 'u-a')))
@@ -282,7 +282,7 @@ describe('改密碼後之 session 處置 (R-SESS-01, ADR-093)', function() {
         let h = await holdLocks(env, ['tokens'])
         let pm = track(Promise.resolve().then(() => env.p.checkTokenAndChangePassword('tk-a2', 'eng', PW_INIT, NEW_PW)))
         await sleep(60)
-        env.tokens.kp.delete('t-a2') //等鎖期間 t-a2 被撤銷(如另一請求或管理員重設)
+        env.tokens.kp.delete('t-a2') //等鎖期間 t-a2 被撤銷(如另一請求或系統管理者重設)
         h.release()
         await h.done
         await pm.pm
@@ -313,7 +313,7 @@ describe('改密碼後之 session 處置 (R-SESS-01, ADR-093)', function() {
             let pw0 = env.users.get('u-a').password
             env.tokens.del = async () => Promise.reject(rej)
             let err = await errOf(env.p.adminResetUserPassword('tk-admin', 'eng', 'u-a'))
-            assert.strictEqual(err, 'adminResetPasswordFailed', `reject(${rej}) 管理員重設`)
+            assert.strictEqual(err, 'adminResetPasswordFailed', `reject(${rej}) 系統管理者重設`)
             assert.strictEqual(env.users.get('u-a').password, pw0)
             assert.strictEqual(env.mails.length, 0)
             let env2 = await mkEnv()

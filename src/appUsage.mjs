@@ -6,7 +6,7 @@ import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
 //應用系統金鑰(app token, tokens.isApp='y')之用途 (ADR-095; 前後端共用)
 //
 //用途分兩種, 以 tokens.appUsage 區分:
-//- 'user'(使用者用途): 以 tokens.userId 綁定一位使用者(可綁管理員), 代表所綁使用者本人, 授權等同所綁使用者之使用者 token; 不適用 perms; 每次使用皆依所綁使用者「當前」狀態判定
+//- 'user'(使用者用途): 以 tokens.userId 綁定一位使用者(可綁系統管理者), 代表所綁使用者本人, 授權等同所綁使用者之使用者 token; 不適用 perms; 每次使用皆依所綁使用者「當前」狀態判定
 //- 'system'(系統服務用途): 不綁使用者, 代表外部應用系統本身, 授權依 perms (ADR-069); tokens.userId 只記建立者(稽核), 不得當身分使用(不據以反查、撤銷、改密碼)
 //- 既有列(升級前建立, 無此欄或 ''): 升級後第一次啟動時由 procCore.migrateLegacyAppTokens 一次性定案 (ADR-095 補記, 見 classifyLegacyAppToken):
 //  升級前可用者(timeEnd 為合法時間且未逾期)寫為 'system'(不設期限, 預設相容部署中之整合不中斷); 升級前即不可用者(已逾期、無 timeEnd、timeEnd 格式錯)寫為 'retired'(維持失效, 不因「不設期限」而復活, 列保留不刪)

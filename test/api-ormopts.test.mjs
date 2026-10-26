@@ -3,8 +3,8 @@
 // 依據: spec/設計要點與取捨.md ADR-083、ADR-085; CLAUDE_rulebook.md R-ORM-02
 //   - WWebSso 不轉交此三鍵(WServOrm 不傳 opt); settings / optExt 給予上游會拒絕之值者忽略, 並於啟動時記警告(console 與 srLog 之 boot 事件, warn),
 //     只列出被忽略之鍵、未給者不出現(server/getIgnoredOrmKeys.mjs)
-//   - 寫入之授權由各功能自行負責(checkToken: 使用者須為管理者、應用系統金鑰須具對應寫入權限; 自助註冊為公開流程), 故下列寫入照常:
-//     自助註冊、使用者清單(管理者 / writeUsers)、金鑰清單(管理者 / writeTokens)、IP 清單(管理者 / writeIps)
+//   - 寫入之授權由各功能自行負責(checkToken: 使用者須為系統管理者、應用系統金鑰須具對應寫入權限; 自助註冊為公開流程), 故下列寫入照常:
+//     自助註冊、使用者清單(系統管理者 / writeUsers)、金鑰清單(系統管理者 / writeTokens)、IP 清單(系統管理者 / writeIps)
 //   - 本檔為「舊設定不使後端啟動失敗」之端到端守護: 若改為轉交, w-serv-orm 1.1.10 起於建構時拋錯, before 之重啟即逾時而 8 案全紅
 //   - 2026-10-12 修改前(w-serv-orm 1.1.8 透傳): useCheckUser:true(未給 getUserById)時上列寫入皆失敗(自助註冊回 userRegistrationFailed, 清單儲存回 saveWriteFail)
 // 作法: 真後端(11007)以臨時 settings(useCheckUser:true、useExcludeWhenNotAdmin:true)重啟; SMTP 導向 127.0.0.1:1(註冊驗證信必敗而不外寄, 寄信失敗不阻斷註冊, 既有契約).
@@ -34,7 +34,7 @@ async function insertFixtures() {
     app.perms = ['writeUsers', 'writeTokens', 'writeIps']
     app.timeEnd = TIME_END
     //供刪除之金鑰列為應用系統金鑰列(isApp='y'): 不帶基準之清單儲存(此處 kpfun 直呼)只刪應用系統金鑰列, session 列(isApp 非 'y')不刪 (R-CONC-03, D3);
-    //管理員於後台刪除 session 列走帶基準之路徑(強制登出, e2e-tokens E2E-003 與 unit-saveBaseline SB-T06)
+    //系統管理者於後台刪除 session 列走帶基準之路徑(強制登出, e2e-tokens E2E-003 與 unit-saveBaseline SB-T06)
     let dels = ['del-a', 'del-b'].map((k) => {
         let t = ds.tokens.funNew({ userId: 'id-for-viewer', isApp: 'y' })
         t.id = `id-ormopts-${k}`
@@ -137,7 +137,7 @@ describe('部署設定給予 w-serv-orm 之使用者檢查(useCheckUser 等)時�
     })
 
 
-    it('ORMOPT-003 管理者儲存使用者清單照常; 更新者為管理者 id(修改前回 saveWriteFail)', async function() {
+    it('ORMOPT-003 系統管理者儲存使用者清單照常; 更新者為系統管理者 id(修改前回 saveWriteFail)', async function() {
         let rows = await getRowsForSave('users')
         rows.find((u) => u.id === 'id-for-viewer').description = 'desc-by-admin'
         let r = await callFapi('updateUsersList', ['token-for-admin', 'eng', rows])
@@ -159,7 +159,7 @@ describe('部署設定給予 w-serv-orm 之使用者檢查(useCheckUser 等)時�
     })
 
 
-    it('ORMOPT-005 管理者於金鑰清單刪除列照常(修改前回 saveWriteFail)', async function() {
+    it('ORMOPT-005 系統管理者於金鑰清單刪除列照常(修改前回 saveWriteFail)', async function() {
         let rows = (await getRowsForSave('tokens')).filter((t) => t.id !== 'id-ormopts-del-a')
         let r = await callFapi('updateTokensList', ['token-for-admin', 'eng', rows])
         assert.strict.equal(r.ok, true, JSON.stringify(r))
@@ -177,7 +177,7 @@ describe('部署設定給予 w-serv-orm 之使用者檢查(useCheckUser 等)時�
     })
 
 
-    it('ORMOPT-007 管理者於 IP 清單修改列照常(修改前回 saveWriteFail)', async function() {
+    it('ORMOPT-007 系統管理者於 IP 清單修改列照常(修改前回 saveWriteFail)', async function() {
         let rows = await getRowsForSave('ips')
         rows.find((v) => v.id === 'id-ormopts-ip').ip = '192.0.2.21'
         let r = await callFapi('updateIpsList', ['token-for-admin', 'eng', rows])

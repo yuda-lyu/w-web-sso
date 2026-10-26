@@ -6,7 +6,7 @@
 //     updateUsersList / adminResetUserPassword → writeUsers; getTokensList → readTokens; updateTokensList → writeTokens;
 //     getIpsList → readIps; updateIpsList → writeIps; getSta* 六支 → readStats
 //   - app token 缺權限 → 與非 admin 使用者同一對外 key 'tokenExpired'(ADR-006), 且不得有任何寫入副作用; srLog 記 appTokenPermDenied(含 perm)
-//   - 使用者 token 不受 perms 影響: admin 全通過, 非 admin 全拒(adminResetUserPassword 之管理員判定同其他管理入口, 非管理員同回 tokenExpired, S-2)
+//   - 使用者 token 不受 perms 影響: admin 全通過, 非 admin 全拒(adminResetUserPassword 之系統管理者判定同其他管理入口, 非系統管理者同回 tokenExpired, S-2)
 //   - 本檔之 app 呼叫者皆為系統服務用途(無 appUsage 之既有列視同系統服務用途, ADR-095); 使用者用途見 api-accessmatrix
 //   - 寫入 tokens.perms 須為未設定或已登錄權限字串之陣列(否則 reject 'tokenPermsInvalid'), 儲存時去重並依全集排序
 // 作法: 真後端(11007)。以 envOverride 令 SMTP 連 127.0.0.1:1(連線拒絕), adminResetUserPassword 寄信必敗而不外寄(寄信失敗不阻斷, 既有契約).
@@ -249,7 +249,7 @@ function expectOf(c, op) {
         return { ok: true }
     }
     if (c.kind === 'viewer') {
-        return { ok: false, err: 'tokenExpired' } //含 adminResetUserPassword: 管理員判定與其他管理入口相同(funCheckAdmin), 同回 tokenExpired (S-2)
+        return { ok: false, err: 'tokenExpired' } //含 adminResetUserPassword: 系統管理者判定與其他管理入口相同(funCheckAdmin), 同回 tokenExpired (S-2)
     }
     if (c.expect.includes(op.perm)) {
         return { ok: true }

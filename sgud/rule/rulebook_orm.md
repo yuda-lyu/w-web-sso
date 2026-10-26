@@ -33,14 +33,14 @@
   - Grep `clearXSS` 於 `server/` → 只在 procCore 之 `updateTabItems`(欄位檢查)與 `createUser`(三欄檢查).
 - **站點全集(2026-10-12)**: `updateTabItems`(users / tokens / ips 三清單)、`createUser`; 皆已套. 測試: `unit-ormWriteFail` A11～A22、B8; `api-adduser` API-011～013(以 HEAD 版 procCore 對真後端驗紅、修改後綠).
 
-### R-VAL-02: 後台使用者清單之 redir 檢查——只攔管理員本次新增或由非空改為空之列; 載入時即為空之既有列(自助註冊者)不擋存檔、不標警示(2026-10-23, sso-run04 第 116 項; ADR-094; 原則 3)
+### R-VAL-02: 後台使用者清單之 redir 檢查——只攔系統管理者本次新增或由非空改為空之列; 載入時即為空之既有列(自助註冊者)不擋存檔、不標警示(2026-10-23, sso-run04 第 116 項; ADR-094; 原則 3)
 
 - **規則**:
-  1. 前端 `errItemsByRedir` 只對「新增列(`_isNew`)redir 空」與「既有列 redir 由非空改為空」回錯(訊息 `userRedirEmpty`, 儲存格警示與 modal 文字不變); 載入時即為空之既有列不回錯. 比對基準 `redirOrig`(**Map**, 列主鍵 → redir 原值; 不用純物件, 因基準存於 Vue data, Vue 2 響應式會以 `__ob__` 鍵覆蓋同名主鍵之值)與 `baseline` 同一快照(載入、存檔成功後重讀)更新; 基準有效而列不在基準內且非新增者視為管理員所設, 嚴格檢查; **基準算不出(`null`, 重讀失敗)時只檢查新增列、不檢查既有列**——此時 baseline 亦為 null, 後端無基準之存檔一律拒收(`saveBaselineFormat`, 提示重新載入), 前端先擋既有列只會使使用者先看到不相干之訊息(外審 sol#3、#4).
+  1. 前端 `errItemsByRedir` 只對「新增列(`_isNew`)redir 空」與「既有列 redir 由非空改為空」回錯(訊息 `userRedirEmpty`, 儲存格警示與 modal 文字不變); 載入時即為空之既有列不回錯. 比對基準 `redirOrig`(**Map**, 列主鍵 → redir 原值; 不用純物件, 因基準存於 Vue data, Vue 2 響應式會以 `__ob__` 鍵覆蓋同名主鍵之值)與 `baseline` 同一快照(載入、存檔成功後重讀)更新; 基準有效而列不在基準內且非新增者視為系統管理者所設, 嚴格檢查; **基準算不出(`null`, 重讀失敗)時只檢查新增列、不檢查既有列**——此時 baseline 亦為 null, 後端無基準之存檔一律拒收(`saveBaselineFormat`, 提示重新載入), 前端先擋既有列只會使使用者先看到不相干之訊息(外審 sol#3、#4).
   2. 儲存格警示以**列主鍵**為鍵(`cellRedirErr(id)`), 不以 redir 值為鍵(空值為鍵會使所有空 redir 儲存格同時被標).
   3. 檢查邏輯在 `src/usersRedirCheck.mjs`(純函式, `redirOrigOfUsers` / `redirErrIdsOfUsers`); 元件只接線.
   4. 後端不驗 redir(本就如此, 不新增); 自助註冊不給預設 redir、不遷移既有資料(取捨見 ADR-094; 「預設 redir」與「modal 指出列」為待裁示選項, 兩者皆會動既有標準圖).
-- **理由**: 自助註冊者 redir 為空是設計事實(`createUser` 以 `funNew` 預設, 註冊流程無此欄; `view=user` / `view=backstage` 登入不需 redir); 規格(E2E-007 / E2E-008)只要求攔管理員本次輸入之空值, 前端規則範圍(全部列)大於規格; 一列之既有資料問題不得擋住整份清單之存檔.
+- **理由**: 自助註冊者 redir 為空是設計事實(`createUser` 以 `funNew` 預設, 註冊流程無此欄; `view=user` / `view=backstage` 登入不需 redir); 規格(E2E-007 / E2E-008)只要求攔系統管理者本次輸入之空值, 前端規則範圍(全部列)大於規格; 一列之既有資料問題不得擋住整份清單之存檔.
 - **盤點指令**:
   - Grep `errItemsByRedir|cellRedirErr|redirOrig` 於 `src/components/LayoutContentUsers.vue` → `errItemsByRedir` 只呼叫 `redirErrIdsOfUsers`、不自行逐列 `isestr(redir)`; `redirOrig` 於載入與存檔後重讀各設一次、重讀失敗清 `null`; redir 儲存格只用 `cellRedirErr`.
   - Grep `cellFieldErr\(` → 只剩 `'account'` / `'email'`(以值為鍵, K14 已套).

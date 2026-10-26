@@ -28,7 +28,7 @@ import { runBaselineCase, createBaselineGate, assertTextSpec, gridContentBox } f
 // 編號錨點: 對應 spec bullet 順序 (流程_後台重設使用者密碼.md). NNN 不重複, 新增 case 插末尾.
 // 涵蓋情境 (本檔為需 Playwright + baseline 之 UI cases; API 契約 cases 已遷至 test/api-resetpassword.test.mjs):
 //
-// 一、管理員觸發 — admin UI:
+// 一、系統管理者觸發 — admin UI:
 //   - E2E-001-admin-ui-modal-opened: 點 Reset password → CheckYesNo modal 開啟態
 //   - E2E-002-admin-ui-cancel-clean: 點 No → modal 關 + DB 不變 + 無 unhandled rejection
 //   - E2E-003-admin-ui-success-alert: 點 Yes → success alert + DB password 變 + isForceChangePw='y'
@@ -78,7 +78,7 @@ function bp(lang, name) {
 // ===================================================================
 
 let expectedSpecText = {
-    //=== 一、管理員觸發 (admin UI) ===
+    //=== 一、系統管理者觸發 (admin UI) ===
     'E2E-001-admin-ui-modal-opened': {
         //adminResetPasswordConfirm: 'Confirm to reset password for {account}?' / '確定對 {account} 重設密碼？'
         eng: { mode: 'text', value: 'Confirm to reset password for' },
@@ -104,7 +104,7 @@ let expectedSpecText = {
     'E2E-005-checkyes-prompt': {
         //userForceChangePwPrompt
         eng: { mode: 'text', value: 'Your password has been reset by the administrator' },
-        cht: { mode: 'text', value: '您的密碼已由管理員重設' },
+        cht: { mode: 'text', value: '您的密碼已由系統管理者重設' },
     },
     'E2E-006-force-form-expanded': {
         //userChangePasswordOldPassword (force form 展開, 應見舊密碼欄 label)
@@ -146,7 +146,7 @@ let expectedSpecText = {
     'E2E-012-logout-relogin-still-force': {
         //userForceChangePwPrompt (同 012, 因 logout 後重登仍見此 CheckYes)
         eng: { mode: 'text', value: 'Your password has been reset by the administrator' },
-        cht: { mode: 'text', value: '您的密碼已由管理員重設' },
+        cht: { mode: 'text', value: '您的密碼已由系統管理者重設' },
     },
 
     //=== 額外 ===

@@ -115,7 +115,7 @@ let expectedSpecText = {
     },
     'E2E-006-3-modal-cannot-delete-self': {
         eng: { mode: 'text', value: 'Admin cannot delete yourself' },
-        cht: { mode: 'text', value: '管理員不得刪除自己' },
+        cht: { mode: 'text', value: '系統管理者不得刪除自己' },
     },
     'E2E-007-1-target-row-selected': {
         // 勾 target 列後、trash 前: target 列還在表中且 checkbox 已勾選, 可見 target 帳號文字

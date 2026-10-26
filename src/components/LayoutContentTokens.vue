@@ -513,7 +513,7 @@ export default {
             itemsCheck: [],
             opt: null,
 
-            //應用系統權限清單: 基本權限恆勾選不可取消, 其餘可勾選, 可取得管理者權限者加註提示 (ADR-069)
+            //應用系統權限清單: 基本權限恆勾選不可取消, 其餘可勾選, 可取得系統管理者權限者加註提示 (ADR-069)
             keysAppPermBase,
             keysAppPermHigh,
             keysAppPermOpt: keysAppPerm.filter((p) => !keysAppPermBase.includes(p)),

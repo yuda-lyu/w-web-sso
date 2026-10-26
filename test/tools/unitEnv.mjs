@@ -7,7 +7,7 @@ import { mkOpt, buildProc, buildProtect, mkServ, mkSrLog, mkTable, mkProcOrm } f
 
 //unit 測試共用環境(多人同時編輯之寫入契約相關測試用): 真實 procCore / procProtect + 真實 w-serv-orm 表鎖(mkServ) + 替身資料表(mkTable),
 //不起 server、不碰資料庫. 固定種子:
-//  users:  u-admin(管理員, order 1)、u-a(order 2)、u-b(order 3)、u-v(未驗證, tokenVerify 'tv-1', order 4); 密碼皆為 PW_INIT
+//  users:  u-admin(系統管理者, order 1)、u-a(order 2)、u-b(order 3)、u-v(未驗證, tokenVerify 'tv-1', order 4); 密碼皆為 PW_INIT
 //  tokens: t-admin / t-a1 / t-b1 為 session 列(isApp 'n', 對應 tk-admin / tk-a1 / tk-b1), t-app1 / t-app2 為應用系統金鑰列(isApp 'y')
 //  ips:    ip-1 / ip-2
 

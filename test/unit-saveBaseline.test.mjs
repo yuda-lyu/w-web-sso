@@ -3,7 +3,7 @@
 // 依據:
 //   - 規格 C:\opensrcOper\dspec\多人同時編輯之寫入契約.md §3~§8、§13(V1~V14); 上位原則 process_principle.md 第 10 條
 //   - 規則帳本 sgud/rule/rulebook_concurrency.md R-CONC-01~05(tokens 採選項 P: app 列嚴格整表比對、session 列逐列寬鬆比對)
-// 真實 procCore / procProtect + 真實 w-serv-orm 表鎖與 procOrm + 替身資料表(test/tools/unitEnv.mjs); 管理員之「載入」走 p.getUsersList 等,
+// 真實 procCore / procProtect + 真實 w-serv-orm 表鎖與 procOrm + 替身資料表(test/tools/unitEnv.mjs); 系統管理者之「載入」走 p.getUsersList 等,
 // 基準以前端同一工具(src/baselineOf.mjs)自算, 與前端行為一致.
 // 命名: SB-U 使用者清單、SB-I IP 清單、SB-T 金鑰清單、SB-S 系統直寫與稽核; 每案註明對應之規格句 / 缺陷編號(E1、X1~X8, 見帳本「現存缺陷實證」).
 
@@ -15,7 +15,7 @@ import procLang from '../server/procLang.mjs'
 import { mkEnvSso, mkProtect, mkUser, mkToken, errOf, snapTables, writesAll, holdLocks, track, afterSelectDelete, sleep, PW_INIT, SALT } from './tools/unitEnv.mjs'
 
 
-//管理員「載入」: 取清單(password / tokenVerify 已剝除)與前端自算之基準
+//系統管理者「載入」: 取清單(password / tokenVerify 已剝除)與前端自算之基準
 let loadUsers = async (env) => {
     let rows = await env.p.getUsersList()
     rows.sort((a, b) => (a.order || 0) - (b.order || 0))
@@ -65,7 +65,7 @@ describe('使用者清單存檔 (users; 嚴格整表比對, 先動先贏)', func
         assert.strictEqual(writesAll(env), w0)
     })
 
-    it('SB-U02 [§6 只寫契約欄位] 基準相符時只寫管理員實際動過之列; 未動之列不寫(不戳記更新者, X2-f); 更新者記操作管理員', async function() {
+    it('SB-U02 [§6 只寫契約欄位] 基準相符時只寫系統管理者實際動過之列; 未動之列不寫(不戳記更新者, X2-f); 更新者記操作系統管理者', async function() {
         let env = mkEnvSso()
         let a = await loadUsers(env)
         env.users.log.save.length = 0
@@ -73,7 +73,7 @@ describe('使用者清單存檔 (users; 嚴格整表比對, 先動先贏)', func
         let ids = env.users.log.save.flat().map((r) => r.id)
         assert.deepStrictEqual(ids, ['u-a'], '只有被改之列進入寫入')
         assert.strictEqual(env.users.get('u-a').userIdUpdate, 'u-admin')
-        assert.strictEqual(env.users.get('u-b').userIdUpdate, '', '未動之列不被標為管理員最後修改')
+        assert.strictEqual(env.users.get('u-b').userIdUpdate, '', '未動之列不被標為系統管理者最後修改')
         //寫入列只含契約 fields(+ order): 不含伺服器專有欄位
         let w = env.users.log.save.flat()[0]
         assert.ok(!('password' in w) || w.password === undefined, '不寫 password')
@@ -136,7 +136,7 @@ describe('使用者清單存檔 (users; 嚴格整表比對, 先動先贏)', func
         assert.ok(env.users.get('u-a').timeBlocked !== '', '封鎖維持')
     })
 
-    it('SB-U07 [V5、X2-c、X2-d] 系統寫入伺服器專有欄位(重寄驗證信之 tokenVerify、變更密碼之 password)後, 管理員可存; 該欄維持系統所寫之值', async function() {
+    it('SB-U07 [V5、X2-c、X2-d] 系統寫入伺服器專有欄位(重寄驗證信之 tokenVerify、變更密碼之 password)後, 系統管理者可存; 該欄維持系統所寫之值', async function() {
         let env = mkEnvSso()
         let a = await loadUsers(env)
         await env.p.resendVerifyEmail('eng', 'vuser', 'vuser@example.com')
@@ -151,7 +151,7 @@ describe('使用者清單存檔 (users; 嚴格整表比對, 先動先贏)', func
         assert.strictEqual(env.users.get('u-a').password, pwNew, 'password 維持系統所寫')
     })
 
-    it('SB-U08 [V4、X2-c] 管理員重設密碼(isForceChangePw → y, 雙方欄位)後, 持舊畫面存檔者被拒; 強制變更旗標不被舊值蓋回', async function() {
+    it('SB-U08 [V4、X2-c] 系統管理者重設密碼(isForceChangePw → y, 雙方欄位)後, 持舊畫面存檔者被拒; 強制變更旗標不被舊值蓋回', async function() {
         let env = mkEnvSso()
         let a = await loadUsers(env)
         await env.p.adminResetUserPassword('tk-admin', 'eng', 'u-b')
@@ -242,7 +242,7 @@ describe('使用者清單存檔 (users; 嚴格整表比對, 先動先贏)', func
         assert.strictEqual(await errOf(saveUsers(env, rows, { baseline: [] })), 'saveStale')
     })
 
-    it('SB-U13 [X8、§7 鎖] 自助註冊與管理員清單新增同帳號並行: 恰一方成功, 帳號不重複(createUser 入 users 表鎖並於鎖內驗唯一)', async function() {
+    it('SB-U13 [X8、§7 鎖] 自助註冊與系統管理者清單新增同帳號並行: 恰一方成功, 帳號不重複(createUser 入 users 表鎖並於鎖內驗唯一)', async function() {
         for (let order of ['createUser先', '清單新增先']) {
             let env = mkEnvSso()
             let a = await loadUsers(env)
@@ -293,7 +293,7 @@ describe('使用者清單存檔 (users; 嚴格整表比對, 先動先贏)', func
         assert.ok(out.every((r) => !('tokenVerify' in r) && !('password' in r)))
     })
 
-    it('SB-U16 [修改只改不增、深度防禦] 管理員存檔讀取後、寫入前列被不經表鎖之寫入者刪除: 拒絕(saveWriteFail)且不新增殘缺列', async function() {
+    it('SB-U16 [修改只改不增、深度防禦] 系統管理者存檔讀取後、寫入前列被不經表鎖之寫入者刪除: 拒絕(saveWriteFail)且不新增殘缺列', async function() {
         let env = mkEnvSso()
         let a = await loadUsers(env)
         let restore = afterSelectDelete(env.users, 'u-a')
@@ -383,7 +383,7 @@ describe('IP 清單存檔 (ips; 嚴格整表比對)', function() {
         let err = await errOf(saveIps(env, mapRows(b.rows, 'ip-2', (r) => ({ ...r, ip: '10.9.9.2' })), { baseline: b.baseline }))
         assert.strictEqual(err, 'saveStale')
         assert.deepStrictEqual(snapTables(env), snap)
-        assert.strictEqual(env.ips.get('ip-1').userIdUpdate, 'u-admin', 'ips 補 userIdUpdate: 後台存檔記操作管理員')
+        assert.strictEqual(env.ips.get('ip-1').userIdUpdate, 'u-admin', 'ips 補 userIdUpdate: 後台存檔記操作系統管理者')
         assert.notStrictEqual(env.ips.get('ip-2').userIdUpdate, 'u-admin', '未動之列不戳記')
     })
 
@@ -450,11 +450,11 @@ describe('金鑰清單存檔 (tokens; 選項 P: app 列嚴格整表比對、sess
         assert.strictEqual(err, 'saveStale')
         assert.deepStrictEqual(snapTables(env), snap)
         assert.deepStrictEqual(env.tokens.get('t-app1').perms, ['readIps'])
-        assert.strictEqual(env.tokens.get('t-app1').userIdUpdate, 'u-admin', 'tokens 補 userIdUpdate: 後台存檔記操作管理員(updateTokensList 傳入 operatorId)')
+        assert.strictEqual(env.tokens.get('t-app1').userIdUpdate, 'u-admin', 'tokens 補 userIdUpdate: 後台存檔記操作系統管理者(updateTokensList 傳入 operatorId)')
         assert.strictEqual(env.tokens.get('t-app1').userId, 'id-app-1', '擁有者 userId 不被操作者覆寫')
     })
 
-    it('SB-T02 [E1] 載入後才登入之 session token: 管理員存檔(只改 app 權杖權限)後該 token 仍有效, 不被刪', async function() {
+    it('SB-T02 [E1] 載入後才登入之 session token: 系統管理者存檔(只改 app 權杖權限)後該 token 仍有效, 不被刪', async function() {
         let env = mkEnvSso()
         let a = await loadTokens(env)
         let r = await env.p.loginByAccountAndPassword('buser', PW_INIT) //載入後才登入
@@ -464,7 +464,7 @@ describe('金鑰清單存檔 (tokens; 選項 P: app 列嚴格整表比對、sess
         assert.ok([...env.tokens.kp.values()].some((t) => t.token === r.token))
     })
 
-    it('SB-T03 [X1 安全: 撤銷不得被繞過] 載入後被登出或被自動封鎖撤銷之 session token: 管理員存舊清單後不復活', async function() {
+    it('SB-T03 [X1 安全: 撤銷不得被繞過] 載入後被登出或被自動封鎖撤銷之 session token: 系統管理者存舊清單後不復活', async function() {
         let env = mkEnvSso()
         let { pp } = mkProtect(env)
         let a = await loadTokens(env)
@@ -476,24 +476,24 @@ describe('金鑰清單存檔 (tokens; 選項 P: app 列嚴格整表比對、sess
         assert.strictEqual(env.tokens.get('t-a1'), undefined)
         assert.strictEqual(env.tokens.get('t-b1'), undefined)
         await saveTokens(env, mapRows(a.rows, 't-app1', (x) => ({ ...x, perms: ['readIps'] })), { baseline: a.baseline, baselineSession: a.baselineSession })
-        assert.deepStrictEqual(env.tokens.get('t-app1').perms, ['readIps'], '管理員之修改已存')
+        assert.deepStrictEqual(env.tokens.get('t-app1').perms, ['readIps'], '系統管理者之修改已存')
         assert.strictEqual(env.tokens.get('t-a1'), undefined, '已登出之 token 不復活')
         assert.strictEqual(env.tokens.get('t-b1'), undefined, '已被封鎖撤銷之 token 不復活')
         assert.strictEqual(await errOf(env.p.checkToken('tk-a1')), 'tokenExpired')
         assert.strictEqual(await errOf(env.p.checkToken('tk-b1')), 'tokenExpired')
     })
 
-    it('SB-T04 [X7] 載入後被續期之 session token: 管理員存檔後 timeEnd 維持續期後之值(不被舊值蓋回)', async function() {
+    it('SB-T04 [X7] 載入後被續期之 session token: 系統管理者存檔後 timeEnd 維持續期後之值(不被舊值蓋回)', async function() {
         let env = mkEnvSso()
         let a = await loadTokens(env)
         let tNew = await env.p.refreshToken('tk-a1')
         assert.notStrictEqual(tNew, rowOf(a.rows, 't-a1').timeEnd)
         await saveTokens(env, mapRows(a.rows, 't-app1', (x) => ({ ...x, perms: ['readIps'] })), { baseline: a.baseline, baselineSession: a.baselineSession })
-        assert.strictEqual(env.tokens.get('t-a1').timeEnd, tNew, '管理員未動之 session 列不寫')
+        assert.strictEqual(env.tokens.get('t-a1').timeEnd, tNew, '系統管理者未動之 session 列不寫')
         assert.strictEqual(env.tokens.get('t-a1').userIdUpdate, 'u-a', 'refreshToken 記 token 擁有者')
     })
 
-    it('SB-T05 [管理員有動且庫內已變者拒收] 改了 session 列、而該列於載入後被續期 → 整次拒收, 零寫入; 庫內未變則可存', async function() {
+    it('SB-T05 [系統管理者有動且庫內已變者拒收] 改了 session 列、而該列於載入後被續期 → 整次拒收, 零寫入; 庫內未變則可存', async function() {
         let env = mkEnvSso()
         let a = await loadTokens(env)
         let tEdit = '2031-01-01T00:00:00.000+08:00'
@@ -509,19 +509,19 @@ describe('金鑰清單存檔 (tokens; 選項 P: app 列嚴格整表比對、sess
         assert.deepStrictEqual(snapTables(env), snap)
     })
 
-    it('SB-T06 [E2E-003 強制登出] 管理員刪除 session 列 → 該 token 失效(行為不變); 已被登出者之刪除冪等; 已被續期者之刪除拒收', async function() {
+    it('SB-T06 [E2E-003 強制登出] 系統管理者刪除 session 列 → 該 token 失效(行為不變); 已被登出者之刪除冪等; 已被續期者之刪除拒收', async function() {
         let env = mkEnvSso()
         let a = await loadTokens(env)
         await saveTokens(env, a.rows.filter((r) => r.id !== 't-a1'), { baseline: a.baseline, baselineSession: a.baselineSession })
         assert.strictEqual(env.tokens.get('t-a1'), undefined)
         assert.strictEqual(await errOf(env.p.checkToken('tk-a1')), 'tokenExpired')
         assert.ok(env.tokens.get('t-b1'), '他列不受影響')
-        //冪等: 載入後 u-b 自行登出, 管理員同時刪除該列
+        //冪等: 載入後 u-b 自行登出, 系統管理者同時刪除該列
         let b = await loadTokens(env)
         await env.p.logoutByToken('tk-b1')
         await saveTokens(env, b.rows.filter((r) => r.id !== 't-b1'), { baseline: b.baseline, baselineSession: b.baselineSession })
         assert.strictEqual(env.tokens.get('t-b1'), undefined)
-        //庫內已變: 載入後 admin 之 session 被續期, 管理員要刪它 → 拒收
+        //庫內已變: 載入後 admin 之 session 被續期, 系統管理者要刪它 → 拒收
         let c = await loadTokens(env)
         await env.p.refreshToken('tk-admin')
         let err = await errOf(saveTokens(env, c.rows.filter((r) => r.id !== 't-admin'), { baseline: c.baseline, baselineSession: c.baselineSession }))
@@ -529,7 +529,7 @@ describe('金鑰清單存檔 (tokens; 選項 P: app 列嚴格整表比對、sess
         assert.ok(env.tokens.get('t-admin'))
     })
 
-    it('SB-T07 [ADR-095 升級路徑關閉] 管理員將 session 列勾為應用系統金鑰: 帶或不帶基準皆整次拒收 tokenSessionUpgradeNotAllowed, 零寫入; 應用系統金鑰列反向改回登入權杖亦拒收 tokenAppLocked', async function() {
+    it('SB-T07 [ADR-095 升級路徑關閉] 系統管理者將 session 列勾為應用系統金鑰: 帶或不帶基準皆整次拒收 tokenSessionUpgradeNotAllowed, 零寫入; 應用系統金鑰列反向改回登入權杖亦拒收 tokenAppLocked', async function() {
         let env = mkEnvSso()
         let a = await loadTokens(env)
         let snap = snapTables(env)
@@ -578,7 +578,7 @@ describe('金鑰清單存檔 (tokens; 選項 P: app 列嚴格整表比對、sess
         assert.deepStrictEqual(snapTables(env), snap, '零寫入')
     })
 
-    it('SB-T14 [外審 sol#5] 管理員未動、已不在庫內之 session 列帶毀損 perms: 不阻擋其他列之合法修改; 將寫入之列仍驗 perms', async function() {
+    it('SB-T14 [外審 sol#5] 系統管理者未動、已不在庫內之 session 列帶毀損 perms: 不阻擋其他列之合法修改; 將寫入之列仍驗 perms', async function() {
         let env = mkEnvSso()
         env.tokens.kp.set('t-b1', { ...env.tokens.get('t-b1'), perms: 'broken' }) //舊資料毀損值(字串)之 session
         let a = await loadTokens(env)
@@ -686,7 +686,7 @@ describe('金鑰清單存檔 (tokens; 選項 P: app 列嚴格整表比對、sess
         assert.strictEqual(err, 'tokenPermsInvalid')
         await saveTokens(env, mapRows(a.rows, 't-app1', (x) => ({ ...x, perms: ['readStats', 'readTokens', 'readStats'] })), { baseline: a.baseline, baselineSession: a.baselineSession })
         assert.deepStrictEqual(env.tokens.get('t-app1').perms, ['readTokens', 'readStats'])
-        assert.strictEqual(env.tokens.get('t-app2').perms, 'writeUsers', '管理員未動之毀損值列不寫(帶基準)')
+        assert.strictEqual(env.tokens.get('t-app2').perms, 'writeUsers', '系統管理者未動之毀損值列不寫(帶基準)')
     })
 
     //以下 SB-T16~T19: 清單存檔不得新增庫內不存在之 session 列(isApp !== 'y'; ADR-092). 修改前(只收回、不放寬): 不帶基準送回已被登出 / 封鎖撤銷之 session 列被當新增寫回而復活
@@ -721,7 +721,7 @@ describe('金鑰清單存檔 (tokens; 選項 P: app 列嚴格整表比對、sess
         assert.ok(env.srLog.logs.warn.some((l) => l.key === 'tokenSessionAddNotAllowed'), 'srLog.warn 帶拒收 key')
     })
 
-    it('SB-T17[ADR-092 X1 補強: 帶基準] 基準之外之 session 列(庫內不存在)送入: 整次拒收 tokenSessionAddNotAllowed, 零寫入; 基準內管理員未動而已被撤銷者仍照舊略過(不拒收、不復活)', async function() {
+    it('SB-T17[ADR-092 X1 補強: 帶基準] 基準之外之 session 列(庫內不存在)送入: 整次拒收 tokenSessionAddNotAllowed, 零寫入; 基準內系統管理者未動而已被撤銷者仍照舊略過(不拒收、不復活)', async function() {
         let env = mkEnvSso()
         let a = await loadTokens(env)
         await env.p.logoutByToken('tk-a1')
@@ -732,7 +732,7 @@ describe('金鑰清單存檔 (tokens; 選項 P: app 列嚴格整表比對、sess
         assert.strictEqual(err, 'tokenSessionAddNotAllowed')
         assert.deepStrictEqual(snapTables(env), snap, '零寫入')
         assert.strictEqual(await errOf(env.p.checkToken('tk-a1')), 'tokenExpired')
-        //基準內(載入時尚在)、管理員未動、其後被撤銷者: 略過不拒收(SB-T03 同, 此處以基準含該列驗證守門不誤擋)
+        //基準內(載入時尚在)、系統管理者未動、其後被撤銷者: 略過不拒收(SB-T03 同, 此處以基準含該列驗證守門不誤擋)
         await env.p.logoutByToken('tk-b1')
         await saveTokens(env, mapRows(b.rows, 't-app1', (x) => ({ ...x, perms: ['readIps'] })), optOf(b))
         assert.deepStrictEqual(env.tokens.get('t-app1').perms, ['readIps'])
@@ -850,7 +850,7 @@ describe('系統直寫: 只改不增、稽核、與表鎖', function() {
         assert.strictEqual(env2.ips.get('ip-1'), undefined)
     })
 
-    it('SB-S04 [R-CONC-04] 稽核: 使用者自助流程記該使用者、重設密碼記操作管理員、登入新增 token 記擁有者', async function() {
+    it('SB-S04 [R-CONC-04] 稽核: 使用者自助流程記該使用者、重設密碼記操作系統管理者、登入新增 token 記擁有者', async function() {
         let env = mkEnvSso()
         await env.p.verifyEmail('tv-1')
         assert.strictEqual(env.users.get('u-v').userIdUpdate, 'u-v', 'verifyEmail 記該使用者')
@@ -860,7 +860,7 @@ describe('系統直寫: 只改不增、稽核、與表鎖', function() {
         assert.notStrictEqual(envR.users.get('u-v').tokenVerify, 'tv-1', 'resendVerifyEmail 已更新驗證碼')
         assert.strictEqual(envR.users.get('u-v').userIdUpdate, 'u-v', 'resendVerifyEmail 記該使用者')
         await env.p.adminResetUserPassword('tk-admin', 'eng', 'u-b')
-        assert.strictEqual(env.users.get('u-b').userIdUpdate, 'u-admin', '重設密碼記操作管理員')
+        assert.strictEqual(env.users.get('u-b').userIdUpdate, 'u-admin', '重設密碼記操作系統管理者')
         await env.p.checkTokenAndChangePassword('tk-a1', 'eng', PW_INIT, 'New@5678')
         assert.strictEqual(env.users.get('u-a').userIdUpdate, 'u-a', '變更密碼記該使用者')
         let r = await env.p.loginByAccountAndPassword('admin1', PW_INIT)
@@ -1022,7 +1022,7 @@ describe('系統直寫: 只改不增、稽核、與表鎖', function() {
 
 describe('並行(V14): 比對與寫入間插不進他人寫入', function() {
 
-    it('SB-C01 [V14、X6] 兩位管理員同時存 IP 清單: 後到者必在先到者完成後才讀取; 結果等於某一串行順序', async function() {
+    it('SB-C01 [V14、X6] 兩位系統管理者同時存 IP 清單: 後到者必在先到者完成後才讀取; 結果等於某一串行順序', async function() {
         let env = mkEnvSso()
         let log = []
         let origSelect = env.ips.select
@@ -1055,7 +1055,7 @@ describe('並行(V14): 比對與寫入間插不進他人寫入', function() {
         assert.ok(iFirstInsert >= 0 && iSecondRead > iFirstInsert, `第二次讀取在第一次寫入之後: ${log.join(' → ')}`)
     })
 
-    it('SB-C02 [V14] 管理員存檔讀取後暫停時, 系統直寫雙方欄位(帳號封鎖)等待; 放行後完成', async function() {
+    it('SB-C02 [V14] 系統管理者存檔讀取後暫停時, 系統直寫雙方欄位(帳號封鎖)等待; 放行後完成', async function() {
         let env = mkEnvSso()
         let { pp } = mkProtect(env)
         let a = await loadUsers(env)
@@ -1071,7 +1071,7 @@ describe('並行(V14): 比對與寫入間插不進他人寫入', function() {
         let armed = true
         env.users.select = async (...x) => {
             let r = await orig.apply(env.users, x)
-            //只在管理員存檔於表鎖內之整表讀取(無條件 select())暫停; 鎖外之操作者查詢(帶條件)不暫停
+            //只在系統管理者存檔於表鎖內之整表讀取(無條件 select())暫停; 鎖外之操作者查詢(帶條件)不暫停
             if (armed && x.length === 0) {
                 armed = false
                 entered()
@@ -1088,12 +1088,12 @@ describe('並行(V14): 比對與寫入間插不進他人寫入', function() {
             }
         })())
         await sleep(80)
-        assert.strictEqual(env.users.get('u-b').timeBlocked, '', '管理員存檔持鎖期間封鎖不得先寫')
+        assert.strictEqual(env.users.get('u-b').timeBlocked, '', '系統管理者存檔持鎖期間封鎖不得先寫')
         assert.ok(!block.state.done)
         gate()
         await save.pm
         await block.pm
-        assert.ok(save.state.ok, '管理員存檔先到, 成功')
+        assert.ok(save.state.ok, '系統管理者存檔先到, 成功')
         assert.ok(env.users.get('u-b').timeBlocked !== '', '放行後封鎖寫入')
         env.users.select = orig
     })

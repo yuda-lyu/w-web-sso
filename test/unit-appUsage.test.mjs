@@ -130,7 +130,7 @@ describe('procCore 之身分解析與用途語意 (ADR-095)', function() {
         addApp(env, 't-bad', 'weird', 'u-admin', { perms: ['readIps'] })
         let gate = (tk) => errOf(env.p.checkToken(tk, { fun: isAdminFun, perm: 'readIps' }))
         assert.strictEqual(await gate('tk-t-au-n'), 'tokenExpired', '綁一般使用者: 管理服務不可')
-        assert.strictEqual(await gate('tk-t-au-y'), null, '綁管理員: 管理服務可(即使 perms 為空)')
+        assert.strictEqual(await gate('tk-t-au-y'), null, '綁系統管理者: 管理服務可(即使 perms 為空)')
         assert.strictEqual(await gate('tk-t-as-r'), null, '系統服務用途具 readIps')
         assert.strictEqual(await errOf(env.p.checkToken('tk-t-as-r', { fun: isAdminFun, perm: 'readTokens' })), 'tokenExpired', '缺 perm')
         assert.strictEqual(await gate('tk-t-bad'), 'tokenExpired', '未登錄之用途值')

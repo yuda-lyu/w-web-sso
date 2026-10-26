@@ -750,7 +750,7 @@ export default {
             return kpErr
         },
 
-        //redir(登入後轉址)檢查, 鍵為列主鍵 id (R-VAL-02, ADR-094): 只攔下管理員本次新增或由非空改為空之列;
+        //redir(登入後轉址)檢查, 鍵為列主鍵 id (R-VAL-02, ADR-094): 只攔下系統管理者本次新增或由非空改為空之列;
         //載入時即為空之既有列(如自助註冊者)不擋存檔、不標警示——一列之既有資料問題不得擋住整份清單之存檔
         errItemsByRedir: function() {
             let vo = this

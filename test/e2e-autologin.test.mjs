@@ -10,7 +10,7 @@ import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertB
 import { runBaselineCase, createBaselineGate, pageHasText, collectDomText } from './tools/e2eLib.mjs'
 import { mdiChartBoxOutline } from '@mdi/js/mdi.js'
 
-//後台之紅框框左側選單可見項目之聯集（backstageMenuBox，見 e2e-setup；2026-09-28 改：原框整個抽屜，非管理者只有 1 項卻框整欄）
+//後台之紅框框左側選單可見項目之聯集（backstageMenuBox，見 e2e-setup；2026-09-28 改：原框整個抽屜，非系統管理者只有 1 項卻框整欄）
 const menuItemsBox = backstageMenuBox
 
 
@@ -521,7 +521,7 @@ let cases = [
         // mmUserInfor menu (LayoutContent isAdmin filter 阻擋 admin-only menu 與 admin-only API).
         // 對應 LayoutContent.vue: isAdmin computed + menus.adminOnly flag 過濾 + mounted hook
         // 設 menuKey='mmUserInfor'. 議題 1 fix 驗 (commit 5006ac0).
-        // 框左側選單可見項目之聯集（非管理者僅「使用者資訊」一項；確認無 admin-only 項目），範圍為 sidebar 抽屜 [ev-stable]。
+        // 框左側選單可見項目之聯集（非系統管理者僅「使用者資訊」一項；確認無 admin-only 項目），範圍為 sidebar 抽屜 [ev-stable]。
         name: 'E2E-009-ok-backstage-nonadmin',
         title: 'E2E-009-ok-backstage-nonadmin: 非 admin token + view=backstage → 停留 backstage 但僅 UserInfor (LayoutContent isAdmin filter)',
         run: (page, lang) => autoLoginScreenshot(page, lang, { name: 'E2E-009-ok-backstage-nonadmin', token: userTokens['id-autologin-ok'], viewParam: 'backstage', boxTarget: menuItemsBox() }),

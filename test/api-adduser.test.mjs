@@ -216,8 +216,8 @@ describe('AddUser API — updateUsersList 拒絕情境與副作用', function() 
         await woItems.users.del({ id: u.id }).catch(() => {})
     })
 
-    it('API-010-new-admin-passes-admin-gate: admin 新建之管理者帳號可通過管理權限閘(funCheckAdmin)', async function() {
-        //對應 spec 規則: 後台建帳即視為已驗證; 設為管理者者應可使用後台管理 API.
+    it('API-010-new-admin-passes-admin-gate: admin 新建之系統管理者帳號可通過管理權限閘(funCheckAdmin)', async function() {
+        //對應 spec 規則: 後台建帳即視為已驗證; 設為系統管理者者應可使用後台管理 API.
         //修正前 timeVerified 為秒級格式, s.checkUserAdmin → getIsVerified(istimemsTZ) 為 false → 管理 API 一律拒絕
         let newAccount = 'ap-au-newadmin'
         let rawPw = 'Pw@KLMN5678'
@@ -227,14 +227,14 @@ describe('AddUser API — updateUsersList 拒絕情境與副作用', function() 
         assert.strict.equal(r.ok, true, `預期 resolve, 實際 reject: ${r.err}`)
 
         let u = (await woItems.users.select({ account: newAccount }))[0]
-        assert.strict.equal(!!u, true, '新管理者應已建立')
+        assert.strict.equal(!!u, true, '新系統管理者應已建立')
 
-        //為新管理者建權杖, 以其權杖呼叫需管理者之 getUsersList
+        //為新系統管理者建權杖, 以其權杖呼叫需系統管理者之 getUsersList
         let t = ds.tokens.funNew({ userId: u.id })
         t.timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
         await woItems.tokens.insert([t])
         let r2 = await callFapi('getUsersList', [t.token])
-        assert.strict.equal(r2.ok, true, `新管理者應可呼叫管理 API, 實際 reject: ${r2.err}`)
+        assert.strict.equal(r2.ok, true, `新系統管理者應可呼叫管理 API, 實際 reject: ${r2.err}`)
 
         await woItems.tokens.del({ id: t.id }).catch(() => {})
         await woItems.users.del({ id: u.id }).catch(() => {})

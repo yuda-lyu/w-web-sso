@@ -13,9 +13,9 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 ## Security: token 入口與呼叫者(2026-10-24)
 
-後端以 token 授權之入口，依呼叫者之通過（✓）與拒絕（✗；對外一律固定鍵 `tokenExpired`，除註明者）整理如下。呼叫者：**無**＝未帶 token；**使用者**＝一般使用者之登入 token；**管理員**＝管理者之登入 token；**用途·使用者**＝使用者用途之應用系統金鑰（綁一般使用者／綁管理員，授權同所綁使用者之登入 token）；**用途·系統**＝系統服務用途之應用系統金鑰（依 `perms`；基本權限 `readUsers` 恆具備）。使用者目前之狀態（已驗證、未封鎖、帳號未到期、未停用）於每次使用時判定；系統服務用途不受建立者狀態影響。
+後端以 token 授權之入口，依呼叫者之通過（✓）與拒絕（✗；對外一律固定鍵 `tokenExpired`，除註明者）整理如下。呼叫者：**無**＝未帶 token；**使用者**＝一般使用者之登入 token；**系統管理者**＝系統管理者之登入 token；**用途·使用者**＝使用者用途之應用系統金鑰（綁一般使用者／綁系統管理者，授權同所綁使用者之登入 token）；**用途·系統**＝系統服務用途之應用系統金鑰（依 `perms`；基本權限 `readUsers` 恆具備）。使用者目前之狀態（已驗證、未封鎖、帳號未到期、未停用）於每次使用時判定；系統服務用途不受建立者狀態影響。
 
-| 入口 | 無 | 使用者 | 管理員 | 用途·使用者(綁一般) | 用途·使用者(綁管理員) | 用途·系統(具 perm) | 用途·系統(缺 perm) |
+| 入口 | 無 | 使用者 | 系統管理者 | 用途·使用者(綁一般) | 用途·使用者(綁系統管理者) | 用途·系統(具 perm) | 用途·系統(缺 perm) |
 |---|---|---|---|---|---|---|---|
 | `checkToken`、`logoutByToken`、`logoutSsoUser`（HTTP／函數） | ✗ | ✓ 本人 | ✓ 本人 | ✓ 本 token | ✓ 本 token | ✓ 本 token | ✓ 本 token |
 | `refreshToken` | ✗ | ✓ | ✓ | ✗ `tokenAppNoRefresh` | ✗ `tokenAppNoRefresh` | ✗ `tokenAppNoRefresh` | ✗ `tokenAppNoRefresh` |
@@ -50,7 +50,7 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 - **`[sys:getTableTags]` 對任何呼叫者恆被拒絕**：本套件 `getUserIdByToken` 恆回空字串（各 kpfun 自行以明確 token 參數驗證，未改變），無從以身分放行；前端元件開機流程仍會呼叫一次（開機時尚無 token），被拒絕不影響已擷取之頁面（登入、申請帳號、重寄驗證信畫面與登入後後台各頁；瀏覽器主控台無錯誤）。依賴此函數取得同步表資訊者（本套件無同步表，預期無人）將收到 `permission denied`。`sysFuncsPublic` 只管這三個系統函數，不影響 kpfun。
 - **伺服端每個前端連線開機會多一則 `error` 事件**（內容 `{ msg: 'permission denied', func: '[sys:getTableTags]' }`；匿名者直接呼叫可超過此數）：範例 `srv.mjs` 之 `on('error')` 會 `console.log` 印出；未掛 `error` 監聽者時 `w-serv-hapi` 改以 `console.error` 輸出，故任何部署都會有輸出，屬預期。過濾請同時比對 `msg` 與 `func`，勿一律略過 `permission denied`。此事件不進 `srLog`。
 - **`[sys:polling]` 公開之前提是本套件不廣播**：`WWebSso` 回傳之實例可經 `getInstWConverServer().broadcast(...)` 推送內容，該內容會送到所有（含未登入）輪詢者；嵌入端不得以此推送非公開內容。
-- **已發布之舊版前端元件照常可用**：舊元件輪詢不帶 token 鍵，視為無身分，`[sys:polling]` 公開故放行；其 `[sys:getTableTags]` 同樣被拒。以真舊版框架用戶端（w-serv-hapi 1.1.7／w-serv-webdata 1.1.15／w-serv-broadcast 1.1.10）對本版後端開機實測（未登入與帶管理員 token 各一次）：開機完成、`getWebInfor` 與帶明確 token 之 `getUsersList` 可用，用戶端僅收到一則 `[sys:getTableTags]` 之 `permission denied` 事件（尚未以已發布之舊版建置檔跑整頁瀏覽器擷取）。
+- **已發布之舊版前端元件照常可用**：舊元件輪詢不帶 token 鍵，視為無身分，`[sys:polling]` 公開故放行；其 `[sys:getTableTags]` 同樣被拒。以真舊版框架用戶端（w-serv-hapi 1.1.7／w-serv-webdata 1.1.15／w-serv-broadcast 1.1.10）對本版後端開機實測（未登入與帶系統管理者 token 各一次）：開機完成、`getWebInfor` 與帶明確 token 之 `getUsersList` 可用，用戶端僅收到一則 `[sys:getTableTags]` 之 `permission denied` 事件（尚未以已發布之舊版建置檔跑整頁瀏覽器擷取）。
 - **下游專案**（w-web-perm／w-web-api／w-web-task 等）：本套件提供之 helper（`getUserByToken` 等）以 HTTP GET `/api/getSsoUserInfor` 反查，不經框架用戶端，不受影響；自行以框架用戶端連線本套件者，僅 `[sys:getFuncList]`、`[sys:polling]` 可用，且每次開機會收到一則 `[sys:getTableTags]` 之拒絕（未逐一檢視各下游之原始碼）。
 - 日後若新增同步表或廣播內容，須重新評估 `[sys:polling]` 之公開（`test/unit-sysfuncs-premise.test.mjs` 靜態守護此前提）。新增測試：`test/api-sysfuncs.test.mjs`（SF-01~06，`sysFuncsPublic` 之變異守護）、`test/unit-sysfuncs-premise.test.mjs`（SP-01~05）。
 
@@ -60,9 +60,9 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 | | 使用者用途（`appUsage='user'`） | 系統服務用途（`appUsage='system'`） |
 |---|---|---|
-| 代表 | 所綁定之一位既有啟用使用者本人（`userId` 即所綁使用者，可綁管理員） | 外部應用系統本身，不綁使用者（`userId` 僅記建立者供稽核） |
-| 授權 | 同該使用者之登入權杖（含管理入口之管理者判準），不適用 `perms` | 依 `perms`（ADR-069，預設只有 `readUsers`） |
-| 可用性 | 每次使用即時依所綁使用者目前狀態判定（存在、啟用、未封鎖、帳號未到期、已驗證），不符即不可用，狀態恢復後可再用 | 不隨建立者之停用、刪除、封鎖而失效；由管理員於後台撤銷 |
+| 代表 | 所綁定之一位既有啟用使用者本人（`userId` 即所綁使用者，可綁系統管理者） | 外部應用系統本身，不綁使用者（`userId` 僅記建立者供稽核） |
+| 授權 | 同該使用者之登入權杖（含管理入口之系統管理者判準），不適用 `perms` | 依 `perms`（ADR-069，預設只有 `readUsers`） |
+| 可用性 | 每次使用即時依所綁使用者目前狀態判定（存在、啟用、未封鎖、帳號未到期、已驗證），不符即不可用，狀態恢復後可再用 | 不隨建立者之停用、刪除、封鎖而失效；由系統管理者於後台撤銷 |
 | `getUserByToken`／`/api/getSsoUserInfor?key=token` 回傳 | 所綁使用者之真實資料，`isApp='y'` | 應用系統身分：`id=app:<金鑰主鍵>`、`name=金鑰名稱`、`isApp='y'`、`isAdmin='y'`，其餘為占位字串 |
 | `changeUserPassword` | 可（仍須舊密碼，作用於所綁使用者） | 不可（`tokenUserOnly`） |
 
@@ -78,14 +78,14 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
   - **升級後仍需要某把已失效之舊金鑰者，請於後台以「新增應用系統金鑰」重新核發**（不提供復原已失效之列）。
 - **新增方式改為 `createAppToken`（後台「金鑰清單」之「新增應用系統金鑰」鈕）**：填名稱（1～60 字）、選用途；使用者用途須選一位啟用中之使用者，系統服務用途勾選權限；權杖字串由伺服端產生。金鑰清單存檔（`updateTokensList`）**不再能新增應用系統金鑰**（`tokenAppAddNotAllowed`），**不再能把登入權杖勾選升級為應用系統金鑰**（`tokenSessionUpgradeNotAllowed`；後台「是否為應用系統金鑰」欄改為唯讀），應用系統金鑰之金鑰字串、所綁使用者、用途、名稱、到期時間建立後不可變更（`tokenAppLocked`），使用者用途不可帶 `perms`（`tokenAppPermsNotForUser`）；清單存檔仍可修改系統服務用途之權限與刪除金鑰。**直打 API 以清單鑄造應用系統金鑰之舊用法須改為呼叫 `createAppToken`**。
 - **停用或刪除使用者時之撤銷範圍**：撤銷該使用者之登入權杖與**綁定該使用者之使用者用途金鑰**（刪列，重新啟用後不恢復，須重新核發）；系統服務用途金鑰（含建立者欄為該使用者者）不撤銷。使用者被封鎖（含自動封鎖）、帳號到期、未驗證時，使用者用途金鑰不刪列，只是即時不可用，狀態恢復後可再用。
-- **對外查詢之授權判準**：以使用者用途金鑰呼叫對外查詢、後台入口者，授權同所綁使用者（綁一般使用者者不具管理服務）；使用者用途金鑰綁管理員時，同樣受「不得停用／降權／刪除自己」之保護（作用於所綁管理員）。
+- **對外查詢之授權判準**：以使用者用途金鑰呼叫對外查詢、後台入口者，授權同所綁使用者（綁一般使用者者不具管理服務）；使用者用途金鑰綁系統管理者時，同樣受「不得停用／降權／刪除自己」之保護（作用於所綁系統管理者）。
 - 保留字：使用者主鍵不得以 `app:` 開頭（後台清單新增使用者時拒收，`invalidRows`）。**既有使用者若主鍵已以 `app:` 開頭，其與系統服務用途金鑰之應用系統身分同名**（`app:<金鑰主鍵>`），下游依 `id` 對應資料時會混同；升級前請檢查 `users` 表並更換此類主鍵（正常產生之主鍵為 UUID，不會如此）。
 - 登出（`logoutByToken`、`logoutSsoUser`）為持有者清理自己權杖之入口：**已逾期之登入權杖仍可登出（只刪本權杖、不回任何資料、不行使任何能力）**，其餘各入口對逾期、使用者不可用之權杖一律回 `tokenExpired`。
 - 統計之「權杖調用」以系統服務用途金鑰之應用系統身分記錄（顯示金鑰名稱），不再併入建立者名下。
 
 **登入權杖之即時有效性（行為變更，S-4）**：登入權杖（session 權杖）原只檢查到期時間；本版起每次使用另依其使用者目前狀態判定（與登入同一判準：已驗證、帳號未到期、未被封鎖、啟用），不符即與到期同樣回 `tokenExpired`。**未驗證信箱、被封鎖、帳號到期或已停用使用者所持有之既有登入權杖因此立即失效**（原可使用至權杖到期）；狀態恢復後權杖照常可用（未被撤銷者）。
 
-**後台重設他人密碼之管理者判準（S-2，語系鍵移除）**：`adminResetUserPassword` 原僅判 `isAdmin==='y'` 並對非管理者回 `adminResetPasswordForbidden`；本版起與其他管理入口同一判準（`funCheckAdmin`：已驗證、帳號未到期、未被封鎖、啟用、管理者），非管理者、狀態不符或權杖無效一律回 `tokenExpired`。語系鍵 `adminResetPasswordForbidden` 已移除，呼叫端若以該鍵判斷須改判 `tokenExpired`。
+**後台重設他人密碼之系統管理者判準（S-2，語系鍵移除）**：`adminResetUserPassword` 原僅判 `isAdmin==='y'` 並對非系統管理者回 `adminResetPasswordForbidden`；本版起與其他管理入口同一判準（`funCheckAdmin`：已驗證、帳號未到期、未被封鎖、啟用、系統管理者），非系統管理者、狀態不符或權杖無效一律回 `tokenExpired`。語系鍵 `adminResetPasswordForbidden` 已移除，呼叫端若以該鍵判斷須改判 `tokenExpired`。
 
 **自助註冊關閉時之驗證入口（S-6）**：`allowUserRegistration` 為 `false`（預設）時，`verifyEmail`（HTTP 驗證連結與 kpfun）與 `resendVerifyEmail` 一律回 `userRegistrationNotAllowed`（驗證連結失效、不寄信、不改資料）；登入頁之「重寄驗證信」連結同步隱藏。已開啟註冊之部署不受影響。
 
@@ -94,27 +94,27 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 **改密碼後之 session 處置（行為變更）**：依 OWASP ASVS「改密碼後提供終止其他所有 session」，本版起改密碼會撤銷該使用者的登入權杖（session 權杖，`isApp` 非 `'y'`）：
 
-- **管理員重設他人密碼**（後台「重設密碼」鈕，或具 `writeUsers` 之 app 權杖呼叫 `adminResetUserPassword`）→ 撤銷**對方全部** session 權杖；該使用者所有裝置立即登出（下次呼叫回登入頁），須以新密碼重新登入。強制下次登入改密碼（`isForceChangePw='y'`）之行為不變。
+- **系統管理者重設他人密碼**（後台「重設密碼」鈕，或具 `writeUsers` 之 app 權杖呼叫 `adminResetUserPassword`）→ 撤銷**對方全部** session 權杖；該使用者所有裝置立即登出（下次呼叫回登入頁），須以新密碼重新登入。強制下次登入改密碼（`isForceChangePw='y'`）之行為不變。
 - **使用者自行改密碼**（`changeUserPassword`）→ **保留發出此請求之目前 session**，撤銷該使用者**其他所有** session 權杖；其他裝置須重新登入。
 - **app 權杖（應用系統金鑰，`isApp='y'`）不是 session，不撤銷**（含以該使用者為擁有者者）；疑似被盜之 app 權杖仍須由後台「金鑰清單」處置。以 app 權杖呼叫 `changeUserPassword`（作用於其擁有者，仍須提供舊密碼）時無「目前 session」可保留，該使用者全部 session 撤銷。
 - 密碼寫入與撤銷在 `[tokens, users]` 兩把表鎖內完成；驗證全數通過後先撤銷、後寫密碼：撤銷失敗則整次拒絕（`adminResetPasswordFailed`／`userChangePasswordFail`）且密碼不變；撤銷成功而密碼寫入失敗時拒絕、密碼不變、session 已撤銷（以原密碼重新登入）。不會出現「密碼已變更但舊 session 仍有效」。舊密碼錯、新密碼不合策略、目標不存在等驗證未過之情形不撤銷任何權杖。
 - 被撤銷之權杖立即無效（`checkToken`／`refreshToken` 皆拒）。無新增語系鍵、RPC 簽章不變。本套件無「忘記密碼、經 email 重設」之未登入入口；日後若新增，須同樣撤銷全部 session。
-- 影響：多裝置使用者自行改密碼後，其他裝置須重新登入（原本可使用至權杖到期）；管理員重設後目標使用者所有裝置皆登出。
+- 影響：多裝置使用者自行改密碼後，其他裝置須重新登入（原本可使用至權杖到期）；系統管理者重設後目標使用者所有裝置皆登出。
 
-**後台使用者清單之「登入後轉址（redir）」檢查範圍（修正）**：自助註冊之使用者其 `redir` 為空（註冊流程不收轉址，預設空字串；以 `view=user`／`view=backstage` 登入不需轉址），過去前端對清單全部列檢查「redir 不可空」，只要清單中有這類使用者，管理員儲存任何變更都被擋（「尚未給予有效登入後轉址」）。本版起只攔下管理員**本次新增**之列與**由非空改為空**之既有列；載入時即為空之既有列不擋存檔、不標警示（欲讓其以預設 `view=login` 轉址登入，請管理員於清單補上 redir）。後端本就不驗 redir，無變更。
+**後台使用者清單之「登入後轉址（redir）」檢查範圍（修正）**：自助註冊之使用者其 `redir` 為空（註冊流程不收轉址，預設空字串；以 `view=user`／`view=backstage` 登入不需轉址），過去前端對清單全部列檢查「redir 不可空」，只要清單中有這類使用者，系統管理者儲存任何變更都被擋（「尚未給予有效登入後轉址」）。本版起只攔下系統管理者**本次新增**之列與**由非空改為空**之既有列；載入時即為空之既有列不擋存檔、不標警示（欲讓其以預設 `view=login` 轉址登入，請系統管理者於清單補上 redir）。後端本就不驗 redir，無變更。
 
 ### Upgrading from 1.1.12 and earlier
 
-**多人同時編輯之寫入契約（行為變更）**：多位管理員可同時開啟後台使用者／金鑰／IP 清單，過去先存者之修改會被持舊畫面者整份蓋回（含系統另行寫入之驗證時間、封鎖時間、強制變更密碼旗標、密碼雜湊、續期後之到期時間），載入後新增之使用者／IP／登入中之 session 金鑰會被誤刪，已登出或被封鎖撤銷之 session 金鑰會復活。本版起（依 w-serv-orm 1.1.17，部署前提：單一行程、同表只由同一個 ORM 實例寫入）：
+**多人同時編輯之寫入契約（行為變更）**：多位系統管理者可同時開啟後台使用者／金鑰／IP 清單，過去先存者之修改會被持舊畫面者整份蓋回（含系統另行寫入之驗證時間、封鎖時間、強制變更密碼旗標、密碼雜湊、續期後之到期時間），載入後新增之使用者／IP／登入中之 session 金鑰會被誤刪，已登出或被封鎖撤銷之 session 金鑰會復活。本版起（依 w-serv-orm 1.1.17，部署前提：單一行程、同表只由同一個 ORM 實例寫入）：
 
 - **先動先贏、整次拒收、零寫入**：後台三個清單頁於載入時以畫面所見之列自算基準（`buildBaseline`，前後端共用 `src/writeContracts/` 之寫入契約），存檔時連同送出；後端於該表之表鎖內新鮮讀取並比對，不符整次拒收（不部分寫入），草稿保留並提示重新載入，回語系鍵 `saveStale`（載入後資料已被更動）、`saveRowNotFound`（要改或刪之資料已不存在）、`saveBaselineFormat`（基準格式或版本不識；不會降級為不帶基準）。存檔成功後前端重新讀取清單作為新基準（不以自己送出之值當基準）。基準比對之欄位為契約 `fields`（使用者清單另含列序名次）；伺服器專有欄位不入基準。
 - **RPC 簽章**：`updateUsersList`／`updateIpsList` 新增選用第 4 參數 `{ baseline }`，`updateTokensList` 為 `{ baseline, baselineSession }`（`baseline`：應用系統金鑰列〔`isApp='y'`〕嚴格整表比對；`baselineSession`：session 列逐列寬鬆比對）。第 4 參數只接受此白名單鍵；不是純物件、多餘鍵、缺鍵或格式不識皆回 `saveBaselineFormat`。回傳形狀不變。
-- **金鑰清單之 session 列（選項 P）**：session 列由登入新增、續期改 `timeEnd`、登出或封鎖刪除，變動頻繁，不採整表比對。只比對管理員有修改或刪除之列；載入後才登入之 session 不被刪；載入後已登出或被封鎖撤銷者不復活；系統續期而管理員未動之列不寫（到期時間不被舊值蓋回）；管理員有動而庫內已變者（如刪除或修改一個剛被續期之 session）整次拒收，重新載入後再操作。
+- **金鑰清單之 session 列（選項 P）**：session 列由登入新增、續期改 `timeEnd`、登出或封鎖刪除，變動頻繁，不採整表比對。只比對系統管理者有修改或刪除之列；載入後才登入之 session 不被刪；載入後已登出或被封鎖撤銷者不復活；系統續期而系統管理者未動之列不寫（到期時間不被舊值蓋回）；系統管理者有動而庫內已變者（如刪除或修改一個剛被續期之 session）整次拒收，重新載入後再操作。
 - **不帶基準之寫入**（app 權杖直呼、升級前已開啟而未重新載入之舊版頁面）本 major 仍允許，後者蓋前者，但：一律取表鎖、修改只改不增、伺服器專有欄位（`password`、`tokenVerify`、`userId`、`timeCreate`、稽核欄、tokens 之 `timeUpdate`）不採用客戶端值（舊版頁面整列送回之舊值不再回寫）；金鑰清單只刪／改應用系統金鑰列，**session 列不刪、不以送入值覆蓋**（原會刪除載入後才登入者、以舊到期時間蓋回續期）；新增列僅限應用系統金鑰（`isApp='y'`，含直打 API 鑄造應用系統金鑰）。若要刪除某 session 以強制登出，請用後台頁（帶基準）。**下一個 major 起後台一律必帶基準，未帶者拒收。**
-- **金鑰清單存檔不得新增 session 列（行為變更；帶或不帶基準皆然）**：session 金鑰（`isApp` 非 `'y'`）只由登入產生。`updateTokensList` 送出之列若庫內不存在且 `isApp` 非 `'y'`，整次拒收（零寫入，同批之其他變更亦不寫），回語系鍵 `tokenSessionAddNotAllowed`（「不可新增登入權杖」），不回顯值。因此以 app 權杖直呼、或升級前已開啟而未重新載入之舊版頁面，送回已被登出或自動封鎖撤銷之 session 列時，不會使其復活（繞過自動封鎖）；舊版頁面遇此情形須重新載入。不受影響：新增應用系統金鑰列、管理員（帶基準）對既有 session 列之刪除（強制登出）、將既有 session 列升級為應用系統金鑰、帶基準時基準內而管理員未動且已被撤銷之 session 列（略過、不復活）。原先「直打 API 以清單鑄造使用者 session 金鑰」之能力一併收回；需要以應用系統身分呼叫者請鑄造應用系統金鑰。
+- **金鑰清單存檔不得新增 session 列（行為變更；帶或不帶基準皆然）**：session 金鑰（`isApp` 非 `'y'`）只由登入產生。`updateTokensList` 送出之列若庫內不存在且 `isApp` 非 `'y'`，整次拒收（零寫入，同批之其他變更亦不寫），回語系鍵 `tokenSessionAddNotAllowed`（「不可新增登入權杖」），不回顯值。因此以 app 權杖直呼、或升級前已開啟而未重新載入之舊版頁面，送回已被登出或自動封鎖撤銷之 session 列時，不會使其復活（繞過自動封鎖）；舊版頁面遇此情形須重新載入。不受影響：新增應用系統金鑰列、系統管理者（帶基準）對既有 session 列之刪除（強制登出）、將既有 session 列升級為應用系統金鑰、帶基準時基準內而系統管理者未動且已被撤銷之 session 列（略過、不復活）。原先「直打 API 以清單鑄造使用者 session 金鑰」之能力一併收回；需要以應用系統身分呼叫者請鑄造應用系統金鑰。
 - **雙方欄位**（後台可改、系統亦會寫）入基準：`timeVerified`、`timeBlocked`、`isForceChangePw`、金鑰之 `timeEnd`、IP 之 `timeBlocked`。系統於持舊畫面者載入後改動這些欄位（驗證信、自動封鎖、重設密碼、app 權杖續期、IP 封鎖），其存檔即被拒。IP 清單另有：自動偵測計時器每 2 秒登錄新 IP，繁忙系統上舊畫面存檔較常需重新載入。
-- **表鎖**：users／tokens／ips 每表一把；server 端全部 19 個寫入站點（後台存檔、登入新增金鑰、續期、登出、自助註冊、驗證信、改密碼、重設密碼、自動封鎖帳號／權杖、計時器登錄與封鎖 IP 等）皆在該表表鎖內執行，系統直寫改為只改不增（讀到後該列被刪，不再把只含被寫欄位之殘缺列新增回庫）；使用者清單存檔與帳號封鎖在 `[tokens, users]` 兩把鎖內同鎖撤銷名下金鑰；自助註冊與後台清單新增同帳號不再可同時成功（帳號唯一性檢查與新增同在 users 表鎖內）；登入於 tokens 表鎖內重讀使用者狀態，已被停用、刪除或封鎖、密碼已被變更（如管理員重設）、驗證被清除或已到期者不再鑄出金鑰，登入回傳之使用者資料取自該次新鮮讀取；自動封鎖（登入失敗、權杖呼叫超限）於鎖內再驗帳號仍屬該使用者、token 仍是其名下使用者 token，等鎖期間已被改名、升為應用系統金鑰或登出者不封鎖。
-- **最後修改者**：tokens、ips 新增欄位 `userIdUpdate`（既有資料不回填，無須遷移）；後台存檔記操作管理員，app 權杖記其虛擬使用者 id，使用者自助流程（驗證信、改密碼）記該使用者，登入／續期記金鑰擁有者，系統計時器與自動封鎖記常數 `system`。tokens 新增列之擁有者 `userId` 保留送入值（擁有者為空者以操作者補），不被操作者覆寫。
+- **表鎖**：users／tokens／ips 每表一把；server 端全部 19 個寫入站點（後台存檔、登入新增金鑰、續期、登出、自助註冊、驗證信、改密碼、重設密碼、自動封鎖帳號／權杖、計時器登錄與封鎖 IP 等）皆在該表表鎖內執行，系統直寫改為只改不增（讀到後該列被刪，不再把只含被寫欄位之殘缺列新增回庫）；使用者清單存檔與帳號封鎖在 `[tokens, users]` 兩把鎖內同鎖撤銷名下金鑰；自助註冊與後台清單新增同帳號不再可同時成功（帳號唯一性檢查與新增同在 users 表鎖內）；登入於 tokens 表鎖內重讀使用者狀態，已被停用、刪除或封鎖、密碼已被變更（如系統管理者重設）、驗證被清除或已到期者不再鑄出金鑰，登入回傳之使用者資料取自該次新鮮讀取；自動封鎖（登入失敗、權杖呼叫超限）於鎖內再驗帳號仍屬該使用者、token 仍是其名下使用者 token，等鎖期間已被改名、升為應用系統金鑰或登出者不封鎖。
+- **最後修改者**：tokens、ips 新增欄位 `userIdUpdate`（既有資料不回填，無須遷移）；後台存檔記操作系統管理者，app 權杖記其虛擬使用者 id，使用者自助流程（驗證信、改密碼）記該使用者，登入／續期記金鑰擁有者，系統計時器與自動封鎖記常數 `system`。tokens 新增列之擁有者 `userId` 保留送入值（擁有者為空者以操作者補），不被操作者覆寫。
 - **`getUsersList` 不再回傳 `tokenVerify`（憑證類欄位收回）**：後台使用者清單原連同註冊驗證用 token 一併回傳並整列存回；契約生效後它屬伺服器專有欄位（存檔取庫內值），前端不再需要。對外 `getSsoUsersList` 原即不輸出。
 - **log／錯誤文字**：基準不符等拒收於 srLog 記 warn（`fun-updateTabItems-reject`，帶語系鍵）；庫內列主鍵重複或缺漏（`rowsInvalid`，屬資料錯誤）回 `anUnexpectedErrorOccurred` 並記 error。帳號封鎖寫入失敗之 log 因改經 w-serv-orm 寫入，錯誤文字為其固定字串（如 `failed to save data`），原例外文字只進 console。
 - 新增語系鍵：`saveStale`、`saveRowNotFound`、`saveBaselineFormat`、`tokenSessionAddNotAllowed`（eng／cht）。
@@ -123,7 +123,7 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 **來源 IP 須為合法 IP（行為變更）**：資料通道的來源 IP 仍取請求標頭 `X-Forwarded-For` 以逗號分隔之第一個非空段（最左），但取得之值現須通過 `net.isIP`（IPv4 或 IPv6；帶 zone 識別碼者總長度不得超過 64 字元）才採用，且**原樣使用、不改寫**（不剝除 `::ffff:` 前綴、不改大小寫），因此以原字串寫入 `ips` 表之既有封鎖列照常命中。唯一之正規化是去除 port：`IPv4:port`（如 `203.0.113.9:8080`）與括號形式 `[IPv6]:port`（如 `[2001:db8::1]:443`）取其 IP 本身（部分雲端閘道會在標頭附帶來源 port；同一 IP 不同 port 計為同一 IP，不會退回連線位址而使全部使用者呈現為閘道位址），port 須為 1～5 位數字且不超過 65535，去除後之 IP 同樣原樣使用。去除後仍非 IP（如 `256.1.1.1:80`、`1.2.3.4:abc`）或標頭值本身非 IP（如 `length`、`constructor`、含標記之字串、`unknown`、超長字串）時不採用，改取連線位址並記一筆 `warn`（`event` 為 `fun-getIpByHeaders`、`key` 為 `invalidForwardedFor`，至多每 10 秒一筆，`suppressed` 為期間被略過之次數，只記長度與前 64 字元）；標頭不存在或為空時仍靜默取連線位址。退回連線位址者，其 IP 封鎖與頻率限制一併改以連線位址計算：若該位址（例如反向代理 IP）已被封鎖，這些請求將被拒；`ips` 表中既有的非 IP 字串列（修改前由任意標頭值登錄而來，含其封鎖列；帶 port 者如 `203.0.113.9:8080` 亦同，新請求改以去 port 後之 `203.0.113.9` 判定並另登新列）不會再被命中，建議管理端檢視並清除。
 
-**計數容器之鍵於窗口過後清除（修正）**：權杖與來源 IP 的調用次數紀錄原只在剪枝時移除窗外之紀錄，鍵本身永久殘留；未登入請求每換一個權杖參數或標頭值就多一個永久殘留之空鍵（長時間運行記憶體無上限成長，且每 2 秒的剪枝與偵測計時器都要走訪全部鍵）。本版起 `minForTokenCallApi`／`minForIpCallApi` 窗口內無新請求之鍵即刪除（登入失敗紀錄原即如此）。連帶行為：管理者自 IP 清單刪除某 IP 後，窗口（預設 10 分鐘）過後不再被偵測計時器自動復活（修改前每 2 秒復活一次）；偵測新 IP 之計時器若連續失敗超過整個窗口，窗內只請求過一次之 IP 不會補登，該 IP 再次請求即重新登錄。
+**計數容器之鍵於窗口過後清除（修正）**：權杖與來源 IP 的調用次數紀錄原只在剪枝時移除窗外之紀錄，鍵本身永久殘留；未登入請求每換一個權杖參數或標頭值就多一個永久殘留之空鍵（長時間運行記憶體無上限成長，且每 2 秒的剪枝與偵測計時器都要走訪全部鍵）。本版起 `minForTokenCallApi`／`minForIpCallApi` 窗口內無新請求之鍵即刪除（登入失敗紀錄原即如此）。連帶行為：系統管理者自 IP 清單刪除某 IP 後，窗口（預設 10 分鐘）過後不再被偵測計時器自動復活（修改前每 2 秒復活一次）；偵測新 IP 之計時器若連續失敗超過整個窗口，窗內只請求過一次之 IP 不會補登，該 IP 再次請求即重新登錄。
 
 **來源 IP 之信任邊界（維持；不提供 `trustProxy`）**：本套件信任 `X-Forwarded-For` 最左段且不做防偽造——線上系統常有多層反向代理、使用者 IP 由反代提供，能經跳板偽造者，反代拿到的也是偽造值，此類防護屬防火牆／反向代理之責。部署於反向代理後時，請由最外層受信任之代理覆寫（而非附加）該標頭；直接對外提供服務（前方無反向代理）時，用戶端可填寫任意合法格式之 IP 以規避 IP 封鎖與頻率限制、冒用他人 IP（可使他人 IP 遭自動封鎖），大量互異之合法 IP 亦會使 `ips` 表列數成長。`/api/cleanKpIpCallApi`、`/api/cleanKpAccountLoginFailed` 不讀標頭，只取連線位址。
 
@@ -154,7 +154,7 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 - 既有資料不回溯：已存成 `&lt;` 形式之值維持原樣。
 - 依賴：`w-serv-orm ^1.1.11`、`w-serv-hapi ^1.1.6`、`w-data-collector ^1.0.46`、`w-syslog ^1.0.33`、`w-orm-lmdb ^1.0.39`、`wsemi ^1.9.16`；w-serv-orm 自身之錯誤訊息改為英文（只寫入 srLog，不回前端）。
 
-**停用 `useCheckUser` / `getUserById` / `useExcludeWhenNotAdmin`（行為變更）**：此三鍵原透傳給 w-serv-orm 之使用者檢查；w-serv-orm 1.1.9 起已移除此三鍵（1.1.10 起給予 `undefined`、`null`、`false` 以外之值即於建構時拋錯）。本套件不再轉交，寫入皆於各功能內以權杖授權（使用者須為管理者、app token 須具對應寫入權限），自助註冊為公開流程。舊設定若仍給予（如 `useCheckUser: true`），後端照常啟動並於啟動時記警告（console 與 srLog 之 `boot` 事件，只列出給予之鍵）；`null`、`false` 視同未給、不警告；請自 settings / optExt 移除。停用前之行為：開啟 `useCheckUser` 時自助註冊必回 `userRegistrationFailed`、金鑰與 IP 清單之儲存必回 `saveWriteFail`（未給 `getUserById` 時使用者清單亦然；有給時以 app token 儲存使用者清單仍然失敗），`useExcludeWhenNotAdmin` 則從未作用。
+**停用 `useCheckUser` / `getUserById` / `useExcludeWhenNotAdmin`（行為變更）**：此三鍵原透傳給 w-serv-orm 之使用者檢查；w-serv-orm 1.1.9 起已移除此三鍵（1.1.10 起給予 `undefined`、`null`、`false` 以外之值即於建構時拋錯）。本套件不再轉交，寫入皆於各功能內以權杖授權（使用者須為系統管理者、app token 須具對應寫入權限），自助註冊為公開流程。舊設定若仍給予（如 `useCheckUser: true`），後端照常啟動並於啟動時記警告（console 與 srLog 之 `boot` 事件，只列出給予之鍵）；`null`、`false` 視同未給、不警告；請自 settings / optExt 移除。停用前之行為：開啟 `useCheckUser` 時自助註冊必回 `userRegistrationFailed`、金鑰與 IP 清單之儲存必回 `saveWriteFail`（未給 `getUserById` 時使用者清單亦然；有給時以 app token 儲存使用者清單仍然失敗），`useExcludeWhenNotAdmin` 則從未作用。
 
 **`serverPort` 未給或無效時監聽 11007（修正）**：原後端把未正規化之 `serverPort` 交給 w-serv-hapi，settings 未給或給非正整數時實際監聽 8080，與文件所載之預設 11007、註冊驗證信連結之回退網址 `http://localhost:11007` 不一致；本版起一律監聽正規化後之值。
 
@@ -172,7 +172,7 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 **修正說明**：1.1.4（含）以前，對外查詢 helper 失敗時會把已代入權杖之完整網址放進 reject 值與 console；消費端若把錯誤原樣回應，送出無效權杖即可取得該系統向 SSO 介接用之 app token。本版起 helper 之 reject 值與 console 皆不含權杖（下述），且 app token 改為依權限授權、預設只能查使用者（見下方「應用系統金鑰權限」）。
 
-**應用系統金鑰（app token，`isApp='y'`）改為依權限授權（破壞性變更）**：原本 app token 通過全部需管理者之功能（視同管理者），本版起依 tokens 表新增之 `perms` 欄（權限字串陣列，多元素即多權限聯集）授權，**預設只提供查使用者**：
+**應用系統金鑰（app token，`isApp='y'`）改為依權限授權（破壞性變更）**：原本 app token 通過全部需系統管理者之功能（視同系統管理者），本版起依 tokens 表新增之 `perms` 欄（權限字串陣列，多元素即多權限聯集）授權，**預設只提供查使用者**：
 
 | 權限字串 | 名稱 | 可呼叫之功能 |
 |---|---|---|
@@ -184,9 +184,9 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 | `writeIps` | 寫IP | 後台 `updateIpsList` |
 | `readStats` | 讀統計 | 後台 `getStaUserSummary`、`getStaTokenSummary`、`getStaIpSummary`、`getStaUserAccountLogin`、`getStaToken`、`getStaIp` |
 
-- 升級前既有之 app token 無 `perms` 欄，升級後只具 `readUsers`。本套件之對外查詢 helper 只用 `readUsers`，不受影響；介接系統若呼叫其他後台功能，請管理者於後台「金鑰清單」之「應用系統權限」欄勾選授予。
-- `writeUsers`、`readTokens`、`writeTokens` 可讓持有者取得管理者層級之能力（讀取管理者之 session 金鑰、改寫金鑰或使用者後接管帳號），後台以「等同管理者權限」標註，請僅授予確有需要之系統。
-- 缺權限時對外回 `tokenExpired`（與非管理者相同），SSO 之 srLog 記 `appTokenPermDenied`（含所需權限）供排錯。
+- 升級前既有之 app token 無 `perms` 欄，升級後只具 `readUsers`。本套件之對外查詢 helper 只用 `readUsers`，不受影響；介接系統若呼叫其他後台功能，請系統管理者於後台「金鑰清單」之「應用系統權限」欄勾選授予。
+- `writeUsers`、`readTokens`、`writeTokens` 可讓持有者取得系統管理者層級之能力（讀取系統管理者之 session 金鑰、改寫金鑰或使用者後接管帳號），後台以「等同系統管理者權限」標註，請僅授予確有需要之系統。
+- 缺權限時對外回 `tokenExpired`（與非系統管理者相同），SSO 之 srLog 記 `appTokenPermDenied`（含所需權限）供排錯。
 - 以 API 寫入 `perms` 時須為權限字串陣列（未設定視同空陣列），含未登錄之字串則整批 reject `tokenPermsInvalid`。
 - 使用者 token 不受 `perms` 影響，仍依使用者之 `isAdmin` 判斷；app token 之速率豁免（不受 token 調用次數封鎖）不變。
 

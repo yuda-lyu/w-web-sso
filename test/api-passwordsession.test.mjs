@@ -1,11 +1,11 @@
 //api-passwordsession.test.mjs — 改密碼後之 session 處置(R-SESS-01, ADR-093; sso-run04 第 117 項)之端到端守護: 真後端(11007) + 真資料庫 + 真傳輸(WServHapiClient), 不經 UI
 //
 // 依據:
-//   - 使用者 2026-10-23 裁示(OWASP ASVS「改密碼後提供終止其他所有 session」):「管理員重設時撤銷對方全部 session; 自己改密碼時保留目前 session、撤銷其他 session」
+//   - 使用者 2026-10-23 裁示(OWASP ASVS「改密碼後提供終止其他所有 session」):「系統管理者重設時撤銷對方全部 session; 自己改密碼時保留目前 session、撤銷其他 session」
 //   - spec/流程_後台重設使用者密碼.md、spec/流程_使用者變更密碼.md〈改密碼後之 session 處置〉; ADR-093; 規則帳本 sgud/rule/rulebook_security.md R-SESS-01
 // 作法: session 一律由真實登入(RPC loginByAccountAndPassword)取得; 「權杖是否有效」以對外同一入口 checkToken / getUserByToken 判定(被撤銷者回 tokenExpired);
 // 重設 / 改密碼走實際 RPC(adminResetUserPassword / changeUserPassword). app 權杖以資料庫夾具建立(其產生途徑為後台金鑰清單, 與本規則無關).
-// 管理員重設對同一對象有 30 秒節流(adminResetPasswordAlreadyTriggered), 故每案例用各自的被重設對象(mkTarget(key)).
+// 系統管理者重設對同一對象有 30 秒節流(adminResetPasswordAlreadyTriggered), 故每案例用各自的被重設對象(mkTarget(key)).
 // SMTP 導向 127.0.0.1:1(寄信必敗而不外寄, 寄信失敗不阻斷既有契約). 每案例前重置 base seed + 共用 fixture, 案例後只刪非 base seed(對齊其他 api 檔).
 // 單元層(替身資料表, 含故障注入、鎖與競態)見 unit-passwordSession.
 
@@ -18,7 +18,7 @@ import { resetToBaseSeed, deleteNonBaseSeed, restartBackend, genTempSettings } f
 
 
 let SALT = '{salt}' //同 settings.json 之 salt 與 g_initialData
-let ADMIN = 'token-for-admin' //base seed 之管理員 session 權杖(使用者 id-for-admin)
+let ADMIN = 'token-for-admin' //base seed 之系統管理者 session 權杖(使用者 id-for-admin)
 let TIME_END = '2030-01-01T00:00:00.000+08:00'
 let TIME_OK = '2025-01-01T00:00:00.000+08:00'
 let PW = 'Pw@PassSess1'
@@ -122,7 +122,7 @@ describe('改密碼後之 session 處置 (api, 真後端 / 真傳輸; R-SESS-01)
     })
 
 
-    it('PSA-001 [管理員重設 → 對方全部 session 失效] 對方 3 個真實 session 皆被撤銷(checkToken 拒); 對方之 app 權杖、他人 session、管理員自己之 session 不受影響; 強制下次登入改密碼不變', async function() {
+    it('PSA-001 [系統管理者重設 → 對方全部 session 失效] 對方 3 個真實 session 皆被撤銷(checkToken 拒); 對方之 app 權杖、他人 session、系統管理者自己之 session 不受影響; 強制下次登入改密碼不變', async function() {
         let t = await mkTarget('t1')
         let s1 = await login(t.account)
         let s2 = await login(t.account)
@@ -139,12 +139,12 @@ describe('改密碼後之 session 處置 (api, 真後端 / 真傳輸; R-SESS-01)
         }
         assert.deepStrictEqual((await dbTokens(t.id)).map((x) => x.token), [t.appToken], '庫內對方只剩 app 權杖')
         for (let s of [sb, ADMIN, t.appToken, 'ps-app-w']) {
-            assert.strictEqual(await alive(s), true, '他人 session、管理員 session、app 權杖不受影響')
+            assert.strictEqual(await alive(s), true, '他人 session、系統管理者 session、app 權杖不受影響')
         }
         let u = (await woItems.users.select({ id: t.id }))[0]
         assert.notStrictEqual(u.password, pw0, '密碼已重設')
         assert.strictEqual(u.isForceChangePw, 'y', '強制下次登入改密碼不變')
-        assert.strictEqual(u.userIdUpdate, 'id-for-admin', '更新者為操作管理員')
+        assert.strictEqual(u.userIdUpdate, 'id-for-admin', '更新者為操作系統管理者')
         let rLogin = await callFapi('loginByAccountAndPassword', ['eng', t.account, PW])
         assert.strictEqual(rLogin.ok, false, '舊密碼不可再登入')
     })

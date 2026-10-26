@@ -527,7 +527,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                 let vu = get(opt, 'verifiedUser', null)
                 if (vu !== null) {
                     if (get(u, 'password', '') !== get(vu, 'password', '')) {
-                        rejectKey = 'failedLoginForCatch' //等待期間密碼已被變更(如管理員重設): 先前以舊密碼通過之驗證不再有效
+                        rejectKey = 'failedLoginForCatch' //等待期間密碼已被變更(如系統管理者重設): 先前以舊密碼通過之驗證不再有效
                         return
                     }
                     if (!isestr(get(u, 'timeVerified', ''))) {
@@ -609,7 +609,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                 description: 'no description',
                 from: 'no from',
                 redir: 'no redir',
-                isAdmin: 'y', //外部應用系統代表為系統管理員等級; 實際授權依 perms (ADR-069), 不依此欄
+                isAdmin: 'y', //外部應用系統代表為系統管理者等級; 實際授權依 perms (ADR-069), 不依此欄
                 timeVerified: '2000-01-01T00:00:00.000+08:00', //應用系統代表為已驗證
                 timeExpired: '',
                 timeBlocked: '',
@@ -677,7 +677,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
 
     //funCheckAdmin: 管理入口之角色判斷(已驗證、未過期、未封鎖、isAdmin='y'、啟用), 與 WWebSso 傳入各管理入口者同一判準(mShare.checkUserAdmin);
-    //procCore 內自有權限閘(adminResetUserPassword)沿用, 使各管理入口對非管理員回相同錯誤鍵 (S-2)
+    //procCore 內自有權限閘(adminResetUserPassword)沿用, 使各管理入口對非系統管理者回相同錯誤鍵 (S-2)
     let funCheckAdmin = (tk, u) => {
         return s.checkUserAdmin(u)
     }
@@ -1155,7 +1155,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         let keyEmail = `createUser:email:${email}`
         let tokenVerify
         //唯一性檢查與 insert 於 users 表鎖內(S04, 修 X8): cst 之鍵空間與後台清單儲存(updateTabItems 取 users 表鎖)不同, 兩者原不互斥,
-        //自助註冊與管理員新增同帳號可同時成功; 取同一把表鎖後, 後到者必能讀到先到者所寫之列而被唯一性檢查擋下
+        //自助註冊與系統管理者新增同帳號可同時成功; 取同一把表鎖後, 後到者必能讀到先到者所寫之列而被唯一性檢查擋下
         await cst.setWithFree([keyAccount, keyEmail], () => withTabLocks(['users'], async () => {
 
             //check account unique (全域唯一，不限 isActive)
@@ -1261,7 +1261,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             }
 
             //update timeVerified: timemsTZ 格式(同其他時間欄與後台編輯之寫入). 原 now2str 為秒級, 共用判斷 getIsVerified(istimemsTZ)
-            //判為未驗證 → 後台清單顯示「未驗證」, 且該帳號設為管理者後過不了管理權限閘 funCheckAdmin (2026-09-29 修正)
+            //判為未驗證 → 後台清單顯示「未驗證」, 且該帳號設為系統管理者後過不了管理權限閘 funCheckAdmin (2026-09-29 修正)
             //經 procOrm 且 mustExist(只改不增, 列已不存在則拒絕而不新增殘缺列, X5), 更新者記該使用者本人 (R-CONC-04)
             //逐筆檢查(ADR-080): 寫入失敗回 verifyEmailFailed, 不顯示驗證成功; tokenVerify 未清, 使用者可再點同一連結重試
             let errTemp = null
@@ -1485,7 +1485,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             //改密碼後之 session 處置 (R-SESS-01, ADR-093): 保留發出此請求之目前 session(token), 撤銷該使用者其他所有 session 權杖; app 權杖不是 session, 不撤銷
             let { u, email } = await withTabLocks(['tokens', 'users'], async () => {
 
-                //鎖內再驗呼叫所用之權杖仍有效 (外審 sol#1): 鎖外之 checkToken 通過後、等鎖期間該 session 可能已被同使用者另一個改密碼請求或管理員重設撤銷,
+                //鎖內再驗呼叫所用之權杖仍有效 (外審 sol#1): 鎖外之 checkToken 通過後、等鎖期間該 session 可能已被同使用者另一個改密碼請求或系統管理者重設撤銷,
                 //被撤銷之權杖不得再改密碼(否則「保留發出請求之目前 session」不成立, 該請求還會撤銷對方保留之 session); checkToken 只讀不取鎖, 可在鎖內呼叫
                 await checkToken(token)
 
@@ -1614,7 +1614,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //
     //回傳: { state:'success' } (不含明文密碼, 避免操作者得知)
     //失敗 reject:
-    //  - token 無效 / 過期 / 操作者非管理員(已驗證、未過期、未封鎖、isAdmin='y'、啟用, 同 funCheckAdmin) / 應用系統金鑰缺 writeUsers: 'tokenExpired' (S-2, 與其他管理入口同鍵)
+    //  - token 無效 / 過期 / 操作者非系統管理者(已驗證、未過期、未封鎖、isAdmin='y'、啟用, 同 funCheckAdmin) / 應用系統金鑰缺 writeUsers: 'tokenExpired' (S-2, 與其他管理入口同鍵)
     //  - userId 空: 'invalid userId'
     //  - 目標 user 不存在: 'user not found'
     //  - 對自己觸發: 'cannot reset self'
@@ -1623,7 +1623,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //寄信失敗 (SMTP 不通) 不視為錯誤, 密碼仍會寫入, 僅記 srLog.error
     let adminResetUserPassword = async (token, lang, targetUserId) => {
 
-        //checkToken, 管理員判定與其他管理入口相同(funCheckAdmin: 已驗證、未過期、未封鎖、isAdmin='y'、啟用; 使用者用途依所綁使用者), 非管理員回相同錯誤鍵 tokenExpired (S-2);
+        //checkToken, 系統管理者判定與其他管理入口相同(funCheckAdmin: 已驗證、未過期、未封鎖、isAdmin='y'、啟用; 使用者用途依所綁使用者), 非系統管理者回相同錯誤鍵 tokenExpired (S-2);
         //系統服務用途須具 writeUsers(其虛擬使用者 isAdmin='y', 故授權不看該欄; ADR-069)
         await checkToken(token, { fun: funCheckAdmin, perm: 'writeUsers' })
 
@@ -1659,8 +1659,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
             }
 
             //目標 user 查找、撤銷其全部 session 與寫入於 [tokens, users] 表鎖內(S08; kmx 在外層、表鎖在內層): password 為伺服器專有欄位、isForceChangePw 為雙方欄位(系統直寫須取表鎖);
-            //只改不增, 目標已被刪則拒絕而不新增殘缺列 (X5); 更新者記操作管理員 (R-CONC-04)
-            //改密碼後之 session 處置 (R-SESS-01, ADR-093): 撤銷對方全部 session 權杖(不含 app 權杖); 呼叫者(管理員 / app 權杖)自己之權杖不在撤銷範圍(目標不得為自己)
+            //只改不增, 目標已被刪則拒絕而不新增殘缺列 (X5); 更新者記操作系統管理者 (R-CONC-04)
+            //改密碼後之 session 處置 (R-SESS-01, ADR-093): 撤銷對方全部 session 權杖(不含 app 權杖); 呼叫者(系統管理者 / app 權杖)自己之權杖不在撤銷範圍(目標不得為自己)
             let { targetAccount, targetName, targetEmail, newPassword } = await withTabLocks(['tokens', 'users'], async () => {
 
                 //目標 user (含 password 拿到也不用, 只是確認存在)
@@ -1819,7 +1819,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //revokeSessionTokensLocked: 改密碼後之 session 處置 (R-SESS-01, ADR-093), 須於 [tokens, users] 表鎖內呼叫(與密碼寫入同一組鎖, 不可重入).
     //只撤銷 userId 名下之 session 權杖(isApp !== 'y', 即使用者登入所發); app 權杖(isApp === 'y')不是 session, 其 userId 為擁有者, 不撤銷
     //(與 revokeTokensByUserIdLocked 之刪除 / 停用 / 封鎖情境不同: 該情境是使用者本身失效, 名下一切權杖皆撤).
-    //exceptToken: 發出請求之目前 session 權杖字串, 該筆保留(使用者自行改密碼); 管理員重設不給, 全撤.
+    //exceptToken: 發出請求之目前 session 權杖字串, 該筆保留(使用者自行改密碼); 系統管理者重設不給, 全撤.
     //逐筆檢查(ormWrite), 單筆失敗不中斷其餘筆, 有失敗即 reject(含失敗筆主鍵), resolve 回傳撤銷筆數; 冪等(無可撤者回 0)
     let revokeSessionTokensLocked = async (userId, exceptToken = '') => {
 
@@ -1858,7 +1858,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
     //- 不帶基準(app 權杖直呼、已開啟之舊版頁面; 本 major 允許, 後者蓋前者, 下一 major 後台必帶): 仍取鎖、只改不增、伺服器專有欄位不採用客戶端值.
     //  users / ips 刪除集合 = 庫內全部 − 送出(以外部為主); tokens 只處理應用系統金鑰列(isApp === 'y'), session 列不刪、不覆蓋、不復活.
     //- tokens 採選項 P (R-CONC-03): app 列(契約 tokens)嚴格整表比對; session 列(契約 tokensSession)逐列寬鬆比對:
-    //  只比對管理員有修改或刪除之列; 載入後新增者不刪; 已不在庫內者不復活; 系統續期而管理員未動者不寫; 管理員有動且庫內已變者拒收.
+    //  只比對系統管理者有修改或刪除之列; 載入後新增者不刪; 已不在庫內者不復活; 系統續期而系統管理者未動者不寫; 系統管理者有動且庫內已變者拒收.
     //分驗證與寫入兩階段 (ADR-080):
     //- 驗證階段: 全部驗證於任何寫入之前完成, 任一失敗即 reject 該驗證之 key, 資料庫無任何變更 (ADR-021).
     //  凡可於寫入前判定、寫入時才會被拒或被靜默改寫之輸入一律於此拒絕 (ADR-081): rows 非陣列、主鍵非字串 / 重複 / 超過鍵長上限 → 'invalidRows';
@@ -2024,7 +2024,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
                     //tokens 路徑: 清單存檔不得新增庫內不存在之 session 列(isApp 非 'y'; ADR-092), 不論帶不帶基準, 整次拒收(零寫入, 回固定語系鍵, 不回顯值):
                     //session 權杖只由登入產生, 後台清單本就無新增 session 列之入口 (ADR-042); 不帶基準時無從分辨「新增」與「載入後已被登出 / 自動封鎖撤銷之舊列」,
-                    //送回舊列會使其復活而繞過撤銷. 例外: 帶基準而該列在 baselineSession 內者(載入時尚在, 其後被撤銷)不屬新增——管理員未動者下方略過、已動者拒收 saveStale.
+                    //送回舊列會使其復活而繞過撤銷. 例外: 帶基準而該列在 baselineSession 內者(載入時尚在, 其後被撤銷)不屬新增——系統管理者未動者下方略過、已動者拒收 saveStale.
                     if (woName === 'tokens') {
                         let idsBase = new Set(isBased ? [...po.baseline, ...po.baselineSession].map(([id]) => id) : [])
                         let rowSessionNew = rows.find((r) => get(r, 'isApp', '') !== 'y' && !nowById.has(r.id) && !idsBase.has(r.id))
@@ -2117,8 +2117,8 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
                     //tokens 路徑: 本批有變動(或新增)之列須為未設定或已登錄權限字串之陣列, 任一列不合法則整批 reject 不寫入 (ADR-069).
                     //與 DB 相同之列不驗: DB 內既有之毀損值(非陣列等)若也擋, 後台整批存回將永遠失敗而無從修正; 其正規化後之有效權限與讀取端 fail closed 結果相同.
-                    //帶基準時, 摘要同基準(管理員未動)之列亦不驗 (外審 sol#5): 該列不會被寫入——app 列已由嚴格整表比對確認庫內即基準, session 列未動不寫——
-                    //如舊資料毀損值之 session 於載入後已被登出(庫內已無此列), 不得因此阻擋其他列之合法修改; 管理員有動或新增之列仍照驗
+                    //帶基準時, 摘要同基準(系統管理者未動)之列亦不驗 (外審 sol#5): 該列不會被寫入——app 列已由嚴格整表比對確認庫內即基準, session 列未動不寫——
+                    //如舊資料毀損值之 session 於載入後已被登出(庫內已無此列), 不得因此阻擋其他列之合法修改; 系統管理者有動或新增之列仍照驗
                     if (woName === 'tokens') {
                         let dgBase = new Map(isBased ? [...po.baseline, ...po.baselineSession] : [])
                         for (let row of rows) {
@@ -2172,7 +2172,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                             let now = nowById.get(id)
                             let live = now !== undefined && contractSession.scope(now)
                             if (sub === undefined) {
-                                //管理員刪除: 已不在庫內(已被登出 / 撤銷)則冪等略過; 在庫內而庫內已變(如已續期)→ 管理員有動且庫內已變, 拒收
+                                //系統管理者刪除: 已不在庫內(已被登出 / 撤銷)則冪等略過; 在庫內而庫內已變(如已續期)→ 系統管理者有動且庫內已變, 拒收
                                 if (!live) {
                                     continue
                                 }
@@ -2182,18 +2182,18 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                                 dels.push(now)
                                 continue
                             }
-                            //管理員未動(摘要同基準): 不寫, 系統續期之 timeEnd 不被舊值蓋回, 已撤銷者不復活 (X1, X7)
+                            //系統管理者未動(摘要同基準): 不寫, 系統續期之 timeEnd 不被舊值蓋回, 已撤銷者不復活 (X1, X7)
                             if (digestRow(sub, contract) === dg) {
                                 continue
                             }
-                            //管理員有動: 已不在庫內或庫內已變 → 拒收; 否則修改(升級為應用系統金鑰已於上方拒收, ADR-095)
+                            //系統管理者有動: 已不在庫內或庫內已變 → 拒收; 否則修改(升級為應用系統金鑰已於上方拒收, ADR-095)
                             if (!live || changedS.has(id)) {
                                 return Promise.reject('saveStale')
                             }
                             mods.push(subNorm.get(id))
                         }
 
-                        //基準之外之列(管理員送入而基準與庫內皆無): 上方已拒收(新增 session 列 tokenSessionAddNotAllowed、新增應用系統金鑰列 tokenAppAddNotAllowed),
+                        //基準之外之列(系統管理者送入而基準與庫內皆無): 上方已拒收(新增 session 列 tokenSessionAddNotAllowed、新增應用系統金鑰列 tokenAppAddNotAllowed),
                         //此處僅剩「他人載入後新增而撞 id」之列(庫內已有、基準內無): 拒收
                         for (let [id] of subRaw) {
                             if (baseA.has(id) || baseS.has(id)) {
@@ -2311,7 +2311,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
                             }
                             row.password = hashPassword(pw, salt)
                         }
-                        //後台建帳自動填 timeVerified: timemsTZ 格式(見 verifyEmail 同處說明; 原 now2str 秒級使新建帳號顯示未驗證、設為管理者後過不了 funCheckAdmin, 2026-09-29 修正)
+                        //後台建帳自動填 timeVerified: timemsTZ 格式(見 verifyEmail 同處說明; 原 now2str 秒級使新建帳號顯示未驗證、設為系統管理者後過不了 funCheckAdmin, 2026-09-29 修正)
                         each(rowsAdd, (row) => {
                             let tv = get(row, 'timeVerified', '')
                             if (!isestr(tv)) {
@@ -2992,7 +2992,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
 
 
     //checkTokenAndCreateAppToken
-    //權限閘同 updateTokensList(管理者 / 具 writeTokens 之系統服務用途); 雙擊防護(後端): 同一操作者之鑄造處理中再送出即拒絕 (lockSave, ADR-074)
+    //權限閘同 updateTokensList(系統管理者 / 具 writeTokens 之系統服務用途); 雙擊防護(後端): 同一操作者之鑄造處理中再送出即拒絕 (lockSave, ADR-074)
     let checkTokenAndCreateAppToken = async (token, data, opt = {}) => {
 
         //checkToken

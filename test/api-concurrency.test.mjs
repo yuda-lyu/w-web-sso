@@ -3,7 +3,7 @@
 // 依據:
 //   - 規格 C:\opensrcOper\dspec\多人同時編輯之寫入契約.md §3~§8、§13 V1~V14; 上位原則 process_principle.md 第 10 條
 //   - 規則帳本 sgud/rule/rulebook_concurrency.md R-CONC-01~05; 缺陷編號 E1、X1~X8 見該冊「現存缺陷實證」(修前探測腳本 p1~p9 之修後對應)
-// 管理員「載入」走 RPC getUsersList / getTokensList / getIpsList, 基準以前端同一工具(src/baselineOf.mjs)自算, 存檔走 RPC updateXxxList 第 4 參數,
+// 系統管理者「載入」走 RPC getUsersList / getTokensList / getIpsList, 基準以前端同一工具(src/baselineOf.mjs)自算, 存檔走 RPC updateXxxList 第 4 參數,
 // 與前端實際傳輸路徑一致(V10: 前端算之基準 = 伺服端新鮮讀取所算, 含傳輸後之型別).
 // 外部應用(app 權杖)直呼、載入後登入 / 登出 / 自助註冊 / 自動封鎖等「他人或系統之寫入」亦走真實入口.
 // 並行語意(V14, 人為延遲)與 19 站點逐一取鎖見 unit-tablock; 細緻的存檔分支見 unit-saveBaseline; 本檔驗證接線(kpfun 第 4 參數、真 LMDB、真傳輸).
@@ -21,7 +21,7 @@ import { resetToBaseSeed, deleteNonBaseSeed, restartBackend, genTempSettings } f
 
 
 let SALT = '{salt}' //同 settings.json 之 salt 與 g_initialData
-let ADMIN = 'token-for-admin' //base seed 之管理員 session 權杖(使用者 id-for-admin)
+let ADMIN = 'token-for-admin' //base seed 之系統管理者 session 權杖(使用者 id-for-admin)
 let ADMIN_ID = 'id-for-admin'
 let TIME_END = '2030-01-01T00:00:00.000+08:00'
 let TIME_OK = '2025-01-01T00:00:00.000+08:00'
@@ -62,7 +62,7 @@ function mkTokenFx(key, userId, ext = {}) {
 }
 
 
-//client: 管理員載入(RPC)與自算基準; 傳輸後之 JSON 即前端所見之列
+//client: 系統管理者載入(RPC)與自算基準; 傳輸後之 JSON 即前端所見之列
 async function loadUsers() {
     let r = await callFapi('getUsersList', [ADMIN])
     assert.strict.equal(r.ok, true, JSON.stringify(r))
@@ -160,7 +160,7 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         assert.strict.equal(rb.err, 'saveStale')
         assert.deepStrictEqual(await snapshot(), snap)
         let t = (await woItems.tokens.select({ id: 'id-cc-app-1' }))[0]
-        assert.strict.equal(t.userIdUpdate, ADMIN_ID, '更新者為操作管理員(updateTokensList 傳入 operatorId)')
+        assert.strict.equal(t.userIdUpdate, ADMIN_ID, '更新者為操作系統管理者(updateTokensList 傳入 operatorId)')
         assert.strict.equal(t.userId, 'id-cc-owner-1', '擁有者不被操作者覆寫')
     })
 
@@ -176,7 +176,7 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         assert.strict.equal((await woItems.ips.select({ id: 'id-cc-ip-1' }))[0].userIdUpdate, ADMIN_ID, 'ips 補 userIdUpdate')
     })
 
-    it('CC-A-004 [V2 適配] 不帶基準之無變更重送: 零寫入(稽核欄與時間不變); 管理員先前載入之基準仍可存', async function() {
+    it('CC-A-004 [V2 適配] 不帶基準之無變更重送: 零寫入(稽核欄與時間不變); 系統管理者先前載入之基準仍可存', async function() {
         let a = await loadUsers()
         let snap = await snapshot()
         let r = await saveUsers(a.rows, undefined) //app 權杖 / 舊版頁面型: 不帶基準, 內容未變
@@ -186,7 +186,7 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         assert.strict.equal(r2.ok, true, `先前基準仍有效: ${JSON.stringify(r2)}`)
     })
 
-    it('CC-A-005 [V3] app 權杖(writeUsers)改一列後, 管理員以舊基準存 → saveStale', async function() {
+    it('CC-A-005 [V3] app 權杖(writeUsers)改一列後, 系統管理者以舊基準存 → saveStale', async function() {
         let a = await loadUsers()
         let cur = await loadUsers()
         let rApp = await saveUsers(editRow(cur.rows, 'id-cc-b', (r) => ({ ...r, name: 'by-app' })), undefined, 'cc-app-w') //不帶基準
@@ -209,7 +209,7 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         assert.strict.equal(r.err, 'saveStale')
         assert.ok((await woItems.users.select({ id: 'id-cc-a' }))[0].timeBlocked !== '', '封鎖不被舊值解除')
 
-        //tokens: 應用系統金鑰不給期限、不可續期(ADR-095), timeEnd 之雙方欄位性質只剩 session 列——session 列被系統續期後, 管理員有動該列(刪除)而庫內已變 → 整次拒收(選項 P)
+        //tokens: 應用系統金鑰不給期限、不可續期(ADR-095), timeEnd 之雙方欄位性質只剩 session 列——session 列被系統續期後, 系統管理者有動該列(刪除)而庫內已變 → 整次拒收(選項 P)
         let t = await loadTokens()
         let rfApp = await callFapi('refreshToken', ['cc-app-1'])
         assert.strict.equal(rfApp.err, 'tokenAppNoRefresh', '應用系統金鑰拒絕續期')
@@ -219,7 +219,7 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         assert.strict.equal(r2.err, 'saveStale')
     })
 
-    it('CC-A-007 [V5、X2-c、X2-d] 系統寫伺服器專有欄位(重寄驗證信之 tokenVerify、變更密碼之 password)後, 管理員可存; 該欄維持系統所寫之值', async function() {
+    it('CC-A-007 [V5、X2-c、X2-d] 系統寫伺服器專有欄位(重寄驗證信之 tokenVerify、變更密碼之 password)後, 系統管理者可存; 該欄維持系統所寫之值', async function() {
         let pending = mkUserFx('pend', { timeVerified: '', tokenVerify: 'cc-tv-pend' })
         await woItems.users.insert([pending])
         let u = await loadUsers()
@@ -239,7 +239,7 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         assert.strict.equal((await woItems.users.select({ id: 'id-cc-a' }))[0].password, pwNew)
     })
 
-    it('CC-A-008 [V6、X5] 系統直寫對已刪之列: verifyEmail / refreshToken 拒絕且庫內無殘缺列; 其後管理員原樣存回清單可成功', async function() {
+    it('CC-A-008 [V6、X5] 系統直寫對已刪之列: verifyEmail / refreshToken 拒絕且庫內無殘缺列; 其後系統管理者原樣存回清單可成功', async function() {
         let pending = mkUserFx('gone', { timeVerified: '', tokenVerify: 'cc-tv-gone' })
         await woItems.users.insert([pending])
         await woItems.users.del({ id: pending.id })
@@ -275,7 +275,7 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         assert.deepStrictEqual(await woItems.tokens.select({ id: 'id-cc-app-2' }), [], '被刪之列不復活')
     })
 
-    it('CC-A-010 [E1、V8] 載入後才登入之 session token: 管理員存檔(只改 app 權杖權限)後仍有效, 不被刪', async function() {
+    it('CC-A-010 [E1、V8] 載入後才登入之 session token: 系統管理者存檔(只改 app 權杖權限)後仍有效, 不被刪', async function() {
         let a = await loadTokens()
         let lg = await callFapi('loginByAccountAndPassword', ['eng', 'ac-cc-b', PW])
         assert.strict.equal(lg.ok, true, JSON.stringify(lg))
@@ -286,7 +286,7 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         assert.deepStrictEqual((await woItems.tokens.select({ id: 'id-cc-app-1' }))[0].perms, ['readIps'])
     })
 
-    it('CC-A-011 [X1 安全] 載入後被登出 / 被自動封鎖撤銷之 session token: 管理員存舊清單後不復活', async function() {
+    it('CC-A-011 [X1 安全] 載入後被登出 / 被自動封鎖撤銷之 session token: 系統管理者存舊清單後不復活', async function() {
         let lgB = await callFapi('loginByAccountAndPassword', ['eng', 'ac-cc-b', PW])
         assert.strict.equal(lgB.ok, true)
         let b = await loadTokens() //含 u-b 之 session
@@ -415,7 +415,7 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         }
     })
 
-    it('CC-A-019 [X8] 自助註冊與管理員清單新增同帳號並行: 恰一方成功, 帳號不重複', async function() {
+    it('CC-A-019 [X8] 自助註冊與系統管理者清單新增同帳號並行: 恰一方成功, 帳號不重複', async function() {
         for (let round = 0; round < 3; round++) {
             let account = `ac-cc-dup${round}`
             let a = await loadUsers()
@@ -430,7 +430,7 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         }
     })
 
-    it('CC-A-020 [X6、V14] 兩位管理員並行存檔: 結果等於某一串行順序(不同操作者互斥於表鎖)', async function() {
+    it('CC-A-020 [X6、V14] 兩位系統管理者並行存檔: 結果等於某一串行順序(不同操作者互斥於表鎖)', async function() {
         let admin2 = mkUserFx('adm2', { isAdmin: 'y' })
         await woItems.users.insert([admin2])
         await woItems.tokens.insert([mkTokenFx('adm2', admin2.id)])
@@ -445,7 +445,7 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         assert.ok(serial.includes(ids), `最終 ${ids} 須為串行結果之一(後存者刪除先存者新增之列)`)
     })
 
-    it('CC-A-021 [E2E-003 行為不變、選項 P、ADR-095] 管理員刪除 session 列(強制登出): 該 token 失效; 升級 session 列為應用系統金鑰: 整次拒收 tokenSessionUpgradeNotAllowed, 零寫入', async function() {
+    it('CC-A-021 [E2E-003 行為不變、選項 P、ADR-095] 系統管理者刪除 session 列(強制登出): 該 token 失效; 升級 session 列為應用系統金鑰: 整次拒收 tokenSessionUpgradeNotAllowed, 零寫入', async function() {
         let a = await loadTokens()
         let r = await saveTokens(a.rows.filter((x) => x.id !== 'id-cc-sess-a'), optT(a))
         assert.strict.equal(r.ok, true, JSON.stringify(r))
@@ -495,7 +495,7 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         assert.strict.equal(chk.ok, false, '已撤銷之 token 仍失效')
     })
 
-    it('CC-A-024 [ADR-092 不變、ADR-095] 清單存檔只改不增: app 權杖(不帶基準)與管理員(帶基準)新增應用系統金鑰列、升級 session 列一律整批拒收且零寫入(鑄造只經 createAppToken); 管理員(帶基準)刪除 session 列照常; 同批混入新 session 列仍回 tokenSessionAddNotAllowed', async function() {
+    it('CC-A-024 [ADR-092 不變、ADR-095] 清單存檔只改不增: app 權杖(不帶基準)與系統管理者(帶基準)新增應用系統金鑰列、升級 session 列一律整批拒收且零寫入(鑄造只經 createAppToken); 系統管理者(帶基準)刪除 session 列照常; 同批混入新 session 列仍回 tokenSessionAddNotAllowed', async function() {
         let a = await loadTokens()
         let snap0 = await snapshot()
         let appNew = (key) => mkTokenFx(key, `id-cc-${key}`, { isApp: 'y', perms: [] })
@@ -505,7 +505,7 @@ describe('多人同時編輯之寫入契約 (api, 真後端 / 真傳輸)', funct
         let r1b = await saveTokens(editRow(a.rows, 'id-cc-sess-a', (x) => ({ ...x, isApp: 'y', perms: ['readStats'] })), undefined, 'cc-app-w')
         assert.strict.equal(r1b.err, 'tokenSessionUpgradeNotAllowed', JSON.stringify(r1b))
         assert.deepStrictEqual(await snapshot(), snap0, '零寫入')
-        //帶基準(管理員): 新增 app 列拒; 刪除 session 列 id-for-token-for-basic 照常
+        //帶基準(系統管理者): 新增 app 列拒; 刪除 session 列 id-for-token-for-basic 照常
         let b = await loadTokens()
         let r2 = await saveTokens([...b.rows, appNew('minted-2')], optT(b))
         assert.strict.equal(r2.err, 'tokenAppAddNotAllowed', JSON.stringify(r2))

@@ -37,28 +37,28 @@
     - `procProtect` 取不到 IP 時只印標頭名稱;
     - `omitUserCredential` 1 處(`/api/getSsoUsersList`; 後台 kpfun `getUsersList` 刻意不套用, 見 ADR-068).
 
-### R-PERM-01: 需管理者之權限閘須同時宣告 app token 所需權限 `perm`(2026-09-25, ADR-069)
+### R-PERM-01: 需系統管理者之權限閘須同時宣告 app token 所需權限 `perm`(2026-09-25, ADR-069)
 
 - **規則**:
   1. 凡以 `{ fun: funCheckAdmin }` 守門之呼叫點, 同一 opt 須帶 `perm: '<權限字串>'`; 只給 `fun` 者 app token 一律不通過(fail closed), 屬漏宣告.
   2. 授權寫在 procCore 內之功能(如 `adminResetUserPassword` 以操作者 `isAdmin` 判斷), app 權限閘亦寫在 procCore(`checkToken(token, { perm })`), 因 app 之虛擬使用者恆為 `isAdmin='y'`.
   3. `perm` 之值須為 `src/appPerms.mjs` 之 `keysAppPerm` 成員; 新增權限時同步: `keysAppPerm`(及是否列入 `keysAppPermHigh`)、`server/procLang.mjs` 之 `appPerm_<權限>`(eng + cht)、README 權限表、`api-apptoken-perms` 之 ops 與 `unit-appPerms` 之 PERM-U-001.
   4. 自身權杖操作(`checkToken` / `refreshToken` / `logoutByToken` / kpfun `getUserByToken` / `checkTokenAndChangePassword`)不帶 `fun` 亦不帶 `perm`.
-- **理由**: ADR-005 之 bypass 使 app token 通過全部需管理者之閘(ADR-069 Context); 改為逐閘宣告後, 漏宣告者以 fail closed 收斂.
+- **理由**: ADR-005 之 bypass 使 app token 通過全部需系統管理者之閘(ADR-069 Context); 改為逐閘宣告後, 漏宣告者以 fail closed 收斂.
 - **盤點指令**:
   - Grep `fun: funCheckAdmin` 於 `server/` → 每筆同行含 `perm: '`(兩者計數相等).
   - Grep `perm: '` 於 `server/` → 值皆在 `keysAppPerm`.
   - Grep `checkToken\(` 於 `server/` → 未帶 opt 者只能是上列自身權杖操作與 `adminResetUserPassword`(帶 `{ perm: 'writeUsers' }`).
 - **站點全集(2026-09-25)**: 17 閘 —— `WWebSso.mjs` 16(HTTP `getSsoUsersList`、`getSsoUserInfor` 兩分支; kpfun `getUserInfor`、`getUsersList`、`updateUsersList`、`getTokensList`、`updateTokensList`、`getIpsList`、`updateIpsList`、`getSta*` 6 支)+ `procCore.mjs` 1(`adminResetUserPassword`); 皆已套.
 
-### R-SESS-01: 改密碼後須撤銷 session 權杖——管理員重設撤銷對方全部; 自行改密碼保留目前 session、撤銷其他; app 權杖不撤銷(2026-10-23, sso-run04 第 117 項; ADR-093; 使用者裁示, OWASP ASVS)
+### R-SESS-01: 改密碼後須撤銷 session 權杖——系統管理者重設撤銷對方全部; 自行改密碼保留目前 session、撤銷其他; app 權杖不撤銷(2026-10-23, sso-run04 第 117 項; ADR-093; 使用者裁示, OWASP ASVS)
 
 - **規則**:
-  1. **改密碼入口全集**(以 Grep 取得, 2026-10-23): `adminResetUserPassword`(管理員 session 或具 `writeUsers` 之 app 權杖; 對象為他人)、`checkTokenAndChangePassword`(session 權杖; app 權杖亦通過 `checkToken`, 作用於其擁有者並須舊密碼)——這兩個是**既有使用者密碼之唯一寫入點**; 其餘「寫 password」者為新帳號(`createUser` 自助註冊、`updateTabItems` users 新增列、離線 `g_initialData.mjs`), 無 session 可撤; 「忘記密碼 / email 重設」入口不存在(日後若新增, 須撤銷全部 session); HTTP 路由無改密碼端點. 新增任何改既有使用者密碼之站點, 須同時加撤銷並補本規則測試.
-  2. **撤銷範圍**: 只撤銷 `tokens.userId = 目標` 且 `isApp !== 'y'` 之列(session 權杖); app 權杖(`isApp === 'y'`, 含擁有者為該使用者者)不是 session, 不撤銷. 管理員重設撤銷全部; 自行改密碼以呼叫所用之權杖字串(`token`)為 `exceptToken` 保留其餘撤銷(app 權杖呼叫者無目前 session, 全撤); 實作為 `revokeSessionTokensLocked(userId, exceptToken)`, 與刪除 / 停用 / 封鎖用之 `revokeTokensByUserIdLocked`(名下一切權杖皆撤, ADR-037)分開, 不共用、不加旗標.
-  3. **鎖與次序**: 驗證、撤銷、密碼寫入全在 `withTabLocks(['tokens', 'users'])` 內(`kmx` 在外層); 驗證全通過後**先撤銷、後寫密碼**——撤銷失敗整體拒絕且密碼不變(`adminResetPasswordFailed` / `userChangePasswordFail`, 不寄信、不記節流); 撤銷成功而密碼寫入失敗則拒絕、密碼不變、session 已撤銷(fail closed); 不變式: 絕不出現「密碼已變更但舊 session 仍有效」. 驗證未過(舊密碼錯、新密碼不合策略、非管理員、對自己重設、目標不存在)不撤銷任何權杖.
+  1. **改密碼入口全集**(以 Grep 取得, 2026-10-23): `adminResetUserPassword`(系統管理者 session 或具 `writeUsers` 之 app 權杖; 對象為他人)、`checkTokenAndChangePassword`(session 權杖; app 權杖亦通過 `checkToken`, 作用於其擁有者並須舊密碼)——這兩個是**既有使用者密碼之唯一寫入點**; 其餘「寫 password」者為新帳號(`createUser` 自助註冊、`updateTabItems` users 新增列、離線 `g_initialData.mjs`), 無 session 可撤; 「忘記密碼 / email 重設」入口不存在(日後若新增, 須撤銷全部 session); HTTP 路由無改密碼端點. 新增任何改既有使用者密碼之站點, 須同時加撤銷並補本規則測試.
+  2. **撤銷範圍**: 只撤銷 `tokens.userId = 目標` 且 `isApp !== 'y'` 之列(session 權杖); app 權杖(`isApp === 'y'`, 含擁有者為該使用者者)不是 session, 不撤銷. 系統管理者重設撤銷全部; 自行改密碼以呼叫所用之權杖字串(`token`)為 `exceptToken` 保留其餘撤銷(app 權杖呼叫者無目前 session, 全撤); 實作為 `revokeSessionTokensLocked(userId, exceptToken)`, 與刪除 / 停用 / 封鎖用之 `revokeTokensByUserIdLocked`(名下一切權杖皆撤, ADR-037)分開, 不共用、不加旗標.
+  3. **鎖與次序**: 驗證、撤銷、密碼寫入全在 `withTabLocks(['tokens', 'users'])` 內(`kmx` 在外層); 驗證全通過後**先撤銷、後寫密碼**——撤銷失敗整體拒絕且密碼不變(`adminResetPasswordFailed` / `userChangePasswordFail`, 不寄信、不記節流); 撤銷成功而密碼寫入失敗則拒絕、密碼不變、session 已撤銷(fail closed); 不變式: 絕不出現「密碼已變更但舊 session 仍有效」. 驗證未過(舊密碼錯、新密碼不合策略、非系統管理者、對自己重設、目標不存在)不撤銷任何權杖.
   4. 被撤銷之權杖立即無效(`checkToken` 查庫無快取, 回 `tokenExpired`); 不新增語系鍵; `isForceChangePw` 行為不變(重設 `'y'`、自行改密碼 `'n'`).
-  5. **自行改密碼於鎖內再驗呼叫權杖**(外審 sol#1): 鎖外 `checkToken` 通過後、等鎖期間該 session 可能已被撤銷, 被撤銷之權杖不得再改密碼(`tokenExpired`, 密碼不變、不撤銷他人); `checkToken` 只讀不取鎖可於鎖內呼叫. 管理員重設不加此再驗(操作者等鎖期間被撤銷屬 HEAD 既有之檢查後行為, 未改).
+  5. **自行改密碼於鎖內再驗呼叫權杖**(外審 sol#1): 鎖外 `checkToken` 通過後、等鎖期間該 session 可能已被撤銷, 被撤銷之權杖不得再改密碼(`tokenExpired`, 密碼不變、不撤銷他人); `checkToken` 只讀不取鎖可於鎖內呼叫. 系統管理者重設不加此再驗(操作者等鎖期間被撤銷屬 HEAD 既有之檢查後行為, 未改).
   6. **撤銷失敗以布林旗標判定**(外審 sol#2), 不以「錯誤值是否為 null」: reject 值可能為 `null` / `undefined`.
 - **理由**: 改密碼的目的之一是讓外洩憑證換來之登入態失效(ASVS); 舊決定 ADR-009「不清除既有 token」被使用者 2026-10-23 裁示取代. 先撤銷後寫密碼是因無交易(ADR-044): 反過來撤銷失敗會留下「新密碼生效、舊 session 仍有效」之最壞狀態且補償回滾本身可失敗; 先撤銷之最壞狀態只是「多登出一次」.
 - **盤點指令**:
@@ -66,15 +66,15 @@
   - Grep `withTabLocks\(\['tokens', 'users'\]` 於 `server/procCore.mjs` → 恰 2 行, 即此二站點(procProtect 之封鎖站點另在 `procProtect.mjs`).
   - Grep `password: |row\.password` 於 `server/procCore.mjs` → 恰 5 行: `createUser`(新帳號)、`checkTokenAndChangePassword`、`adminResetUserPassword`、`updateTabItems` 新增列之 `row.password` 兩行(新帳號); 寫入既有使用者 `password` 者只有 `checkTokenAndChangePassword` 與 `adminResetUserPassword`.
 - **站點全集(2026-10-23)**: 2 站點(`checkTokenAndChangePassword`、`adminResetUserPassword`), 皆已套; 新帳號寫 password 之 4 處不適用.
-- **測試**: `unit-passwordSession`(PS-U-001～021: 兩入口 × 呼叫者種類(管理員 session / writeUsers app 權杖 / 使用者 session / app 權杖呼叫改密碼)× app 權杖不撤銷 × 失敗點(驗證未過 / 撤銷失敗含 reject(null) / 密碼寫入失敗)× 鎖與競態(登入交錯、撤銷進行中插入登入、重設與自行改密碼並行、兩 session 並行改密碼、等鎖期間權杖被撤銷))、`api-passwordsession`(PSA-001～006, 真後端 / 真登入 / 真 `checkToken`)、`api-resetpassword` API-008(改斷言新規則)、`unit-tablock` SITE-LOCK-S07 / S08(兩把鎖任一被占用皆等待).
+- **測試**: `unit-passwordSession`(PS-U-001～021: 兩入口 × 呼叫者種類(系統管理者 session / writeUsers app 權杖 / 使用者 session / app 權杖呼叫改密碼)× app 權杖不撤銷 × 失敗點(驗證未過 / 撤銷失敗含 reject(null) / 密碼寫入失敗)× 鎖與競態(登入交錯、撤銷進行中插入登入、重設與自行改密碼並行、兩 session 並行改密碼、等鎖期間權杖被撤銷))、`api-passwordsession`(PSA-001～006, 真後端 / 真登入 / 真 `checkToken`)、`api-resetpassword` API-008(改斷言新規則)、`unit-tablock` SITE-LOCK-S07 / S08(兩把鎖任一被占用皆等待).
 - **修前紅**: 換入 HEAD 版 `server/procCore.mjs`(sha256 回驗還原): `api-passwordsession` 6 案 5 紅(PSA-001、002、003、005、006; PSA-004 為驗證未過不撤銷之對照組, 修前後皆綠); `unit-passwordSession` 17 案 11 紅(修前版 server).
-- **變異驗證(2026-10-23, 外審修補後最終版)**: unit 層 15 項全數被抓到(對照組 45 案全綠; 在 `tmp` 內之 repo 子集副本施作, 逐項還原並驗 sha256): S1 拿掉管理員重設之撤銷、S2 拿掉自行改密碼之撤銷、S3 撤銷到目前 session、S4 撤銷到 app 權杖、S5 / S6 撤銷失敗被吞(仍寫密碼)、S7 驗證未過即撤銷、S8～S11 表鎖只取單表(各站點 × users / tokens)、S12 保留者比對欄位錯、S13 / S14 失敗判定回退為 `errRevoke !== null`(reject(null) 被當成功)、S15 拿掉鎖內再驗呼叫權杖. S1～S4 另於真後端(`api-passwordsession` + `api-resetpassword`)重驗, 結果見報告(sso-run04-修正報告.md).
+- **變異驗證(2026-10-23, 外審修補後最終版)**: unit 層 15 項全數被抓到(對照組 45 案全綠; 在 `tmp` 內之 repo 子集副本施作, 逐項還原並驗 sha256): S1 拿掉系統管理者重設之撤銷、S2 拿掉自行改密碼之撤銷、S3 撤銷到目前 session、S4 撤銷到 app 權杖、S5 / S6 撤銷失敗被吞(仍寫密碼)、S7 驗證未過即撤銷、S8～S11 表鎖只取單表(各站點 × users / tokens)、S12 保留者比對欄位錯、S13 / S14 失敗判定回退為 `errRevoke !== null`(reject(null) 被當成功)、S15 拿掉鎖內再驗呼叫權杖. S1～S4 另於真後端(`api-passwordsession` + `api-resetpassword`)重驗, 結果見報告(sso-run04-修正報告.md).
 
 ### R-APPTOK-01: 應用系統金鑰之兩種用途——「權杖代表誰」只經 `loadActor` / `getActorByToken` 解析、即時判準與登入同謂詞、金鑰只經 `createAppToken` 鑄造、不給期限不續期(2026-10-24, sso-run01; ADR-095; 使用者裁示, 存取管控表 S-1~S-6)
 
 - **規則**:
   1. **身分單一咽喉**: 凡需要「這個權杖代表誰」(本人入口、管理入口之操作者、稽核欄、改密碼對象、反查身分)一律經 `getActorByToken(token)`(= `loadActor` + `isActorLive`); **不得直接讀 `tokens.userId` 當身分**——系統服務用途金鑰之 `userId` 只記建立者(稽核), 建立者被停用 / 刪除 / 為空皆不影響; 使用者用途之 `userId` 才是所綁使用者. 允許直接讀 `tk.userId` 之處僅: `loadActor`(解析用)、log 欄位、`refreshToken` 之稽核操作者(只對登入 token, 應用系統金鑰已先拒)、`tokenAppLocked` 之比對、`createAppToken` 之輸入驗證.
-  2. **即時判準(S-4)**: 登入 token = 未逾期且 `isUserUsable(使用者)`; 使用者用途 = 不看 `timeEnd` 且所綁使用者 `isUserUsable`; 系統服務用途 = 恆可用. `isUserUsable` 與登入(`loginByAccountAndPassword` / `createToken` 鎖內重讀)同謂詞——`timeVerified` 為非空字串(**不要求 timemsTZ 格式**)、`tn > timeExpired` 才算到期、`tn <= timeBlocked` 為封鎖中、`isActive === 'n'` 為停用——**不得改回 `mShare.checkUserBasic`**(其 `getIsVerified` 要求 timemsTZ、`isActive` 須為 `'y'`, 舊格式驗證時間者可登入卻立即被判失效, 外審 sol#4). 管理入口之管理員判準 `funCheckAdmin`(= `checkUserAdmin`)維持原樣.
+  2. **即時判準(S-4)**: 登入 token = 未逾期且 `isUserUsable(使用者)`; 使用者用途 = 不看 `timeEnd` 且所綁使用者 `isUserUsable`; 系統服務用途 = 恆可用. `isUserUsable` 與登入(`loginByAccountAndPassword` / `createToken` 鎖內重讀)同謂詞——`timeVerified` 為非空字串(**不要求 timemsTZ 格式**)、`tn > timeExpired` 才算到期、`tn <= timeBlocked` 為封鎖中、`isActive === 'n'` 為停用——**不得改回 `mShare.checkUserBasic`**(其 `getIsVerified` 要求 timemsTZ、`isActive` 須為 `'y'`, 舊格式驗證時間者可登入卻立即被判失效, 外審 sol#4). 管理入口之系統管理者判準 `funCheckAdmin`(= `checkUserAdmin`)維持原樣.
   3. **授權**: 使用者 token 與使用者用途以 `fun(tk, 使用者)` 判斷、perms 不適用; 系統服務用途以 `perm` 判斷(只給 `fun` 未宣告 `perm` 者 fail closed, 沿 R-PERM-01); 用途值未登錄 fail closed.
   4. **鑄造唯一入口 `createAppToken`**: 權杖字串與主鍵伺服端產生; 於 `[tokens, users]` 表鎖內驗證(綁定者存在且啟用、綁定值不含會被 XSS 清除改寫之標記)並**再驗操作者仍有權**(`recheck`)再寫入; `lockSave('createAppToken', 操作者)` 雙擊防護; 失敗以旗標判定. 清單存檔(`updateTabItems` tokens 路徑)只改不增: 新增應用系統金鑰列 → `tokenAppAddNotAllowed`、升級登入 token → `tokenSessionUpgradeNotAllowed`、改字串 / 綁定者 / 啟用旗標 / 期限 → `tokenAppLocked`、使用者用途設 perms → `tokenAppPermsNotForUser`; 皆整批零寫入.
   5. **撤銷範圍**: 刪除 / 停用使用者(清單存檔)撤銷其登入 token 與綁其之使用者用途金鑰(`revokeTokensByUserIdLocked(userId, { includeAppUser: true })`); 自動封鎖只撤登入 token(預設); 系統服務用途金鑰(含 `userId` 欄為該使用者之既有列)一律不撤銷. 測試以直寫庫改狀態(不經清單存檔、故不撤銷)驗「即時失效 / 恢復」, 經清單存檔驗「撤銷範圍」, 兩者分開.
@@ -122,9 +122,9 @@
   - Grep `broadcast\(` 於 `server/` → 0 命中(`src/` 之 `broadcast` 為 `mUI.mjs` 內無關之 Vue 輔助函數); Grep `tableNamesSync|useDbOrm|getUserIdByToken` 於 `server/WWebSso.mjs` → `[]` / `false` / 恆 `return ''`. 以上五項由 `unit-sysfuncs-premise` SP-01~05 靜態守護.
   - 發布產物: Grep `sysFuncsPublic:` 於 `dist/w-web-sso.umd.js` → 含設定(umd 內嵌之框架版本 ≥ 1.1.16 才認得該選項; 以 `invalid opt.sysFuncsPublic` 檢核碼存在確認).
   - Grep `"version"` 於 `node_modules/w-serv-hapi/package.json`、`w-serv-webdata`、`w-serv-broadcast` → 1.1.8 / 1.1.16 / 1.1.12 以上(`package.json` 之 `w-serv-hapi` ≥ `^1.1.8`).
-  - 真瀏覽器擷取(暫存腳本, 作法見 `experience.md`「系統函數逐一確認」): 預載攔截 `chromium.launch`, 解碼 `/api/main` 請求本體(XHR 二進位本體 `postDataBuffer()` 為 null, 改於頁面端攔截 `XMLHttpRequest.send`), 彙整情境 × 函數 × `__sysToken__` 狀態 × 回應; 情境: 登入頁冷載入、申請帳號畫面、登入失敗、未驗證使用者之重寄驗證信畫面、驗證信結果頁(HTTP)、管理員登入後後台各頁.
+  - 真瀏覽器擷取(暫存腳本, 作法見 `experience.md`「系統函數逐一確認」): 預載攔截 `chromium.launch`, 解碼 `/api/main` 請求本體(XHR 二進位本體 `postDataBuffer()` 為 null, 改於頁面端攔截 `XMLHttpRequest.send`), 彙整情境 × 函數 × `__sysToken__` 狀態 × 回應; 情境: 登入頁冷載入、申請帳號畫面、登入失敗、未驗證使用者之重寄驗證信畫面、驗證信結果頁(HTTP)、系統管理者登入後後台各頁.
 - **站點全集(2026-10-25)**: 系統函數 3 個——`[sys:polling]` 公開(必需; 恆空)、`[sys:getFuncList]` 公開(必需; 僅名稱)、`[sys:getTableTags]` 拒絕(不需要; 無同步表); 通訊路由 `ulctr`/`slc`/`dwgfn`/`dwgf`/`dw` 未註冊監聽(前端不呼叫, 呼叫即拒). 前端擷取所見之其餘請求皆為 kpfun(`getWebInfor`、`loginByAccountAndPassword`、`checkToken`、`getUserByToken`、`getUsersList`、`getTokensList`、`getIpsList`、`getSta*`、`changeUserPassword` 等), 不屬本條.
-- **測試**: `api-sysfuncs`(SF-01 `[sys:getFuncList]` × 7 類 + 未知 / 已逾期 token、SF-02 `[sys:polling]` × 同呼叫者 × 新 / 舊協定 + 同一 clientId 之 token 序列 + 非法 clientId、SF-03 `[sys:getTableTags]` × 同呼叫者恆拒、SF-04 token 值形態與封裝鍵缺漏〔公開 / 非公開皆然〕、SF-05 真 `WServHapiClient` 一開始即帶管理員 token 開機、SF-06 真用戶端貼近 `src/main.js`〔先空後帶 token〕)、`unit-sysfuncs-premise`(SP-01~05)、各 `e2e-*` 之登入流程(輪詢被拒則前端停在連線中, 全部轉紅)、`api-accessmatrix` 公開入口 MX-PUB-02.
+- **測試**: `api-sysfuncs`(SF-01 `[sys:getFuncList]` × 7 類 + 未知 / 已逾期 token、SF-02 `[sys:polling]` × 同呼叫者 × 新 / 舊協定 + 同一 clientId 之 token 序列 + 非法 clientId、SF-03 `[sys:getTableTags]` × 同呼叫者恆拒、SF-04 token 值形態與封裝鍵缺漏〔公開 / 非公開皆然〕、SF-05 真 `WServHapiClient` 一開始即帶系統管理者 token 開機、SF-06 真用戶端貼近 `src/main.js`〔先空後帶 token〕)、`unit-sysfuncs-premise`(SP-01~05)、各 `e2e-*` 之登入流程(輪詢被拒則前端停在連線中, 全部轉紅)、`api-accessmatrix` 公開入口 MX-PUB-02.
 - **驗證結果(2026-10-25 sso-run01; 全文見 `C:\opensrcOper\dnow\20261025111555\agent-out\sso-run01-修正報告.md`; 證據 `spec/evidence/2026-10-25-sysfuncs/`)**:
   - **修前紅**: M1(註解掉 `sysFuncsPublic` = 框架預設 = 修前行為): `api-sysfuncs` 2 過 / 4 敗(SF-03 無 token 格收到 `success`〔`{ mode: 'syncKpTable', data: {} }`〕).
   - **變異**(暫改一處 → 跑測試 → 立即還原; 還原後 sha256 相符): M1 預設 / M4 明列三者 / M6 `null` ⇒ SF-03、04、05、06 紅; M2 只列 getFuncList ⇒ SF-02、05、06 紅; M3 只列 polling ⇒ SF-01、05、06 紅; M5 `[]` ⇒ SF-01、02、05、06 紅; U1 `broadcast(` 呼叫 ⇒ SP-01; U2 `tableNamesSync` 非空 ⇒ SP-02; U3 / U4 `getUserIdByToken` 回非空 / 拋錯 ⇒ SP-03; U5 明列三者(靜態)⇒ SP-04.
@@ -165,7 +165,7 @@
   4. `procCore._getGenUserByKV` 的 `srLog.debug`(`userNotFound` / `userDuplicate`)之 `valueUser` 以 `maskKv(keyUser, valueUser)` 遮罩(與同函式 console 一致); 內部呼叫端固定傳 `account` / `id`, 此為縱深防禦.
   5. 對外 helper(`getUserByToken` / `getUserByUserId` / `getUsersByToken`)之網址範本檢查改為「恰一個完整參數」比對: `src/fetchSsoMsg.mjs` 之 `hasUrlParam(url, name, value)` ——參數名之前須為字串起點或 `?` `&` `"` 空白、參數值之後須為字串終點或 `& # "` 空白(以參數分隔字元定界; `"` 與空白供單元測試以 `data:` 網址〔佔位符在 JSON 字串內、無 `?`〕模擬 SSO), 且同名參數恰出現一次. 原 `indexOf('key=token')` 子字串檢查使 `key=tokenVerify`、`xkey=token`、`token={sysToken}x` 皆通過; 初版(run02 前半)改以「前後不得為參數字元 `[A-Za-z0-9_.~%-]`」排除, 外審(minimax MM-C-01 / 02、agy-opus F-C1 / F-C2)指出仍通過 `key=token+`〔server 實得 `token `〕、`key=token;x`、`a=key=token`、`&amp;key=token`、路徑 `/key=token`、片段 `#key=token`、重複參數 `key=token&key=id` 等偽陽性, 改為分隔字元定界 + 恰一個.
   6. log 衛生(外審 minimax MM-B-01 / 02、MM-D-02 提出, 本輪採納): 使用端給定之欄位名 `key` 與識別欄之查詢值 `value`(白名單內者原樣記供追查)寫入 `srLog` 前一律經 `srLog.capText`: 控制字元(< 32、127)置換為 `?`(`safeText`), 長度超過 `LOG_TEXT_MAX`(256)者截斷並附 `...(len=N)`; 短字串原樣. 站點: `WWebSso` 兩入口 `srLog.info` 之 `key`、`maskKv` 識別欄分支、`procCore._getGenUserByKV` `srLog.debug` 之 `keyUser`. 非識別欄之值仍一律 `maskToken`(規則 4). (pino JSON 已跳脫控制字元, 不致換行注入; 此規則限制使用端可控之 log 量並與 `maskToken` 同一紀律.)
-- **理由**: 修前欄位名由呼叫者(管理者或具 `readUsers` 之應用系統金鑰)任意指定並直接作為資料庫選擇器鍵: ①誤用 `key=userId`(`users.userId` 為建立者主鍵欄)不報錯而查到建立者; ②可對憑證欄(`tokenVerify`、`password`)以值探測存在性; ③非識別欄之值可能即憑證, 需靠 log 遮罩補救(R-SEC-01). 全庫正式用法僅 `token`(上游分流)、`id`、`account`、`name`(srv.mjs 註解範例).
+- **理由**: 修前欄位名由呼叫者(系統管理者或具 `readUsers` 之應用系統金鑰)任意指定並直接作為資料庫選擇器鍵: ①誤用 `key=userId`(`users.userId` 為建立者主鍵欄)不報錯而查到建立者; ②可對憑證欄(`tokenVerify`、`password`)以值探測存在性; ③非識別欄之值可能即憑證, 需靠 log 遮罩補救(R-SEC-01). 全庫正式用法僅 `token`(上游分流)、`id`、`account`、`name`(srv.mjs 註解範例).
 - **盤點指令**:
   - `git grep -n -E "checkTokenAndGetUserInfor|getUserInfor|_getGenUserByKV|getGenUserByKV\(" -- server` → 欄位名只在 `procCore.getUserInfor`(使用端給定)與內部固定常數呼叫(`account` / `id`).
   - `git grep -n -E "indexOf\('(key|token|value)=" -- src` → 應為 0(helper 範本檢查一律經 `hasUrlParam`).

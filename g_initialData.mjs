@@ -9,7 +9,7 @@ let salt = process.env.SALT || '{salt}' //pepper 須與後端 settings 之 salt 
 
 
 //基本測試數據 (使用者) 原始定義 — 為 g_initialData 重建 DB 與 e2e setup 的單一真理來源.
-//e2e 各測試 setup 階段透過 buildBaseUsers() 重建這批基本數據 (含系統管理員 ac-admin),
+//e2e 各測試 setup 階段透過 buildBaseUsers() 重建這批基本數據 (含系統管理者 ac-admin),
 //確保每個 e2e 都從相同已知 DB 狀態起跑, 不受其他 e2e 非預期殘留影響.
 let baseUsersRaw = [
     {

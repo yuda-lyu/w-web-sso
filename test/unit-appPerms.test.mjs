@@ -16,7 +16,7 @@ import procLang from '../server/procLang.mjs'
 
 describe('應用系統金鑰權限 — src/appPerms.mjs (ADR-069)', function() {
 
-    it('PERM-U-001-vocabulary: 權限全集為 7 個字串且順序固定, 基本權限僅 readUsers, 可取得管理者權限者為 writeUsers / readTokens / writeTokens', function() {
+    it('PERM-U-001-vocabulary: 權限全集為 7 個字串且順序固定, 基本權限僅 readUsers, 可取得系統管理者權限者為 writeUsers / readTokens / writeTokens', function() {
         assert.deepStrictEqual(ap.keysAppPerm, ['readUsers', 'writeUsers', 'readTokens', 'writeTokens', 'readIps', 'writeIps', 'readStats'])
         assert.deepStrictEqual(ap.keysAppPermBase, ['readUsers'])
         assert.deepStrictEqual(ap.keysAppPermHigh, ['writeUsers', 'readTokens', 'writeTokens'])

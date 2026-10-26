@@ -330,7 +330,7 @@ describe('migrateLegacyAppTokens: 升級遷移 (procCore)', function() {
         assert.strictEqual(await errOf(env.p.checkTokenAndCreateAppToken(tk, { name: 'x', usage: 'system', perms: [] }, { perm: 'writeTokens' })), 'tokenExpired')
         assert.strictEqual(await errOf(env.p.checkTokenAndChangePassword(tk, 'eng', 'x', 'y')) !== null, true)
         assert.strictEqual(await errOf(env.p.refreshToken(tk)), 'tokenAppNoRefresh')
-        assert.strictEqual(await env.p.checkTokenAndGetUserByToken('tk-admin', tk), null, '管理員查已失效之金鑰: 目標須此刻可用, 否則回 null(對外為 tokenNoPermission, S-5)')
+        assert.strictEqual(await env.p.checkTokenAndGetUserByToken('tk-admin', tk), null, '系統管理者查已失效之金鑰: 目標須此刻可用, 否則回 null(對外為 tokenNoPermission, S-5)')
         assert.strictEqual(env.tokens.get('r-hi').appUsage, 'retired', '被拒絕之呼叫不改資料')
     })
 

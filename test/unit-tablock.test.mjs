@@ -400,7 +400,7 @@ describe('表鎖之範圍與次序', function() {
         assert.strictEqual(r, 'done')
     })
 
-    it('SITE-LOCK-G04 [V14] 比對與寫入間插不進他人寫入: 管理員以舊基準存檔讀取後暫停期間, 他人之同表寫入(外部同步型整段 delAll+insert、系統直寫)必須等待', async function() {
+    it('SITE-LOCK-G04 [V14] 比對與寫入間插不進他人寫入: 系統管理者以舊基準存檔讀取後暫停期間, 他人之同表寫入(外部同步型整段 delAll+insert、系統直寫)必須等待', async function() {
         let env = mkEnvSso()
         let a = await rowsOf(env, 'Users')
         let baseline = baselineOfUsers(a)
@@ -437,7 +437,7 @@ describe('表鎖之範圍與次序', function() {
         await save.pm
         await sync.pm
         await verify.pm
-        assert.ok(save.state.ok, '管理員之比對與寫入未被插隊, 成功')
+        assert.ok(save.state.ok, '系統管理者之比對與寫入未被插隊, 成功')
         assert.strictEqual(env.users.get('u-b').name, 'by-sync')
         env.users.select = orig
     })

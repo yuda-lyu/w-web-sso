@@ -26,8 +26,8 @@ let keysAppPerm = [
 let keysAppPermBase = ['readUsers']
 
 
-//keysAppPermHigh: 可取得管理者權限之權限, 授予即等同管理者, 後台清單以提示標註
-//- readTokens: 金鑰清單含全部 session token 字串(含管理者), 持有者可冒用
+//keysAppPermHigh: 可取得系統管理者權限之權限, 授予即等同系統管理者, 後台清單以提示標註
+//- readTokens: 金鑰清單含全部 session token 字串(含系統管理者), 持有者可冒用
 //- writeTokens: 可改寫任一 token 之字串與效期, 亦可改自身 perms 自行擴權
 //- writeUsers: 可改寫使用者之 email 與 isAdmin, 再經重設密碼接管帳號
 let keysAppPermHigh = ['writeUsers', 'readTokens', 'writeTokens']

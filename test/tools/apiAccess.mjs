@@ -1,7 +1,7 @@
 //apiAccess.mjs — 存取矩陣與應用系統金鑰用途類 api 測試之共用夾具與輔助 (api-accessmatrix / api-apptoken-usage; ADR-095)
 //
-// 呼叫者 7 類(dspec w-web存取管控表.md〇): 無 token、使用者 token 一般(U)、使用者 token 管理員(A)、
-// 應用系統 token・使用者用途綁一般使用者(AU-U)、綁管理員(AU-A)、系統服務用途具全部 perms(AS+)、僅基本權限(AS-).
+// 呼叫者 7 類(dspec w-web存取管控表.md〇): 無 token、使用者 token 一般(U)、使用者 token 系統管理者(A)、
+// 應用系統 token・使用者用途綁一般使用者(AU-U)、綁系統管理者(AU-A)、系統服務用途具全部 perms(AS+)、僅基本權限(AS-).
 // fixture 以直寫庫建立(測試行程與後端共用同一 LMDB), 鑄造 API 本身由 api-apptoken-usage 另測.
 
 import { woItems } from '../../g_mOrm.mjs'

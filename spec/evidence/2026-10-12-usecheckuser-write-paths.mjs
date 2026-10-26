@@ -1,9 +1,9 @@
 //w-serv-orm 之使用者檢查(useCheckUser)與本套件各寫入點之相容性實測(ADR-083 取證; 2026-10-14 改為各版皆可跑完, ADR-085)
 //以真 getProc / getMapOrm 搭配只回成功之假資料表(不碰資料庫), 對各寫入點所傳之 userId 逐一呼叫 procOrm:
-//  自助註冊之新使用者自身 id、使用者清單之管理者 id 與應用系統金鑰之虛擬 id、金鑰 / IP 清單之空字串(server/procCore.mjs createUser、updateTabItems)
+//  自助註冊之新使用者自身 id、使用者清單之系統管理者 id 與應用系統金鑰之虛擬 id、金鑰 / IP 清單之空字串(server/procCore.mjs createUser、updateTabItems)
 //設定: S1 useCheckUser:true 未給 getUserById; S2 另給查 users 之 getUserById(部署方之合理實作); S3 useCheckUser 為非布林(null); S0 false(ADR-083 時本套件交出之值)
 //執行: node spec/evidence/2026-10-12-usecheckuser-write-paths.mjs
-//結果(歷史, 2026-10-12, w-serv-orm 1.1.8): S1 / S3 五者皆拒(invalid getUserById; 金鑰 / IP 清單為 invalid userId); S2 只有使用者清單(管理者 id)通過; S0 五者皆通過
+//結果(歷史, 2026-10-12, w-serv-orm 1.1.8): S1 / S3 五者皆拒(invalid getUserById; 金鑰 / IP 清單為 invalid userId); S2 只有使用者清單(系統管理者 id)通過; S0 五者皆通過
 //結果(2026-10-14):
 //  - w-serv-orm 1.1.9: 四組五者皆通過(getProc 不收 opt, 設定被靜默忽略)
 //  - w-serv-orm 1.1.10: S1、S2 於建構時即拒(opt.useCheckUser has been removed, …); S3(null)、S0(false)視同未給, 五者皆通過
@@ -31,7 +31,7 @@ let variants = {
 }
 let calls = [
     ['W1 createUser(新使用者自身 id)', 'u-new-self', 'users', 'insert', [{ id: 'u-new-self', account: 'a', email: 'a@x.y' }]],
-    ['W2 使用者清單(管理者 id)', 'id-for-admin', 'users', 'save', [{ id: 'u-1', name: 'n' }]],
+    ['W2 使用者清單(系統管理者 id)', 'id-for-admin', 'users', 'save', [{ id: 'u-1', name: 'n' }]],
     ['W2 使用者清單(應用系統金鑰之虛擬 id)', 'id-for-app', 'users', 'save', [{ id: 'u-1', name: 'n' }]],
     ['W3 金鑰清單(operatorId 空字串)', '', 'tokens', 'del', [{ id: 't-1' }]],
     ['W4 IP 清單(operatorId 空字串)', '', 'ips', 'save', [{ id: 'ip-1', ip: '10.0.0.1' }]],

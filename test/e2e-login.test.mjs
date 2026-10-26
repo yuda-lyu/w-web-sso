@@ -857,7 +857,7 @@ let cases = [
         },
     },
     {
-        // 011: view=backstage — backstage 為全螢幕 WDrawer 佈局，無 .sb；框左側選單可見項目（backstageMenuBox，非管理者僅「使用者資訊」一項）。
+        // 011: view=backstage — backstage 為全螢幕 WDrawer 佈局，無 .sb；框左側選單可見項目（backstageMenuBox，非系統管理者僅「使用者資訊」一項）。
         // 2026-09-28 改：原傳 'body' 框整頁（整張圖一個框＝沒有指出任何東西），且與同畫面之 e2e-autologin E2E-009 框法不對稱
         name: 'E2E-011-view-backstage',
         title: 'E2E-011-view-backstage',

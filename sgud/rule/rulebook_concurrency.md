@@ -4,7 +4,7 @@
 
 ## 多人同時編輯(原則 10)
 
-- **摘要**: 管理員之間「開著舊畫面存檔」時採**先動先贏、整次拒收、零寫入**: 前端載入時以 `buildBaseline` 對畫面所見之列自算有序基準 `[[id, 列摘要]]`, 存檔連同送出; 後端於**該表之表鎖內**新鮮讀取、重算比對, 不符整次拒收並提示重新載入. 每表一份寫入契約(`fields` 白名單 / `serverOnly` / `orderKey` / `scope`), 欄位分三類(客戶端 / 雙方 / 伺服器專有), **所有**寫入入口(後台存檔、登入續期登出、驗證信、改密碼、自動封鎖、計時器登錄 IP)取同一表鎖, 系統直寫只改不增、刪除未命中回報, 資料列記錄最後修改者. 外部應用(app 權杖)直呼 API 屬不帶基準之寫入, 照常寫入(後者蓋前者).
+- **摘要**: 系統管理者之間「開著舊畫面存檔」時採**先動先贏、整次拒收、零寫入**: 前端載入時以 `buildBaseline` 對畫面所見之列自算有序基準 `[[id, 列摘要]]`, 存檔連同送出; 後端於**該表之表鎖內**新鮮讀取、重算比對, 不符整次拒收並提示重新載入. 每表一份寫入契約(`fields` 白名單 / `serverOnly` / `orderKey` / `scope`), 欄位分三類(客戶端 / 雙方 / 伺服器專有), **所有**寫入入口(後台存檔、登入續期登出、驗證信、改密碼、自動封鎖、計時器登錄 IP)取同一表鎖, 系統直寫只改不增、刪除未命中回報, 資料列記錄最後修改者. 外部應用(app 權杖)直呼 API 屬不帶基準之寫入, 照常寫入(後者蓋前者).
 - **權威來源(絕對路徑)**:
   - 共用規格: `C:\opensrcOper\dspec\多人同時編輯之寫入契約.md`(本冊依其第 3、4、9、10、11、13 節); 外部匯入另見 `C:\opensrcOper\dspec\外部匯入之定義與機制.md`(第 113 項).
   - 上位原則: `C:\opensrcOper\sgud\proc\process_principle.md` 第 10 條(多人同時編輯)、第 11 條(外部匯入).
@@ -54,7 +54,7 @@ rg -n "useDbOrm|tableNamesExec|tableNamesSync" server/WWebSso.mjs
 | S05 | `procCore.mjs:952` | users save(`ormWrite`) | `verifyEmail` ← kpfun(:1195)、HTTP `/api/verifyEmail`(:1008→:1020) | `{id, timeVerified}` | 無 | 同 S02(殘缺列, X5-b) | 雙方欄位 `timeVerified` | users 鎖 + 只改不增; 補 `userIdUpdate/timeUpdate`(目前不更新, X2-g) |
 | S06 | `procCore.mjs:1027` | users save(`ormWrite`) | `resendVerifyEmail` ← kpfun(:1201) | `{id, tokenVerify}` | `kmx` `resendVerifyEmail:${account}` | 同 S02 | 伺服器專有 `tokenVerify`(不須表鎖; 但須只改不增) | 只改不增; 補更新者; 是否取表鎖見 R-CONC-01 注 1 |
 | S07 | `procCore.mjs:1185` | users save(`ormWrite`) | `checkTokenAndChangePassword` ← kpfun `changeUserPassword`(:1237) | `{id, password, isForceChangePw:'n'}` | `kmx` `changeUserPassword:${userId}` | 同 S02 | `password` 專有 + `isForceChangePw` 雙方 | users 鎖(kmx 外、表鎖內) + 只改不增 |
-| S08 | `procCore.mjs:1322` | users save(`ormWrite`) | `adminResetUserPassword` ← kpfun(:1247) | `{id, password, isForceChangePw:'y'}` | `kmx` `adminResetUserPassword:${targetUserId}` | 同 S02 | 同 S07 | 同 S07; 更新者=操作管理員 |
+| S08 | `procCore.mjs:1322` | users save(`ormWrite`) | `adminResetUserPassword` ← kpfun(:1247) | `{id, password, isForceChangePw:'y'}` | `kmx` `adminResetUserPassword:${targetUserId}` | 同 S02 | 同 S07 | 同 S07; 更新者=操作系統管理者 |
 | S09 | `procCore.mjs:1403` | tokens del(`ormWrite`) | `revokeTokensByUserId` ← `updateTabItems`(:1695、:1705)、`procProtect.blockAccount`(:213)、`blockAccountByToken`(:408) | 該 userId 全部 token | 無 | 無 token 回 0(冪等, 不視為未命中) | 刪除(撤銷) | 拆「持鎖版」與「自取鎖版」: 上游已持 tokens 鎖者用持鎖版 |
 | S10 | `procCore.mjs:1650` | users/tokens/ips del(`procOrm`) | `updateTabItems` ← `checkTokenAndUpdateUsersList`(:2004)/`TokensList`(:2137)/`IpsList`(:2200) ← kpfun(`WWebSso.mjs:1264/1284/1303`; app 權杖具 writeUsers/Tokens/Ips 亦可呼叫, :2024-2026) | 刪除集合 = **庫內全部 − 送出**(`:1582`) | `lockSave` `${op}:${operatorId}`(非表鎖, X6) | rows 取自同函式 select(:1512), 無存在檢查 | 後台整表存檔之刪除 | guardWrite 內; 刪除集合改為「基準內 − 送出」(無基準者 R-CONC-03) |
 | S11 | `procCore.mjs:1668` | tokens insert(`procOrm`, 依擁有者分組) | 同 S10(tokens) | 全欄(擁有者 = 送入 userId, R-ORM-03) | 同 S10 | — | 新增(直打 API 鑄造, ADR-042; UI 無新增列) | 同 S10; userIdUpdate 見 R-CONC-04 |
@@ -110,7 +110,7 @@ rg -n "useDbOrm|tableNamesExec|tableNamesSync" server/WWebSso.mjs
 | `userId` | 客戶端(**擁有者語意**, 規格 §3 / §11 明列入 fields) | UI 僅非 app 列可編(:684-698); procOrm insert 會改寫為建立者, 本套件依擁有者分組寫入(`procCore.mjs:1656-1669`, R-ORM-03); 不得被操作者覆寫 |
 | `isApp` | 客戶端 | UI checkbox(:170、:879-887); 系統不寫(funNew 為 '', 即 session 列 isApp 為 ''); 亦為 `scope` 判準 |
 | `perms` | 客戶端 | UI 權限清單(:172-238); 驗證 `procCore.mjs:2108-2127`; 縮短需前置清空(:1617-1642) |
-| `timeCreate` | 客戶端(本表另有語意) | UI 可編(:241-269); w-serv-orm 僅於 insert 戳記, save 不動(`getMapOrm.mjs:729-734`)→ 管理員編輯可留存; 系統僅於 S01 初始化 |
+| `timeCreate` | 客戶端(本表另有語意) | UI 可編(:241-269); w-serv-orm 僅於 insert 戳記, save 不動(`getMapOrm.mjs:729-734`)→ 系統管理者編輯可留存; 系統僅於 S01 初始化 |
 | `timeEnd` | **雙方** | UI 可編(:271-300); 系統寫: S02 `refreshToken`(`procCore.mjs:684-688`)、S01 初值 |
 | `timeUpdate` | **伺服器專有** | UI 顯示可編(:301-)但每次 save 由 adjustData 重設為現在(`getMapOrm.mjs:744-766`), 編輯無法留存; 系統寫 S02 → 不入基準、不採用客戶端值 |
 | `userIdUpdate`(新增) | 伺服器專有 | 補欄, R-CONC-04 |
@@ -151,7 +151,7 @@ export default {
 }
 ```
 
-**理由**: ①users 的 12 個 `fields` 恰為「後台能改」或「系統會改且後台能改」者, 其中 `timeVerified / timeBlocked / isForceChangePw` 被系統改動後舊畫面存檔即被拒(先動先贏), 否則即缺陷 X2-a/b/c(靜默回寫); ②`password / tokenVerify` 專有: 既有列取庫內值, 修 X2-d; ③`order` 以名次入基準(拖曳重排被偵測, 存檔重編號不誤擋, 規格 §5); ④tokens `userId` 為擁有者故入 fields; `timeUpdate` 專有因編輯無法留存; `timeEnd` 雙方因 S02 會寫; ⑤`scope` 使 session 列的高頻變動(登入、續期、登出隨時發生)不使管理員存檔被誤拒, 並使刪除集合不含載入後才出現的 session(修 E1); ⑥ips 無範圍: 系統自動登錄的新 IP 屬「他人於載入後新增」, 舊畫面存檔即被拒(符合原則; 繁忙系統上 ips 頁較常需重新載入, 見風險).
+**理由**: ①users 的 12 個 `fields` 恰為「後台能改」或「系統會改且後台能改」者, 其中 `timeVerified / timeBlocked / isForceChangePw` 被系統改動後舊畫面存檔即被拒(先動先贏), 否則即缺陷 X2-a/b/c(靜默回寫); ②`password / tokenVerify` 專有: 既有列取庫內值, 修 X2-d; ③`order` 以名次入基準(拖曳重排被偵測, 存檔重編號不誤擋, 規格 §5); ④tokens `userId` 為擁有者故入 fields; `timeUpdate` 專有因編輯無法留存; `timeEnd` 雙方因 S02 會寫; ⑤`scope` 使 session 列的高頻變動(登入、續期、登出隨時發生)不使系統管理者存檔被誤拒, 並使刪除集合不含載入後才出現的 session(修 E1); ⑥ips 無範圍: 系統自動登錄的新 IP 屬「他人於載入後新增」, 舊畫面存檔即被拒(符合原則; 繁忙系統上 ips 頁較常需重新載入, 見風險).
 
 ### R-CONC-03: 整表存檔——表鎖內新鮮讀取、基準比對、刪除集合 = 基準內 − 送出、只寫 fields、不帶基準者沿用既有政策(2026-10-22, 原則 10, 規格 §6 / §8)
 
@@ -165,19 +165,19 @@ export default {
 5. 拒收鍵轉語系鍵: `baselineMismatch → saveStale`、`rowNotFound → saveRowNotFound`、`baselineFormat → saveBaselineFormat`(皆提示重新載入; 第二波新增於 `server/procLang.mjs` eng + cht, `unit-lang` 守護).
 
 **tokens 雙層(規格 §3 `scope` 與本產品設計之衝突, 待裁示 T1)**:
-- **衝突**: 方案 v2 §3.2 稱「session token 之撤銷維持既有專用路徑」, 但盤點顯示**後台金鑰清單本身就是 session 的管理員撤銷路徑**: 清單列出全部 session 列(`getTokensList` 回全表, `procCore.mjs:2067-2076`), spec `流程_後台金鑰清單.md` E2E-003「勾選金鑰刪除並儲存以撤銷登入」(強制登出特定使用者)與 E2E-002(把 session 列 `isApp` 切為 `y` 即升為應用系統金鑰, ADR-042: 清單無新增列, 新 app 權杖由既有列勾選並改寫權杖字串產生); 其他撤銷路徑只有持有者自己登出(S03)與系統的刪除 / 停用 / 封鎖(S09). 若契約 `scope` 單純限 `isApp==='y'` 並以「基準內 − 送出」為刪除集合, 管理員在清單刪除 session 列將**靜默無效**(列不在基準 → 不被刪), 且 session 列升級路徑失去基準保護——屬功能退化與部分變更.
-- **建議(選項 P, 僅用核心純函數, 不改核心)**: 前端依 `scope` 切兩份基準送出: `baseline` = `buildBaseline(app 列, 契約 A: scope=isApp==='y')`(嚴格); `baselineSession` = `buildBaseline(非 app 列, 契約 B: 同 fields、scope=isApp!=='y')`(寬鬆). 後端: A 嚴格比對; B 以 `compareBaseline` 結果取 `added`(忽略, 不刪)、`removed`(他人已撤銷, 忽略並略過該列)、`changed`(系統續期等, 管理員**未編輯**該列〔送出摘要 = 基準摘要〕則略過、**已編輯**則 `baselineMismatch`); 刪除集合 = (A 基準 id ∪ B 基準 id) − 送出 id(僅庫內仍存在者); 升級(送出列 `isApp==='y'` 而庫內為 session)視為該列之編輯, 採用 `fields`; 不帶基準者只處理 A 範圍, session 列不刪、不覆蓋. 此解同時修 E1(載入後新 session 不被刪)、X1(已撤銷之 session 不復活: 送出而庫內不存在且未編輯者略過)、X7(續期後 `timeEnd` 不被舊值蓋回).
-- **備選**: ①A: 清單不再顯示 / 不可刪 session 列, 另建管理員撤銷 RPC——違反 spec E2E-001~003 與 UI 行為, e2e 標準圖大量重產; ②B': 基準含全部列——登入 / 續期使管理員存檔常被誤拒, 不可用. 選項 P 之線上格式為對既有 RPC 加選用第 4 參數 `{ baseline, baselineSession }`, 舊前端不送即走不帶基準政策.
+- **衝突**: 方案 v2 §3.2 稱「session token 之撤銷維持既有專用路徑」, 但盤點顯示**後台金鑰清單本身就是 session 的系統管理者撤銷路徑**: 清單列出全部 session 列(`getTokensList` 回全表, `procCore.mjs:2067-2076`), spec `流程_後台金鑰清單.md` E2E-003「勾選金鑰刪除並儲存以撤銷登入」(強制登出特定使用者)與 E2E-002(把 session 列 `isApp` 切為 `y` 即升為應用系統金鑰, ADR-042: 清單無新增列, 新 app 權杖由既有列勾選並改寫權杖字串產生); 其他撤銷路徑只有持有者自己登出(S03)與系統的刪除 / 停用 / 封鎖(S09). 若契約 `scope` 單純限 `isApp==='y'` 並以「基準內 − 送出」為刪除集合, 系統管理者在清單刪除 session 列將**靜默無效**(列不在基準 → 不被刪), 且 session 列升級路徑失去基準保護——屬功能退化與部分變更.
+- **建議(選項 P, 僅用核心純函數, 不改核心)**: 前端依 `scope` 切兩份基準送出: `baseline` = `buildBaseline(app 列, 契約 A: scope=isApp==='y')`(嚴格); `baselineSession` = `buildBaseline(非 app 列, 契約 B: 同 fields、scope=isApp!=='y')`(寬鬆). 後端: A 嚴格比對; B 以 `compareBaseline` 結果取 `added`(忽略, 不刪)、`removed`(他人已撤銷, 忽略並略過該列)、`changed`(系統續期等, 系統管理者**未編輯**該列〔送出摘要 = 基準摘要〕則略過、**已編輯**則 `baselineMismatch`); 刪除集合 = (A 基準 id ∪ B 基準 id) − 送出 id(僅庫內仍存在者); 升級(送出列 `isApp==='y'` 而庫內為 session)視為該列之編輯, 採用 `fields`; 不帶基準者只處理 A 範圍, session 列不刪、不覆蓋. 此解同時修 E1(載入後新 session 不被刪)、X1(已撤銷之 session 不復活: 送出而庫內不存在且未編輯者略過)、X7(續期後 `timeEnd` 不被舊值蓋回).
+- **備選**: ①A: 清單不再顯示 / 不可刪 session 列, 另建系統管理者撤銷 RPC——違反 spec E2E-001~003 與 UI 行為, e2e 標準圖大量重產; ②B': 基準含全部列——登入 / 續期使系統管理者存檔常被誤拒, 不可用. 選項 P 之線上格式為對既有 RPC 加選用第 4 參數 `{ baseline, baselineSession }`, 舊前端不送即走不帶基準政策.
 
 ### R-CONC-04: 資料列記錄最後修改者之使用者 id; 缺欄補欄; 直寫路徑補填; 擁有者語意不被覆寫(2026-10-22, 原則 10, 規格 §11)
 
-**規則**: 三表皆須有 `userIdUpdate`(伺服器專有)並於**每次寫入**記錄操作者 id(後台存檔 = 操作管理員; app 權杖 = 該 app 使用者 id; 使用者自助流程 = 該使用者 id; 系統計時器 = 固定常數, 見 D7); `tokens.userId` 為擁有者, 不被操作者覆寫.
+**規則**: 三表皆須有 `userIdUpdate`(伺服器專有)並於**每次寫入**記錄操作者 id(後台存檔 = 操作系統管理者; app 權杖 = 該 app 使用者 id; 使用者自助流程 = 該使用者 id; 系統計時器 = 固定常數, 見 D7); `tokens.userId` 為擁有者, 不被操作者覆寫.
 
 **現況**: users 有 `userIdUpdate` 但 S05~S08、S15、S16 直呼 `woItems` 不經 `adjustData`, **不更新** `timeUpdate / userIdUpdate`(探測 X2-g); tokens 無 `userIdUpdate`(僅 `userId` 擁有者 / `timeCreate / timeUpdate`); ips 只有 `id / ip / timeBlocked`; `updateTokensList / updateIpsList` 雖算了 `operatorId`(:2144、:2207)卻只用於 `lockSave` 鍵, 呼叫 `updateTabItems` 時未傳(:2130、:2193)→ procOrm 的 userId 為 `''`(探測 p7 輸出 `insert(x) by ` 空).
 
 **現況(2026-10-23)**: **已套**. 實作與下列規劃的差異: ④改為 `procOrm(..., 'insert', rowsAdd, { keepUserId: true })` 單次呼叫(w-serv-orm 1.1.17 `keepUserId`: 列上非空字串 `userId` 保留為擁有者、`userIdUpdate` 恆為操作者; 擁有者為空者以操作者補), 不再依擁有者分組、也不需追加 `save` 補正; ③系統直寫不經 `ormWrite` 而經 `procOrm` + `mustExist`(取得 `adjustData` 戳記與 clearXSS, 副作用: 封鎖寫入失敗之 log 錯誤文字改為核心固定字串). 測試: `SB-S04`(稽核逐站點)、`SB-T01`、`SB-T09`、`SB-I01`~`I03`、`CC-A-002` / `003` / `005`; 變異 M22(拿掉 keepUserId)、M23(不傳 operatorId)、M38(不記 system)、M39(refreshToken 不記擁有者)皆被抓到.
 
-**第二波處置**: ①schema: `src/schema/tables/tokens.mjs`、`ips.mjs` 加 `userIdUpdate`(STRING, 名「最新變更使用者主鍵」, 同 users), `funNew` 不預設(新增時由 procOrm 戳記); ②`updateTokensList / updateIpsList` 傳入 `operatorId`; ③直寫站點改經 `procOrm('save', …, { autoInsert:false })`(w-serv-orm 第 110 項提供)以取得 `adjustData` 戳記與 clearXSS, 或明確帶 `userIdUpdate / timeUpdate`; ④tokens 依擁有者分組 insert(S11)時 `adjustData` 以同一參數同寫 `userId` 與 `userIdUpdate`(=擁有者), 須追加一次 `save({ id, userIdUpdate: operatorId })` 補正, 或請核心提供分離參數(列入對核心之需求); ⑤既有資料**不回填**(`userIdUpdate` 缺值視同空, 規格化摘要中 undefined ≡ '' 且為專有欄不入基準, 無遷移風險). 更新者值: 後台存檔 = 操作者; S05 = 該使用者; S06 / S07 = 該使用者; S08 = 操作管理員; S01 / S02 = token 擁有者; 計時器與自動封鎖(S15~S19)= 常數 `'system'`(D7).
+**第二波處置**: ①schema: `src/schema/tables/tokens.mjs`、`ips.mjs` 加 `userIdUpdate`(STRING, 名「最新變更使用者主鍵」, 同 users), `funNew` 不預設(新增時由 procOrm 戳記); ②`updateTokensList / updateIpsList` 傳入 `operatorId`; ③直寫站點改經 `procOrm('save', …, { autoInsert:false })`(w-serv-orm 第 110 項提供)以取得 `adjustData` 戳記與 clearXSS, 或明確帶 `userIdUpdate / timeUpdate`; ④tokens 依擁有者分組 insert(S11)時 `adjustData` 以同一參數同寫 `userId` 與 `userIdUpdate`(=擁有者), 須追加一次 `save({ id, userIdUpdate: operatorId })` 補正, 或請核心提供分離參數(列入對核心之需求); ⑤既有資料**不回填**(`userIdUpdate` 缺值視同空, 規格化摘要中 undefined ≡ '' 且為專有欄不入基準, 無遷移風險). 更新者值: 後台存檔 = 操作者; S05 = 該使用者; S06 / S07 = 該使用者; S08 = 操作系統管理者; S01 / S02 = token 擁有者; 計時器與自動封鎖(S15~S19)= 常數 `'system'`(D7).
 
 ### R-CONC-05: 前端以 `buildBaseline` 對畫面所見之列自算基準, 不另向後端取; 不改 RPC 回傳形狀; 存檔被拒保留草稿(2026-10-22, 原則 10, 規格 §8)
 
@@ -197,8 +197,8 @@ export default {
 
 **規則**:
 1. 守門位置: `server/procCore.mjs` `updateTabItems` 寫入回呼, 表鎖內、`saveNewRowExists` 之後、perms 驗證與 diff 之前. 判準: 送出列 `get(row,'isApp','') !== 'y'` ∧ 庫內(鎖內新鮮讀取)不存在 ∧ 不在 `baseline` / `baselineSession` 內 → `Promise.reject('tokenSessionAddNotAllowed')`(整次拒收、零寫入、同批合法變更亦不寫; eng + cht 固定文字「不可新增登入權杖」, 不回顯值; 並 `srLog.warn`〔`fun-updateTabItems-reject`, 帶該 key〕).
-2. 豁免: 帶基準而該列在 `baselineSession` 內者不屬新增(載入時尚在、其後被撤銷): 管理員未動者照舊略過(不復活、不拒收——否則載入後被登出者使正常存檔被拒, 破壞選項 P 與 X1 略過語意), 已動者照舊 `saveStale`.
-3. 不變: 應用系統金鑰列(`isApp === 'y'`)之新增(帶 / 不帶基準, 含擁有者保留)、管理員(帶基準)對既有 session 列之刪除與升級為應用系統金鑰、不帶基準時 session 列不刪不覆蓋(D3).
+2. 豁免: 帶基準而該列在 `baselineSession` 內者不屬新增(載入時尚在、其後被撤銷): 系統管理者未動者照舊略過(不復活、不拒收——否則載入後被登出者使正常存檔被拒, 破壞選項 P 與 X1 略過語意), 已動者照舊 `saveStale`.
+3. 不變: 應用系統金鑰列(`isApp === 'y'`)之新增(帶 / 不帶基準, 含擁有者保留)、系統管理者(帶基準)對既有 session 列之刪除與升級為應用系統金鑰、不帶基準時 session 列不刪不覆蓋(D3).
 4. 收回之能力: 經清單「鑄造使用者 token(session 列)」(原 A23 斷言可行)——只收回、不放寬.
 
 **盤點指令**: `rg "tokenSessionAddNotAllowed" server` → 3 行(`procCore.mjs` 守門之 `srLog.warn` 與 `Promise.reject` 各 1、`procLang.mjs` 語系鍵 1〔含 eng + cht〕); 測試端 `rg "tokenSessionAddNotAllowed" test` 須含 `unit-saveBaseline`(SB-T16~T18)、`api-concurrency`(CC-A-022~024)、`unit-ormWriteFail`(A23). 判準只認 `isApp === 'y'` 為應用系統金鑰列(與 `updateTabItems` 內 `isApp(r)` 及契約 `scope` 一致).
@@ -209,11 +209,11 @@ export default {
 |---|---|---|---|
 | 不帶基準 + 已撤銷 session 列 | 拒收 | 已套 | SB-T16、CC-A-022 |
 | 帶基準 + 基準外之已撤銷 session 列 | 拒收 | 已套 | SB-T17(前段)、CC-A-023 |
-| 帶基準 + 基準內、管理員未動、已被撤銷之 session 列 | 略過(不拒收、不復活) | 已套(刻意不套守門) | SB-T17(後段)、SB-T03、CC-A-011 |
+| 帶基準 + 基準內、系統管理者未動、已被撤銷之 session 列 | 略過(不拒收、不復活) | 已套(刻意不套守門) | SB-T17(後段)、SB-T03、CC-A-011 |
 | `isApp` 為 `'n'` / `''` / 缺欄 / `'Y'` / `'yes'` | 皆視為 session 列 → 拒收(帶 / 不帶基準) | 已套 | SB-T18 |
 | 同批混入新 app 列與新 session 列 | 整批拒收、新 app 列亦不寫 | 已套 | SB-T18、CC-A-024 |
 | 應用系統金鑰列新增(帶 / 不帶基準)、session 刪除(帶基準)、session 升級 | 照常 | 刻意不套 | SB-T19、SB-T07、SB-T09、SB-T10、CC-A-021、CC-A-024、PERM-A-008 |
-| 觀察: 送回已撤銷 session 列並把 `isApp` 改為 `'y'` | 成為應用系統金鑰, 屬 `writeTokens` 持有者既有鑄造能力(ADR-042 / ADR-069 信任邊界, 等同管理者), 未增加權限 | 刻意不套 | 決策 `sso-run03`(`decisions.tsv`) |
+| 觀察: 送回已撤銷 session 列並把 `isApp` 改為 `'y'` | 成為應用系統金鑰, 屬 `writeTokens` 持有者既有鑄造能力(ADR-042 / ADR-069 信任邊界, 等同系統管理者), 未增加權限 | 刻意不套 | 決策 `sso-run03`(`decisions.tsv`) |
 
 **測試與修前紅 / 修後綠**: `unit-saveBaseline` SB-T16~T19(修前版 SB-T16~T18 紅、T19 對照綠; 修後全綠)、`api-concurrency` CC-A-022~024(修前版 3 / 3 紅——三案皆 `ok:true`, 即已撤銷列被寫回、新 session 列被接受; 修後 24 / 24 綠). 修前版 API 層取得方式: 單一取鎖期間暫時換入修改前之 `server/procCore.mjs`、`procLang.mjs`(複本 sha256 回驗, 結束必還原並以 sha256 回驗相符), 跑 CC-A-022~024 後還原再跑回歸. 變異驗證: `tmp/sso-run03/mutate.mjs`(歸檔 `agent-out/sso-run03-probes/`)12 項全數被抓到、對照組全綠: 拿掉守門 M01、不豁免基準內 M02 / M09、只管帶基準 M03、只管不帶基準 M04、判準改 `=== 'n'` M05、不看庫內已存在 M06、拒收鍵非專用鍵 M07、只檢查第一列 M08、cht 文字缺 M10、不記 log key M11、未限 tokens 路徑 M12.
 
@@ -221,19 +221,19 @@ export default {
 
 ## 現存缺陷實證(inv01, 2026-10-22; 腳本與輸出全文見下方「重現法」)
 
-探測以真實 `procCore` / `procProtect` 工廠 + 真實 w-serv-orm + w-orm-lmdb(暫存於 `./tmp/inv01/dbs/<名>`)進行, 管理員動作走 `checkTokenAndUpdate*List`(同 kpfun 路徑), 系統動作走真實入口(`verifyEmail`、`createUser`、`refreshToken`、`logoutByToken`、`pp.loginByAccountAndPassword` 連續失敗觸發自動封鎖等). 全部 9 支、21 個判定: **RED 19 / GREEN 2(對照組)**.
+探測以真實 `procCore` / `procProtect` 工廠 + 真實 w-serv-orm + w-orm-lmdb(暫存於 `./tmp/inv01/dbs/<名>`)進行, 系統管理者動作走 `checkTokenAndUpdate*List`(同 kpfun 路徑), 系統動作走真實入口(`verifyEmail`、`createUser`、`refreshToken`、`logoutByToken`、`pp.loginByAccountAndPassword` 連續失敗觸發自動封鎖等). 全部 9 支、21 個判定: **RED 19 / GREEN 2(對照組)**.
 
 | 編號 | 缺陷 | 探測 | 結果 | 程式位置 | 修於 |
 |---|---|---|---|---|---|
-| **E1** | 管理員存權杖清單時, 載入後才登入之 session token 被刪(使用者被登出) | `p1-e1-session-deleted.mjs` | RED: u2 登入後 token 有效, 管理員存舊清單(只改 app 權杖權限)後 `checkToken` = `tokenExpired`; 對照組(管理員所見之 u1 session 與 app 權杖)仍在 | 刪除集合 = 庫內全部 − 送出(`procCore.mjs:1512、:1582、:1650`) | R-CONC-03 |
-| X1 | 載入後被登出 / 被自動封鎖撤銷之 session token 於管理員存舊清單時**復活**(被當新增列重新寫入, 到期時間為原值)——**撤銷被繞過** | `p2-revoked-token-resurrect.mjs` | RED×2: u1 登出後 token 復活為 valid; u2 被自動封鎖(timeBlocked 有值)並撤銷後 token 復活為 valid | 送出而庫內不存在 → `r.add`(`:1582`)→ `procOrm insert`(:1668) | R-CONC-03(選項 P) |
-| X2 | 管理員存舊使用者清單時, 所有「與庫內不同」之列被整列以舊值寫回: `timeVerified`(驗證信已點 → 變回未驗證, 無法登入)、`timeBlocked`(自動封鎖被解除)、`isForceChangePw`(重設密碼後之強制變更旗標被蓋回 'n')、`tokenVerify`(重寄驗證信之新連結失效); 且管理員未動之列被標為管理員最後修改 | `p3-users-stale-revert.mjs` | RED×6(a 驗證時間、b 封鎖、c 強制變更旗標、d tokenVerify、f 稽核污染、g 系統直寫不更新 timeUpdate/userIdUpdate); GREEN×1(e: password 已受保護); 後果: u1 登入得 `userRegistrationNotVerified` | `ltdtDiffByKey`(整列 JSON.stringify)+ 整列 save(`procCore.mjs:1581-1582、:1681`); 專有欄保護只有 password(:1566-1579) | R-CONC-02 / 03 |
-| X3 | 載入後才出現之使用者(自助註冊、他位管理員新增)於管理員存舊清單時被刪除 | `p4-users-new-rows-deleted.mjs` | RED×2: newbie、byB 皆被刪 | 同 E1(users) | R-CONC-03 |
+| **E1** | 系統管理者存權杖清單時, 載入後才登入之 session token 被刪(使用者被登出) | `p1-e1-session-deleted.mjs` | RED: u2 登入後 token 有效, 系統管理者存舊清單(只改 app 權杖權限)後 `checkToken` = `tokenExpired`; 對照組(系統管理者所見之 u1 session 與 app 權杖)仍在 | 刪除集合 = 庫內全部 − 送出(`procCore.mjs:1512、:1582、:1650`) | R-CONC-03 |
+| X1 | 載入後被登出 / 被自動封鎖撤銷之 session token 於系統管理者存舊清單時**復活**(被當新增列重新寫入, 到期時間為原值)——**撤銷被繞過** | `p2-revoked-token-resurrect.mjs` | RED×2: u1 登出後 token 復活為 valid; u2 被自動封鎖(timeBlocked 有值)並撤銷後 token 復活為 valid | 送出而庫內不存在 → `r.add`(`:1582`)→ `procOrm insert`(:1668) | R-CONC-03(選項 P) |
+| X2 | 系統管理者存舊使用者清單時, 所有「與庫內不同」之列被整列以舊值寫回: `timeVerified`(驗證信已點 → 變回未驗證, 無法登入)、`timeBlocked`(自動封鎖被解除)、`isForceChangePw`(重設密碼後之強制變更旗標被蓋回 'n')、`tokenVerify`(重寄驗證信之新連結失效); 且系統管理者未動之列被標為系統管理者最後修改 | `p3-users-stale-revert.mjs` | RED×6(a 驗證時間、b 封鎖、c 強制變更旗標、d tokenVerify、f 稽核污染、g 系統直寫不更新 timeUpdate/userIdUpdate); GREEN×1(e: password 已受保護); 後果: u1 登入得 `userRegistrationNotVerified` | `ltdtDiffByKey`(整列 JSON.stringify)+ 整列 save(`procCore.mjs:1581-1582、:1681`); 專有欄保護只有 password(:1566-1579) | R-CONC-02 / 03 |
+| X3 | 載入後才出現之使用者(自助註冊、他位系統管理者新增)於系統管理者存舊清單時被刪除 | `p4-users-new-rows-deleted.mjs` | RED×2: newbie、byB 皆被刪 | 同 E1(users) | R-CONC-03 |
 | X4 | ips: 載入後系統自動登錄之新 IP 被刪; 系統封鎖之 IP 的 `timeBlocked` 被舊值蓋回(解除封鎖) | `p5-ips-stale.mjs` | RED×2 | 同 E1 / X2(ips) | R-CONC-03 |
-| X5 | 系統直寫以 `save` 預設 `autoInsert=true`: 讀到列後該列被刪, 寫入時把**只含被寫欄位之殘缺列**新增回庫, 並回報成功; 殘缺 users 列(email 空)使管理員正常存檔被擋 `userEmailEmpty` | `p6-stub-row-resurrect.mjs`(select 後人為暫停, 同 V14 作法) | RED×3: (a) refreshToken 回報續期成功且庫內多一筆缺 token / userId 之殘缺列; (b) verifyEmail 回成功且庫內多 `{id,timeVerified}` 殘缺列; (c) 原樣存回清單被拒 | S02、S05~S08、S15、S16、S18(直呼 `save` 無 `autoInsert:false`) | R-CONC-01 |
-| X6 | 不同管理員之清單儲存不互斥(`lockSave` 鍵為 `${op}:${operatorId}`), 讀 / 寫可交錯, 結果不等於任何串行順序 | `p7-no-table-lock.mjs` | RED: 事件序 `read(a) → read(a) → insert(x) → insert(y)`, 最終 `{a,x,y}` ∉ 串行結果 `{a,y}`/`{a,x}` | `server/lockSave.mjs:28`; `procCore.mjs:2052、2147、2210` | R-CONC-01 |
-| X7 | 載入後被續期(`refreshToken` 延長 `timeEnd`)之 session, 管理員存檔時 `timeEnd` 被舊值蓋回(提早到期) | `p8-token-timeend-revert.mjs` | RED: 續期後 00:48 → 存檔後回到 23:13 | 同 X2(tokens 整列 save) | R-CONC-03(選項 P) |
-| X8 | 自助註冊與管理員清單新增同帳號可同時成功, 產生重複帳號(全域唯一被破壞) | `p9-createuser-vs-admin-add.mjs` | RED: `account=dup` 共 2 列 | `createUser` 鎖(`cst` 鍵 `createUser:account:*`)與清單儲存鎖(`lockSave`)鍵空間不同(`procCore.mjs:852` vs `:2052`) | R-CONC-01(S04 入 users 鎖) |
+| X5 | 系統直寫以 `save` 預設 `autoInsert=true`: 讀到列後該列被刪, 寫入時把**只含被寫欄位之殘缺列**新增回庫, 並回報成功; 殘缺 users 列(email 空)使系統管理者正常存檔被擋 `userEmailEmpty` | `p6-stub-row-resurrect.mjs`(select 後人為暫停, 同 V14 作法) | RED×3: (a) refreshToken 回報續期成功且庫內多一筆缺 token / userId 之殘缺列; (b) verifyEmail 回成功且庫內多 `{id,timeVerified}` 殘缺列; (c) 原樣存回清單被拒 | S02、S05~S08、S15、S16、S18(直呼 `save` 無 `autoInsert:false`) | R-CONC-01 |
+| X6 | 不同系統管理者之清單儲存不互斥(`lockSave` 鍵為 `${op}:${operatorId}`), 讀 / 寫可交錯, 結果不等於任何串行順序 | `p7-no-table-lock.mjs` | RED: 事件序 `read(a) → read(a) → insert(x) → insert(y)`, 最終 `{a,x,y}` ∉ 串行結果 `{a,y}`/`{a,x}` | `server/lockSave.mjs:28`; `procCore.mjs:2052、2147、2210` | R-CONC-01 |
+| X7 | 載入後被續期(`refreshToken` 延長 `timeEnd`)之 session, 系統管理者存檔時 `timeEnd` 被舊值蓋回(提早到期) | `p8-token-timeend-revert.mjs` | RED: 續期後 00:48 → 存檔後回到 23:13 | 同 X2(tokens 整列 save) | R-CONC-03(選項 P) |
+| X8 | 自助註冊與系統管理者清單新增同帳號可同時成功, 產生重複帳號(全域唯一被破壞) | `p9-createuser-vs-admin-add.mjs` | RED: `account=dup` 共 2 列 | `createUser` 鎖(`cst` 鍵 `createUser:account:*`)與清單儲存鎖(`lockSave`)鍵空間不同(`procCore.mjs:852` vs `:2052`) | R-CONC-01(S04 入 users 鎖) |
 
 **未實證之分析項(不作缺陷宣稱, 第二波以 V14 型人為延遲測試驗證)**:
 - 登入 vs 停用 / 刪除交錯: `loginByAccountAndPassword` 查使用者(:329)→ 驗密碼(CPU 密集)→ `createToken`(:364、:411)與 `updateTabItems` 之撤銷(:1695-1709)無互斥, 可能在撤銷後鑄出屬於已停用使用者之 token(帶 `fun` 之權限閘因 `getGenUserByUserId` 只查 `isActive:'y'` 而拒絕, 單純 `checkToken` 不拒). 處置(第二波): 登入於 tokens 鎖內重讀使用者狀態再 insert, 驗密碼維持鎖外.
@@ -284,10 +284,10 @@ export default {
 | # | sso 之適配 | 測試(檔: 案) | 層 |
 |---|---|---|---|
 | V1 | 三表各: A、B 載入, A 存, B 舊基準存 → `saveStale`、DB 與 A 存後快照逐列相同(零寫入)、前端草稿仍在(儲存鈕仍顯示、modal 提示重新載入) | `api-concurrency`: CC-A-001(users)/002(tokens, app 列)/003(ips); `e2e-concurrency`: CC-E-001~003(雙語系) | api + e2e |
-| V2 | sso 無「未帶 id 之同步」(`ds.*.funNew` 僅 `createUser / createToken / ipDetectNew` 產 id; `updateTabItems` 要求 id): 適配為「不帶基準無變更重送」零寫入、`userIdUpdate / timeUpdate` 不變、管理員舊基準仍可存. 第 113 項落地後補 I1(同 `srcKey` 重送) | `api-concurrency`: CC-A-004 | api |
-| V3 | app 權杖(writeUsers)改一列 → 管理員舊基準被拒 | CC-A-005 | api |
+| V2 | sso 無「未帶 id 之同步」(`ds.*.funNew` 僅 `createUser / createToken / ipDetectNew` 產 id; `updateTabItems` 要求 id): 適配為「不帶基準無變更重送」零寫入、`userIdUpdate / timeUpdate` 不變、系統管理者舊基準仍可存. 第 113 項落地後補 I1(同 `srcKey` 重送) | `api-concurrency`: CC-A-004 | api |
+| V3 | app 權杖(writeUsers)改一列 → 系統管理者舊基準被拒 | CC-A-005 | api |
 | V4 | 真實自動封鎖(連續登入失敗)→ users 舊基準被拒; 計時器 `blockIpByIp` → ips 舊基準被拒; app 權杖 `refreshToken` 延長 → tokens 舊基準(app 列)被拒 | CC-A-006(三表) | api |
-| V5 | `resendVerifyEmail` / `changeUserPassword` 後管理員舊基準可存, 且 `tokenVerify` / `password` 維持系統所寫值(`isForceChangePw` 於 'n'→'n' 不變, 不誤擋) | CC-A-007 | api |
+| V5 | `resendVerifyEmail` / `changeUserPassword` 後系統管理者舊基準可存, 且 `tokenVerify` / `password` 維持系統所寫值(`isForceChangePw` 於 'n'→'n' 不變, 不誤擋) | CC-A-007 | api |
 | V6 | 不帶基準修改已刪列 → `saveRowNotFound`、不復活; 系統直寫對已刪列(`verifyEmail`、`refreshToken`、`blockAccount`)→ 拒絕且無殘缺列(X5) | `unit-tablock`: SITE-ROWGONE-S02/S05/S15/S16/S18; `api-concurrency`: CC-A-008 | unit + api |
 | V7 | `logoutByToken` 重複 → `invalid token`(既有鍵); 帶基準而 app 列已被刪 → `saveStale`; 不帶基準刪除未命中: 範圍內以「庫內 − 送出」計, 已不存在者天然不在集合; session 已撤銷者依 T1 決議(選項 P: 忽略) | CC-A-009; `unit-tablock` | api + unit |
 | V8 | E1(載入後新 session 不被刪且仍有效)、X3(載入後新使用者不被刪: 帶基準即整次拒收, 列仍在)、X4(ips 同)、X1(已撤銷 session 不復活) | CC-A-010~013(對應 p1~p5 轉綠) | api |
@@ -296,7 +296,7 @@ export default {
 | V11 | **不適用**(無推播 / 輪詢重建: `tableNamesSync: []`, 頁面無廣播訂閱); 以盤點指令 R-CONC-01 第 4 條與 `rg "broadcast|onBroadcast|setInterval" src/components/LayoutContent*.vue` 空結果守護 | — | 盤點 |
 | V12 | 多列提交中一列庫內已被改 → 整次拒收, 其餘列零寫入 | CC-A-016 | api |
 | V13 | 非陣列 / 字串 / `[[id,'h9:x']]` / 重複 id / 缺 id / 過長 → `saveBaselineFormat`, 不降級(DB 不變) | CC-A-017 | api |
-| V14 | 人為延遲: A 讀後暫停, B(另一管理員存檔 / 系統直寫)嘗試寫 → B 等待至 A 完成; **19 站點逐一**「他人持表鎖時該站點等待、不先寫」(SITE-LOCK-S01~S19)及「持鎖不死鎖」案例 | `unit-tablock` | unit |
+| V14 | 人為延遲: A 讀後暫停, B(另一系統管理者存檔 / 系統直寫)嘗試寫 → B 等待至 A 完成; **19 站點逐一**「他人持表鎖時該站點等待、不先寫」(SITE-LOCK-S01~S19)及「持鎖不死鎖」案例 | `unit-tablock` | unit |
 
 ### W2-6 預估影響之既有測試
 
@@ -304,7 +304,7 @@ export default {
 - `unit-ormWriteFail`(41 案: D1~D4、A1~A23、B1~B8、C1~C3b): A / B / C 系列依賴寫入順序與 `mkTable.log` 之寫入內容——寫入改為只寫 `fields` 後 `log.save` 之內容變; B1~B8 系統直寫改只改不增; C1~C3b 封鎖寫入改取表鎖. 估計(未逐案驗證)半數以上案例需改期望值或簽名.
 - `unit-iterClientObj`、`unit-queryKey`、`unit-register`、`unit-countKeys`、`unit-protectTimers`、`unit-sourceIp`: 僅 `buildProc / buildProtect` 簽名更新.
 - `api-doubleclick`(DC-01~08): `saveInProgress` 不變; `saveNewRowExists` 在不帶基準路徑保留, 帶基準路徑改由基準不符拒收——須補一案確認兩路徑皆擋.
-- `api-adduser`(13)、`api-deleteuser`(3)、`api-apptoken-perms`(7, PERM-A-001 讀回、PERM-A-008 鑄造擁有者)、`api-ormopts`(8)、`api-httpendpoints`(12, 對外 verify / refresh / logout 端點): 預期語意不變, 需跑; `api-apptoken-perms`(:190-433)、`api-ormopts`(:162、:171)、`api-doubleclick` DC-07 以管理員 / app 權杖不帶基準直呼 `updateTokensList`——不帶基準之刪除集合改限 app 範圍、整列寫入改只寫 `fields`, 依賴「以此刪 session 列」或「整列覆寫專有欄位」者須逐案核對(本輪未逐案讀; e2e-tokens E2E-003 為 UI 路徑, 屬選項 P 涵蓋).
+- `api-adduser`(13)、`api-deleteuser`(3)、`api-apptoken-perms`(7, PERM-A-001 讀回、PERM-A-008 鑄造擁有者)、`api-ormopts`(8)、`api-httpendpoints`(12, 對外 verify / refresh / logout 端點): 預期語意不變, 需跑; `api-apptoken-perms`(:190-433)、`api-ormopts`(:162、:171)、`api-doubleclick` DC-07 以系統管理者 / app 權杖不帶基準直呼 `updateTokensList`——不帶基準之刪除集合改限 app 範圍、整列寫入改只寫 `fields`, 依賴「以此刪 session 列」或「整列覆寫專有欄位」者須逐案核對(本輪未逐案讀; e2e-tokens E2E-003 為 UI 路徑, 屬選項 P 涵蓋).
 - e2e: 見 W2-7.
 
 ### W2-7 改動範圍 → e2e 檔對照(全域守則第 12 條所需; 與「spec → 測試檔對照」互補)
@@ -334,7 +334,7 @@ e2e 全套約 100 分鐘, 依守則第 12 條只在最末輪由主控於凍結�
 ## 待裁示與依原則自行決定
 
 **待裁示(主控 / 使用者)**:
-- **T1(必須, 影響第二波契約)**: tokens 清單 session 列之處置——建議選項 P(R-CONC-03「tokens 雙層」: 兩份基準 + 寬鬆 session 層)以保留 spec E2E-001~003 之管理員撤銷 / 升級功能; 備選 A(移除 session 列的編輯與刪除, 另建撤銷 RPC)、B'(全表基準, 不可用). 此項偏離方案 v2 §3.2「session token 之撤銷維持既有專用路徑」之字面, 因該專用路徑實際不存在.
+- **T1(必須, 影響第二波契約)**: tokens 清單 session 列之處置——建議選項 P(R-CONC-03「tokens 雙層」: 兩份基準 + 寬鬆 session 層)以保留 spec E2E-001~003 之系統管理者撤銷 / 升級功能; 備選 A(移除 session 列的編輯與刪除, 另建撤銷 RPC)、B'(全表基準, 不可用). 此項偏離方案 v2 §3.2「session token 之撤銷維持既有專用路徑」之字面, 因該專用路徑實際不存在.
 - **T2(對核心之需求, 請主控轉 opensrcOper / 第 110 項)**: ①procOrm 在 insert 分組寫入擁有者時, `userId`(擁有者)與 `userIdUpdate`(操作者)須可分別指定; ②`compareBaseline` 回傳之 `added / removed / changed` 須為 id 陣列(選項 P 需要); ③`guardWrite` 之 `write` 回呼須可在持鎖下呼叫 sso 內部函式(不可重入由呼叫端保證)、且允許 `tables` 為多表; ④純函數子模組須能被 vue-cli 5(webpack 5, 無 `transpileDependencies`)直接打包, 或明載語法層級; ⑤`buildBaseline` 排序規則須定義非數值 `order`(sso 自助註冊新增之 users 列 `order` 為 `''`, 實測 `ds.users.funNew()` 輸出 `"order":""`)之位置——建議視為 +∞(排在全部有數值者之後, 其間依 pk 碼元), 且瀏覽器與 Node 一致.
 - **T3(低)**: 第二波可否順手停止 `getUsersList` 回傳 `tokenVerify`(契約生效後前端不再需要整列存回它; 屬憑證類欄位硬化, 與 R-SEC-01 精神一致, 但改變 RPC 回傳形狀, 與規格「不改 RPC 回傳形狀」字面有出入, 故不自行決定).
 
@@ -345,7 +345,7 @@ e2e 全套約 100 分鐘, 依守則第 12 條只在最末輪由主控於凍結�
 - D4 `createUser`(S04)納入 users 表鎖(唯一性檢查與 insert 同鎖), 修 X8.
 - D5 系統直寫改經 procOrm 的「只改不增」選項(待核心 API), 以同時取得稽核戳記.
 - D6 `userIdUpdate` 補欄不回填既有資料.
-- D7 無使用者可歸屬之系統寫入(計時器、自動封鎖)的 `userIdUpdate` 記常數 `'system'`; 使用者自助流程記該使用者 id; 管理員流程記操作者.
+- D7 無使用者可歸屬之系統寫入(計時器、自動封鎖)的 `userIdUpdate` 記常數 `'system'`; 使用者自助流程記該使用者 id; 系統管理者流程記操作者.
 - D8 tokens / ips 存檔成功後重拉清單並重算基準(同 users 既有作法, 基準與畫面來自同一快照).
 - D9 V2 / V7 / V11 對 sso 之適配(見 W2-5).
 - D10 users 寫入後撤銷 tokens 於同一組 `[tokens, users]` 鎖內完成.
@@ -365,7 +365,7 @@ e2e 全套約 100 分鐘, 依守則第 12 條只在最末輪由主控於凍結�
 | V2 | 重送內容不變之同步 → 零寫入 | sso 無「未帶 id 之同步」, 適配為不帶基準無變更重送零寫入且先前基準仍可存: `api-concurrency` CC-A-004; 第 113 項落地後補 I1(同 `srcKey` 重送) | 已證(適配) |
 | V3 | 外部改內容 → 舊基準被拒 | CC-A-005(app 權杖 writeUsers) | 已證 |
 | V4 | 系統直寫雙方欄位後舊基準被拒 | SB-U05(驗證信)、SB-U06(自動封鎖)、SB-U08(重設密碼)、SB-I03(IP 封鎖)、SB-T11(app 權杖續期)、CC-A-006(真實自動封鎖與續期) | 已證 |
-| V5 | 系統寫伺服器專有欄位後管理員可存、該欄維持系統所寫之值 | SB-U07、SB-U09、CC-A-007、CC-A-018 | 已證 |
+| V5 | 系統寫伺服器專有欄位後系統管理者可存、該欄維持系統所寫之值 | SB-U07、SB-U09、CC-A-007、CC-A-018 | 已證 |
 | V6 | 修改時該列已被刪 → 拒絕、不復活 | 系統直寫: SB-S01~S03、SB-U16、CC-A-008; 帶基準之清單存檔: 整表比對得 `saveStale`(SB-U04、SB-I04) | 已證 |
 | V7 | 刪除已不存在之列 | SB-U04、SB-I04、SB-T06(session 冪等)、CC-A-009(重複登出沿用既有鍵 `invalid token`) | 已證 |
 | V8 | 整表存檔期間他人新增列不被刪 | E1: SB-T02、CC-A-010; X1: SB-T03、CC-A-011; X3: SB-U04、CC-A-012; X4: SB-I02、CC-A-013 | 已證 |
@@ -393,7 +393,7 @@ e2e 全套約 100 分鐘, 依守則第 12 條只在最末輪由主控於凍結�
 
 ### 變異驗證(`tmp/sso-run01/mutate.mjs`, 歸檔 `agent-out/sso-run01-probes/`)
 
-於 `./tmp/sso-run01/mut/<編號>/` 複製 `server/`、`src/`(元件只複製三個清單頁供靜態接線守護)與 4 支 unit 測試後套用單一變異, 跑 `unit-saveBaseline / unit-tablock / unit-writeContract / unit-ormWriteFail`; 對照組 M00(無變異)全綠. **52 項變異全數被抓到**(外審前 41 項, 其中首輪 40 / 41, 存活之 M37「帳號封鎖不於鎖內重讀使用者」經強化 SB-S03 後被抓到; 外審 sol 後修補與測試補強新增 M40~M50 共 11 項, 並重跑全矩陣): 逐站點取錯表鎖 M01~M09、M10 / M10b、M11~M14; 拿掉 `mustExist` M15a / M15b; 不比對基準 M16; session 列寬鬆改嚴格 M17; 刪除集合改回「庫內全部 − 送出」M18、不帶基準時亦刪 / 覆蓋 session 列 M27 / M28; 伺服器專有欄位採客戶端值 M19; 管理員未動之 session 也寫 M20; 已撤銷 session 當新增復活 M21; 拿掉 `keepUserId` M22; 稽核(不傳 operatorId M23、不記 system M38、refreshToken 不記擁有者 M39); T3 M24; opt 降級 M25; 登入不鎖內重讀 M26; 契約欄位 / scope 誤改 M29~M32; 前端工具 M33 / M34; 吞掉 `saveWriteFail` M35; 拒收鍵不轉語系鍵 M36; **外審後新增**: S15 帳號對應不於鎖內再驗 M40、S16 token 身分不於鎖內重讀 M41、登入鎖內不再判密碼 / 驗證 / 到期 M42、登入回傳值取鎖外舊使用者 M43、perms 驗證不略過摘要同基準之列 M44、不帶基準以送入原值比對有無編輯〔sol#8 之作法, 與 ADR-069 衝突, 此變異鎖定現行行為〕M45、`parseSaveOpt` 不做防禦性複製 M46、站點「先空取鎖再釋放、於鎖外做原讀寫」(S07 M47、S17 / S18 M48; 只有 SITE-LOCK-W01 抓得到, 逐站點「等待」案抓不到)、WWebSso 注入 procProtect 之鎖改為另一組 M49(WC-09)、使用者清單頁存檔不帶基準 M50(WC-10).
+於 `./tmp/sso-run01/mut/<編號>/` 複製 `server/`、`src/`(元件只複製三個清單頁供靜態接線守護)與 4 支 unit 測試後套用單一變異, 跑 `unit-saveBaseline / unit-tablock / unit-writeContract / unit-ormWriteFail`; 對照組 M00(無變異)全綠. **52 項變異全數被抓到**(外審前 41 項, 其中首輪 40 / 41, 存活之 M37「帳號封鎖不於鎖內重讀使用者」經強化 SB-S03 後被抓到; 外審 sol 後修補與測試補強新增 M40~M50 共 11 項, 並重跑全矩陣): 逐站點取錯表鎖 M01~M09、M10 / M10b、M11~M14; 拿掉 `mustExist` M15a / M15b; 不比對基準 M16; session 列寬鬆改嚴格 M17; 刪除集合改回「庫內全部 − 送出」M18、不帶基準時亦刪 / 覆蓋 session 列 M27 / M28; 伺服器專有欄位採客戶端值 M19; 系統管理者未動之 session 也寫 M20; 已撤銷 session 當新增復活 M21; 拿掉 `keepUserId` M22; 稽核(不傳 operatorId M23、不記 system M38、refreshToken 不記擁有者 M39); T3 M24; opt 降級 M25; 登入不鎖內重讀 M26; 契約欄位 / scope 誤改 M29~M32; 前端工具 M33 / M34; 吞掉 `saveWriteFail` M35; 拒收鍵不轉語系鍵 M36; **外審後新增**: S15 帳號對應不於鎖內再驗 M40、S16 token 身分不於鎖內重讀 M41、登入鎖內不再判密碼 / 驗證 / 到期 M42、登入回傳值取鎖外舊使用者 M43、perms 驗證不略過摘要同基準之列 M44、不帶基準以送入原值比對有無編輯〔sol#8 之作法, 與 ADR-069 衝突, 此變異鎖定現行行為〕M45、`parseSaveOpt` 不做防禦性複製 M46、站點「先空取鎖再釋放、於鎖外做原讀寫」(S07 M47、S17 / S18 M48; 只有 SITE-LOCK-W01 抓得到, 逐站點「等待」案抓不到)、WWebSso 注入 procProtect 之鎖改為另一組 M49(WC-09)、使用者清單頁存檔不帶基準 M50(WC-10).
 
 ### 外審 sol 後之修補(2026-10-23)
 
@@ -428,7 +428,7 @@ e2e 全套約 100 分鐘, 依守則第 12 條只在最末輪由主控於凍結�
   - 不帶基準者無從分辨「新增」與「載入後已被刪之舊列」: 送回已被刪除 / 撤銷之舊列(app 金鑰、IP、使用者)會被當新增寫回(外審 sol#1); 送出 `isApp='y'` 之 session 升級會以送入值寫入該列(含舊的 `timeEnd`, 外審 sol#2; session → 應用系統金鑰之升級是 spec 金鑰清單 E2E-002 之既有功能). 帶基準之後台頁皆不受影響.
   - **session 列已收回(2026-10-23, sso-run03, R-CONC-06)**: 送回已被登出 / 自動封鎖撤銷之 session 列不再復活(整次拒收 `tokenSessionAddNotAllowed`), 不再屬已知限制. 上列仍成立者只剩 app 金鑰 / IP / 使用者之舊列(其新增本屬合法操作, 且不涉撤銷繞過)與 session → app 升級之舊 `timeEnd`.
 - IP 清單在繁忙系統因計時器登錄新 IP, 舊畫面存檔較常需重新載入.
-- 管理員刪除 / 修改一個載入後被續期之 session 時整次拒收(現行前端不自動續期, 僅 API 端續期會觸發).
+- 系統管理者刪除 / 修改一個載入後被續期之 session 時整次拒收(現行前端不自動續期, 僅 API 端續期會觸發).
 - `rowsInvalid` 無法在真 ORM 下自然重現, 以測試替身回傳重複主鍵之列守護(SB-U17).
 - 離線工具 `g_initialData.mjs` 4 處直寫不取表鎖(前提: 服務已停止, 規格 §12).
 - 單一行程部署前提; 多行程需另採資料庫交易或條件寫入.

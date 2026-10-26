@@ -4,7 +4,7 @@
 //   S-1/S-3 使用者用途: 以 userId 綁使用者, 每次使用皆依所綁使用者「當前」狀態判定(存在、啟用、未封鎖、帳號未到期、已驗證, 與登入同一判準), 授權等同所綁使用者之使用者 token, perms 不適用,
 //           反查回所綁使用者實際資料＋isApp='y', 可改所綁使用者密碼(須舊密碼), 自我保護適用, 不給期限不能續期;
 //           系統服務用途: 不綁使用者, 反查回應用系統身分(id=app:<tokens.id>, 名稱=金鑰名稱), 授權依 perms, 不得改密碼, 建立者被停用 / 刪除 / 封鎖時不撤銷; 既有無用途欄之列視同系統服務用途
-//   S-2 adminResetUserPassword 之管理員判定同其他管理入口(funCheckAdmin), 非管理員同回 tokenExpired
+//   S-2 adminResetUserPassword 之系統管理者判定同其他管理入口(funCheckAdmin), 非系統管理者同回 tokenExpired
 //   S-4 使用者 token 之「本人」入口(checkToken / refreshToken / getUserByToken / changeUserPassword)亦依使用者當前狀態判定
 //   S-5 以 key=token 查他人時, 目標 token 須未逾期且其使用者目前可用, 否則一律固定鍵 tokenNoPermission
 // 作法: 真後端(11007), 直寫庫改變使用者狀態(不經清單存檔, 故不觸發撤銷)以驗「即時失效、恢復」; 經清單存檔之停用 / 刪除另驗撤銷範圍。
@@ -106,7 +106,7 @@ describe('應用系統金鑰兩種用途與使用者身分驗證缺口 (ADR-095)
                 else {
                     assert.strictEqual(inState.refreshKey, 'tokenAppNoRefresh', '使用者用途 refresh 一律固定鍵')
                 }
-                //管理員綁定者: 管理入口亦拒; 一般使用者綁定者本即拒
+                //系統管理者綁定者: 管理入口亦拒; 一般使用者綁定者本即拒
                 let lst = await callFapi('getUsersList', [c.token])
                 assert.strictEqual(lst.ok, false)
                 assert.strictEqual(lst.err, 'tokenExpired')
@@ -188,7 +188,7 @@ describe('應用系統金鑰兩種用途與使用者身分驗證缺口 (ADR-095)
     //
     // 經清單存檔之停用 / 刪除: 撤銷範圍 (停用、刪除使用者之撤銷只作用於其登入 token 與綁其之使用者用途金鑰)
     //
-    it('REV[停用] 管理員經清單停用使用者: 其登入 token 與綁其之使用者用途金鑰皆撤銷(列刪除); 系統服務用途金鑰(含建立者欄為該使用者者)不撤銷; 重新啟用後已撤銷者不恢復', async function() {
+    it('REV[停用] 系統管理者經清單停用使用者: 其登入 token 與綁其之使用者用途金鑰皆撤銷(列刪除); 系統服務用途金鑰(含建立者欄為該使用者者)不撤銷; 重新啟用後已撤銷者不恢復', async function() {
         await woItems.tokens.save([{ id: 'id-m-as-base', userId: 'id-for-viewer' }]) //建立者欄指向被停用者
         let r = await saveUsers('token-for-admin', (rows) => {
             rows.find((u) => u.id === 'id-for-viewer').isActive = 'n'
@@ -207,7 +207,7 @@ describe('應用系統金鑰兩種用途與使用者身分驗證缺口 (ADR-095)
         assert.strictEqual(await usable('token-for-viewer'), false)
     })
 
-    it('REV[刪除] 管理員經清單刪除使用者: 其登入 token 與使用者用途金鑰撤銷; 系統服務用途金鑰不撤銷', async function() {
+    it('REV[刪除] 系統管理者經清單刪除使用者: 其登入 token 與使用者用途金鑰撤銷; 系統服務用途金鑰不撤銷', async function() {
         await woItems.tokens.save([{ id: 'id-m-as-base', userId: 'id-for-viewer' }])
         let r = await saveUsers('token-for-admin', (rows) => {
             rows.splice(rows.findIndex((u) => u.id === 'id-for-viewer'), 1)
@@ -262,9 +262,9 @@ describe('應用系統金鑰兩種用途與使用者身分驗證缺口 (ADR-095)
 
 
     //
-    // S-2: adminResetUserPassword 之管理員判定
+    // S-2: adminResetUserPassword 之系統管理者判定
     //
-    it('S-2 adminResetUserPassword 與其他管理入口同一管理員判準: 被封鎖 / 帳號到期 / 未驗證 / 已停用 / 已降權之「管理員」(token 仍在)一律回 tokenExpired, 與 getUsersList 同鍵, 目標密碼不變', async function() {
+    it('S-2 adminResetUserPassword 與其他管理入口同一系統管理者判準: 被封鎖 / 帳號到期 / 未驗證 / 已停用 / 已降權之「系統管理者」(token 仍在)一律回 tokenExpired, 與 getUsersList 同鍵, 目標密碼不變', async function() {
         let cases = [
             { key: '封鎖', patch: { timeBlocked: FUTURE } },
             { key: '帳號到期', patch: { timeExpired: PAST } },
@@ -286,7 +286,7 @@ describe('應用系統金鑰兩種用途與使用者身分驗證缺口 (ADR-095)
                 await woItems.users.save([{ id: 'id-for-admin', timeBlocked: '', timeExpired: FUTURE, timeVerified: VERIFIED, isActive: 'y', isAdmin: 'y' }])
             }
         }
-        //對照: 正常管理員可重設
+        //對照: 正常系統管理者可重設
         let tid = nextTarget()
         await insertTargetOnly(tid)
         let ok = await callFapi('adminResetUserPassword', ['token-for-admin', 'eng', tid])
@@ -341,7 +341,7 @@ describe('應用系統金鑰兩種用途與使用者身分驗證缺口 (ADR-095)
     //
     // 自我保護 (updateUsersList)
     //
-    it('SELF 使用者用途綁管理員(AU-A): 不得刪除、降權、停用所綁使用者自己(同使用者 token); 可改他人; 系統服務用途操作者(AS+)無「自己」故不受此限', async function() {
+    it('SELF 使用者用途綁系統管理者(AU-A): 不得刪除、降權、停用所綁使用者自己(同使用者 token); 可改他人; 系統服務用途操作者(AS+)無「自己」故不受此限', async function() {
         let del = await saveUsers('m-au-a', (rows) => {
             rows.splice(rows.findIndex((u) => u.id === 'id-for-admin'), 1)
         })
@@ -369,14 +369,14 @@ describe('應用系統金鑰兩種用途與使用者身分驗證缺口 (ADR-095)
         assert.strictEqual((await woItems.users.select({ id: 'id-for-viewer' }))[0].description, 'edited-by-au-a')
         //寫入稽核: 更新者記所綁使用者(身分), 非 app 權杖列
         assert.strictEqual((await woItems.users.select({ id: 'id-for-viewer' }))[0].userIdUpdate, 'id-for-admin')
-        //AS+ 停用該管理員: 允許(無自己), 更新者記應用系統身分
+        //AS+ 停用該系統管理者: 允許(無自己), 更新者記應用系統身分
         let as = await saveUsers('m-as-all', (rows) => {
             rows.find((u) => u.id === 'id-for-admin').isActive = 'n'
         })
         assert.strictEqual(as.ok, true, JSON.stringify(as))
         assert.strictEqual((await woItems.users.select({ id: 'id-for-admin' }))[0].isActive, 'n')
         assert.strictEqual((await woItems.users.select({ id: 'id-for-admin' }))[0].userIdUpdate, 'app:id-m-as-all')
-        assert.strictEqual((await woItems.tokens.select({ token: 'm-au-a' })).length, 0, '被停用之管理員之使用者用途金鑰隨之撤銷')
+        assert.strictEqual((await woItems.tokens.select({ token: 'm-au-a' })).length, 0, '被停用之系統管理者之使用者用途金鑰隨之撤銷')
     })
 
     it('SELF[保留前綴] 後台清單新增之使用者主鍵不得以 app: 開頭(應用系統身分專用前綴); 既有列不受影響', async function() {
@@ -452,7 +452,7 @@ describe('應用系統金鑰兩種用途與使用者身分驗證缺口 (ADR-095)
     //
     // 鑄造 createAppToken
     //
-    it('MINT 使用者用途: 綁存在且啟用之使用者(可綁管理員); 權杖字串與主鍵由伺服端產生(忽略客戶端指定); 不給期限; 反查為所綁使用者; 可改所綁使用者密碼', async function() {
+    it('MINT 使用者用途: 綁存在且啟用之使用者(可綁系統管理者); 權杖字串與主鍵由伺服端產生(忽略客戶端指定); 不給期限; 反查為所綁使用者; 可改所綁使用者密碼', async function() {
         let r = await callFapi('createAppToken', ['token-for-admin', 'eng', { name: '  my-user-key  ', usage: 'user', userId: 'id-for-viewer', token: 'client-chosen', id: 'client-id', timeEnd: FUTURE }])
         assert.strictEqual(r.ok, true, JSON.stringify(r))
         assert.notStrictEqual(r.val.token, 'client-chosen')
@@ -469,10 +469,10 @@ describe('應用系統金鑰兩種用途與使用者身分驗證缺口 (ADR-095)
         let cp = await callFapi('changeUserPassword', [r.val.token, 'eng', 'pw-viewer', NEW_PW])
         assert.strictEqual(cp.ok, true, JSON.stringify(cp))
         assert.strictEqual((await callFapi('loginByAccountAndPassword', ['eng', 'ac-viewer', NEW_PW])).ok, true)
-        //綁管理員
+        //綁系統管理者
         let ra = await callFapi('createAppToken', ['token-for-admin', 'eng', { name: 'admin-key', usage: 'user', userId: 'id-for-admin' }])
         assert.strictEqual(ra.ok, true, JSON.stringify(ra))
-        assert.strictEqual((await callFapi('getUsersList', [ra.val.token])).ok, true, '綁管理員: 管理服務可用')
+        assert.strictEqual((await callFapi('getUsersList', [ra.val.token])).ok, true, '綁系統管理者: 管理服務可用')
         //兩次鑄造之權杖字串互異
         let rb = await callFapi('createAppToken', ['token-for-admin', 'eng', { name: 'admin-key', usage: 'user', userId: 'id-for-admin' }])
         assert.notStrictEqual(rb.val.token, ra.val.token)

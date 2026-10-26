@@ -74,7 +74,7 @@ let expectedModalText = {
     },
     'E2E-008-cannot-demote-self': {
         eng: 'Cannot demote yourself from admin',
-        cht: '不可解除自己的管理員權限',
+        cht: '不可解除自己的系統管理者權限',
     },
     'E2E-009-cannot-disable-self': {
         eng: 'Cannot disable yourself',
@@ -693,7 +693,7 @@ async function captureLegacyEmptyRedirSaved(page, lang) {
     assert.strict.equal(Number.isNaN(regRowIdx), false, '清單內應見自助註冊者列')
     await fillAgGridCell(page, tgtRowIdx, 'name', 'Modified Target')
 
-    //[多階段 stage1] 儲存前框自助註冊者列的 redir 空格: 空值且無警示 icon (不是管理員本次所設, 不攔下)
+    //[多階段 stage1] 儲存前框自助註冊者列的 redir 空格: 空值且無警示 icon (不是系統管理者本次所設, 不攔下)
     await ensureColumnVisible(page, 'redir')
     let cellSel = `.ag-row[row-index="${regRowIdx}"] .ag-cell[col-id="redir"]`
     let cell = await page.evaluate((sel) => {

@@ -22,7 +22,7 @@ import { runBaselineCase, createBaselineGate, pageHasText, collectDomText, waitG
 //   2. 跑測試比對:   npx mocha test/e2e-concurrency.test.mjs --timeout 300000
 //
 // 每個案例(使用者清單 / 金鑰清單 / IP 清單 各一, × 2 語系)走同一條使用者路徑:
-//   ① 管理員開啟清單、改一格(草稿) → ② 「另一位管理員 / 系統」於其載入後更動同表另一列(以直接寫庫代之) →
+//   ① 系統管理者開啟清單、改一格(草稿) → ② 「另一位系統管理者 / 系統」於其載入後更動同表另一列(以直接寫庫代之) →
 //   ③ 按儲存: 整次拒收, 彈出失敗訊息框(前綴 + saveStale 文字, 提示重新載入)[標準圖], 庫內無該修改 →
 //   ④ 關閉訊息框: 草稿保留(改過的格仍在、儲存鈕仍在) → ⑤ 重新載入清單: 見到他人之更動, 重改同一格並儲存成功 →
 //   ⑥ 不重新載入, 再改另一格並儲存仍成功(存檔成功後以伺服端重新讀取之列為新基準; 自己送出之值不當基準).
@@ -54,7 +54,7 @@ let mdiCloudUploadOutline = 'M6.5 20Q4.22 20 2.61 18.43 1 16.85 1 14.58 1 12.63 
 
 
 // ===================================================================
-// 測試資料: 管理員 + 各清單專屬 seed(全部審計時間欄凍結, 避免全頁截圖含時間欄而 flake)
+// 測試資料: 系統管理者 + 各清單專屬 seed(全部審計時間欄凍結, 避免全頁截圖含時間欄而 flake)
 // ===================================================================
 
 let admin = {
@@ -66,7 +66,7 @@ let admin = {
 }
 let userTokens = {}
 
-//使用者清單: base seed 3 位 + 管理員 + 兩位被編輯 / 被他人更動者
+//使用者清單: base seed 3 位 + 系統管理者 + 兩位被編輯 / 被他人更動者
 let seedUsers = [
     { id: 'id-cc-ua', account: 'cc-ua', name: 'CC UserA', email: 'cc-ua@test.com' },
     { id: 'id-cc-ub', account: 'cc-ub', name: 'CC UserB', email: 'cc-ub@test.com' },
@@ -121,7 +121,7 @@ async function insertSeed() {
     }
     await woItems.users.insert([mk({ ...admin, isAdmin: 'y' }, 890), mk(seedUsers[0], 891), mk(seedUsers[1], 892)])
 
-    //管理員 session 金鑰: token 字串固定(此列顯示於金鑰清單畫面, 隨機 UUID 會使 E2E-CC-002 標準圖每次不同); timeEnd 為動態值(隨執行時間), 該欄不在標準圖可見範圍; timeCreate / timeUpdate 凍結
+    //系統管理者 session 金鑰: token 字串固定(此列顯示於金鑰清單畫面, 隨機 UUID 會使 E2E-CC-002 標準圖每次不同); timeEnd 為動態值(隨執行時間), 該欄不在標準圖可見範圍; timeCreate / timeUpdate 凍結
     let t = ds.tokens.funNew({ userId: admin.id })
     t.token = 'cc-token-admin-session'
     t.timeEnd = ot().add(60, 'minute').format('YYYY-MM-DDTHH:mm:ss.SSSZ')
@@ -300,7 +300,7 @@ async function openList(page, lang, menuKey, headerCol) {
     await page.waitForTimeout(3000)
     await waitUntilExist(page, `backstage ${t.statistics} 文字`, (s) => document.body.innerText.includes(s), { arg: t.statistics, timeout: 60000 })
     await page.locator(`text="${t[menuKey]}"`).first().waitFor({ state: 'visible', timeout: 60000 })
-    //IP 清單: 本案管理員瀏覽器流量所登記之 127.0.0.1 由後端 ipDetectNew 計時器(每 2 秒)補登進 ips 表(標準圖之既有第一列), 須先等其入庫再開啟清單;
+    //IP 清單: 本案系統管理者瀏覽器流量所登記之 127.0.0.1 由後端 ipDetectNew 計時器(每 2 秒)補登進 ips 表(標準圖之既有第一列), 須先等其入庫再開啟清單;
     //否則登入後約 2 秒內開清單時計時器尚未補登, 清單少一列(2026-10-25 sso-run01 全套中 E2E-CC-003 cht 差 340px 一次, 同案重跑 10 案 0 敗: 計時器相位之時序賭注).
     //瀏覽器外之後端計時器結果以偵測驅動等待(pollUntil)取代時序假設
     if (menuKey === 'ipsList') {
@@ -541,7 +541,7 @@ async function runCase(mode, lang, c, extra = {}) {
             //每案自行重設為固定種子狀態, 不依賴前序測試之殘留(skill role-coder-for-test-e2e §6):
             //① 先清 server 記憶體之 IP 調用計數: ips 表之列不只來自 DB 寫入, ipDetectNew 計時器(每 2 秒)會把計數內「表中尚無」之 IP 補登進表,
             //   前序測試檔(e2e-autoblock 以 X-Forwarded-For 登記 1.2.3.x)殘留於計數者, 會在 ② 清表後數秒內被補登回來, 使 IP 清單多出一列.
-            //   本案管理員自己之瀏覽器流量所登記之 127.0.0.1 仍照常補登(標準圖之既有第一列, 與前序無關).
+            //   本案系統管理者自己之瀏覽器流量所登記之 127.0.0.1 仍照常補登(標準圖之既有第一列, 與前序無關).
             //② 清庫並寫入本案固定種子(順序不可對調: 先清庫再清計數, 計時器可於兩者之間補登) ③ 守門: 三表恰為固定種子.
             await cleanKpIpCallApi()
             await cleanSeed()

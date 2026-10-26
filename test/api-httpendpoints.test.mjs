@@ -291,7 +291,7 @@ describe('對外 HTTP 端點 API — getSsoUsersList / refreshToken (D14)', func
 
     it('verifyEmail: 有效 tokenVerify → 驗證成功, DB timeVerified 以 timemsTZ 格式寫入且共用判斷認定已驗證 (2026-09-29)', async function() {
         //spec 流程_使用者創建帳密「驗證信」: 驗證成功寫入 timeVerified; 須為 timemsTZ 格式(同其他時間欄),
-        //共用判斷 getIsVerified(istimemsTZ) 方認定已驗證 → 後台清單顯示已驗證、設為管理者後可過 funCheckAdmin.
+        //共用判斷 getIsVerified(istimemsTZ) 方認定已驗證 → 後台清單顯示已驗證、設為系統管理者後可過 funCheckAdmin.
         //修正前寫入秒級格式(now2str), 本案之格式斷言失敗
         await insertPendingUser()
         let res = await fetch(`${apiUrl}/api/verifyEmail?token=${encodeURIComponent(pendingTokenVerify)}&lang=eng`)

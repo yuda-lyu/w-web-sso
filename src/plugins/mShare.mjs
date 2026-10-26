@@ -139,7 +139,7 @@ function checkUserAdmin(u) {
     let b1 = getIsVerified(u) //須已驗證
     let b2 = !getIsExpired(u) //不能過期
     let b3 = !getIsBlocked(u) //不能封鎖中
-    let b4 = getIsAdmin(u) //須為系統管理員
+    let b4 = getIsAdmin(u) //須為系統管理者
     let b5 = getIsActive(u) //須有效
     let b = b1 && b2 && b3 && b4 && b5
     return b

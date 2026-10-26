@@ -2,15 +2,15 @@
 
 ## 觸發
 
-管理員登入後台後，於左側導覽點「Ips list」進入 IP 清單頁（`LayoutContentIps.vue`）。此頁列出系統追蹤的 IP 紀錄（含封鎖到期時間），提供管理員檢視、調整封鎖時間、刪除與儲存。
+系統管理者登入後台後，於左側導覽點「Ips list」進入 IP 清單頁（`LayoutContentIps.vue`）。此頁列出系統追蹤的 IP 紀錄（含封鎖到期時間），提供系統管理者檢視、調整封鎖時間、刪除與儲存。
 
 後端 `getIpsList` / `updateIpsList` 皆以 `funCheckAdmin` 包裝（`server/WWebSso.mjs:1279,1264`，funCheckAdmin 施加於 `checkTokenAndGetIpsList` / `checkTokenAndUpdateIpsList`，`server/procCore.mjs:1898,1922`），**僅具 admin 權限的有效 token 可存取**；token 無效／過期／非 admin 一律 reject。
 
 ## 重要流程
 
 - **E2E-001**
-  - title: 管理員進入 IP 清單頁顯示初始檢視態
-  - description: 驗證管理員以有效 admin token 登入後台後，自左側導覽進入「Ips list」頁，後端 `getIpsList` 回傳目前系統追蹤之 IP 紀錄並渲染於表格中。本案例為 IP 清單流程之第 1 段（初始檢視態），用於確認頁面開啟時可正常取得資料並呈現，無任何儲存或修改動作，僅驗證初始載入結果。
+  - title: 系統管理者進入 IP 清單頁顯示初始檢視態
+  - description: 驗證系統管理者以有效 admin token 登入後台後，自左側導覽進入「Ips list」頁，後端 `getIpsList` 回傳目前系統追蹤之 IP 紀錄並渲染於表格中。本案例為 IP 清單流程之第 1 段（初始檢視態），用於確認頁面開啟時可正常取得資料並呈現，無任何儲存或修改動作，僅驗證初始載入結果。
   - flow:
     - 測試資料：admin user（`isAdmin='y'` / `isActive='y'` / `timeVerified` 有值 / `timeExpired` 未來 / `timeBlocked` 空）+ 其有效 admin token；另 seed 5 筆 IP 記錄（各具固定 IP 與未來固定 `timeBlocked`，固定值以免 pixel 浮動）。
     - 操作：開乾淨登入頁 → 輸入 admin 帳號密碼 → 點「Log in」/「登入」→ 轉址後台 → 點側欄「Ips list」/「IP清單」→ 確認進入編輯模式。
@@ -21,8 +21,8 @@
     - 清理：移除本檔特化 admin user / token / 全部 IP 記錄，保留 base seed。
 
 - **E2E-002**
-  - title: 管理員修改某列欄位後儲存成功
-  - description: 驗證管理員於 IP 清單頁修改某列之可編輯欄位後點「Save」按鈕，後端 `updateIpsList` 以差異更新方式將變更寫入 DB `ips` 表，前端隨即顯示 System message 持久 modal 之儲存成功訊息（i18n 鍵 `ipSaveIpsSuccess`），管理員點 OK 確認後，表格重新取回資料並顯示已更新的欄位值。本案例採多階段截圖（共 3 張）：stage1 截「ip 已改、尚未 Save」之觸發圖，stage2 截成功 modal，stage3 截 OK 後表格已更新列。（測試以該列 `ip` 文字欄位之修改為「修改欄位」之代表——與修改 `timeBlocked` 走同一 updateIpsList 差異更新路徑、終態同為成功 modal；之所以不用 timeBlocked 是其欄為 WTimeminute 自訂渲染、UI 操作路徑不同。）
+  - title: 系統管理者修改某列欄位後儲存成功
+  - description: 驗證系統管理者於 IP 清單頁修改某列之可編輯欄位後點「Save」按鈕，後端 `updateIpsList` 以差異更新方式將變更寫入 DB `ips` 表，前端隨即顯示 System message 持久 modal 之儲存成功訊息（i18n 鍵 `ipSaveIpsSuccess`），系統管理者點 OK 確認後，表格重新取回資料並顯示已更新的欄位值。本案例採多階段截圖（共 3 張）：stage1 截「ip 已改、尚未 Save」之觸發圖，stage2 截成功 modal，stage3 截 OK 後表格已更新列。（測試以該列 `ip` 文字欄位之修改為「修改欄位」之代表——與修改 `timeBlocked` 走同一 updateIpsList 差異更新路徑、終態同為成功 modal；之所以不用 timeBlocked 是其欄為 WTimeminute 自訂渲染、UI 操作路徑不同。）
   - flow:
     - 測試資料：同 E2E-001（目標列為其中一筆 IP 記錄）。
     - 操作：登入後台 → 點「Ips list」/「IP清單」→ 於目標列之 `ip` 欄位雙擊進入編輯 → 清空後輸入新 IP 值（`10.0.0.99`）→ 按 Enter 離開編輯（cell 顯示新值、表格進入「已修改」態、Save 按鈕出現）→ 點 Save。
@@ -40,8 +40,8 @@
     - 清理：移除本檔特化資料並復原 seed，保留 base seed。
 
 - **E2E-003**
-  - title: 管理員勾選刪除某列後儲存成功
-  - description: 驗證管理員於 IP 清單頁勾選某列後執行刪除動作，再點「Save」按鈕送出，後端 `updateIpsList` 透過 diff 將該列自 DB `ips` 表移除，前端顯示 System message 持久 modal 之儲存成功訊息（`ipSaveIpsSuccess`）。本案例與 E2E-002 共享同一條成功路徑與 i18n 訊息，差別僅在於資料異動為「刪除」而非「修改」。採多階段截圖（共 2 張）：stage1 截「已勾選目標列、尚未刪除/Save」之觸發圖，stage2 截成功 modal。
+  - title: 系統管理者勾選刪除某列後儲存成功
+  - description: 驗證系統管理者於 IP 清單頁勾選某列後執行刪除動作，再點「Save」按鈕送出，後端 `updateIpsList` 透過 diff 將該列自 DB `ips` 表移除，前端顯示 System message 持久 modal 之儲存成功訊息（`ipSaveIpsSuccess`）。本案例與 E2E-002 共享同一條成功路徑與 i18n 訊息，差別僅在於資料異動為「刪除」而非「修改」。採多階段截圖（共 2 張）：stage1 截「已勾選目標列、尚未刪除/Save」之觸發圖，stage2 截成功 modal。
   - flow:
     - 測試資料：同 E2E-001（目標列為其中一筆 IP 記錄）。
     - 操作：登入後台 → 點「Ips list」/「IP清單」→ 勾選目標列之列選取 checkbox → 點垃圾桶（刪除）→ 點 Save。
@@ -56,8 +56,8 @@
     - 清理：移除本檔特化資料並復原 seed，保留 base seed。
 
 - **E2E-004**
-  - title: 管理員 token 失效時儲存顯示失敗訊息
-  - description: 驗證管理員點 Save 當下其 admin token 已過期或非 admin 時，後端 `checkToken`（內含 `funCheckAdmin`）拒絕請求，前端 `errTemp` 被設值後流程於檢查 errTemp 階段中止，顯示 System message 持久 modal 之儲存失敗訊息（i18n 鍵 `ipSaveIpsFail` 後接後端錯誤字串），DB `ips` 表內容不變。依 spec 粒度規則，後端 reject 屬可預期失敗，仍走 `showCheckYes` 持久 modal 而非 `$alert` toast。
+  - title: 系統管理者 token 失效時儲存顯示失敗訊息
+  - description: 驗證系統管理者點 Save 當下其 admin token 已過期或非 admin 時，後端 `checkToken`（內含 `funCheckAdmin`）拒絕請求，前端 `errTemp` 被設值後流程於檢查 errTemp 階段中止，顯示 System message 持久 modal 之儲存失敗訊息（i18n 鍵 `ipSaveIpsFail` 後接後端錯誤字串），DB `ips` 表內容不變。依 spec 粒度規則，後端 reject 屬可預期失敗，仍走 `showCheckYes` 持久 modal 而非 `$alert` toast。
   - flow:
     - 測試資料：同 E2E-001（目標列為其中一筆 IP 記錄）；本案模擬「填完表格後 admin token 才到期」——於進頁、改完 `ip` 欄位後、Save 前將 admin token 之 `timeEnd` 設為過去（過期）。
     - 操作：登入後台 → 點「Ips list」/「IP清單」→ 於目標列 `ip` 欄位雙擊編輯輸入新值（使 Save 按鈕出現）→（admin token 於 Save 前轉為過期）→ 點 Save。
@@ -70,7 +70,7 @@
 ## 執行流程
 
 ```
-001  管理員點 Save, 觸發 saveIps  [LayoutContentIps.vue:681]
+001  系統管理者點 Save, 觸發 saveIps  [LayoutContentIps.vue:681]
 002      執行非同步流程 core()  [LayoutContentIps.vue:686]
 003          開啟 loading  [LayoutContentIps.vue:695]
 004          檢查 isError  [LayoutContentIps.vue:698]
@@ -85,7 +85,7 @@
 013                  updateIpsList(rows)  [procCore.mjs:1927]
 014                      updateTabItems('ips', rows, 'id', {resetOrder:false, operatorId, optClient}) 差異更新  [procCore.mjs:updateTabItems]
                              (2026-10-23 多人同時編輯: 前端第 4 參數帶載入時之基準 { baseline }; 於 ips 表鎖內新鮮讀取並比對, 基準不符整次拒收
-                              saveStale / saveBaselineFormat, 零寫入; 通過後刪除集合 = 基準內 − 送出, 只寫摘要不同之列, 更新者 userIdUpdate 記操作管理員;
+                              saveStale / saveBaselineFormat, 零寫入; 通過後刪除集合 = 基準內 − 送出, 只寫摘要不同之列, 更新者 userIdUpdate 記操作系統管理者;
                               存檔成功後前端重新取清單作為新基準; 詳 流程_多人同時編輯.md, E2E-CC-003)
 015          檢查 errTemp  [LayoutContentIps.vue:725]
 016              非 null (後端 reject):
@@ -102,7 +102,7 @@
 
 | 觸發情境 | i18n 鍵 (grep `server/procLang.mjs`) | 顯示元件 | 規則 |
 |---|---|---|---|
-| 儲存成功 | `ipSaveIpsSuccess` | `showCheckYes` 持久 modal（System message） | 管理員須點 OK 確認讀過 |
+| 儲存成功 | `ipSaveIpsSuccess` | `showCheckYes` 持久 modal（System message） | 系統管理者須點 OK 確認讀過 |
 | 儲存失敗（後端 reject） | `ipSaveIpsFail`（後接錯誤字串） | `showCheckYes` 持久 modal | 同上 |
 | 儲存失敗（載入後資料已被他人或系統更動／資料已不存在／基準格式不識；2026-10-23） | `ipSaveIpsFail` 接 `saveStale`／`saveRowNotFound`／`saveBaselineFormat`（文字見 `流程_多人同時編輯.md`） | `showCheckYes` 持久 modal | 整次拒收、零寫入、草稿保留、提示重新載入 |
 | 儲存失敗（寫入資料庫失敗，部分變更可能已生效） | `ipSaveIpsFail` 接 `saveWriteFail`（「資料寫入未全部完成，部分變更可能已生效，請重新整理頁面確認後再操作」/「Not all changes were written, and some may have taken effect. Please reload the page and check before making changes.」） | `showCheckYes` 持久 modal | UI 不可達：僅資料庫寫入例外（procOrm 整批錯誤或逐筆失敗）時發生，以 `test/unit-ormWriteFail.test.mjs` A6 驗證；procOrm 原文只寫 log，已寫入之列不回滾，IP 清單快取照清（ADR-080） |
@@ -134,7 +134,7 @@
 
 每條帶分類標籤（缺陷（待修）／設計事實（記錄備查）／待裁示（業主決定）／已修復（附修復紀錄））；修復後不刪、改標已修復。
 
-- **已修復（附修復紀錄）** 2026-10-12（部署設定 `useCheckUser`）：部署方給 `useCheckUser: true`（或非布林值如 `null`）時，IP 清單之儲存必定失敗，modal「儲存IP數據失敗: 資料寫入未全部完成，部分變更可能已生效，請重新整理頁面確認後再操作」（`saveWriteFail`），不論是否給 getUserById、操作者為管理者或應用系統金鑰——本清單不帶操作者（userId 為空字串），w-serv-orm 之使用者檢查直接拒絕。修復：本套件不再啟用該檢查，給予即忽略並於啟動時記警告（ADR-083）；`test/api-ormopts.test.mjs` ORMOPT-007、008 於修改前失敗、修改後通過；以該設定啟動之後端實跑 e2e 修改 IP 儲存案例（eng），與既有標準圖相符。
+- **已修復（附修復紀錄）** 2026-10-12（部署設定 `useCheckUser`）：部署方給 `useCheckUser: true`（或非布林值如 `null`）時，IP 清單之儲存必定失敗，modal「儲存IP數據失敗: 資料寫入未全部完成，部分變更可能已生效，請重新整理頁面確認後再操作」（`saveWriteFail`），不論是否給 getUserById、操作者為系統管理者或應用系統金鑰——本清單不帶操作者（userId 為空字串），w-serv-orm 之使用者檢查直接拒絕。修復：本套件不再啟用該檢查，給予即忽略並於啟動時記警告（ADR-083）；`test/api-ormopts.test.mjs` ORMOPT-007、008 於修改前失敗、修改後通過；以該設定啟動之後端實跑 e2e 修改 IP 儲存案例（eng），與既有標準圖相符。
 - **已修復（附修復紀錄）** 2026-10-12（w-serv-orm 1.1.8 適配）：①IP 欄輸入含會被 XSS 清除改寫之 HTML 標記時，原會儲存成功但存成 `&lt;` 之形式（UI 可達）；②直打 API 時，新增列主鍵含標記或超過 LMDB 鍵長上限且與刪除同批者，刪除落地後才被拒（回 `saveWriteFail`）；表內重複主鍵者後列覆蓋前列而靜默寫入；rows 非陣列者經比對成「全數刪除」（僅內部呼叫可達）。修復：一律於驗證階段拒絕（`htmlMarkupNotAllowed` / `invalidRows`，ADR-081）。`test/unit-ormWriteFail.test.mjs` A12、A13、A18、A19、A21、A22 於修改前失敗、修改後通過；e2e IP 修改與刪除案例（兩語系）與既有標準圖相符。
 
 - **已修復（附修復紀錄）** 2026-09-29（ADR-076）：載入 IP 清單失敗時畫面只剩空表格（「No Rows To Show」）而無任何訊息，載入中亦先顯示空表格——與金鑰清單同一成因與修法，見 `spec/流程_後台金鑰清單.md` 之同日條目（真瀏覽器驗證修正前後）。

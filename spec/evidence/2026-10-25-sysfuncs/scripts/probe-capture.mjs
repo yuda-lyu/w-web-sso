@@ -54,7 +54,7 @@ let browser = null
 try {
     await startServersOnce()
     await resetToBaseSeed()
-    //管理員 redir 改為與測試同源(base seed 之 redir 為 localhost:8080, 與 baseUrl 不同源會跳出)
+    //系統管理者 redir 改為與測試同源(base seed 之 redir 為 localhost:8080, 與 baseUrl 不同源會跳出)
     let us = buildBaseUsers()
     us.find((u) => u.id === 'id-for-admin').redir = `${baseUrl}/?view=backstage&token={token}`
     //未驗證使用者(供「重寄驗證信」畫面; 只進到重寄畫面, 不送出, 避免真的寄信)
@@ -95,7 +95,7 @@ try {
         await uiState(page, 'S3-login-fail')
     })
 
-    //S4 管理員登入 → 後台各頁
+    //S4 系統管理者登入 → 後台各頁
     await scenario(browser, 'S4-admin-login-backstage', async (page) => {
         await page.goto(`${baseUrl}/?lang=eng`, { waitUntil: 'networkidle', timeout: 30000 })
         await page.waitForTimeout(3000)

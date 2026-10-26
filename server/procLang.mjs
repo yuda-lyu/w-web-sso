@@ -137,7 +137,7 @@ let kpLang = {
     },
     anUnexpectedErrorOccurred: {
         eng: `An unexpected error occurred, please contact the administrator`,
-        cht: `發生非預期錯誤，請洽管理員`,
+        cht: `發生非預期錯誤，請洽系統管理者`,
     },
     getDataError: {
         eng: `Failed to get data, please try again later`,
@@ -829,7 +829,7 @@ let kpLang = {
     },
     loginAccountExpired: {
         eng: 'Your account has expired. Please contact the administrator.',
-        cht: '您的帳號已過期，請聯繫管理員。',
+        cht: '您的帳號已過期，請聯繫系統管理者。',
     },
     loginUnknownError: {
         eng: 'An unexpected error occurred during login. Please try again later.',
@@ -1007,7 +1007,7 @@ let kpLang = {
     },
     tokenPermsHigh: {
         eng: 'Equivalent to administrator',
-        cht: '等同管理者權限',
+        cht: '等同系統管理者權限',
     },
     tokenPermsInvalid: {
         eng: 'Invalid app token permissions.',
@@ -1375,7 +1375,7 @@ let kpLang = {
     },
     resetPwEmContent: {
         eng: `Dear {name},<br><br>The administrator has reset the password for your {sender} account.<br><br>Account: {account}<br>New password: <strong>{newPassword}</strong><br><br>Please log in with this password and immediately set your own new password upon login.<br><br>If you did not expect this change, please contact the administrator.<br><br>This is an automated notification.`,
-        cht: `使用者 {name} 您好：<br><br>管理員已重設您於「{sender}」的密碼。<br><br>帳號：{account}<br>新密碼：<strong>{newPassword}</strong><br><br>請以此密碼登入後，立即變更為您自己的新密碼。<br><br>若非您預期之操作，請聯繫管理員。<br><br>此為系統自動通知信件。`,
+        cht: `使用者 {name} 您好：<br><br>系統管理者已重設您於「{sender}」的密碼。<br><br>帳號：{account}<br>新密碼：<strong>{newPassword}</strong><br><br>請以此密碼登入後，立即變更為您自己的新密碼。<br><br>若非您預期之操作，請聯繫系統管理者。<br><br>此為系統自動通知信件。`,
     },
 
     //adminResetUserPassword (前端 modifyItemPasswordById)
@@ -1407,13 +1407,13 @@ let kpLang = {
     //強制變更密碼 (使用者收信登入後 CheckYes 文字)
     userForceChangePwPrompt: {
         eng: `Your password has been reset by the administrator. Please change it to your own new password.`,
-        cht: `您的密碼已由管理員重設，請按確認後變更為您自己的新密碼。`,
+        cht: `您的密碼已由系統管理者重設，請按確認後變更為您自己的新密碼。`,
     },
 
     //後台新增/編輯使用者 - 自我鎖死保護
     cannotDemoteSelf: {
         eng: `Cannot demote yourself from admin`,
-        cht: `不可解除自己的管理員權限`,
+        cht: `不可解除自己的系統管理者權限`,
     },
     cannotDisableSelf: {
         eng: `Cannot disable yourself`,
@@ -1421,7 +1421,7 @@ let kpLang = {
     },
     cannotDeleteSelf: {
         eng: `Admin cannot delete yourself`,
-        cht: `管理員不得刪除自己`,
+        cht: `系統管理者不得刪除自己`,
     },
 
     //雙擊防護(後端)之第 2 次回應 (ADR-074)

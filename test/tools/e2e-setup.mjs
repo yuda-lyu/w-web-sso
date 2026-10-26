@@ -141,7 +141,7 @@ async function composeBox(buf, box) {
 
 
 //e2e 資料庫起始狀態重置: 清空 users / tokens / ips 三張表, 再插入「基本測試數據」(g_initialData
-//的 3 使用者 + 4 token, 含系統管理員 ac-admin). 每個 e2e 測試 setup 階段先呼叫此函式, 再插入
+//的 3 使用者 + 4 token, 含系統管理者 ac-admin). 每個 e2e 測試 setup 階段先呼叫此函式, 再插入
 //自己的特化數據, 即可保證從相同已知 DB 狀態起跑 — 不受其他 e2e 非預期結束殘留 / 既有數據變動影響.
 //teardown 階段各測試只刪自己的特化數據, 不動基本種子 → 非 e2e 時段仍保有完整基本數據可用.
 async function resetToBaseSeed() {
@@ -207,7 +207,7 @@ async function cleanKpAccountLoginFailed() {
 //後台左側選單之可見項目聯集（紅框目標；「已進入後台、選單依身分列出頁籤」之觀看區）：
 //技能 §7.2 清單列「進入頁面 → 當時可見之項目列的聯集」、§7.3-2 不框整欄空白。選單為 WListVertical，項目根元素為 WListItem
 //（inline style 帶 border-top-left-radius，無 class 可用）；範圍為 WDrawer 平移層 [ev-stable]（x≈0、寬≈229px 之 sidebar）。
-//2026-09-28 收斂自 e2e-autologin（原框整個抽屜，非管理者僅 1 項卻框整欄）並套用於 e2e-login E2E-011（原框整個 body；兩案為同一畫面，須對稱）。
+//2026-09-28 收斂自 e2e-autologin（原框整個抽屜，非系統管理者僅 1 項卻框整欄）並套用於 e2e-login E2E-011（原框整個 body；兩案為同一畫面，須對稱）。
 function backstageMenuBox() {
     return itemsUnionBox('div[style*="border-top-left-radius"]', { within: '[ev-stable]' })
 }

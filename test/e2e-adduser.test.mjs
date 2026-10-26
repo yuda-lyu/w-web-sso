@@ -85,7 +85,7 @@ let expectedModalText = {
     },
     'E2E-010-cannot-demote-self': {
         eng: 'Cannot demote yourself from admin',
-        cht: '不可解除自己的管理員權限',
+        cht: '不可解除自己的系統管理者權限',
     },
     'E2E-011-cannot-disable-self': {
         eng: 'Cannot disable yourself',
@@ -875,7 +875,7 @@ async function captureCannotDemoteSelf(page, lang) {
     let bufTrigger = await captureStableWithBox(page, `.ag-row[row-index="${adminRowIdx}"] .ag-cell[col-id="isAdmin"]`)
     await clickSave(page)
     await waitCheckYes(page, lang)
-    //[多階段 stage2] 觀看區 = CheckYes modal（不可解除自己管理員權限的前端攔截訊息）
+    //[多階段 stage2] 觀看區 = CheckYes modal（不可解除自己系統管理者權限的前端攔截訊息）
     let bufModal = await captureStableWithBox(page, 'div[style*="overscroll-behavior"] div[tabindex="0"] > div')
     return {
         'E2E-010-1-isadmin-uncheck-cell': bufTrigger,

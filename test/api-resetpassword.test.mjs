@@ -144,7 +144,7 @@ describe('ResetPassword API — adminResetUserPassword 拒絕情境 (API-001/003
         assert.strict.equal(r.err, 'adminResetPasswordCannotResetSelf', `錯誤訊息應為 'adminResetPasswordCannotResetSelf', 實際: ${r.err}`)
     })
 
-    it('API-004-forbidden-non-admin: 非 admin 呼叫, reject "tokenExpired"(管理員判定同其他管理入口, S-2; 原回 adminResetPasswordForbidden)', async function() {
+    it('API-004-forbidden-non-admin: 非 admin 呼叫, reject "tokenExpired"(系統管理者判定同其他管理入口, S-2; 原回 adminResetPasswordForbidden)', async function() {
         let attackerToken = userTokens[testUsers.attacker.id]
         let r = await callFapi('adminResetUserPassword', [attackerToken, 'eng', testUsers.targetEng.id])
         assert.strict.equal(r.ok, false, `預期 reject, 實際 resolve: ${JSON.stringify(r)}`)
@@ -253,7 +253,7 @@ describe('ResetPassword API — 後端契約 (API-002/007/008/009)', function() 
 
     it('API-008-multi-device-tokens-revoked: target 有 2 個 session token 與 1 個以其為擁有者之 app token, admin reset 後 2 個 session token 被撤銷、app token 仍存在', async function() {
         //2026-10-23 sso-run04 第 117 項(使用者裁示, R-SESS-01 / ADR-093): 原案例「admin reset 不主動清 user token」(ADR-009)已被取代,
-        //同一案例編號與 fixture 改為斷言新規則: 管理員重設撤銷對方全部 session 權杖(isApp !== 'y'), app 權杖不是 session 不撤銷; 端到端詳見 api-passwordsession.test.mjs
+        //同一案例編號與 fixture 改為斷言新規則: 系統管理者重設撤銷對方全部 session 權杖(isApp !== 'y'), app 權杖不是 session 不撤銷; 端到端詳見 api-passwordsession.test.mjs
         //用獨立 target (targetEng3) 避開其他 case 對 targetEng 之 30s throttle 污染
         let targetId = testUsers.targetEng3.id
         let oldTks = await woItems.tokens.select({ userId: targetId }).catch(() => [])

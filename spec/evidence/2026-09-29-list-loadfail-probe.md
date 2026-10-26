@@ -3,7 +3,7 @@
 ## 方法
 
 - 環境：`test/tools/e2e-setup.mjs` 之 `startServersOnce()`（後端 11007、前端 dev server 8080）、`launchBrowser()`（確定性渲染旗標之 headless Chromium），視窗 1280×720，eng。
-- 資料：`resetToBaseSeed()` 後插入一位管理者（帳號 `pl-admin`）供登入。
+- 資料：`resetToBaseSeed()` 後插入一位系統管理者（帳號 `pl-admin`）供登入。
 - 步驟（每頁一個全新 context）：於 `**/api/main` 掛攔截，將請求本體以 `u8arr2obj` 解出 `func`，僅當 `func` 為該頁之清單載入函式（`getUsersList` / `getTokensList` / `getIpsList`）時 `route.abort('failed')`，其餘照常 → 以真鍵盤登入 → 點主選單之「Users list」／「Tokens list」／「Ips list」。
 - 觀察：點選後約 1 秒之畫面（修正後才取樣）；之後最長等 90 秒至畫面出現 `getDataError` 文字（「Failed to get data, please try again later」），記錄耗時；最終畫面有無表格（`.ag-root-wrapper`）與資料列數。另於不攔截之 context 依序點三頁，確認資料列出現、無等待或錯誤文字殘留。
 - 探測腳本為 AI 暫存（`tmp/probe-loadfail.mjs`，已清除）；重做時依上列方法即可。

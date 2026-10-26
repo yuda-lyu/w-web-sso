@@ -4,7 +4,7 @@
 //   - IP-A-001 標頭首段非 IP(length、constructor、<img src=x>、unknown、1.2.3.4:abc、1000 字元): ips 表與統計皆記連線位址, 原字串不進任何持久面; log 有限流之 warn
 //   - IP-A-002 標頭首段為合法 IP(IPv4、IPv6、::ffff:、大寫 IPv6): ips 表與統計原樣登錄(不改寫)
 //   - IP-A-003 以原字串寫入 ips 表之封鎖列(::ffff:203.0.113.20)仍命中; 未映射之 203.0.113.20 不受影響(無正規化)
-//   - IP-A-004 窗口(minForIpCallApi)過後無新請求之 IP, 其計數鍵被刪除: 管理者自 ips 表刪除之列不再被偵測計時器復活(修改前鍵永久殘留, 每 2 秒復活)
+//   - IP-A-004 窗口(minForIpCallApi)過後無新請求之 IP, 其計數鍵被刪除: 系統管理者自 ips 表刪除之列不再被偵測計時器復活(修改前鍵永久殘留, 每 2 秒復活)
 //   - IP-A-005 標頭非 IP 時以連線位址判定: 多個不同非 IP 標頭值共用連線位址之計數(超過門檻即封鎖該連線位址), 封鎖後非 IP 標頭之請求被拒、合法他 IP 不受影響
 //   - IP-A-006 標頭帶 port(IPv4:port、[IPv6]:port): 去 port 取 IP——ips 表與統計皆記去 port 後之 IP(同 IP 不同 port 為同一 IP), 不退回連線位址(run02 裁示 1)
 //   - IP-A-007 帶 port 之請求以 IP 本身計數與判定封鎖: 不同 port 合併計次而封鎖該 IP、以原字串寫入之封鎖列對帶 port 之請求命中, 連線位址與其他 IP 不受牽連
@@ -197,7 +197,7 @@ describe('來源 IP 之格式驗證與計數鍵清理經真後端 (R-IP-01 / R-C
         assert.notStrictEqual(rBad.msg, 'permission denied', `非 IP 標頭應以連線位址判定(實得 ${JSON.stringify(rBad)})`)
     })
 
-    it('IP-A-004 窗口過後無新請求之 IP 其計數鍵被刪除: 管理者刪除之 ips 列不再被偵測計時器復活', async function() {
+    it('IP-A-004 窗口過後無新請求之 IP 其計數鍵被刪除: 系統管理者刪除之 ips 列不再被偵測計時器復活', async function() {
         //窗口 0.1 分鐘 = 6 秒(剪枝與偵測計時器皆每 2 秒, 登錄與剪枝之間留足餘裕); 門檻取大值不觸發封鎖
         await fresh({ minForIpCallApi: 0.1, numForIpCallApi: 100000 })
         let ip = '203.0.113.50'
