@@ -52,14 +52,14 @@
 ### R-ORM-02: 本套件不轉交 w-serv-orm 已移除之使用者檢查設定; settings / optExt 給予上游會拒絕之值者忽略並於啟動時記警告(2026-10-14 改寫, ADR-085; 原 2026-10-12, ADR-083)
 
 - **規則**:
-  1. `WServOrm(ds, WOrm, url, db)` 與 `getProc(mapOrm)` 一律不傳 opt——w-serv-orm 1.1.9 起無設定鍵, 1.1.10 起 `useCheckUser` / `getUserById` / `useExcludeWhenNotAdmin` 給予 undefined、null、false 以外之值即於建構時拋錯(`w-serv-orm/src/checkOptRemoved.mjs`). 站點: `server/WWebSso.mjs`、`g_mOrm.mjs`、`test/tools/unitProc.mjs` 之 `mkProcOrm`.
+  1. 不轉交已移除之使用者檢查設定: `getProc(mapOrm)` 一律不傳 opt, `WServOrm(ds, WOrm, url, db, opt)` 之 opt 除診斷輸出之 `funLog`(R-ORM-04, 2026-10-28 起 `server/WWebSso.mjs` 傳 `{ funLog }`)外不傳任何鍵(`g_mOrm.mjs` 不傳)——w-serv-orm 1.1.9 起無此三鍵, 1.1.10 起 `useCheckUser` / `getUserById` / `useExcludeWhenNotAdmin` 給予 undefined、null、false 以外之值即於建構時拋錯(`w-serv-orm/src/checkOptRemoved.mjs`). 站點: `server/WWebSso.mjs`、`g_mOrm.mjs`、`test/tools/unitProc.mjs` 之 `mkProcOrm`.
   2. settings / optExt 之三鍵由 `server/getIgnoredOrmKeys.mjs` 判定: 逐鍵委派上游 `checkOptRemoved`(其註解明載供包裝層檢查自身之 opt), 會被上游拒絕者依 useCheckUser、getUserById、useExcludeWhenNotAdmin 之序列出, `WWebSso` 於啟動時記警告(console 與 srLog 之 boot 事件, warn), 不中斷啟動; undefined、null、false 不列(與上游接受集一致, 判準只有上游一份).
   3. 警告訊息只寫出被列出之鍵名, 理由文字不得含三鍵之名(`api-ormopts` ORMOPT-001 以「未給之鍵不出現在訊息」斷言).
   4. 寫入之授權由各功能負責: 清單儲存於呼叫 procOrm 前經 `checkToken(token, { fun: funCheckAdmin, perm })`; 自助註冊由 `allowUserRegistration` 與輸入驗證守門. 新增經 procOrm 之寫入點須同樣先授權, 不得倚賴 ORM 層(w-serv-orm 1.1.9 起 procOrm 不做授權, `WServOrm.mjs` JSDoc「授權」段).
   5. 若日後開放 ORM 通道(WServHapi 之 `operOrm` / `tableNamesExec`), 授權由 w-serv-webdata 之 `authorizeExec` 另行設計(含應用系統金鑰之虛擬使用者、自助註冊); 透傳三鍵已不可能(上游拋錯).
 - **理由**: 擋板必須保留——部署方之舊設定若給 `useCheckUser: true` 而本套件轉交, w-serv-orm 1.1.10 於建構時拋錯、後端啟動即失敗(違反「舊 settings 原封不動, 新版必須能啟動」, `sgud/exp/experience.md` 套件身分第 1 條); 判準委派上游, 使「警告」恰為「若轉交即拒絕」之值. 原 ADR-083 之理由(上游之使用者檢查使註冊與清單儲存必然失敗、非布林預設為 true)自 1.1.9 起不成立. 見 ADR-085.
 - **盤點指令**:
-  - Grep `WServOrm\(` 於 `server/` 與根目錄 `*.mjs` → `WWebSso.mjs`、`g_mOrm.mjs` 各 1, 皆 4 個參數.
+  - Grep `WServOrm\(` 於 `server/` 與根目錄 `*.mjs` → `WWebSso.mjs`、`g_mOrm.mjs` 各 1(`g_mOrm` 4 個參數; `WWebSso` 第 5 參數恰為 `{ funLog: mkOrmFunLog(srLog) }`, R-ORM-04, `unit-ormDiagLog` SITE-ODL-001 / 002 守門).
   - Grep `getProc\(` 於 `test/`、`spec/evidence/` → `unitProc.mjs` 之 `mkProcOrm`(1 個參數)、`unit-ignoredOrmKeys`(以三鍵之值呼叫, 取上游拋錯為判準)、取證腳本(逐組 try/catch).
   - Grep `useCheckUser|getUserById|useExcludeWhenNotAdmin` 於 `server/` → 只在 `getIgnoredOrmKeys.mjs`(鍵名清單)與 `WWebSso.mjs` 之 JSDoc / 註解.
   - Grep `optWServOrm|getOptWServOrm` 於 `server/`、`test/`、根目錄 `*.mjs` → 0(ADR / 經驗之歷史敘述除外).
@@ -77,4 +77,22 @@
   - Grep `procOrm\(` 於 `server/` → `createUser`(users, 建立者即自身)、`updateTabItems` 之刪除 / 新增 / 修改; 新增步驟於 tokens 以擁有者分組(`mpOwner`).
   - 讀 `src/schema/tables/*.mjs` 之 settings 鍵: `userId` 出現於 users(建立者)與 tokens(擁有者), `userIdUpdate` 只在 users; ips 皆無.
 - **站點全集(2026-10-12)**: tokens 之新增 1 處; 已套. 測試: `unit-ormWriteFail` A23; `api-apptoken-perms` PERM-A-008(兩者修改前失敗、修改後通過).
+
+### R-ORM-04: w-serv-orm 之診斷輸出由本套件以 funLog 導入 srLog; 細節遮罩後才寫入; console 照舊只列標籤與摘要(2026-10-28 第 154 項 sso-run01, ADR-098)
+
+- **規則**:
+  1. 站點: `server/WWebSso.mjs` 建立 `WServOrm` 時 opt 恰為 `{ funLog: mkOrmFunLog(srLog) }`(`server/ormDiagLog.mjs`); 不傳 `logDetail`(true 會把含主鍵與錯誤原文之完整細節還原到 console, pm2 / 容器收集)、不傳已移除之使用者檢查設定(R-ORM-02). 新增建立 `WServOrm` 之站點須同樣接 funLog, 或在本條站點全集登錄刻意不套之理由.
+  2. funLog 行為: console 照舊輸出 `label` 與 `safe`(同 w-serv-orm 1.1.20 預設之 `console.log(label, safe)`, 無 safe 者只列 label; 不含主鍵與原文); srLog.error 一筆 `{ event: 'orm-diag', label, safe, detail }`(`detail` 為 `maskOrmDetail` 遮罩後者, 無細節者無此鍵, 遮罩失敗為 `'(unmaskable)'`); console、遮罩、srLog 寫入之任何失敗皆吞下, 不影響 procOrm 之流程與結果.
+  3. `detail` 遮罩(`maskOrmDetail`): 非錯誤原文位置之字串與鍵名像識別欄(id、userId、account、email、name、pass、token)之數字 → `maskToken` 形式(記原長); 錯誤原文位置(`err` / `error` / `message` / `msg` 與頂層字串)保留文字, 先置換已知識別值(同筆細節內者與該次呼叫輸入內識別欄之值, 含 `$in` / `$ne` 內者)為同一遮罩, 再置換信箱與 uuid 樣式, 最後 `capText`(控制字元 → `?`, 超過 256 截斷); `Error` 只留 `{ errType, message }`(無 stack, 類別名稱須合白名單樣式); 層數 6 / 節點 200(輸入 20000) / 識別值上限 1000; 不執行細節內程式(getter、Proxy 陷阱)、不改輸入、`__proto__` 鍵以 defineProperty 保留.
+  4. 呼叫輸入脈絡: `WWebSso` 內 procCore / procProtect 取得之 `procOrm` 為 `wrapProcOrm(procOrmRaw)` 之回傳(AsyncLocalStorage 記下 `{ userId, input }`; 只多一層脈絡, 不改引數、回傳、reject、時機; 並行呼叫各有自己的脈絡). 原始 `procOrmRaw` 在 `WWebSso.mjs` 只出現解構與包裝兩處.
+  5. 層級一律 `error`(SSO 執行時經 procOrm 產生之診斷皆為寫入失敗或輸入被拒; 進度類標籤只在呼叫實例之 `backup` / `recover` 時出現, SSO 不呼叫).
+- **理由**: w-serv-orm 1.1.20 讓 console 預設不含個資, 但 procOrm 之 reject 訊息只列主鍵、不含 ORM 錯誤原文, 而 R-ORM-01 規則 2 要求原文寫 srLog.error——不接 funLog 則寫入失敗之原因(如 `Key size is larger than the maximum key size (1978)`)無處可查. 只寫 `safe` 補不回原因; 原樣寫 `detail` 會把主鍵 / 信箱 / 原文內之資料值落地(違反 R-SEC-01 精神), 故遮罩後寫. 取捨與替代方案見 ADR-098.
+- **殘餘風險**: 錯誤原文若夾帶既不在細節、也不在該次呼叫輸入內之資料值(例如資料庫端既存列之內容)無從辨識, 只受信箱 / uuid 樣式、控制字元與長度限制; 真 w-orm-lmdb 之錯誤文字不含列內容(實測: 鍵長超限之 save 逐筆失敗與 insert 整批 reject, 探測腳本與輸出見 sso-run01 報告證據; `unit-ormDiagLog` ODL-L01 為警鈴). 換 ORM 或升級 w-orm-lmdb 須重核.
+- **盤點指令**:
+  - Grep `WServOrm\(` 於 `server/`、根目錄 `*.mjs`(去註解) → `WWebSso.mjs`(含 funLog)、`g_mOrm.mjs`(刻意不套) 各 1(`unit-ormDiagLog` SITE-ODL-001 / 002).
+  - Grep `\bfunLog\b` 於 `server/`(去註解) → 只在 `WWebSso.mjs`(SITE-ODL-004); Grep `\blogDetail\b` 於 `server/`、`src/` → 0(SITE-ODL-003).
+  - Grep `procOrmRaw` 於 `server/WWebSso.mjs`(去註解) → 恰 2 處(SITE-ODL-002).
+  - 可重跑: `npx mocha --no-parallel test/unit-ormDiagLog.test.mjs test/api-ormdiag.test.mjs --timeout 180000`.
+- **站點全集(2026-10-28)**: 建立 `WServOrm` 2 處——`server/WWebSso.mjs`(**已套**: funLog + 包裝 procOrm)、`g_mOrm.mjs`(**刻意不套**: 開發腳本與測試用單例, 無 srLog, 預設 console 已不含個資; 其 `woItems` 為測試直接操作〔不經 procOrm〕); 測試替身組裝 2 處(`test/tools/unitProc.mjs` 之 `mkServ` / `mkProcOrm`, 不傳 funLog, 診斷走預設 console, 由 `unit-ormDiagLog` 以真實 WServOrm 另驗 funLog). 工具路徑 `g_backupDb.mjs`(`getDb.backup`)、`g_initialTestData.mjs`(`genTestData`)為手動腳本, 其 opt 之 `logDetail` / `funLog` 未給, 輸出為上游預設(不含個資), 不屬 WServOrm 站點.
+- **測試**: `test/unit-ormDiagLog.test.mjs`(31 案: ODL-M01~M14、F01~F03、W01~W09、L01、SITE-ODL-001~004)、`test/api-ormdiag.test.mjs`(2 案, 真後端 + `test/tools/srvOrmDiag.mjs`). 修改前紅: 未接線時 `api-ormdiag` ORMDIAG-002 紅(srLog 無 `orm-diag`, 回應與 stdout 診斷行斷言前已過)、`unit-ormDiagLog` SITE-ODL-002 / 004 紅; 變異 34 項(`m01`~`m34`, `./tmp/sso-run01/mut/` 副本, 對照組先全綠)皆被抓到、0 存活、還原後逐檔 sha256 與 repo 一致(`m34` 為全套測試後補 `ODL-M14` 憑證案時加跑).
 

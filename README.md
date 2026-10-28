@@ -37,6 +37,17 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 ## Upgrade Notes
 
+### Upgrading from 1.1.19 and earlier
+
+**w-serv-orm 診斷輸出導入 srLog（log 行為變更，R-ORM-04）**：升級 `w-serv-orm` 至 `^1.1.20`。1.1.20 起 w-serv-orm 的診斷輸出（寫入失敗、輸入被拒等）預設只在 console 列標籤與不含個資之摘要，完整細節（失敗列主鍵、ORM 錯誤原文）只交 `opt.funLog`；沒有接上者，console 雖不再洩漏主鍵，卻也失去寫入失敗之原因（ORM 錯誤原文）。本版 `WWebSso` 以 `server/ormDiagLog.mjs` 之 `funLog` 接管（`WServOrm` 之 opt 只給此一項，其餘行為不變）：
+
+- **srLog**：每則診斷寫一筆 error 層級之 `{ event: 'orm-diag', label, safe, detail }`。`label` 為標籤（含表名與操作，如 `users.save fail`、`tokens.save row not found`）；`safe` 為筆數、失敗位置、錯誤類別等不含個資之摘要（如 `{ n: 1, ks: [0] }`、`{ ok: 0 }`、`{ errType: 'Error' }`）；`detail` 為遮罩後之細節（無細節之診斷無此鍵）。
+- **detail 之遮罩**：非錯誤原文位置之字串（失敗列主鍵、帳號、信箱、被拒條件之值等）一律遮罩為 `maskToken` 之形式（如 `abc...xyz(len=36)`）；錯誤原文位置（`err`、`message`、`msg`）保留文字供診斷，但其中出現的、該次寫入輸入內之識別值（`id`／`userId`／`account`／`email`／`name`／`token`／`password` 等欄位之值）與細節內之識別值置換為同一遮罩，另置換信箱與 uuid 樣式、控制字元換為 `?`、長度截斷（256 字元）；`Error` 只留類別名稱與遮罩後訊息（不含 stack）；層數、節點數有上限，不執行細節內任何程式。殘餘風險：錯誤原文若夾帶既不在細節、也不在該次寫入輸入內之資料值（例如資料庫端既存列之內容），無從辨識，只受上述樣式與長度限制。
+- **console**：照舊只輸出標籤與摘要（同 w-serv-orm 1.1.20 預設之輸出，不含主鍵與錯誤原文），行程標準輸出交給 pm2 或容器收集者不受影響。
+- **不影響流程**：srLog 或 console 寫入失敗、遮罩失敗皆被吞下，不改變任何寫入之結果；`procOrm` 之 resolve／reject 內容與時機不變（`WWebSso` 內部以非同步脈絡記下進行中呼叫之操作者與輸入供遮罩用，不改引數與回傳）。
+- 原記為「帳號封鎖寫入失敗之 log 錯誤文字為其固定字串，原例外文字只進 console」（見下方 1.1.12 節）者，原例外文字改進 srLog 之 `orm-diag`（遮罩後）。回前端之文字不變（仍為語系鍵）。
+- 新增測試：`test/unit-ormDiagLog.test.mjs`（遮罩契約、真實 w-serv-orm 搭配可注入失敗之資料表、站點全集守門）、`test/api-ormdiag.test.mjs`（獨立後端經自助註冊觸發 `users.insert` 失敗，驗證 srLog 與 stdout）。
+
 ### Upgrading from 1.1.15 and earlier
 
 **框架系統函數之身分關卡（行為變更，ADR-096）**：升級 `w-serv-hapi` 至 `^1.1.8`（連帶 `w-serv-webdata` 1.1.16、`w-serv-broadcast` 1.1.12），並重建前端（前端元件輪詢改帶 token 鍵）。框架預設三個系統函數皆公開；本版起本套件顯式設定 `sysFuncsPublic: ['[sys:getFuncList]', '[sys:polling]']`，只列未登入之登入頁確實需要且無敏感內容者。以真瀏覽器擷取登入頁、註冊畫面、重寄驗證信畫面與登入後各頁之請求，開機流程相同（第 3 欄為擷取所見）：
@@ -116,7 +127,7 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 - **表鎖**：users／tokens／ips 每表一把；server 端全部 19 個寫入站點（後台存檔、登入新增金鑰、續期、登出、自助註冊、驗證信、改密碼、重設密碼、自動封鎖帳號／權杖、計時器登錄與封鎖 IP 等）皆在該表表鎖內執行，系統直寫改為只改不增（讀到後該列被刪，不再把只含被寫欄位之殘缺列新增回庫）；使用者清單存檔與帳號封鎖在 `[tokens, users]` 兩把鎖內同鎖撤銷名下金鑰；自助註冊與後台清單新增同帳號不再可同時成功（帳號唯一性檢查與新增同在 users 表鎖內）；登入於 tokens 表鎖內重讀使用者狀態，已被停用、刪除或封鎖、密碼已被變更（如系統管理者重設）、驗證被清除或已到期者不再鑄出金鑰，登入回傳之使用者資料取自該次新鮮讀取；自動封鎖（登入失敗、權杖呼叫超限）於鎖內再驗帳號仍屬該使用者、token 仍是其名下使用者 token，等鎖期間已被改名、升為應用系統金鑰或登出者不封鎖。
 - **最後修改者**：tokens、ips 新增欄位 `userIdUpdate`（既有資料不回填，無須遷移）；後台存檔記操作系統管理者，app 權杖記其虛擬使用者 id，使用者自助流程（驗證信、改密碼）記該使用者，登入／續期記金鑰擁有者，系統計時器與自動封鎖記常數 `system`。tokens 新增列之擁有者 `userId` 保留送入值（擁有者為空者以操作者補），不被操作者覆寫。
 - **`getUsersList` 不再回傳 `tokenVerify`（憑證類欄位收回）**：後台使用者清單原連同註冊驗證用 token 一併回傳並整列存回；契約生效後它屬伺服器專有欄位（存檔取庫內值），前端不再需要。對外 `getSsoUsersList` 原即不輸出。
-- **log／錯誤文字**：基準不符等拒收於 srLog 記 warn（`fun-updateTabItems-reject`，帶語系鍵）；庫內列主鍵重複或缺漏（`rowsInvalid`，屬資料錯誤）回 `anUnexpectedErrorOccurred` 並記 error。帳號封鎖寫入失敗之 log 因改經 w-serv-orm 寫入，錯誤文字為其固定字串（如 `failed to save data`），原例外文字只進 console。
+- **log／錯誤文字**：基準不符等拒收於 srLog 記 warn（`fun-updateTabItems-reject`，帶語系鍵）；庫內列主鍵重複或缺漏（`rowsInvalid`，屬資料錯誤）回 `anUnexpectedErrorOccurred` 並記 error。帳號封鎖寫入失敗之 log 因改經 w-serv-orm 寫入，錯誤文字為其固定字串（如 `failed to save data`），原例外文字當時只進 console（w-serv-orm 1.1.20 起改為進 srLog 之 `orm-diag`，遮罩後，見 Upgrading from 1.1.19 and earlier）。
 - 新增語系鍵：`saveStale`、`saveRowNotFound`、`saveBaselineFormat`、`tokenSessionAddNotAllowed`（eng／cht）。
 
 ### Upgrading from 1.1.11 and earlier

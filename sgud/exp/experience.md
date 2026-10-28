@@ -204,3 +204,15 @@
 - **重產與其驗證 e2e 必須同鏈一次取鎖**: 自己排隊之兩個 `--lock` 指令誰先取到鎖不保證, e2e 先於重產跑會對舊標準圖全紅。以一支 node 鏈腳本(`spawnSync` 依序: 重產 → 逐檔隔離 e2e, 重產失敗即不續跑)交給單一 `quiet-run --lock`, 51 分鐘(重產 4 次約 3 分鐘 + 95 案)一次完成。
 - **授權前之候選圖即授權後之結果**: sso-run02 以 `E2E_BASELINE_OUT_DIR` 產出之 12 張候選圖, 與 sso-run03 實際寫入 `test/pics` 者逐位元相同(`cmp`), 故主控目視候選圖即等於目視最終圖; 重產後以工作樹 sha256 前後比對證明只有該 12 檔(加 spec)改變、其餘標準圖 0 變動。
 - **spec title 縮短之判斷**: 先 `git grep -F "<舊標題>"` 查引用處(本案測試以 `E2E-NNN-<kebab>` 與圖鍵命名, 不含標題, 故測試檔 0 改動); 縮短後以 `git grep -h "title:" | sort | uniq -d` 驗全部 spec 內仍唯一(手冊以 title 為鍵); 長度以字元數計, 英文字(`Users list`、`isAdmin`)與空白各算 1。把按鈕英文標籤(`Reset password`)換成中性描述(「重設密碼鈕」)可省最多字, 且 title 不隨語系; 保留「系統管理者」用詞。下游手冊內容檔在本 repo 外, 無法核對者於報告與 state 註明。
+
+## w-serv-orm 診斷輸出導入 srLog: 先問「上游預設拿掉的是什麼」、funLog 收不到呼叫輸入、遮罩要有「不知情的值」紅燈案例(2026-10-28, sso-run01, 第 154 項, ADR-098 / R-ORM-04)
+
+- **「預設不含個資」拿掉的不只是 id**: w-serv-orm 1.1.20 讓 console 不再有主鍵, 但本套件各 `srLog.error` 站點本就記 `userId` / `account`(識別欄照記是既有稽核政策, 規則帳本並無「日誌不記 id／個資」), 真正失去的是 **ORM 錯誤原文**(procOrm 的 reject 訊息只列主鍵、不含原文; 例: 真 LMDB 回 `Key size is larger than the maximum key size (1978)`). 先對照「接線前後各缺什麼」再決定寫什麼——寫 `safe` 只有筆數 / 位置 / 錯誤類別, 補不回原因; 寫 `detail` 才補得回, 所以必須遮罩後寫。規則帳本找不到明文政策時, 以現有站點的實際寫法 + R-SEC-01 / R-QKEY-01 推導, 並在 ADR 寫明推導過程。
+- **funLog 收不到呼叫的輸入, 原文卻可能夾帶輸入值**: 初版只用「同筆細節內出現過的識別值」置換錯誤原文, `catch` 路徑(細節只有一個 Error)的測試(`ODL-W03`: Error 訊息含該列主鍵與信箱)立刻紅。解法是包裝 procOrm 以 `AsyncLocalStorage` 記下 `{ userId, input }`, funLog 同步於同一流程內取用; 並行呼叫各有自己的脈絡(`ODL-W09` 交錯完成)。包裝只多一層脈絡, 且 `procCore` / `procProtect` 取得的須是包裝後者(`SITE-ODL-002` 斷言原始 `procOrmRaw` 僅出現兩處)。**遮罩測試必須含「不在細節裡的值」案例**, 否則只驗得到「顯而易見的那一半」。
+- **主鍵同時是字串與個資的邊界**: users 的 `id` 是 uuid(自產), 先套「已知識別值 → `maskToken`(同值同遮罩, 可與他處紀錄對照)」再套信箱 / uuid 樣式標記; 順序反了(樣式先換)會讓 `id` 變成無從對照的 `(uuid)`。頂層字串(沒有鍵名)是錯誤原文位置, 不可當識別值收集, 否則整段原文被換成一個遮罩(`ODL-M04` / `ODL-M11` 曾因此紅)。
+- **遮罩函數的工程細節**: 走訪前先轉成有界純資料樹(`toTree`: 不執行 getter / Proxy 陷阱、`__proto__` 鍵以 `defineProperty` 保留、節點數連原始值一起計, 否則 10 萬個字串的陣列不被截); 字串不在 `toTree` 截斷(遮罩要記原長, 真 LMDB 鍵長超限情境主鍵 2112 字元曾被記成 2000), 錯誤原文才在置換前截斷; 識別值長度上限 = 原文截斷長度(更長者不可能出現在已截斷的原文內)。
+- **console 照舊**: 傳 funLog 後 w-serv-orm 不再寫 console, 為維持 stdout 可見(pm2 / 容器), funLog 自己以與上游預設相同的格式 `console.log(label, safe)` 補回, 與 `logBoot` 雙寫同理; `ODL-W01` 以「與未傳 funLog 的實例逐行相同」斷言, `ORMDIAG-002` 在真後端以 stdout 診斷行恰為 `users.insert fail { ok: 0 }` 斷言。
+- **端到端測試的故障注入**: 真後端以測試專用啟動腳本 `test/tools/srvOrmDiag.mjs`(私有埠 11307、私有 lmdb / log 資料夾於 `test/_tmp/api-ormdiag/`)包裝 `WOrmLmdb`, 開關檔存在時令 `users.insert` 回傳違約形狀 `{ ok: 0, err }`; 觸發用公開入口 `createUser`(免登入)。不改 `restartBackend` / `srv.mjs`, 不碰 11007 與 `./db`; `after` 殺行程後回驗埠已釋放、目錄已刪(LMDB 檔案於行程結束後才釋放, 刪除要重試)。
+- **變異驗證沿用 `./tmp/<名>/mut/` 副本法**: 對照組先跑、`from` 須恰命中 1 次(第一輪 `m11` 因 `console.log(label, safe)` 在註解裡也出現而 SKIP, 改用含上下文的唯一片段); 存活變異要判讀是否等價——`m17`(拿掉 `scrubText` 的 `safeText`)存活是因結尾 `capText` 已含 `safeText`, 屬冗餘, 移除冗餘碼而非補測試。副本需含根目錄 `*.mjs`(`SITE-ODL-001` 靜態盤點會讀 `g_mOrm.mjs`), 否則對照組就紅。
+- **ADR 編號先查現有最大號再用**: 草稿期間誤用已被「角色用詞」占用的 097, 寫 ADR 前 `Grep "^## ADR-"` 取最大號 + 1。
+- **守門 hook 的作法**: 變異驅動的輸出不能 `>` 重導檔案, 改走 `quiet-run`(完整輸出在其 `./tmp/quiet-run/*.log`); `sed -i` 一樣被擋, 批次替換用 `Edit` 的 `replace_all`。

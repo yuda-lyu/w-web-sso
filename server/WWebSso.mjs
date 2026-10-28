@@ -26,6 +26,7 @@ import WServOrm from 'w-serv-orm/src/WServOrm.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
 import srLogInit, { maskToken, maskUrl, maskKv, capText } from './srLog.mjs'
+import mkOrmFunLog, { wrapProcOrm } from './ormDiagLog.mjs'
 import srEmailInit from './srEmail.mjs'
 import procCore from './procCore.mjs'
 import procLang from './procLang.mjs'
@@ -160,7 +161,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         srLog[level]({ event: 'boot', msg })
     }
 
-    //ignoredOrmKeys, w-serv-orm 已移除之使用者檢查設定: 本套件不轉交(WServOrm 不傳 opt); settings / optExt 仍給予且其值會被上游拒絕者忽略並記警告,
+    //ignoredOrmKeys, w-serv-orm 已移除之使用者檢查設定: 本套件不轉交(WServOrm 之 opt 只給 funLog); settings / optExt 仍給予且其值會被上游拒絕者忽略並記警告,
     //使舊設定照常啟動(若轉交, w-serv-orm 1.1.10 起於建構時拋錯). 寫入之授權由各功能自行負責(清單儲存先經 checkToken, 自助註冊為公開流程) (ADR-083 / ADR-085)
     //警告只寫出被列出之鍵名, 理由文字不含其他鍵名(R-ORM-02)
     let ignoredOrmKeys = getIgnoredOrmKeys(opt)
@@ -454,16 +455,20 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         kpLangWeb[lang] = kp
     })
 
-    //WServOrm, 不傳 opt: w-serv-orm 1.1.9 起無設定鍵, 已移除之使用者檢查設定見上方 ignoredOrmKeys (ADR-085)
+    //WServOrm, opt 只給 funLog(診斷輸出導入 srLog, R-ORM-04 / ADR-098): w-serv-orm 1.1.20 起診斷輸出預設只在 console 列標籤與不含個資之摘要, 完整細節(失敗列主鍵、ORM 錯誤原文)只交 funLog;
+    //本套件於 funLog 內遮罩後寫 srLog.error, console 照舊. 已移除之使用者檢查設定仍不轉交(w-serv-orm 1.1.9 起無此設定鍵, 見上方 ignoredOrmKeys, ADR-085)
     let wp = {}
     try {
-        wp = WServOrm(ds, WOrm, url, db)
+        wp = WServOrm(ds, WOrm, url, db, { funLog: mkOrmFunLog(srLog) })
     }
     catch (err) {
         console.log('WServOrm init failed', err)
         throw err
     }
-    let { woItems, procOrm, withTabLocks, guardWrite } = wp //withTabLocks / guardWrite: 每表一鍵之表鎖(多人同時編輯之寫入契約, 原則 10), procCore 與 procProtect 共用同一組
+    let { woItems, procOrm: procOrmRaw, withTabLocks, guardWrite } = wp //withTabLocks / guardWrite: 每表一鍵之表鎖(多人同時編輯之寫入契約, 原則 10), procCore 與 procProtect 共用同一組
+
+    //procOrm, 記下進行中呼叫之操作者與輸入, 供 funLog 遮罩 ORM 錯誤原文內夾帶之輸入值(只多一層非同步脈絡, 不改引數、回傳與 reject)
+    let procOrm = wrapProcOrm(procOrmRaw)
 
     //getWebInfor
     let getWebInfor = () => {

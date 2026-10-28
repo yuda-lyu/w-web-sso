@@ -326,7 +326,8 @@ function mkTable(rows = []) {
 }
 
 
-//mkProcOrm: 以替身 woItems 組出真實 w-serv-orm 之 procOrm, 組法同其 WServOrm(getMapOrm → getProc), 與 SSO 正式之 WServOrm 同樣不傳 opt(1.1.9 起無設定鍵, R-ORM-02).
+//mkProcOrm: 以替身 woItems 組出真實 w-serv-orm 之 procOrm, 組法同其 WServOrm(getMapOrm → getProc), 與 SSO 正式之 WServOrm 同樣不傳已移除之設定(1.1.9 起無設定鍵, R-ORM-02);
+//SSO 正式另傳診斷輸出之 funLog(R-ORM-04), 不影響 procOrm 語意, 本函數不傳(診斷輸出走 w-serv-orm 預設之 console), funLog 之行為由 unit-ormDiagLog 以真實 WServOrm 驗證.
 //w-serv-orm 1.1.8 起 getMapOrm 與 getProc 皆為各實例狀態, 同一行程內多次組出互不干擾(他檔載入 g_mOrm 之正式實例亦不受影響).
 function mkProcOrm(ds, woItems) {
     return getProc(getMapOrm(ds, woItems)).procOrm
