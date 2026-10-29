@@ -39,14 +39,25 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 ### Upgrading from 1.1.19 and earlier
 
-**w-serv-orm 診斷輸出導入 srLog（log 行為變更，R-ORM-04）**：升級 `w-serv-orm` 至 `^1.1.20`。1.1.20 起 w-serv-orm 的診斷輸出（寫入失敗、輸入被拒等）預設只在 console 列標籤與不含個資之摘要，完整細節（失敗列主鍵、ORM 錯誤原文）只交 `opt.funLog`；沒有接上者，console 雖不再洩漏主鍵，卻也失去寫入失敗之原因（ORM 錯誤原文）。本版 `WWebSso` 以 `server/ormDiagLog.mjs` 之 `funLog` 接管（`WServOrm` 之 opt 只給此一項，其餘行為不變）：
+**w-serv-orm 診斷輸出導入 srLog（log 行為變更，R-ORM-04）**：升級 `w-serv-orm` 至 `^1.1.20`。1.1.20 起 w-serv-orm 的診斷輸出（寫入失敗、輸入被拒等）預設只在 console 列標籤與不含個資之摘要，完整細節（失敗列主鍵、ORM 錯誤原文）只交 `opt.funLog`；沒有接上者，console 雖不再洩漏主鍵，卻也失去寫入失敗之原因（ORM 錯誤原文）。本版 `WWebSso` 以 wsemi 之 `genDiagFunLog` 產生之 `funLog` 接管（`WServOrm` 之 opt 只給此一項，其餘行為不變；診斷輸出之選項與規則見 wsemi 之 `getDiag`／`genDiagFunLog` 說明與跨套件規格，本套件不另提供 `logDetail`／`funLog` 選項）：
 
-- **srLog**：每則診斷寫一筆 error 層級之 `{ event: 'orm-diag', label, safe, detail }`。`label` 為標籤（含表名與操作，如 `users.save fail`、`tokens.save row not found`）；`safe` 為筆數、失敗位置、錯誤類別等不含個資之摘要（如 `{ n: 1, ks: [0] }`、`{ ok: 0 }`、`{ errType: 'Error' }`）；`detail` 為遮罩後之細節（無細節之診斷無此鍵）。
-- **detail 之遮罩**：非錯誤原文位置之字串（失敗列主鍵、帳號、信箱、被拒條件之值等）一律遮罩為 `maskToken` 之形式（如 `abc...xyz(len=36)`）；錯誤原文位置（`err`、`message`、`msg`）保留文字供診斷，但其中出現的、該次寫入輸入內之識別值（`id`／`userId`／`account`／`email`／`name`／`token`／`password` 等欄位之值）與細節內之識別值置換為同一遮罩，另置換信箱與 uuid 樣式、控制字元換為 `?`、長度截斷（256 字元）；`Error` 只留類別名稱與遮罩後訊息（不含 stack）；層數、節點數有上限，不執行細節內任何程式。殘餘風險：錯誤原文若夾帶既不在細節、也不在該次寫入輸入內之資料值（例如資料庫端既存列之內容），無從辨識，只受上述樣式與長度限制。
-- **console**：照舊只輸出標籤與摘要（同 w-serv-orm 1.1.20 預設之輸出，不含主鍵與錯誤原文），行程標準輸出交給 pm2 或容器收集者不受影響。
-- **不影響流程**：srLog 或 console 寫入失敗、遮罩失敗皆被吞下，不改變任何寫入之結果；`procOrm` 之 resolve／reject 內容與時機不變（`WWebSso` 內部以非同步脈絡記下進行中呼叫之操作者與輸入供遮罩用，不改引數與回傳）。
-- 原記為「帳號封鎖寫入失敗之 log 錯誤文字為其固定字串，原例外文字只進 console」（見下方 1.1.12 節）者，原例外文字改進 srLog 之 `orm-diag`（遮罩後）。回前端之文字不變（仍為語系鍵）。
-- 新增測試：`test/unit-ormDiagLog.test.mjs`（遮罩契約、真實 w-serv-orm 搭配可注入失敗之資料表、站點全集守門）、`test/api-ormdiag.test.mjs`（獨立後端經自助註冊觸發 `users.insert` 失敗，驗證 srLog 與 stdout）。
+- **srLog**：每則診斷寫一筆 warn 層級之 `{ event: 'orm-diag', label, safe }`。`label` 為標籤（含表名與操作，如 `users.save fail`、`tokens.save row not found`；控制字元換為 `?`）；`safe` 為筆數、失敗位置、錯誤類別等不含個資之摘要（如 `{ n: 1, ks: [0] }`、`{ ok: 0 }`、`{ errType: 'Error' }`）。**只寫安全摘要，不含失敗列主鍵、資料值與 ORM 錯誤原文（無 `detail`）**。
+- **console**：傳入 `funLog` 後 w-serv-orm 不寫 console，本套件亦不補寫，診斷只進 srLog。
+- **不影響流程**：srLog 寫入拋錯或回傳 rejected promise 皆被吞下（不產生 unhandled rejection），不改變任何寫入之結果；`procOrm` 之 resolve／reject 內容與時機不變。
+- 回前端之文字不變（仍為語系鍵）。
+- 測試：`test/unit-diaglog.test.mjs`（真實 w-serv-orm 搭配可注入失敗之資料表驗證轉接；wsemi 共用語料 A01／A07／T01／T07／R01／R02／R04／R07／R11／R12 以本套件之呼叫點重跑；站點全集守門）、`test/api-ormdiag.test.mjs`（獨立後端經自助註冊、登入 RPC 與 HTTP 端點觸發故障，驗證 srLog、回應與 stdout）。
+
+### Breaking changes（診斷輸出遷移至 wsemi 共用模組）
+
+依跨套件規格〈診斷輸出與遮罩〉（遮罩與診斷輸出一律用 wsemi 之共用函數，不再各套件自寫），相對於 1.1.20 之行為變化（依賴：`wsemi ^1.9.31`、`w-serv-orm ^1.1.22`）：
+
+- **srLog 不再有 `detail`**：w-serv-orm 診斷（`orm-diag`）只寫安全摘要，不再寫遮罩後之細節（失敗列主鍵、ORM 錯誤原文）。需要錯誤原文排障者，請在資料庫端或以 w-serv-orm 之 `logDetail` 於測試環境重現（本套件不開放）。
+- **等級 `error` → `warn`**：依 `event: 'orm-diag'` 或日誌等級 50 過濾告警者，須改為等級 40。
+- **不再 console 雙寫**：stdout 不再有 `users.save fail { n: 1, ks: [ 0 ] }` 之診斷行。
+- **刪除 `server/ormDiagLog.mjs`**（`maskOrmDetail`、`wrapProcOrm`、`AsyncLocalStorage` 脈絡一併移除）；`procOrm` 不再包裝，引數、回傳與時機不變。
+- **外來值進入本套件時遮罩憑證**：本套件直接呼叫資料表（`select`／`save`／`del` 等）所收到之後端／驅動錯誤，與寄信（`srEmail`）之 SMTP 錯誤，若夾帶資料庫連線字串或寄信帳密（`emSrcPW`、`emSrcEmail` 之帳密並列形式），遮罩為 `***` 後才進入本套件，故其後之 console、srLog 的 `err`／`msg`／`key` 欄位、回遠端之 `msg`、HTML 結果頁皆不含該憑證；含憑證者之 reject 值為保型副本（`Error` 類別與 `code` 保留、診斷文字保留）、無憑證者原物件。本套件以固定詞彙組成之 reject（如 `tokenExpired`、`failedLoginForCatch`）不經遮罩。限制：遮罩清單不含長度少於 4 字元之密碼、不遮單獨帳號與儲存路徑（依規格 Q3，對外錯誤值不遮路徑）。
+- **建構期輸出**：`url` 型別無效時 console 只印型別（不印值）；資料庫連線初始化失敗（`WServOrm init failed`）之輸出與重拋之錯誤已遮罩連線字串與密碼；寄信密碼（`emSrcPW`）型別無效時，錯誤訊息為 `invalid srcPW`（不回顯其值）。
+- 受影響者：以 `orm-diag` 之 `detail`、等級 50 或 stdout 診斷行為依據之日誌分析／告警規則（本套件內無此類消費者）。
 
 ### Upgrading from 1.1.15 and earlier
 

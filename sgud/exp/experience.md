@@ -215,4 +215,16 @@
 - **端到端測試的故障注入**: 真後端以測試專用啟動腳本 `test/tools/srvOrmDiag.mjs`(私有埠 11307、私有 lmdb / log 資料夾於 `test/_tmp/api-ormdiag/`)包裝 `WOrmLmdb`, 開關檔存在時令 `users.insert` 回傳違約形狀 `{ ok: 0, err }`; 觸發用公開入口 `createUser`(免登入)。不改 `restartBackend` / `srv.mjs`, 不碰 11007 與 `./db`; `after` 殺行程後回驗埠已釋放、目錄已刪(LMDB 檔案於行程結束後才釋放, 刪除要重試)。
 - **變異驗證沿用 `./tmp/<名>/mut/` 副本法**: 對照組先跑、`from` 須恰命中 1 次(第一輪 `m11` 因 `console.log(label, safe)` 在註解裡也出現而 SKIP, 改用含上下文的唯一片段); 存活變異要判讀是否等價——`m17`(拿掉 `scrubText` 的 `safeText`)存活是因結尾 `capText` 已含 `safeText`, 屬冗餘, 移除冗餘碼而非補測試。副本需含根目錄 `*.mjs`(`SITE-ODL-001` 靜態盤點會讀 `g_mOrm.mjs`), 否則對照組就紅。
 - **ADR 編號先查現有最大號再用**: 草稿期間誤用已被「角色用詞」占用的 097, 寫 ADR 前 `Grep "^## ADR-"` 取最大號 + 1。
+
+
+## 診斷遮罩改用 wsemi 共用模組: 外來值在「入口」遮罩, 不在「出口」遮罩; 站點全集先請子代理盤點再人工收斂(2026-10-29, mig-sso, 第 161 項, ADR-099 / R-ORM-04)
+
+- **做法被推翻一次**: 起初把 `diag.err` / `diag.mask` 套在出口與日誌各處(kpfun 集中出口、九支 HTTP handler、`getErrMsg` 包 11 處 srLog 與 12 處 console、兩處 `Promise.reject(err)` 共約 45 站), 做完回頭對照 dspec R07 才發現: 這些出口同時流過「本套件以固定詞彙組成之 reject」(`tokenExpired`、`failedLoginForCatch`、`userRegistration…`)與外來值, 一律包 = 秘密若為固定 key 之子字串(例: 寄信密碼 `ginForCa`)會把 key 切碎成 `failedLo***tch`, 前端字典查不到, 且形成反推密碼的 oracle. 還原後改為**只在外來值進入本套件時遮罩一次**(`guardOrm` 包 `woItems`、`srEmail.send` catch、`WServOrm` 建構錯誤、`ormWrite` 逐筆 err), 其後固定 key 不受影響、日誌與回遠端之值自然已遮罩. 判準: 遮罩點要放在「值的來源只有外來值」之處; 看到出口同時有固定 key 與外來值就不是遮罩點.
+- **站點全集盤點的分工**: 本套件 `server/**` 命中 585 行(程式碼 397 + 補充 111, Grep 抓不到的 srLog 欄位、`pm2resolve` 結果處置、傳參考 reject、未 catch 的 `await woItems.*` 要靠讀碼補), 交 sonnet 子代理產 `./tmp/mig-sso/sites.md`(約 14 分鐘), 我再依「值來源」收斂為四類(外來值入口 / 固定詞彙 / 非憑證類外來值 / 刻意不套). 子代理把「原文可能含查詢條件值」也標為「外來值直接流出」, 其中多數是資料值而非憑證(dspec D3 只遮憑證), 需自行篩.
+- **語料驅動的接線測試**: `wsemi/src/_diagCases.mjs` 的 `wire: true` 案(A01、A07、T01、T07、K*、E*、R01、R02、R04、R07、R11、R12…)不能原樣套——其 `call` 跑 wsemi API, `check` 針對該輸出. 做法: 取 `make(ctx)` 產生外來值, 經「本套件的真實入口」(`guardOrm`)後, 以同一 `check` 判定(R02 要自組 `{ r, same, inst, code }`); 只適用於 detail 的案(K、V、S、P、E)不屬 sso(不取細節); R11 / R12 依 Q3 / P1 改為斷言「reject 原物件、不遮路徑與單獨帳號」.
+- **`genDiagFunLog` 的行為與舊 `mkOrmFunLog` 不同處**: 回傳 `{ funLog, close }`(不是函數); `safe` 未給時 srLog 物件仍帶 `safe: undefined` 鍵(JSON 序列化後消失, `deepStrictEqual` 要寫 `safe: undefined`); 寫入 promise 由 wsemi 標記已處理(舊版 srLog 回傳 rejected promise 會 unhandled); `write` 非函數建構即拋. w-serv-orm 1.1.22 的 `safe` 形狀對本套件各路徑未變(`{ n, ks }`、`{ ok: 0 }`、`{ errType }`、`{ reason }`).
+- **用「getter 讀取次數」驗不取細節無效**: 試過以結果的 `err` getter 計數區分「funLog 取細節」與「不取」, 但 w-serv-orm 自己的 `getItemsFail` 也讀 `err`, 兩者次數相同; 改以(a)srLog 物件鍵恰為 `event / label / safe`、(b)語料 A01 / A07 以本套件轉接器重跑、(c)原始碼盤點 `genDiagFunLog(` 恰一次且無手寫 funLog 三者鎖定.
+- **測試鎖與全套時間**: 本機兩槽被他套件的 `npm test` 占滿時, 排隊可達數十分鐘到數小時(本輪單一 3 檔小測試排了 > 15 分鐘仍未取得). 動工前就把「變異＋修前紅＋修後綠」寫成**單一腳本**(`./tmp/mig-sso/campaign.mjs`: 就地改檔、finally 還原並以 sha256 回驗、caught 判定以對照組失敗集為基準)與全套各排一個 `--lock` 指令, 以 `nohup` 脫離(一個指令一取一放); 本套件全套(含 e2e)約 100~170 分鐘, 超過單輪預算時如實回 `FIX=CONTINUE`.
+- **`test/_tmp/<案>` 的背景寫檔**: 呼叫 `WWebSso(...)` 會先建 srLog(w-syslog 背景寫檔), 即使隨後建構失敗, `logs/` 仍可能在測試刪除後被重建; 清理要等寫入靜止後重複刪 3 次再斷言不存在.
+- **檔案編碼**: 工作樹為 CRLF(`core.autocrlf=true`), `Write` 新檔也是 CRLF; 腳本改檔時 `find` 字串含換行須依檔案 EOL 轉換(`campaign.mjs` 以 `eol` 處理).
 - **守門 hook 的作法**: 變異驅動的輸出不能 `>` 重導檔案, 改走 `quiet-run`(完整輸出在其 `./tmp/quiet-run/*.log`); `sed -i` 一樣被擋, 批次替換用 `Edit` 的 `replace_all`。

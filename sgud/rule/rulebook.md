@@ -13,7 +13,7 @@
 | R-VUE-01、R-VUE-02、R-UI-01、R-UI-02、R-UI-03 | `rulebook_ui.md` | R-VUE-01、R-VUE-02、R-UI-01、R-UI-02、R-UI-03 |
 | R-SEC-01、R-PERM-01、R-SESS-01、R-APPTOK-01、R-SYS-01、R-IP-01、R-QKEY-01 | `rulebook_security.md` | R-SEC-01、R-PERM-01、R-SESS-01(改密碼後之 session 處置, 2026-10-23 第 117 項)、R-APPTOK-01(應用系統金鑰兩種用途與身分驗證缺口 S-1~S-6, 2026-10-24 sso-run01)、R-SYS-01(框架系統函數之身分關卡 `sysFuncsPublic`, 2026-10-25 sso-run01, ADR-096)、R-IP-01、R-QKEY-01 |
 | R-OBJ-ITER-01、R-KEY-01、R-CNT-01 | `rulebook_inputkeys.md` | R-OBJ-ITER-01、R-KEY-01、R-CNT-01 |
-| R-ORM-01、R-VAL-01、R-VAL-02、R-ORM-02、R-ORM-03、R-ORM-04 | `rulebook_orm.md` | R-ORM-01、R-VAL-01、R-VAL-02(後台使用者清單 redir 檢查範圍, 2026-10-23 第 116 項)、R-ORM-02、R-ORM-03、R-ORM-04(w-serv-orm 診斷輸出導入 srLog, 2026-10-28 第 154 項) |
+| R-ORM-01、R-VAL-01、R-VAL-02、R-ORM-02、R-ORM-03、R-ORM-04 | `rulebook_orm.md` | R-ORM-01、R-VAL-01、R-VAL-02(後台使用者清單 redir 檢查範圍, 2026-10-23 第 116 項)、R-ORM-02、R-ORM-03、R-ORM-04(w-serv-orm 診斷輸出導入 srLog 與外來值入口遮罩, 2026-10-28 第 154 項導入; 2026-10-29 第 161 項改依 wsemi 共用模組, ADR-099) |
 | R-ERR-01、R-PKG-01 | `rulebook_runtime.md` | R-ERR-01、R-PKG-01 |
 | 已知缺口 / 待辦(對照技能 audit)全節 | `rulebook_gaps.md` | 已知缺口 / 待辦(對照技能 audit)全節 |
 | 多人同時編輯(原則 10): 欄位三分類、寫入者全集、寫入契約、現存缺陷、第二波規劃與**實作結果**(V1~V14 對應、缺陷 → 測試、變異驗證、改動範圍 → 測試檔) | `rulebook_concurrency.md` | 2026-10-22 盤點輪(第 111 項 inv01)新增; 2026-10-23 第二波實作輪(sso-run01)補「第二波實作結果」 |
@@ -23,3 +23,18 @@
 
 ## 程式碼規則
 
+
+## 診斷輸出與遮罩(跨套件規格; 摘要, 2026-10-29 第 161 項 mig-sso)
+
+遮罩與診斷輸出**一律用 wsemi 之共用函數**(`getDiag`、`getDiagSecrets`、`maskDiagText`、`maskDiagCopy`、`maskDiagErr`、`maskDiagUrl`、`getDiagBriefErr`、`genDiagFunLog`), 本套件**不得另寫等價實作**; 各套件只宣告「本套件之秘密來源、呼叫點」. 規則全文見:
+
+- 跨套件規格: `C:\opensrcOper\dspec\診斷輸出與遮罩.md`(原則 D1~D5、使用者裁定 Q1~Q4 與 P1~P9、已知限制 §5; 本套件適用 **Q1**: sso 之 orm-diag 只寫安全摘要).
+- wsemi 規則: R-DIAG-01(`node_modules/wsemi` 之來源 repo `sgud/rule/rulebook_diag.md`, 唯讀參考); 共用測試語料 `wsemi/src/_diagCases.mjs`(各套件接線測試以其適用子集重跑呼叫點).
+
+本套件須宣告與做到者(逐條對應 `rulebook_orm.md` R-ORM-04 與 `test/unit-diaglog.test.mjs` SITE-DG-001~009):
+
+1. `WServOrm` 之 opt 只給 `{ funLog }`, `funLog` 由 `genDiagFunLog((o) => srLog.warn(o))` 產生; 無 detail、不 console 雙寫、等級 warn.
+2. 秘密來源 = 資料庫連線字串 `url` + 寄信帳密(`emSrcEmail` / `emSrcPW`), 以 `getDiag({}, { secrets: getDiagSecrets(...) })` 建 `diag`.
+3. **外來值(資料庫驅動、SMTP 之 reject)於「進入本套件」之入口遮罩**: `guardOrm(diag, woItems)`、`srEmail.send` 之 catch、`WServOrm` 建構錯誤、`ormWrite` 逐筆 err; 其後之 console、srLog、kpfun、HTTP 端點皆已遮罩.
+4. **本套件以固定詞彙組成之 reject 不得包 `diag.err` / `diag.mask`**(dspec R07).
+5. 不自寫遮罩; 需要時用 `diag`; 發現 wsemi 函數缺陷依全域設定 §5.2 撰寫建議檔交主控, 不在本套件繞道.

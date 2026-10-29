@@ -2,10 +2,12 @@ import get from 'lodash-es/get.js'
 import isestr from 'wsemi/src/isestr.mjs'
 import ispint from 'wsemi/src/ispint.mjs'
 import isearr from 'wsemi/src/isearr.mjs'
+import getDiag from 'wsemi/src/getDiag.mjs'
 import WEmail from 'w-email'
 
 
-let init = (st) => {
+//init(st, diag): diag 為診斷遮罩實例(wsemi getDiag, 由 WWebSso 宣告寄信帳密後傳入, R-DIAG-01; 未傳者為無登錄秘密之預設實例), send 內 w-email(SMTP)之 reject 為外來值, 出口前經 diag.err
+let init = (st, diag = getDiag()) => {
 
     let srcEmail = get(st, 'emSrcEmail', '')
     if (!isestr(srcEmail)) {
@@ -14,7 +16,7 @@ let init = (st) => {
 
     let srcPW = get(st, 'emSrcPW', '')
     if (!isestr(srcPW)) {
-        throw new Error(`invalid srcPW[${srcPW}]`)
+        throw new Error('invalid srcPW') //寄信密碼為憑證, 訊息不回顯其值(型別無效時值可為任意設定內容)
     }
 
     let srcHost = get(st, 'emSrcHost', '')
@@ -66,8 +68,14 @@ let init = (st) => {
             // }
         }
 
-        //WEmail
-        let r = await new WEmail(opt)
+        //WEmail, SMTP 之 reject 為外來值(主機/帳號/回應文字, 可夾帶寄信帳密), 進入本套件前遮罩憑證; 上方 invalid 系列為本函數以固定詞彙組成之 reject, 不經遮罩
+        let r = null
+        try {
+            r = await new WEmail(opt)
+        }
+        catch (err) {
+            return Promise.reject(diag.err(err))
+        }
         // console.log('已成功寄送信件', r)
 
         return r

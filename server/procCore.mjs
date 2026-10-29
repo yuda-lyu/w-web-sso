@@ -38,6 +38,7 @@ import waitFun from 'wsemi/src/waitFun.mjs'
 import delay from 'wsemi/src/delay.mjs'
 import nowms2str from 'wsemi/src/nowms2str.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
+import getDiag from 'wsemi/src/getDiag.mjs'
 import clearXSS from 'wsemi/src/clearXSS.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
@@ -163,13 +164,16 @@ function timingSafePasswordEqual(a, b) {
 }
 
 
-function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl, withTabLocks, guardWrite }) {
+function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExpired, kpLang, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl, withTabLocks, guardWrite }) {
 
     //withTabLocks / guardWrite: 取自 w-serv-orm WServOrm 實例(每實例一個鎖管理器、每表一鍵, 規格 §7); 所有寫入 users / tokens / ips 之站點皆須在該表表鎖內執行 (R-CONC-01),
     //且與 procProtect 共用同一組(同表只由同一鎖管理器寫入, 規格 §12). 缺少即無法保證互斥, 故不提供預設替身
     if (!isfun(withTabLocks) || !isfun(guardWrite)) {
         throw new Error('procCore needs withTabLocks and guardWrite from the WServOrm instance')
     }
+
+    //diag, 診斷遮罩實例(wsemi getDiag, 由 WWebSso 宣告本套件之秘密後傳入, R-DIAG-01; 未傳者為無登錄秘密之預設實例): 本模組只用於直接寫入點 ormWrite 之逐筆失敗原文(ORM 逐筆 err 屬外來值, 於組成 reject 字串時遮罩);
+    //資料表與寄信之 reject(外來值)於進入本套件時已由 WWebSso 之 guardOrm / srEmail 遮罩憑證, 本模組內之 catch、log 與 reject 不再遮罩, 本模組自身以固定詞彙組成之 reject 亦不經遮罩
 
 
     //pmKeyMutex: per-key in-memory mutex, 同 key 序列化、不同 key 並行.
@@ -1810,7 +1814,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //del
         await ormWrite(woItems.tokens, 'del', map(ts, (t) => {
             return { id: t.id }
-        }))
+        }), diag)
 
         return size(ts)
     }
@@ -1844,7 +1848,7 @@ function proc(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, pass
         //del
         await ormWrite(woItems.tokens, 'del', map(tsDel, (t) => {
             return { id: t.id }
-        }))
+        }), diag)
 
         return size(tsDel)
     }

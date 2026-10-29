@@ -23,11 +23,14 @@ import fsIsFile from 'wsemi/src/fsIsFile.mjs'
 import replace from 'wsemi/src/replace.mjs'
 import WServHapiServer from 'w-serv-hapi/src/WServHapiServer.mjs'
 import WServOrm from 'w-serv-orm/src/WServOrm.mjs'
+import getDiag from 'wsemi/src/getDiag.mjs'
+import getDiagSecrets from 'wsemi/src/getDiagSecrets.mjs'
+import genDiagFunLog from 'wsemi/src/genDiagFunLog.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
 import srLogInit, { maskToken, maskUrl, maskKv, capText } from './srLog.mjs'
-import mkOrmFunLog, { wrapProcOrm } from './ormDiagLog.mjs'
 import srEmailInit from './srEmail.mjs'
+import guardOrm from './guardOrm.mjs'
 import procCore from './procCore.mjs'
 import procLang from './procLang.mjs'
 import procProtect from './procProtect.mjs'
@@ -118,7 +121,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
     //check url
     if (!isestr(url)) {
-        console.log('invalid url', url)
+        console.log('invalid url', typeof url) //url 為連線字串(含帳密), 不輸出其值
         throw new Error('invalid url')
     }
 
@@ -193,6 +196,17 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     if (isestr(process.env.SALT)) {
         salt = process.env.SALT
     }
+
+    //diag, 本套件之診斷遮罩實例(wsemi getDiag, R-DIAG-01 / R-ORM-04; 規格見 dspec〈診斷輸出與遮罩〉): 只宣告秘密來源並使用其 err / mask, 不自寫任何遮罩;
+    //秘密 = 資料庫連線字串 url、寄信帳密(emSrcEmail / emSrcPW). 外來值(資料庫驅動、寄信之 reject 原文)於進入本套件時一次遮罩(guardOrm 包 woItems、srEmail.send 內 catch),
+    //本套件自身以固定詞彙組成之 reject(如 tokenExpired)不經遮罩. 診斷輸出之 funLog 另由 genDiagFunLog 轉寫(只寫安全摘要), 不經本實例之出口
+    let diag = getDiag({}, {
+        secrets: getDiagSecrets({
+            urls: [url],
+            username: get(opt, 'emSrcEmail', ''),
+            password: get(opt, 'emSrcPW', ''),
+        }),
+    })
 
     //minExpired, 使用者成功登入後產生token之有效時間(分鐘)
     let minExpired = get(opt, 'minExpired', '')
@@ -391,7 +405,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let kpLangExt = get(opt, 'kpLangExt', {})
 
     //srEmail
-    let srEmail = srEmailInit(opt)
+    let srEmail = srEmailInit(opt, diag)
 
     //readTextIfFile, 值若為既存檔案路徑(絕對或基於啟動路徑之相對)則於初始化讀檔內容作為模板或文字, 否則原樣視為文字
     let readTextIfFile = (v, label = '') => {
@@ -455,20 +469,23 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         kpLangWeb[lang] = kp
     })
 
-    //WServOrm, opt 只給 funLog(診斷輸出導入 srLog, R-ORM-04 / ADR-098): w-serv-orm 1.1.20 起診斷輸出預設只在 console 列標籤與不含個資之摘要, 完整細節(失敗列主鍵、ORM 錯誤原文)只交 funLog;
-    //本套件於 funLog 內遮罩後寫 srLog.error, console 照舊. 已移除之使用者檢查設定仍不轉交(w-serv-orm 1.1.9 起無此設定鍵, 見上方 ignoredOrmKeys, ADR-085)
+    //WServOrm, opt 只給 funLog(診斷輸出導入 srLog, R-ORM-04 / ADR-098 / ADR-099): 以 wsemi genDiagFunLog 轉寫, 只寫 label 與安全摘要至 srLog.warn(event: 'orm-diag'), 不讀細節(funLog 帶 noDetail, w-serv-orm 不取細節);
+    //已移除之使用者檢查設定仍不轉交(w-serv-orm 1.1.9 起無此設定鍵, 見上方 ignoredOrmKeys, ADR-085). 本套件未提供停止, 故不呼叫其 close
+    let { funLog } = genDiagFunLog((o) => srLog.warn(o))
     let wp = {}
     try {
-        wp = WServOrm(ds, WOrm, url, db, { funLog: mkOrmFunLog(srLog) })
+        wp = WServOrm(ds, WOrm, url, db, { funLog })
     }
     catch (err) {
-        console.log('WServOrm init failed', err)
-        throw err
+        let errMasked = diag.err(err) //建構錯誤(資料庫連線初始化)可含連線字串, 輸出與重拋前經遮罩
+        console.log('WServOrm init failed', errMasked)
+        throw errMasked
     }
-    let { woItems, procOrm: procOrmRaw, withTabLocks, guardWrite } = wp //withTabLocks / guardWrite: 每表一鍵之表鎖(多人同時編輯之寫入契約, 原則 10), procCore 與 procProtect 共用同一組
+    let { woItems: woItemsRaw, procOrm, withTabLocks, guardWrite } = wp //withTabLocks / guardWrite: 每表一鍵之表鎖(多人同時編輯之寫入契約, 原則 10), procCore 與 procProtect 共用同一組
 
-    //procOrm, 記下進行中呼叫之操作者與輸入, 供 funLog 遮罩 ORM 錯誤原文內夾帶之輸入值(只多一層非同步脈絡, 不改引數、回傳與 reject)
-    let procOrm = wrapProcOrm(procOrmRaw)
+    //woItems, 本套件直接呼叫資料表(select / save / del 等)之 reject 為資料庫驅動之外來值(可夾帶連線字串與帳密), 進入本套件前經 diag.err 遮罩憑證(guardOrm);
+    //procOrm / withTabLocks / guardWrite 之 reject 為 w-serv-orm 以固定詞彙組成(R-DIAG-01), 不另包
+    let woItems = guardOrm(diag, woItemsRaw)
 
     //getWebInfor
     let getWebInfor = () => {
@@ -545,7 +562,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         verifyEmailResultContent = fs.readFileSync(fpTpl, 'utf8')
     }
 
-    let p = procCore(woItems, procOrm, { srLog, srEmail, salt, minExpired, kpLang, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl, withTabLocks, guardWrite })
+    let p = procCore(woItems, procOrm, { srLog, diag, srEmail, salt, minExpired, kpLang, passwordPolicy, allowUserRegistration, siteUrl, verifyBaseUrl, withTabLocks, guardWrite })
 
     //升級遷移 (ADR-095 補記): 啟動時對升級前建立之應用系統金鑰列一次性定案——升級前可用者視為系統服務用途(不設期限), 升級前即不可用者(已逾期、無 timeEnd、timeEnd 格式錯)標為已失效(retired), 不因「不設期限」而復活, 列不刪.
     //冪等(已定案者不再處理); 不阻擋啟動——尚未定案之舊列(遷移進行中或失敗)讀取時依升級前規則判定, 永不比升級前更寬(已逾期者仍失效), 失敗者重啟後重試

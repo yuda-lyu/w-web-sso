@@ -59,7 +59,7 @@
   5. 若日後開放 ORM 通道(WServHapi 之 `operOrm` / `tableNamesExec`), 授權由 w-serv-webdata 之 `authorizeExec` 另行設計(含應用系統金鑰之虛擬使用者、自助註冊); 透傳三鍵已不可能(上游拋錯).
 - **理由**: 擋板必須保留——部署方之舊設定若給 `useCheckUser: true` 而本套件轉交, w-serv-orm 1.1.10 於建構時拋錯、後端啟動即失敗(違反「舊 settings 原封不動, 新版必須能啟動」, `sgud/exp/experience.md` 套件身分第 1 條); 判準委派上游, 使「警告」恰為「若轉交即拒絕」之值. 原 ADR-083 之理由(上游之使用者檢查使註冊與清單儲存必然失敗、非布林預設為 true)自 1.1.9 起不成立. 見 ADR-085.
 - **盤點指令**:
-  - Grep `WServOrm\(` 於 `server/` 與根目錄 `*.mjs` → `WWebSso.mjs`、`g_mOrm.mjs` 各 1(`g_mOrm` 4 個參數; `WWebSso` 第 5 參數恰為 `{ funLog: mkOrmFunLog(srLog) }`, R-ORM-04, `unit-ormDiagLog` SITE-ODL-001 / 002 守門).
+  - Grep `WServOrm\(` 於 `server/` 與根目錄 `*.mjs` → `WWebSso.mjs`、`g_mOrm.mjs` 各 1(`g_mOrm` 4 個參數; `WWebSso` 第 5 參數恰為 `{ funLog }`〔`funLog` 由 wsemi `genDiagFunLog((o) => srLog.warn(o))` 產生〕, R-ORM-04, `unit-diaglog` SITE-DG-001 / 002 守門).
   - Grep `getProc\(` 於 `test/`、`spec/evidence/` → `unitProc.mjs` 之 `mkProcOrm`(1 個參數)、`unit-ignoredOrmKeys`(以三鍵之值呼叫, 取上游拋錯為判準)、取證腳本(逐組 try/catch).
   - Grep `useCheckUser|getUserById|useExcludeWhenNotAdmin` 於 `server/` → 只在 `getIgnoredOrmKeys.mjs`(鍵名清單)與 `WWebSso.mjs` 之 JSDoc / 註解.
   - Grep `optWServOrm|getOptWServOrm` 於 `server/`、`test/`、根目錄 `*.mjs` → 0(ADR / 經驗之歷史敘述除外).
@@ -78,21 +78,30 @@
   - 讀 `src/schema/tables/*.mjs` 之 settings 鍵: `userId` 出現於 users(建立者)與 tokens(擁有者), `userIdUpdate` 只在 users; ips 皆無.
 - **站點全集(2026-10-12)**: tokens 之新增 1 處; 已套. 測試: `unit-ormWriteFail` A23; `api-apptoken-perms` PERM-A-008(兩者修改前失敗、修改後通過).
 
-### R-ORM-04: w-serv-orm 之診斷輸出由本套件以 funLog 導入 srLog; 細節遮罩後才寫入; console 照舊只列標籤與摘要(2026-10-28 第 154 項 sso-run01, ADR-098)
+### R-ORM-04: w-serv-orm 之診斷輸出由本套件以 wsemi `genDiagFunLog` 導入 srLog(只寫安全摘要); 外來值於進入本套件時遮罩憑證(2026-10-28 第 154 項 sso-run01 ADR-098; 2026-10-29 第 161 項 mig-sso 改依 dspec〈診斷輸出與遮罩〉, ADR-099)
+
+> 跨套件規格: `C:\opensrcOper\dspec\診斷輸出與遮罩.md`(原則 D1~D5、裁定 Q1~Q4 / P1~P9、已知限制 §5); wsemi 規則 R-DIAG-01(`node_modules/wsemi` 來源 repo `sgud/rule/rulebook_diag.md`). 本條只記本套件須宣告與改之處; `rulebook.md`〈診斷輸出與遮罩〉為摘要.
 
 - **規則**:
-  1. 站點: `server/WWebSso.mjs` 建立 `WServOrm` 時 opt 恰為 `{ funLog: mkOrmFunLog(srLog) }`(`server/ormDiagLog.mjs`); 不傳 `logDetail`(true 會把含主鍵與錯誤原文之完整細節還原到 console, pm2 / 容器收集)、不傳已移除之使用者檢查設定(R-ORM-02). 新增建立 `WServOrm` 之站點須同樣接 funLog, 或在本條站點全集登錄刻意不套之理由.
-  2. funLog 行為: console 照舊輸出 `label` 與 `safe`(同 w-serv-orm 1.1.20 預設之 `console.log(label, safe)`, 無 safe 者只列 label; 不含主鍵與原文); srLog.error 一筆 `{ event: 'orm-diag', label, safe, detail }`(`detail` 為 `maskOrmDetail` 遮罩後者, 無細節者無此鍵, 遮罩失敗為 `'(unmaskable)'`); console、遮罩、srLog 寫入之任何失敗皆吞下, 不影響 procOrm 之流程與結果.
-  3. `detail` 遮罩(`maskOrmDetail`): 非錯誤原文位置之字串與鍵名像識別欄(id、userId、account、email、name、pass、token)之數字 → `maskToken` 形式(記原長); 錯誤原文位置(`err` / `error` / `message` / `msg` 與頂層字串)保留文字, 先置換已知識別值(同筆細節內者與該次呼叫輸入內識別欄之值, 含 `$in` / `$ne` 內者)為同一遮罩, 再置換信箱與 uuid 樣式, 最後 `capText`(控制字元 → `?`, 超過 256 截斷); `Error` 只留 `{ errType, message }`(無 stack, 類別名稱須合白名單樣式); 層數 6 / 節點 200(輸入 20000) / 識別值上限 1000; 不執行細節內程式(getter、Proxy 陷阱)、不改輸入、`__proto__` 鍵以 defineProperty 保留.
-  4. 呼叫輸入脈絡: `WWebSso` 內 procCore / procProtect 取得之 `procOrm` 為 `wrapProcOrm(procOrmRaw)` 之回傳(AsyncLocalStorage 記下 `{ userId, input }`; 只多一層脈絡, 不改引數、回傳、reject、時機; 並行呼叫各有自己的脈絡). 原始 `procOrmRaw` 在 `WWebSso.mjs` 只出現解構與包裝兩處.
-  5. 層級一律 `error`(SSO 執行時經 procOrm 產生之診斷皆為寫入失敗或輸入被拒; 進度類標籤只在呼叫實例之 `backup` / `recover` 時出現, SSO 不呼叫).
-- **理由**: w-serv-orm 1.1.20 讓 console 預設不含個資, 但 procOrm 之 reject 訊息只列主鍵、不含 ORM 錯誤原文, 而 R-ORM-01 規則 2 要求原文寫 srLog.error——不接 funLog 則寫入失敗之原因(如 `Key size is larger than the maximum key size (1978)`)無處可查. 只寫 `safe` 補不回原因; 原樣寫 `detail` 會把主鍵 / 信箱 / 原文內之資料值落地(違反 R-SEC-01 精神), 故遮罩後寫. 取捨與替代方案見 ADR-098.
-- **殘餘風險**: 錯誤原文若夾帶既不在細節、也不在該次呼叫輸入內之資料值(例如資料庫端既存列之內容)無從辨識, 只受信箱 / uuid 樣式、控制字元與長度限制; 真 w-orm-lmdb 之錯誤文字不含列內容(實測: 鍵長超限之 save 逐筆失敗與 insert 整批 reject, 探測腳本與輸出見 sso-run01 報告證據; `unit-ormDiagLog` ODL-L01 為警鈴). 換 ORM 或升級 w-orm-lmdb 須重核.
+  1. 站點: `server/WWebSso.mjs` 建立 `WServOrm` 時 opt 恰為 `{ funLog }`, `funLog` 恰由 `let { funLog } = genDiagFunLog((o) => srLog.warn(o))` 產生(wsemi); 不傳 `logDetail`(true 會把含主鍵與錯誤原文之完整細節還原到 console, pm2 / 容器收集)、不傳已移除之使用者檢查設定(R-ORM-02). 新增建立 `WServOrm` 之站點須同樣接 funLog, 或在本條站點全集登錄刻意不套之理由.
+  2. funLog 行為(wsemi 保證, dspec Q1): srLog.warn 一筆 `{ event: 'orm-diag', label, safe }`; **只有安全摘要, 無 detail**(funLog 帶 `noDetail`, w-serv-orm 不取細節); label 控制字元換 `?`; 傳 funLog 後 w-serv-orm 不寫 console, 本套件不補寫(不雙寫); srLog 寫入拋錯或回傳 rejected promise 皆吞下(不產生 unhandled rejection), 不影響 procOrm. `procOrm` 不再包裝(刪 `wrapProcOrm`、AsyncLocalStorage、`maskOrmDetail`, 檔 `server/ormDiagLog.mjs` 已刪).
+  3. 外來值於進入本套件時遮罩(dspec D3: 只遮憑證——網址整串、`帳:密`、寄信密碼; 不遮單獨帳號與儲存路徑〔Q3〕): `WWebSso` 以 `getDiag({}, { secrets: getDiagSecrets({ urls: [url], username: emSrcEmail, password: emSrcPW }) })` 建本套件之 `diag`(只宣告秘密來源, 不自寫遮罩). 入口(站點全集見下): (a) `woItems = guardOrm(diag, woItemsRaw)`(`server/guardOrm.mjs`, 各資料表以 Proxy 轉呼叫, reject 與同步拋錯經 `diag.err`); (b) `srEmail.send` 內 `new WEmail(opt)` 之 catch 經 `diag.err`(`srEmailInit(opt, diag)`); (c) `WServOrm` 建構錯誤 catch 經 `diag.err` 後才 console 輸出與重拋; (d) `ormWrite` 之逐筆失敗原文(逐筆 err)於組成 reject 字串時 `diag.mask`(procCore 兩處 `ormWrite(` 皆帶 `diag`).
+  4. **本套件以固定詞彙組成之 reject 不得包 `diag.err` / `diag.mask`**(dspec R07: 秘密為其子字串時固定 key 被切碎, 且形成反推密碼之 oracle): `procCore`、`procProtect`、`procStaInfor`、`lockSave` 內不得出現; 故不在 kpfun 集中出口(`WWebSso` 之 `optHapi.kpFunExt` 包裝)與九支 HTTP handler 統一遮罩——該處同時看到固定 key 與外來值. `procOrm` / `withTabLocks` / `guardWrite` 之 reject 為 w-serv-orm 以固定詞彙組成, 不另包.
+  5. 建構期不回顯憑證: `url` 型別無效時 console 只印 `typeof url`; `srEmail` 之 `invalid srcPW` 不帶值.
+- **理由**: dspec D1(單一實作: 遮罩一律用 wsemi, 各套件只宣告秘密來源與呼叫點); 本套件自製之 `maskOrmDetail`(鍵名啟發式＋AsyncLocalStorage)被外審指出缺口(`maskToken` 露首尾字元與長度), 使用者 2026-10-29 裁定 Q1=A 改為只寫安全摘要. 入口遮罩而非出口遮罩之理由見 ADR-099 Alternatives.
+- **殘餘風險 / 已知限制**(dspec §5): reject 清單之短密碼(少於 4 字元)不遮; 單獨帳號與儲存路徑不遮(Q3); 非本套件宣告之秘密(例如資料庫端既存列之內容、錯誤原文夾帶之使用者資料)無從辨識; srLog 的 `err` 欄位仍記 procOrm 之 reject 文字(含主鍵, w-serv-orm 回傳契約文字)與 `fun-createUser-insert` 等站點之 `account`(既有稽核政策, 範圍外未動).
 - **盤點指令**:
-  - Grep `WServOrm\(` 於 `server/`、根目錄 `*.mjs`(去註解) → `WWebSso.mjs`(含 funLog)、`g_mOrm.mjs`(刻意不套) 各 1(`unit-ormDiagLog` SITE-ODL-001 / 002).
-  - Grep `\bfunLog\b` 於 `server/`(去註解) → 只在 `WWebSso.mjs`(SITE-ODL-004); Grep `\blogDetail\b` 於 `server/`、`src/` → 0(SITE-ODL-003).
-  - Grep `procOrmRaw` 於 `server/WWebSso.mjs`(去註解) → 恰 2 處(SITE-ODL-002).
-  - 可重跑: `npx mocha --no-parallel test/unit-ormDiagLog.test.mjs test/api-ormdiag.test.mjs --timeout 180000`.
-- **站點全集(2026-10-28)**: 建立 `WServOrm` 2 處——`server/WWebSso.mjs`(**已套**: funLog + 包裝 procOrm)、`g_mOrm.mjs`(**刻意不套**: 開發腳本與測試用單例, 無 srLog, 預設 console 已不含個資; 其 `woItems` 為測試直接操作〔不經 procOrm〕); 測試替身組裝 2 處(`test/tools/unitProc.mjs` 之 `mkServ` / `mkProcOrm`, 不傳 funLog, 診斷走預設 console, 由 `unit-ormDiagLog` 以真實 WServOrm 另驗 funLog). 工具路徑 `g_backupDb.mjs`(`getDb.backup`)、`g_initialTestData.mjs`(`genTestData`)為手動腳本, 其 opt 之 `logDetail` / `funLog` 未給, 輸出為上游預設(不含個資), 不屬 WServOrm 站點.
-- **測試**: `test/unit-ormDiagLog.test.mjs`(31 案: ODL-M01~M14、F01~F03、W01~W09、L01、SITE-ODL-001~004)、`test/api-ormdiag.test.mjs`(2 案, 真後端 + `test/tools/srvOrmDiag.mjs`). 修改前紅: 未接線時 `api-ormdiag` ORMDIAG-002 紅(srLog 無 `orm-diag`, 回應與 stdout 診斷行斷言前已過)、`unit-ormDiagLog` SITE-ODL-002 / 004 紅; 變異 34 項(`m01`~`m34`, `./tmp/sso-run01/mut/` 副本, 對照組先全綠)皆被抓到、0 存活、還原後逐檔 sha256 與 repo 一致(`m34` 為全套測試後補 `ODL-M14` 憑證案時加跑).
+  - Grep `WServOrm\(` 於 `server/`、根目錄 `*.mjs`(去註解) → `WWebSso.mjs`(含 funLog)、`g_mOrm.mjs`(刻意不套) 各 1(`unit-diaglog` SITE-DG-001 / 002).
+  - Grep `\bfunLog\b` 於 `server/`(去註解) → 只在 `WWebSso.mjs`; Grep `\blogDetail\b` 於 `server/`、`src/` → 0; Grep `maskOrmDetail|wrapProcOrm|AsyncLocalStorage|ormDiagLog` 於 `server/`、`src/`、根目錄 → 0(SITE-DG-003 / 004).
+  - Grep `woItemsRaw` 於 `server/WWebSso.mjs`(去註解) → 恰 2 處(解構與 `guardOrm(diag, woItemsRaw)`, SITE-DG-005).
+  - Grep `diag\.err\(` 於 `server/` → 只在 `WWebSso.mjs`(建構錯誤)、`guardOrm.mjs`、`srEmail.mjs`; Grep `diag\.mask\(` 於 `server/` → 只在 `ormWrite.mjs`; `procCore`/`procProtect`/`procStaInfor`/`lockSave` 內為 0(SITE-DG-007).
+  - Grep `console\.log\((?:'[^']*', )?(?:err|errTemp)\)` 於 `server/` → `WWebSso.mjs` 1(fs 錯誤)、`procCore.mjs` 12、`procProtect.mjs` 3(SITE-DG-008; 其錯誤皆來自已於入口遮罩之資料表 / 寄信).
+  - 可重跑: `npx mocha --no-parallel test/unit-diaglog.test.mjs test/api-ormdiag.test.mjs --timeout 180000`.
+- **站點全集(2026-10-29 mig-sso; 盤點 `server/**`、`src/*.mjs`、根目錄 `*.mjs` 之 reject / throw / emit / srLog 欄位 / console / catch: 主表 116 列＋補充 36 列; 逐站表見 mig-sso 修正報告)**:
+  - **外來值入口(已套)**: 資料表 reject(`procCore`/`procProtect`/`ormWrite` 直接呼叫 `woItems.*`; 含 `console.log(errTemp)` 12 處、srLog `err` 21 處、`Promise.reject(err)`/`r.msg` 回遠端之 kpfun 與 5 支 HTTP handler)→ `guardOrm`; 寄信 reject(`procCore` 4 處 console、2 處 srLog)→ `srEmail.send` catch; `WServOrm` 建構錯誤(`WWebSso`)→ `diag.err`; 逐筆 err(`ormWrite`)→ `diag.mask`.
+  - **固定詞彙(刻意不包)**: `procCore`/`procProtect`/`WWebSso`/`lockSave`/`procStaInfor`/`hashPassword`/`genRandomPassword`/`wrapTimer`/`getIgnoredOrmKeys`/`srLog`/`staLogs/*` 之 `Promise.reject('<key>')`、`throw new Error('invalid …')` 等(依 dspec R07); 其中 `srEmail` 之 `invalid srcName[…]` 系列為固定詞彙加使用端輸入回顯(非憑證), 原樣.
+  - **非憑證類外來值(原樣)**: `staLogs/*`、`procStaInfor`、`WWebSso:640` 之 fs / Worker 錯誤(僅本機路徑與 errno, 不遮路徑〔Q3〕); `srLog` 欄位之 token / ip / account 由既有 `maskToken`/`maskKv`/`capText` 處理(R-SEC-01).
+  - **刻意不套**: `srv.mjs`(示範入口, `instWWebSso.on('error')` 的事件源為 w-serv-hapi 傳輸層; kpfun 之 reject 於進入本套件時已遮罩)、`g_*.mjs`(開發腳本, 本機 `./db`)、`src/baselineOf.mjs`(前端 console, 錯誤來自 w-serv-orm 前端 `buildBaseline`, 不屬後端出口)、`src/fetchSsoMsg.mjs`(已有 `maskUrl` ＋白名單形狀)。
+  - 建立 `WServOrm` 2 處——`server/WWebSso.mjs`(**已套**)、`g_mOrm.mjs`(**刻意不套**: 開發腳本與測試用單例, 無 srLog, 預設 console 已不含個資); 測試替身組裝 2 處(`test/tools/unitProc.mjs` 之 `mkServ` / `mkProcOrm`, 不傳 funLog, 由 `unit-diaglog` 以真實 WServOrm 另驗 funLog).
+- **測試**: `test/unit-diaglog.test.mjs`(接線測試: DGF 轉接器、DGX 外來值入口〔語料 T01 / T07 / R01 / R02 / R04 / R11 / R12 以 `guardOrm` 重跑, 另 R07 固定詞彙〕、DGC 建構期、SITE-DG 站點全集)、`test/api-ormdiag.test.mjs`(真後端 + `test/tools/srvOrmDiag.mjs`: ORMDIAG-001~005). 修改前紅 / 變異結果見 mig-sso 修正報告(`./tmp/mig-sso/campaign.mjs`, 一次取鎖跑完; 還原後逐檔 sha256 回驗).
 

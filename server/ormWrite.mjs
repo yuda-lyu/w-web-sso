@@ -3,6 +3,7 @@ import map from 'lodash-es/map.js'
 import size from 'lodash-es/size.js'
 import join from 'lodash-es/join.js'
 import isfun from 'wsemi/src/isfun.mjs'
+import getDiag from 'wsemi/src/getDiag.mjs'
 import getItemsFail from 'w-data-collector/src/getItemsFail.mjs'
 
 
@@ -18,9 +19,10 @@ import getItemsFail from 'w-data-collector/src/getItemsFail.mjs'
  * @param {Object} wo 輸入 ORM 物件(woItems 內之資料表), 須有 mode 對應之函數
  * @param {String} mode 輸入寫入函數名稱字串, 僅 'save' 或 'del'(insert 回傳聚合物件且錯誤皆屬整批性, 不適用)
  * @param {Object|Array} data 輸入數據物件或陣列
- * @returns {Promise} 回傳 Promise, resolve 回傳 ORM 逐筆結果陣列; reject 回傳錯誤: 整批性錯誤為 ORM 之 reject 原樣, 逐筆失敗為含失敗筆主鍵與錯誤原文之字串. 錯誤供 log, 回傳前端前須由呼叫端轉為語系鍵
+ * @param {Function} [diag=getDiag()] 輸入診斷遮罩實例(wsemi getDiag, R-DIAG-01), 逐筆失敗之 ORM 錯誤原文(外來值)組入 reject 字串時經 diag.mask 遮罩憑證; 預設為無登錄秘密之實例
+ * @returns {Promise} 回傳 Promise, resolve 回傳 ORM 逐筆結果陣列; reject 回傳錯誤: 整批性錯誤為 ORM 之 reject 原樣(由呼叫端之 catch 站點遮罩), 逐筆失敗為含失敗筆主鍵與(已遮罩憑證之)錯誤原文之字串. 錯誤供 log, 回傳前端前須由呼叫端轉為語系鍵
  */
-async function ormWrite(wo, mode, data) {
+async function ormWrite(wo, mode, data, diag = getDiag()) {
 
     //check
     if (mode !== 'save' && mode !== 'del') {
@@ -37,7 +39,7 @@ async function ormWrite(wo, mode, data) {
     let fails = getItemsFail(rs, data)
     if (size(fails) > 0) {
         let ss = map(fails, (v) => {
-            return `id[${v.id}]: ${v.err}`
+            return `id[${v.id}]: ${diag.mask(v.err)}` //逐筆 err 為 ORM 錯誤原文(外來值), 於建立時遮罩憑證
         })
         return Promise.reject(`${mode} fail: ${join(ss, '; ')}`)
     }
