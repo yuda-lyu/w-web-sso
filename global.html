@@ -29,7 +29,7 @@
 <nav >
     
     
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="WWebSso.html">WWebSso</a></li></ul><h3>Global</h3><ul><li><a href="global.html#calcUsageSummary">calcUsageSummary</a></li><li><a href="global.html#convertUser">convertUser</a></li><li><a href="global.html#createLockSave">createLockSave</a></li><li><a href="global.html#fetchSsoMsg">fetchSsoMsg</a></li><li><a href="global.html#getFreqVal">getFreqVal</a></li><li><a href="global.html#getIgnoredOrmKeys">getIgnoredOrmKeys</a></li><li><a href="global.html#groupFreq">groupFreq</a></li><li><a href="global.html#httpGetJson">httpGetJson</a></li><li><a href="global.html#maskOrmDetail">maskOrmDetail</a></li><li><a href="global.html#maskUrl">maskUrl</a></li><li><a href="global.html#mkOrmFunLog">mkOrmFunLog</a></li><li><a href="global.html#ormWrite">ormWrite</a></li><li><a href="global.html#resolveShellWorker">resolveShellWorker</a></li><li><a href="global.html#submitGuard">submitGuard</a></li><li><a href="global.html#sumFreqVal">sumFreqVal</a></li><li><a href="global.html#wrapProcOrm">wrapProcOrm</a></li><li><a href="global.html#wrapTimer">wrapTimer</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="WWebSso.html">WWebSso</a></li></ul><h3>Global</h3><ul><li><a href="global.html#calcUsageSummary">calcUsageSummary</a></li><li><a href="global.html#convertUser">convertUser</a></li><li><a href="global.html#createLockSave">createLockSave</a></li><li><a href="global.html#fetchSsoMsg">fetchSsoMsg</a></li><li><a href="global.html#getFreqVal">getFreqVal</a></li><li><a href="global.html#getIgnoredOrmKeys">getIgnoredOrmKeys</a></li><li><a href="global.html#groupFreq">groupFreq</a></li><li><a href="global.html#guardOrm">guardOrm</a></li><li><a href="global.html#httpGetJson">httpGetJson</a></li><li><a href="global.html#maskUrl">maskUrl</a></li><li><a href="global.html#ormWrite">ormWrite</a></li><li><a href="global.html#resolveShellWorker">resolveShellWorker</a></li><li><a href="global.html#submitGuard">submitGuard</a></li><li><a href="global.html#sumFreqVal">sumFreqVal</a></li><li><a href="global.html#wrapTimer">wrapTimer</a></li></ul>
     
 </nav>
 
@@ -1723,6 +1723,192 @@ console.log(groupFreq(arr, 4, ['1.2.3.4'])[0].data['1.2.3.4'])
 
     
 
+    <h4 class="name" id="guardOrm"><span class="type-signature"></span>guardOrm<span class="signature">(diag, woItems)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>外來值入口遮罩: 包裝 w-serv-orm 之 woItems(各資料表之 ORM 物件), 使資料庫驅動回傳之錯誤進入本套件前先遮罩憑證(R-DIAG-01, 規格 dspec〈診斷輸出與遮罩〉)</p>
+<p>本套件直接呼叫 woItems.&lt;表&gt;.select / save / del 等(procCore、procProtect、ormWrite), 其 reject(或同步拋錯)為後端/驅動之外來值, 可能夾帶連線字串與帳密;
+這些值之後會被寫入 console、srLog.error 之 err 欄位, 或原樣 reject 至 kpfun 與 HTTP 端點(回遠端), 故於進入點一次遮罩: 回傳包裝後之 woItems(各表以 Proxy 轉呼叫, 函數之 reject 與同步拋錯
+經 diag.err, 無憑證者回原物件、身分不變; 有憑證者為保型副本), resolve 之結果與非函數屬性原樣. 本套件自身以固定詞彙組成之 reject(如 'tokenExpired')不經本函數, 故不會被秘密之子字串切碎.
+遮罩邏輯全部由 wsemi 之 diag 實例(getDiag)提供, 本函數不含任何遮罩實作.</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="server_guardOrm.mjs.html">server/guardOrm.mjs</a>, <a href="server_guardOrm.mjs.html#line47">line 47</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>diag</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>輸入診斷遮罩實例(wsemi getDiag 之回傳, 需有 err 函數)</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>woItems</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>輸入 w-serv-orm 之 woItems，格式為 { <woName>: &lt;ORM 物件&gt; }</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>回傳同鍵之包裝後 woItems</p>
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Object</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
     <h4 class="name" id="httpGetJson"><span class="type-signature type-signature-async">(async) </span>httpGetJson<span class="signature">(url)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
 
     
@@ -1874,289 +2060,6 @@ console.log(groupFreq(arr, 4, ['1.2.3.4'])[0].data['1.2.3.4'])
     <dd>
         
 <span class="param-type">Promise</span>
-
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-        
-            
-
-    
-
-    <h4 class="name" id="maskOrmDetail"><span class="type-signature"></span>maskOrmDetail<span class="signature">(detail, opt<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {*}</span></h4>
-
-    
-
-
-
-
-<dl class="details">
-    
-    <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li><p>遮罩 w-serv-orm 診斷輸出之完整細節(R-ORM-04)</p>
-<p>細節含失敗列之主鍵與 ORM 錯誤原文, 寫入 srLog 前先轉為有界之純資料並遮罩(不執行細節內任何使用端程式):
-非錯誤原文位置之字串(主鍵、帳號、信箱等)一律遮罩為 maskToken 之形式(前後各至多 4 字元與長度), 鍵名像識別欄之數字亦同;
-錯誤原文位置(err、error、message、msg 與頂層字串)保留文字, 但控制字元換為 ?、信箱與 uuid 樣式置換、同筆細節內出現過之識別值置換為其遮罩、長度截斷(256);
-Error 只留類別名稱與訊息(不含 stack); 層數、節點數與字串長度皆有上限.
-錯誤原文可能夾帶不在同筆細節內之資料值(例: catch 路徑之細節只有 Error), 故另可給進行中呼叫之輸入(opt.ctx, 由 wrapProcOrm 於呼叫時記下),
-其中鍵名像識別欄(id、userId、account、email、name、token、password 等)之值併入置換依據.
-殘餘風險: 錯誤原文夾帶「既不在細節、也不在該次呼叫輸入」的資料值(例如資料庫端既存列之內容), 無從辨識, 只受信箱 / uuid 樣式、控制字元與長度上限的限制.</p></li></ul></dd>
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="server_ormDiagLog.mjs.html">server/ormDiagLog.mjs</a>, <a href="server_ormDiagLog.mjs.html#line249">line 249</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-    <h5 class="h5-parameters">Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-        <th>Attributes</th>
-        
-
-        
-        <th>Default</th>
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>detail</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">*</span>
-
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                </td>
-            
-
-            <td class="description last"><p>輸入 w-serv-orm funLog 之 detail(完整細節)</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>opt</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object</span>
-
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                    <code>{}</code>
-                
-                </td>
-            
-
-            <td class="description last"><p>輸入設定物件，預設{}</p>
-                <h6>Properties</h6>
-                
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-        <th>Attributes</th>
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>ctx</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object</span>
-
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-
-            <td class="description last"><p>輸入進行中呼叫之輸入，{ userId, input }</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-            </td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5 class="h5-returns">Returns:</h5>
-
-        
-<div class="param-desc">
-    <p>回傳遮罩後之純資料(字串 / 數字 / 布林 / null / 陣列 / 純物件)</p>
-</div>
-
-
-
-<dl class="param-type">
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">*</span>
 
 
 
@@ -2339,172 +2242,7 @@ Error 只留類別名稱與訊息(不含 stack); 層數、節點數與字串長�
 
     
 
-    <h4 class="name" id="mkOrmFunLog"><span class="type-signature"></span>mkOrmFunLog<span class="signature">(srLog)</span><span class="type-signature"> &rarr; {function}</span></h4>
-
-    
-
-
-
-
-<dl class="details">
-    
-    <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li><p>產生 w-serv-orm 之 funLog(opt.funLog), 把診斷輸出導入 srLog(R-ORM-04)</p>
-<p>1.1.20 起 w-serv-orm 預設只在 console 輸出標籤與不含個資之摘要, 完整細節(失敗列主鍵、ORM 錯誤原文)只交 funLog.
-本函數回傳之 funLog 於給予時取代其 console 輸出, 故:</p>
-<ul>
-<li>console: 照舊輸出標籤與摘要(同 w-serv-orm 預設之 console.log(label, safe), 不含主鍵與原文; stdout 仍可見, 同 logBoot 雙寫);</li>
-<li>srLog.error: { event: 'orm-diag', label, safe, detail }, detail 經 maskOrmDetail 遮罩(無細節者無此鍵), 遮罩失敗時為 '(unmaskable)'.
-輸出之任何失敗(console、遮罩、srLog 寫入)皆吞下, 不影響 procOrm 之流程與結果.</li>
-</ul></li></ul></dd>
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="server_ormDiagLog.mjs.html">server/ormDiagLog.mjs</a>, <a href="server_ormDiagLog.mjs.html#line290">line 290</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-    <h5 class="h5-parameters">Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>srLog</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object</span>
-
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last"><p>輸入 srLog(w-syslog 實例, 需有 error 函數)</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5 class="h5-returns">Returns:</h5>
-
-        
-<div class="param-desc">
-    <p>回傳 funLog(label, safe, detail)</p>
-</div>
-
-
-
-<dl class="param-type">
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">function</span>
-
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-        
-            
-
-    
-
-    <h4 class="name" id="ormWrite"><span class="type-signature type-signature-async">(async) </span>ormWrite<span class="signature">(wo, mode, data)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+    <h4 class="name" id="ormWrite"><span class="type-signature type-signature-async">(async) </span>ormWrite<span class="signature">(wo, mode, data, diag<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
 
     
 
@@ -2525,7 +2263,7 @@ procOrm 自 w-serv-orm 1.1.7 起已內含此檢查(逐筆失敗即 reject), 經 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="server_ormWrite.mjs.html">server/ormWrite.mjs</a>, <a href="server_ormWrite.mjs.html#line23">line 23</a>
+        <a href="server_ormWrite.mjs.html">server/ormWrite.mjs</a>, <a href="server_ormWrite.mjs.html#line25">line 25</a>
     </li></ul></dd>
     
 
@@ -2585,7 +2323,11 @@ procOrm 自 w-serv-orm 1.1.7 起已內含此檢查(逐筆失敗即 reject), 經 
         <th>Type</th>
 
         
+        <th>Attributes</th>
+        
 
+        
+        <th>Default</th>
         
 
         <th class="last">Description</th>
@@ -2611,7 +2353,19 @@ procOrm 自 w-serv-orm 1.1.7 起已內含此檢查(逐筆失敗即 reject), 經 
             </td>
 
             
+                <td class="attributes">
+                
 
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
             
 
             <td class="description last"><p>輸入 ORM 物件(woItems 內之資料表), 須有 mode 對應之函數</p></td>
@@ -2635,7 +2389,19 @@ procOrm 自 w-serv-orm 1.1.7 起已內含此檢查(逐筆失敗即 reject), 經 
             </td>
 
             
+                <td class="attributes">
+                
 
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
             
 
             <td class="description last"><p>輸入寫入函數名稱字串, 僅 'save' 或 'del'(insert 回傳聚合物件且錯誤皆屬整批性, 不適用)</p></td>
@@ -2662,10 +2428,62 @@ procOrm 自 w-serv-orm 1.1.7 起已內含此檢查(逐筆失敗即 reject), 經 
             </td>
 
             
+                <td class="attributes">
+                
 
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
             
 
             <td class="description last"><p>輸入數據物件或陣列</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>diag</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>getDiag()</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入診斷遮罩實例(wsemi getDiag, R-DIAG-01), 逐筆失敗之 ORM 錯誤原文(外來值)組入 reject 字串時經 diag.mask 遮罩憑證; 預設為無登錄秘密之實例</p></td>
         </tr>
 
     
@@ -2691,7 +2509,7 @@ procOrm 自 w-serv-orm 1.1.7 起已內含此檢查(逐筆失敗即 reject), 經 
 
         
 <div class="param-desc">
-    <p>回傳 Promise, resolve 回傳 ORM 逐筆結果陣列; reject 回傳錯誤: 整批性錯誤為 ORM 之 reject 原樣, 逐筆失敗為含失敗筆主鍵與錯誤原文之字串. 錯誤供 log, 回傳前端前須由呼叫端轉為語系鍵</p>
+    <p>回傳 Promise, resolve 回傳 ORM 逐筆結果陣列; reject 回傳錯誤: 整批性錯誤為 ORM 之 reject 原樣(由呼叫端之 catch 站點遮罩), 逐筆失敗為含失敗筆主鍵與(已遮罩憑證之)錯誤原文之字串. 錯誤供 log, 回傳前端前須由呼叫端轉為語系鍵</p>
 </div>
 
 
@@ -3491,167 +3309,6 @@ opt.hold 為函數, 輸入流程結果, 回傳 true 時保持占位與按鈕鎖(
 
     
 
-    <h4 class="name" id="wrapProcOrm"><span class="type-signature"></span>wrapProcOrm<span class="signature">(procOrm)</span><span class="type-signature"> &rarr; {function}</span></h4>
-
-    
-
-
-
-
-<dl class="details">
-    
-    <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li><p>包裝 procOrm, 記下進行中呼叫之操作者與輸入(R-ORM-04)</p>
-<p>w-serv-orm 的 funLog 只收到標籤、摘要與細節，收不到該次呼叫的輸入；ORM 錯誤原文可能夾帶輸入中的資料值(主鍵、信箱等)。
-包裝後之 procOrm 於非同步脈絡(AsyncLocalStorage)內記下 { userId, input }，funLog 於同一流程內同步執行，據以遮罩。
-只多一層脈絡，不改引數、回傳值、reject 與執行時機。</p></li></ul></dd>
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="server_ormDiagLog.mjs.html">server/ormDiagLog.mjs</a>, <a href="server_ormDiagLog.mjs.html#line271">line 271</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-    <h5 class="h5-parameters">Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>procOrm</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">function</span>
-
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last"><p>輸入 w-serv-orm 之 procOrm(userId, woName, mode, input, opt)</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5 class="h5-returns">Returns:</h5>
-
-        
-<div class="param-desc">
-    <p>回傳同簽名之 procOrm</p>
-</div>
-
-
-
-<dl class="param-type">
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">function</span>
-
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-        
-            
-
-    
-
     <h4 class="name" id="wrapTimer"><span class="type-signature"></span>wrapTimer<span class="signature">(name, fn, onError<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {function}</span></h4>
 
     
@@ -3921,7 +3578,7 @@ why: 計時器之 async 回呼 reject 時無人接手, Node 預設即結束行�
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Wed Oct 28 2026 16:28:34 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Fri Oct 30 2026 02:44:13 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
