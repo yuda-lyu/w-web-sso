@@ -117,7 +117,19 @@ describe('部署設定給予 w-serv-orm 之使用者檢查(useCheckUser 等)時�
 
 
     it('ORMOPT-001 啟動時記警告(srLog boot 事件, warn)一筆, 列出被忽略之 useCheckUser 與 useExcludeWhenNotAdmin(未給之 getUserById 不列)', async function() {
-        let ws = readLogLinesSince(t0).filter((o) => o.event === 'boot' && o.level === 40 && String(o.msg || '').includes('useCheckUser'))
+        //srLog(w-syslog)以 pino 之 thread-stream worker 非同步寫檔: 後端就緒時 boot 事件可能尚未落檔, 一次讀取會偶發漏看(2026-10-31 sso-run01 實測: 修前碼 HEAD 副本 2 / 10、修後 2 / 10 失敗, 與 console 改動無關);
+        //改為偵測驅動等待至事件出現(上限 30 秒, 非固定等待), 出現後再等 0.5 秒重讀以確認仍為恰 1 筆(不因等待而放寬「恰一筆」之斷言)
+        let findWarns = () => readLogLinesSince(t0).filter((o) => o.event === 'boot' && o.level === 40 && String(o.msg || '').includes('useCheckUser'))
+        let ws = findWarns()
+        let tWait = Date.now()
+        while (ws.length === 0 && Date.now() - tWait < 30000) {
+            await new Promise((resolve) => setTimeout(resolve, 200))
+            ws = findWarns()
+        }
+        if (ws.length > 0) {
+            await new Promise((resolve) => setTimeout(resolve, 500))
+            ws = findWarns()
+        }
         assert.strict.equal(ws.length, 1, `boot 警告應恰 1 筆: ${JSON.stringify(ws)}`)
         assert.ok(ws[0].msg.includes('useExcludeWhenNotAdmin'), ws[0].msg)
         assert.ok(!ws[0].msg.includes('getUserById'), `未給 getUserById 不應列出: ${ws[0].msg}`)

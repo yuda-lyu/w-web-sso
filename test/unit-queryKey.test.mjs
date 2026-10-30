@@ -195,7 +195,7 @@ describe('以使用端給定之欄位名查使用者——白名單 id / account
         }
     })
 
-    it('QK-008 _getGenUserByKV 資料庫錯誤分支之 console 輸出: 非識別欄之 valueUser 遮罩(console 亦屬 R-SEC-01 輸出面), 識別欄照記', async function() {
+    it('QK-008 _getGenUserByKV 資料庫錯誤分支之 console 輸出: 查詢值(非識別欄與識別欄)一律只給型別、不輸出其值(console 屬 R-SEC-01 輸出面; ADR-101 取代原「非識別欄遮罩、識別欄照記」), 識別欄之欄位名照印、名單外之欄位名只給型別', async function() {
         let secret = 'TV-CONSOLE-SECRET-0123456789'
         let env = mkEnv()
         env.users.fail.batch.add('select') //select 整批 reject → 走 console 錯誤分支
@@ -218,8 +218,11 @@ describe('以使用端給定之欄位名查使用者——白名單 id / account
         let text = lines.join('\n')
         assert.ok(text.includes('valueUser'), '應有 valueUser 之 console 輸出(確認錯誤分支確實被觸發)')
         assert.ok(!text.includes(secret), 'console 不得含非識別欄之查詢值明文')
-        assert.ok(text.includes(maskKv('tokenVerify', secret)), 'console 應為遮罩形式')
-        assert.ok(text.includes('nobody-here'), '識別欄照記')
+        assert.ok(!text.includes(maskKv('tokenVerify', secret)), 'console 不得含遮罩形式(值本身不印, ADR-101)')
+        assert.ok(!text.includes('nobody-here'), '識別欄之值亦不印(原照記, ADR-101 取代)')
+        assert.ok(text.includes('valueUser (typeof string)'), 'valueUser 只給型別')
+        assert.ok(text.includes('keyUser account'), '識別欄之欄位名照印')
+        assert.ok(text.includes('keyUser (typeof string)'), '名單外之欄位名(tokenVerify)只給型別')
     })
 
     it('QK-009 log 衛生(規則 6): 使用端可控之 key 與識別欄 value 寫入 log 前置換控制字元並限制長度, 短字串原樣; 非識別欄仍 maskToken', async function() {

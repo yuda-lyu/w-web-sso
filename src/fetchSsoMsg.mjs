@@ -3,15 +3,13 @@ import isestr from 'wsemi/src/isestr.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import ispm from 'wsemi/src/ispm.mjs'
 import httpGetJson from './httpGetJson.mjs'
-import maskUrl from './maskUrl.mjs'
 
 
 //fetchSsoMsg: 三支對外查詢 helper(getUserByToken / getUserByUserId / getUsersByToken)共用之核心, 內部模組, 非對外 API
-//K 契約(spec/設計要點與取捨.md ADR-068):
+//K 契約(spec/設計要點與取捨.md ADR-068; console 內容依 ADR-101 收斂):
 //- 失敗一律 reject 固定 key, 不含網址與權杖(原實作 reject 與 console 皆帶已代入權杖之完整網址, 經呼叫端原樣轉給瀏覽器)
-//- 診斷每次失敗印一行 '[w-web-sso] <helper> <key> {...}', 其內不含任何權杖字元:
-//  網址印範本(未代入)之 origin + pathname; 錯誤只印 name / code / HTTP status(fetch 錯誤原文可能夾帶完整網址,
-//  如 'Failed to parse URL from <url>'); SSO 回之 state / msg 只在 key 形狀時印(非 key 之 msg 可能回顯請求內容)
+//- 診斷每次失敗印一行 '[w-web-sso] <helper> <key> {...}', 其內不含任何傳入值(權杖、網址範本皆不印; ADR-101 起連範本之 origin + pathname 亦不印, 部署方自知其設定之網址):
+//  錯誤只印 name / code / HTTP status(fetch 錯誤原文可能夾帶完整網址, 如 'Failed to parse URL from <url>'); SSO 回之 state / msg 只在 key 形狀時印(非 key 之 msg 可能回顯請求內容); 本體只給型別
 
 
 let reName = /^[A-Za-z]{1,40}$/
@@ -71,9 +69,6 @@ function hasUrlParam(url, name, value) {
 async function fetchSsoMsg(name, url, kvs, opt) {
     let { keyRequest, keyData, keyNoData, isValid } = opt
 
-    //urlLog, 範本未代入, 只留 origin + pathname
-    let urlLog = maskUrl(url)
-
     //get
     let res = null
     let errTemp = null
@@ -87,7 +82,6 @@ async function fetchSsoMsg(name, url, kvs, opt) {
     //check, 連線失敗 / 網址無法解析 / 非 2xx
     if (errTemp !== null) {
         logFail(name, keyRequest, {
-            url: urlLog,
             errName: pick(get(errTemp, 'name'), reName),
             errCode: pick(get(errTemp, 'cause.code'), reCode) || pick(get(errTemp, 'code'), reCode),
             status: get(errTemp, 'status'),
@@ -103,7 +97,6 @@ async function fetchSsoMsg(name, url, kvs, opt) {
     //check, SSO 回錯誤(本體非 JSON 時 data 為字串, state 為空)
     if (state !== 'success') {
         logFail(name, keyData, {
-            url: urlLog,
             ssoState: pick(state, reKey),
             ssoMsg: pick(msg, reKey),
             bodyType: typeof data,
@@ -113,9 +106,7 @@ async function fetchSsoMsg(name, url, kvs, opt) {
 
     //check, 資料型別
     if (!isValid(msg)) {
-        logFail(name, keyNoData, {
-            url: urlLog,
-        })
+        logFail(name, keyNoData, {})
         return Promise.reject(keyNoData)
     }
 

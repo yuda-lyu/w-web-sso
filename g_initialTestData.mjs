@@ -1,3 +1,4 @@
+import getDiagBriefErr from 'wsemi/src/getDiagBriefErr.mjs'
 import ds from './src/schema/index.mjs'
 import { woItems } from './g_mOrm.mjs'
 import genTestData from 'w-serv-orm/src/genTestData.mjs'
@@ -13,7 +14,7 @@ async function initialTestData() {
 
 initialTestData()
     .catch((err) => {
-        console.log('initialTestData catch', err)
+        console.log('initialTestData catch', getDiagBriefErr(err)) //錯誤原文不印, 只給摘要 (ADR-101)
     })
 
 

@@ -1,5 +1,6 @@
 import map from 'lodash-es/map.js'
 import { pathToFileURL } from 'url'
+import getDiagBriefErr from 'wsemi/src/getDiagBriefErr.mjs'
 import ds from './src/schema/index.mjs'
 import hashPassword from './server/hashPassword.mjs'
 import { woItems } from './g_mOrm.mjs'
@@ -131,7 +132,7 @@ export { baseUsersRaw, baseTokensRaw, buildBaseUsers, buildBaseTokens, initialDa
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     initialData()
         .catch((err) => {
-            console.log('initialData catch', err)
+            console.log('initialData catch', getDiagBriefErr(err)) //錯誤原文不印, 只給摘要 (ADR-101)
         })
 }
 

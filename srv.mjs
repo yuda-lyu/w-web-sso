@@ -1,4 +1,5 @@
 import WOrm from 'w-orm-lmdb/src/WOrmLmdb.mjs'
+import getDiagBriefErr from 'wsemi/src/getDiagBriefErr.mjs'
 import WWebSso from './server/WWebSso.mjs'
 import getSettings from './g_getSettings.mjs'
 
@@ -14,7 +15,7 @@ let pathSettings = process.argv[2] || './settings.json'
 let instWWebSso = WWebSso(WOrm, url, db, pathSettings, st)
 
 instWWebSso.on('error', (err) => {
-    console.log(err)
+    console.log('error', getDiagBriefErr(err)) //框架 error 事件之內容(含使用端自填之函數名、錯誤原文)不印, 只給錯誤摘要 (ADR-101)
 })
 
 //login測試

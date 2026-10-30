@@ -576,7 +576,7 @@ describe('DGX 外來值入口遮罩: guardOrm / srEmail / ormWrite (dspec D3、R
         }
     })
 
-    it('DGX-04 外來值 reject 經 console 出口(procCore.checkToken 內層 reject)已遮, 對外仍為固定 key tokenExpired', async function() {
+    it('DGX-04 外來值 reject 經 console 出口(procCore.checkToken 內層 reject)不輸出錯誤原文(ADR-101 取代原「遮罩後保留診斷文字」), 只印錯誤類型; 對外仍為固定 key tokenExpired', async function() {
         let ctx = mkCtx()
         let diag = getDiag({}, { secrets: getDiagSecrets(ctx.src()) })
         let rawTables = { users: mkTable(), tokens: mkTable(), ips: mkTable() }
@@ -589,7 +589,9 @@ describe('DGX 外來值入口遮罩: guardOrm / srEmail / ormWrite (dspec D3、R
         })
         assert.strictEqual(e, 'tokenExpired')
         let s = strs(lines)
-        assert.ok(s.includes('checkToken inner reject') && s.includes('read failed at'), `保留診斷文字: ${s}`)
+        //原斷言: 保留診斷文字 'read failed at'(遮憑證後); 現行: console 只印安全摘要 { errType }, 診斷文字(後端錯誤原文)不印(dspec D2)
+        assert.ok(s.includes('checkToken inner reject') && s.includes('errType'), `只印錯誤類型: ${s}`)
+        assert.ok(!s.includes('read failed at'), `console 不得含後端錯誤原文: ${s}`)
         for (let x of [ctx.sec.password, 'db.example.com']) {
             assert.ok(!s.includes(x), `console 不得含 ${x}: ${s}`)
         }
@@ -846,8 +848,9 @@ describe('SITE-DG 站點全集(原始碼盤點; R-ORM-04 / R-DIAG-01)', function
         assert.deepStrictEqual(users, ['./server/procCore.mjs'])
     })
 
-    it('SITE-DG-008 console 出口之外來值: 本套件以 console.log 輸出 catch 到之錯誤者, 其錯誤皆來自已於入口遮罩之資料表 / 寄信(server/ 內 console.log(err 類) 站點全集鎖定)', function() {
-        //盤點 server/ 中以 console.log 直接輸出 err / errTemp 者, 檔與件數鎖定; 新增站點須先確認其錯誤來源已經入口遮罩(guardOrm / srEmail)或為固定詞彙, 再更新此表
+    it('SITE-DG-008 console 出口之外來值: server/ 內不再以 console 直接輸出 catch 到之錯誤物件(原 12 + 3 + 1 處已於 ADR-101 改為只印 diag.brief / getDiagBriefErr 之安全摘要; 站點全集見 unit-consoleNoLeak SITE-CNL)', function() {
+        //原: 以 console.log 直接輸出 err / errTemp 者(WWebSso 1、procCore 12、procProtect 3, 錯誤皆來自已於入口遮罩憑證之資料表 / 寄信)被鎖定為已遮罩之外來值入口;
+        //ADR-101(dspec〈診斷輸出與遮罩〉D2 預設不輸出資料值與後端錯誤原文)起, console 不再輸出錯誤原文(遮罩只遮憑證, 不遮其他資料值), 站點全數改為只印錯誤類型與代碼; 本盤點改為鎖定「零處」
         let files = listSources().filter((p) => /^\.\/server\//.test(p))
         let counts = {}
         for (let p of files) {
@@ -856,11 +859,7 @@ describe('SITE-DG 站點全集(原始碼盤點; R-ORM-04 / R-DIAG-01)', function
                 counts[p] = n
             }
         }
-        assert.deepStrictEqual(counts, {
-            './server/WWebSso.mjs': 1, //fs 寫入入口檔之錯誤(路徑), 非憑證
-            './server/procCore.mjs': 12, //資料表(guardOrm)與寄信(srEmail)之 reject
-            './server/procProtect.mjs': 3, //資料表(guardOrm)之 reject
-        })
+        assert.deepStrictEqual(counts, {})
     })
 
     it('SITE-DG-010 白名單接線: server/WWebSso.mjs 自 w-serv-orm 公開入口 safeKeys.mjs 匯入 SAFE_KEYS(恰一次), 不自宣告第二份; 接線運算式恰為 genDiagFunLog((o) => srLog.warn(o), { safeKeys: SAFE_KEYS })', function() {

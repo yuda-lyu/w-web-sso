@@ -46,7 +46,7 @@ import hashPassword, { verifyPassword } from './hashPassword.mjs'
 import genRandomPassword from './genRandomPassword.mjs'
 import createLockSave from './lockSave.mjs'
 import ormWrite from './ormWrite.mjs'
-import { maskToken, maskKv, keysUserQuery, capText } from './srLog.mjs'
+import { maskToken, maskKv, keysUserQuery, capText, logType, logKey } from './srLog.mjs'
 import { hasAppPerm, isAppPermsValue, normAppPerms } from '../src/appPerms.mjs'
 import { getAppUsage, getAppId, isAppUsageValue, isAppIdLike, isLegacyAppToken, classifyLegacyAppToken, keyAppUsageRetired } from '../src/appUsage.mjs'
 import contracts from '../src/writeContracts/index.mjs'
@@ -237,9 +237,10 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
 
         //check
         if (errTemp) {
-            console.log(errTemp)
-            console.log('keyUser', keyUser)
-            console.log('valueUser', maskKv(keyUser, valueUser)) //keyUser 可由對外查詢指定, 非識別欄之值可能即憑證 (ADR-068)
+            //console 只印欄位名(名單內者)、值之型別與錯誤摘要, 不印查詢值(識別欄亦然)與錯誤原文 (ADR-101; keyUser 可由對外查詢指定, 名單外者只給型別)
+            console.log('err', diag.brief(errTemp))
+            console.log('keyUser', logKey(keyUser, keysUserQuery))
+            console.log('valueUser', logType(valueUser))
             console.log(`failed to find user`)
             return Promise.reject(`failed to find user`)
         }
@@ -332,7 +333,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
 
         //check
         if (errTemp) {
-            console.log(errTemp)
+            console.log('err', diag.brief(errTemp))
             console.log(`failed to find token`)
             return Promise.reject(`failed to find token`)
         }
@@ -350,7 +351,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
 
         //check
         if (nts >= 2) {
-            console.log(`duplicate token by keyToken[${keyToken}]`)
+            console.log(`duplicate token by keyToken[${logKey(keyToken, ds.tokens.keys)}]`)
             return Promise.reject(`duplicate token by keyToken[${keyToken}]`)
         }
 
@@ -375,9 +376,9 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
 
         //check
         if (errTemp) {
-            console.log(errTemp)
-            console.log('keyIp', keyIp)
-            console.log('valueIp', valueIp)
+            console.log('err', diag.brief(errTemp))
+            console.log('keyIp', logKey(keyIp, ds.ips.keys))
+            console.log('valueIp', logType(valueIp))
             console.log(`failed to find ip`)
             return Promise.reject(`failed to find ip`)
         }
@@ -395,9 +396,9 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
 
         //check
         if (noips >= 2) {
-            console.log('keyIp', keyIp)
-            console.log('valueIp', valueIp)
-            console.log(`duplicate ip by keyIp[${keyIp}]`)
+            console.log('keyIp', logKey(keyIp, ds.ips.keys))
+            console.log('valueIp', logType(valueIp))
+            console.log(`duplicate ip by keyIp[${logKey(keyIp, ds.ips.keys)}]`)
             return Promise.reject(`duplicate ip by keyIp[${keyIp}]`)
         }
 
@@ -490,7 +491,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
 
         //check
         if (!ispnum(minExpired)) {
-            console.log(`minExpired`, minExpired)
+            console.log(`minExpired`, logType(minExpired))
             console.log(`invalid minExpired`)
             return Promise.reject(`invalid minExpired`)
         }
@@ -560,7 +561,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
             return Promise.reject(rejectKey)
         }
         if (errTemp) {
-            console.log(errTemp)
+            console.log('err', diag.brief(errTemp))
             // console.log(`token`, token)
             console.log(`can not create a token from userId`)
             return Promise.reject(`can not create a token from userId`)
@@ -667,7 +668,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
         if (actor.kind === 'user') {
             let timeEnd = get(tk, 'timeEnd', '')
             if (!istimemsTZ(timeEnd)) {
-                console.log(`timeEnd`, timeEnd)
+                console.log(`timeEnd`, logType(timeEnd))
                 console.log(`invalid timeEnd`)
                 return Promise.reject(`invalid timeEnd`)
             }
@@ -848,7 +849,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
             })
             .catch((err) => {
                 //對外統一 key 'tokenExpired' 防 information leakage (對齊 checkToken B-02); 內部 log 保留
-                console.log('checkTokenByObj inner reject', err)
+                console.log('checkTokenByObj inner reject', diag.brief(err))
                 errTemp = 'tokenExpired'
             })
 
@@ -884,7 +885,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
                 //對外統一 key 'tokenExpired' 為防 information leakage (ADR-006)
                 //—— 原樣 bubble err 會洩漏 _checkToken 之 'invalid token' / 'duplicate tokens'
                 //等具體 reject 字串 (Round-3 audit B-02 fix); 內部仍 console.log 保留 audit 細節.
-                console.log('checkToken inner reject', err)
+                console.log('checkToken inner reject', diag.brief(err))
                 errTemp = 'tokenExpired'
             })
 
@@ -952,7 +953,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
         //check
         if (!istimemsTZ(timeEnd)) {
             // console.log(`token`, token)
-            console.log(`timeEnd`, timeEnd)
+            console.log(`timeEnd`, logType(timeEnd))
             console.log(`invalid timeEnd`)
             return Promise.reject(`invalid timeEnd`)
         }
@@ -963,8 +964,8 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
         //check
         if (tn >= timeEnd) { //現在時間>=到期時間, 代表已到期, 禁止更新token
             // console.log(`token`, token)
-            console.log(`tn`, tn)
-            console.log(`timeEnd`, timeEnd)
+            console.log(`tn`, tn) //伺服器時鐘(程式自產, 非輸入)
+            console.log(`timeEnd`, logType(timeEnd)) //權杖列之值, 只給型別
             console.log(`token expired`)
             return Promise.reject(`tokenExpired`)
         }
@@ -993,7 +994,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
 
         //check
         if (errTemp) {
-            console.log(errTemp)
+            console.log('err', diag.brief(errTemp)) //procOrm 之 reject 訊息含失敗筆主鍵, 不印原文
             // console.log(`token`, token)
             console.log(`can not update timeEnd for token`)
             srLog.error({ event: 'fun-refreshToken-save', token: maskToken(token), err: getErrorMessage(errTemp) })
@@ -1060,7 +1061,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
 
         //check
         if (errTemp) {
-            console.log(errTemp)
+            console.log('err', diag.brief(errTemp))
             // console.log(`token`, token)
             console.log(`failed to delete token`)
             return Promise.reject(`failed to delete token`)
@@ -1228,7 +1229,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
             await srEmail.send(sender, title, content, email)
         }
         catch (err) {
-            console.log('send verify email error', err)
+            console.log('send verify email error', diag.brief(err)) //寄信之錯誤原文可夾帶收件者, 只印摘要
         }
 
         return { state: 'success', msg: 'ok' }
@@ -1386,7 +1387,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
                 await srEmail.send(sender, title, content, email)
             }
             catch (err) {
-                console.log('resend verify email error', err)
+                console.log('resend verify email error', diag.brief(err))
                 return Promise.reject('userRegistrationResendFailed')
             }
 
@@ -1574,8 +1575,8 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
                 //sender
                 let sender = get(kpLang, `${lang}.webName`, '')
                 if (!isestr(sender)) {
-                    console.log('get(kpLang, lang)', get(kpLang, lang))
-                    console.log('lang', lang)
+                    console.log('get(kpLang, lang)', logType(get(kpLang, lang))) //整本語系字典與請求之 lang 值皆不印, 只給型別
+                    console.log('lang', logType(lang))
                     //須用 throw 讓下方 catch 接住對齊「寄送 email 失敗時, 不能報錯中斷流程」設計
                     //(async function 內 return Promise.reject 不被 try/catch 攔截 → 跳過外圍 catch
                     //→ 密碼已寫但 API reject 給前端, 使用者以為失敗實際舊密碼已失效).
@@ -1588,7 +1589,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
                 //title, 取 kpLang 之 chpwEmTitle 鍵(settings 信件鍵與 kpLangExt 已於初始化覆寫入 kpLang)
                 let title = getEmailTitle('chpwEmTitle', lang)
                 if (!isestr(title)) {
-                    console.log('chpwEmTitle 取不到, lang', lang)
+                    console.log('chpwEmTitle 取不到, lang', logType(lang))
                     throw new Error(`invalid title`)
                 }
 
@@ -1602,7 +1603,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
 
             }
             catch (err) {
-                console.log(err)
+                console.log('err', diag.brief(err))
 
                 //error (不記任何密碼明文; ADR-014 連 hash 都不該外洩)
                 srLog.error({ event: 'fun-changePassword-sendEmail', token: maskToken(token), lang, err: getErrorMessage(err) })
@@ -1762,7 +1763,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
 
             }
             catch (err) {
-                console.log(err)
+                console.log('err', diag.brief(err))
                 //僅記 log, 不記明文密碼
                 srLog.error({ event: 'fun-adminResetUserPassword-sendEmail', token: maskToken(token), targetUserId, err: getErrorMessage(err) })
             }

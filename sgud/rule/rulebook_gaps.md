@@ -4,6 +4,8 @@
 
 ## 已知缺口 / 待辦(對照技能 audit)
 
+- **console 診斷不輸出資料值之範圍外項(2026-10-31 sso-run01, 第 191 項, ADR-101; 待主控裁示是否納入下一輪)**: ①瀏覽器端 console 47 處輸出列物件 / 後端回傳值 / 錯誤值 / URL 參數(派工限定伺服端、不改畫面); ②srLog 欄位(`err` 記 procOrm 之 reject 訊息含失敗筆主鍵約 21 處、`srLog.debug` 之 `valueUser` 識別欄照記、`srLog.info` 之識別欄與 `ip`); ③reject / throw 訊息帶值(`invalid timeBlocked[...]`、`srEmail` 之 `invalid toEmails[...]` 等); ④`procCore.checkTokenByObj` 全庫無呼叫者(疑孤兒函式, 依死碼規則只提出); ⑤第三方 `w-serv-hapi` 無 `error` 監聽者時之 console 輸出. 全文見 ADR-101〈範圍外觀察〉與 `rulebook_security.md` R-LOG-01.
+
 - ~~**待授權: 角色用詞統一連帶改變之 12 張 cht 標準圖(2026-10-26 sso-run02, ADR-097)**~~ **已授權並重產(2026-10-26 sso-run03)**: 角色用詞統一為「系統管理者」後, cht 文字變長使彈窗 / 權限浮層寬度隨之變寬(`cannotDeleteSelf`、`cannotDemoteSelf` 之 modal 各 1 張、權限浮層 9 張), 差異含外框, 超出 sso-run02 當時「差異僅為文字」之授權而列待授權; 主控目視新圖後裁示授權, 已只重產此 12 張並重跑 `e2e-deleteuser`、`e2e-modifyuser`、`e2e-adduser`、`e2e-tokens`. 之後凡改這些 cht 文字, 彈窗 / 浮層寬度連動之圖仍會連外框改變(見 `rulebook_test.md`「改動範圍 → 測試檔」).
 
 - ~~**X-Forwarded-For 信任邊界(2026-10-20 評估, 未改; 待使用者裁示; 主控第 90 項 §1b)**~~ **已裁示並處置(2026-10-20, 主控第 93 項; ADR-089, R-IP-01)**: 使用者裁示「線上系統常有多層反向代理, 使用者 IP 由反代提供; 能經跳板偽造者反代拿到的也是偽造值, 此類防護屬專門防火牆, **SSO 不做防偽造系統**」. 處置: ①維持 `getIpByHeaders` 取 `X-Forwarded-For` **最左段**之語意(不預設不信任標頭、不改取最右、不提供 `trustProxy`; 原評估之 P2 / P3 不採); ②只做不改語意之衛生——P1 格式驗證(非 IP 退回連線位址並限流記 warn, 合法 IP 原樣不改寫; **run02 更正: `IPv4:port` / `[IPv6]:port` 去 port 取 IP 本身〔唯一之正規化〕,去後仍非 IP 者才退回連線位址**)與計數容器空鍵清理(R-CNT-01); ③README 載明信任邊界. 原評估(HEAD `46e1cd4`, 經真後端)之實測保留為事實紀錄: 標頭值可任意登錄於 `ips` 表 / `kpIpCallApi`(P1 後限合法 IP 格式)、以受害者 IP 作標頭送超過門檻可使該 IP 遭計次封鎖(嫁禍)、本機位址被封後改帶其他標頭值之請求不受限(封鎖可被標頭輪替規避)——皆屬偽造防護範圍, 依裁示由防火牆 / 反代負責, 非本套件之缺口. 殘餘(不處理, 屬上述範圍): 合法格式之大量互異 IP 仍使 `ips` 表列數與一個窗口內之 `kpIpCallApi` 鍵數成長(長期無上限成長已由 R-CNT-01 消除).

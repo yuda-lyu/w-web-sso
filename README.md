@@ -70,6 +70,24 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 - 受影響者：依賴 `orm-diag` 之 `safe` 內名單外之鍵作排障或告警者（本套件內無此類消費者）。
 - 測試：`test/unit-diaglog.test.mjs` 之 DGS（白名單外之鍵不入日誌、名單內之鍵逐一保留、既有 ORM 失敗情境轉接後鍵不丟失）、SITE-DG-010／011（接線與 w-serv-orm 匯入全表，出貨碼不匯入其內部檔）；接線取樣自 `server/WWebSso.mjs` 原始碼求值（`test/tools/diagWire.mjs`），不手寫第二份轉接器。
 
+### Breaking changes（console 診斷不再輸出資料值）
+
+依跨套件規格〈診斷輸出與遮罩〉D2「預設不輸出資料值」與〈輸入參數之檢測機制〉V20「訊息與 throw／reject 前之 console 皆不含輸入值」，**本套件伺服端 console 診斷只印鍵名、型別、固定詞彙與錯誤摘要**，不再印使用者物件、請求本體、傳入參數值、資料表與後端之回傳值（含錯誤原文）。console 內容之變化（ADR-101；取代 ADR-068 之 console 遮罩規則）：
+
+- **查詢值一律不印**：`_getGenUserByKV`／`getIpByKV` 之錯誤分支原印出查詢值（識別欄 `id`／`account`／`email`／`name` 與 IP 原樣、其他欄位以 `maskKv` 形式）；現只印 `valueUser (typeof string)` 之型別。欄位名在本套件資料表之欄位名單內才照印（如 `keyUser account`），名單外（使用端自填者）只給型別。
+- **錯誤只印安全摘要 `{ errType, errCode }`**：資料表、寄信（SMTP）、`procOrm` 寫入等之錯誤，原印出錯誤物件（經遮罩者只遮憑證，仍可夾帶主鍵、收件者、列內容等資料值）；現如 `err { errType: 'Error' }`、`checkToken inner reject { errType: 'Error' }`、`send verify email error { errType: 'Error', errCode: 'ECONNREFUSED' }`。需要原文者請查資料庫端或 srLog 之固定詞彙事件。
+- **權杖列欄位與建構參數不印值**：`timeEnd`（無效或已過期）、`minExpired` 只印型別；`WWebSso` 建構參數 `WOrm`、`db` 無效時只印型別（原印出傳入值，`WOrm` 為物件時含其內容）。
+- **語系值與整本語系字典不印**：改密碼寄信前置檢查失敗（取不到寄件者名稱或信件標題）時，原印出 `get(kpLang, lang)`（整本語系字典）與請求之 `lang`；現只印型別。
+- **被封鎖之來源 IP 不印**：verifyConn 封鎖分支之 console 由 `block ip[<ip>]` 改為 `block ip`；來源 IP 仍由 verifyConn 之 `srLog.info { event: 'verifyConn', ip }` 記錄。
+- **啟動期設定警告不印設定值**：`settings.<鍵>` 指定之路徑不存在等警告只列 settings 鍵名（如 `settings.pathTemplate 指定之資料夾不存在, 改採套件內建模板`），不再列路徑值；升級遷移失敗之警告只列錯誤摘要。
+- **`srv.mjs` 範例之 `on('error')` 只印摘要**（`error { errType: 'object' }` 等）：框架 `error` 事件之內容（如 `{ msg: 'permission denied', func: '[sys:getTableTags]' }`，`func` 為使用端自填之函數名）不再於範例 console 出現，事件本身之內容與部署方自設之 `on('error')` 不受影響。
+- **對外查詢 helper（`getUserByToken`／`getUserByUserId`／`getUsersByToken`）之診斷行不再印網址範本**：原 `[w-web-sso] <helper> <key> { url: <origin + pathname>, errName, ... }` 之 `url` 欄位移除，其餘（錯誤類別名與代碼、HTTP 狀態、key 形狀之 SSO state／msg、本體型別）不變；部署方自知其設定之網址。
+- **離線種子腳本**（`g_initialData.mjs`、`g_initialTestData.mjs`）：`catch` 只印錯誤摘要，不再印例外物件。
+- **不變**：固定詞彙（如 `invalid token`、`duplicate tokens`、`failed to find user`）、標頭名稱（取不到來源 IP 時之 `headers(keys)`，值不印）、權杖之 `maskToken` 遮罩（srLog）、對外 reject 之固定 key（K 契約）、對外 reject／throw 之遮罩副本。
+- 受影響者：以 stdout 擷取錯誤原文、被封鎖 IP、查詢值之維運腳本或告警規則（本套件內無此類消費者）；請改讀 srLog。
+- 範圍：本輪只改伺服端 console；srLog 欄位（如 `err` 記 procOrm 之 reject 訊息）、reject／throw 訊息帶值之處與瀏覽器端 console 不在此列（見 `spec/設計要點與取捨.md` ADR-101 範圍外觀察）。
+- 測試：`test/unit-consoleNoLeak.test.mjs`（同一組識別值置於使用者物件、請求本體、建構參數與錯誤原文，觸發各站點並斷言 console 不含；站點全集守門 SITE-CNL）、`test/api-consoleNoLeak.test.mjs`（獨立後端真行程之 stdout／stderr）。
+
 ### Upgrading from 1.1.15 and earlier
 
 **框架系統函數之身分關卡（行為變更，ADR-096）**：升級 `w-serv-hapi` 至 `^1.1.8`（連帶 `w-serv-webdata` 1.1.16、`w-serv-broadcast` 1.1.12），並重建前端（前端元件輪詢改帶 token 鍵）。框架預設三個系統函數皆公開；本版起本套件顯式設定 `sysFuncsPublic: ['[sys:getFuncList]', '[sys:polling]']`，只列未登入之登入頁確實需要且無敏感內容者。以真瀏覽器擷取登入頁、註冊畫面、重寄驗證信畫面與登入後各頁之請求，開機流程相同（第 3 欄為擷取所見）：
@@ -81,7 +99,7 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 | `[sys:getTableTags]` | 函數綁定完成後立即送出（與 `getWebInfor` 並行，無人等待其結果） | 同步表時間戳；本套件無同步表（公開時回空物件） | **不公開**：登入頁不需要其結果；對任何呼叫者恆回 `permission denied` |
 
 - **`[sys:getTableTags]` 對任何呼叫者恆被拒絕**：本套件 `getUserIdByToken` 恆回空字串（各 kpfun 自行以明確 token 參數驗證，未改變），無從以身分放行；前端元件開機流程仍會呼叫一次（開機時尚無 token），被拒絕不影響已擷取之頁面（登入、申請帳號、重寄驗證信畫面與登入後後台各頁；瀏覽器主控台無錯誤）。依賴此函數取得同步表資訊者（本套件無同步表，預期無人）將收到 `permission denied`。`sysFuncsPublic` 只管這三個系統函數，不影響 kpfun。
-- **伺服端每個前端連線開機會多一則 `error` 事件**（內容 `{ msg: 'permission denied', func: '[sys:getTableTags]' }`；匿名者直接呼叫可超過此數）：範例 `srv.mjs` 之 `on('error')` 會 `console.log` 印出；未掛 `error` 監聽者時 `w-serv-hapi` 改以 `console.error` 輸出，故任何部署都會有輸出，屬預期。過濾請同時比對 `msg` 與 `func`，勿一律略過 `permission denied`。此事件不進 `srLog`。
+- **伺服端每個前端連線開機會多一則 `error` 事件**（內容 `{ msg: 'permission denied', func: '[sys:getTableTags]' }`；匿名者直接呼叫可超過此數）：範例 `srv.mjs` 之 `on('error')` 會 `console.log` 印出錯誤摘要（ADR-101 起不印事件內容，見〈Breaking changes（console 診斷不再輸出資料值）〉）；未掛 `error` 監聽者時 `w-serv-hapi` 改以 `console.error` 輸出，故任何部署都會有輸出，屬預期。過濾請同時比對 `msg` 與 `func`，勿一律略過 `permission denied`。此事件不進 `srLog`。
 - **`[sys:polling]` 公開之前提是本套件不廣播**：`WWebSso` 回傳之實例可經 `getInstWConverServer().broadcast(...)` 推送內容，該內容會送到所有（含未登入）輪詢者；嵌入端不得以此推送非公開內容。
 - **已發布之舊版前端元件照常可用**：舊元件輪詢不帶 token 鍵，視為無身分，`[sys:polling]` 公開故放行；其 `[sys:getTableTags]` 同樣被拒。以真舊版框架用戶端（w-serv-hapi 1.1.7／w-serv-webdata 1.1.15／w-serv-broadcast 1.1.10）對本版後端開機實測（未登入與帶系統管理者 token 各一次）：開機完成、`getWebInfor` 與帶明確 token 之 `getUsersList` 可用，用戶端僅收到一則 `[sys:getTableTags]` 之 `permission denied` 事件（尚未以已發布之舊版建置檔跑整頁瀏覽器擷取）。
 - **下游專案**（w-web-perm／w-web-api／w-web-task 等）：本套件提供之 helper（`getUserByToken` 等）以 HTTP GET `/api/getSsoUserInfor` 反查，不經框架用戶端，不受影響；自行以框架用戶端連線本套件者，僅 `[sys:getFuncList]`、`[sys:polling]` 可用，且每次開機會收到一則 `[sys:getTableTags]` 之拒絕（未逐一檢視各下游之原始碼）。

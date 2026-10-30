@@ -4,6 +4,8 @@
 
 ### R-SEC-01: 權杖(憑證)不得進入任何輸出——回應、reject 值、srLog、console(2026-09-24, ADR-068)
 
+> 🔁 2026-10-31 補記(ADR-101 / R-LOG-01): 本規則中關於 **console** 之處置已取代——console 一律不輸出值(只給型別 / 鍵名 / 固定詞彙 / 錯誤摘要; helper 診斷行不再印網址範本之 origin + pathname; `maskKv` 不再用於 console); 對 srLog、回應、reject 值之規則(`maskToken` / `maskUrl` / `maskKv`、K 契約)不變. 下文保留為歷史脈絡.
+
 - **規則**:
   1. 對外 helper(`src/getUserByToken|getUserByUserId|getUsersByToken.mjs`, 核心 `src/fetchSsoMsg.mjs`):
      - reject 只能是固定 key;
@@ -36,6 +38,36 @@
     - `maskKv` 3 處(`getSsoUserInfor` HTTP 與 kpfun 之 valueLog、`_getGenUserByKV` DB 錯誤 console);
     - `procProtect` 取不到 IP 時只印標頭名稱;
     - `omitUserCredential` 1 處(`/api/getSsoUsersList`; 後台 kpfun `getUsersList` 刻意不套用, 見 ADR-068).
+
+### R-LOG-01: console 診斷不輸出資料值——只印鍵名、型別、固定詞彙與錯誤摘要(2026-10-31, ADR-101; 取代 R-SEC-01 規則 1、2 中 console 之處置與 R-QKEY-01 規則 4 之 console 部分)
+
+- **依據**: 跨套件規格 `C:\opensrcOper\dspec\診斷輸出與遮罩.md` D2「預設不輸出資料值」(使用者 2026-10-29 裁示)、`輸入參數之檢測機制.md` §6 V20「訊息與 throw / reject 前之 console 皆不含輸入值」; 主控 2026-10-31 裁定(第 191 項): console 診斷只印**鍵名、型別或固定詞彙**, 不印使用者物件、請求本體、傳入參數值、資料表與後端之回傳值; 四套件(sso / perm / api / task)寫法一致.
+- **規則**(適用 `server/` 與 `srv.mjs` 之全部 console 呼叫, 及引用方後端執行之 `src/` 模組):
+  1. console 之引數只能是五類: ①固定詞彙(程式內字面字串); ②鍵名——欄位名經 `logKey(key, 名單)`(`server/srLog.mjs`), 名單為本套件資料表欄位名單(users 查詢鍵 `keysUserQuery`、`ds.tokens.keys`、`ds.ips.keys`), 名單外或非字串只給型別; ③型別——值經 `logType(v)` 只給 `(typeof x)`(null、陣列另標), 不論長短、是否識別欄、是否曾遮罩; ④錯誤摘要——`diag.brief(err)`(`procCore`、`WWebSso`)或 wsemi `getDiagBriefErr(err)`(`procProtect`、`srv.mjs`), 即 `{ errType, errCode }`, **不自寫**; ⑤程式自產之值(伺服器時鐘、計數、由已驗證之正整數埠推導之預設網址).
+  2. 其餘值一律不印: 使用者物件與其欄位(含識別欄 id / account / email / name)、請求本體與查詢值、來源 IP、權杖列欄位(`timeEnd` 等)、建構參數與設定值(含路徑)、語系值與語系字典、後端 / 驅動 / SMTP 錯誤原文(**遮罩只遮憑證, 不遮主鍵、信箱、列內容**, 故經 `diag.err` 之錯誤仍不得印)、框架 `error` 事件之內容.
+  3. 啟動期 `logBoot`(console 與 srLog 雙寫)之訊息, 插值只能是: settings 鍵名(`label`)、被忽略之設定鍵名清單、程式自算之計數與預設網址、`diag.brief` 摘要(`SITE-CNL-005` 鎖定全集).
+  4. 新增 console 呼叫時, 引數須屬上列五類; 輸出原始變數(`err`、`user`、`row`、`payload`、`body`、`res`、`input`)者 `SITE-CNL-001 / 003` 失敗. 確有需要直接輸出之程式自產值, 於 `unit-consoleNoLeak` 之 `DYN_ARGS` 登錄並附判定理由.
+- **不在本規則內**(派工限定 console, 未改; 待主控裁示): srLog 欄位(`err` 記 procOrm 之 reject 訊息含失敗筆主鍵約 21 處; `srLog.debug` 之 `valueUser` 識別欄照記; `srLog.info` 之 `account`、`userId`、`key` / `value`、verifyConn 之 `ip`)、reject / throw 訊息帶值之處(`invalid timeBlocked[...]`、`srEmail` 之 `invalid toEmails[...]` 等)、瀏覽器端 console(54 處, 其中 47 處輸出列物件、後端回傳值、錯誤值或 URL 參數值).
+- **理由**: 見 ADR-101. 原 ADR-068 M 契約以 `maskKv` 遮罩 console 之查詢值(識別欄照記, 其餘露首尾字元), ADR-098 / 099 將 `console.log(errTemp)` 列為範圍外觀察; D2 要求預設不輸出資料值, 且錯誤原文可夾帶主鍵(`refreshToken` 寫入失敗之 reject 訊息含 `id[...]`)、收件者(SMTP 錯誤)、列內容.
+- **盤點指令**(可重跑; 以規則為軸):
+  - Grep `console\.(log|warn|error|info|debug)\(` 於 `server/`、`srv.mjs`、`g_initialData.mjs`、`g_initialTestData.mjs` 並去註解(測試內以 `SITE-CNL` 之 `consoleCalls` 求得) → 63 + 1 + 4 站(`procCore` 48、`procProtect` 5、`WWebSso` 10、`srv.mjs` 1、`g_initialData` 2、`g_initialTestData` 2; `SITE-CNL-002` 鎖定); 每站之每個引數屬上列五類(`SITE-CNL-001`).
+  - Grep `console\.(log|warn|error|info|debug)\([^)]*\b(err|errTemp|errMasked|user|row|payload|body|res|input)\)` 於 `server/` → 0(`SITE-CNL-003`; `SITE-DG-008` 鎖定零處).
+  - `src/` 去除僅瀏覽器執行之 `baselineOf.mjs`、`plugins/mUI.mjs` 後恰一站: `fetchSsoMsg.mjs` 之 `logFail`, 其明細不含 `url`(`SITE-CNL-004`).
+- **站點全集與判定(2026-10-31; 修前活碼 125 站, 逐站表見報告 `C:\opensrcOper\dnow\20261031023204\agent-out\sso-修正報告.md`)**:
+
+  | 範圍 | 站數 | 輸出資料值而已改 | 不輸出資料值(不改) | 不改而列待裁示 |
+  |---|---|---|---|---|
+  | `server/procCore.mjs` | 48 | 27(查詢值 / IP / `timeEnd` / `minExpired` / 語系值 → `logType`; 欄位名 → `logKey`; 錯誤 → `diag.brief`) | 21(固定詞彙 20、伺服器時鐘 1) | — |
+  | `server/procProtect.mjs` | 5 | 3(封鎖三處之下層錯誤 → `getDiagBriefErr`) | 2(標頭名稱、固定詞彙) | — |
+  | `server/WWebSso.mjs` | 10 | 6(`WOrm` / `db` → `logType`; 初始化失敗、入口檔錯誤 → `diag.brief`; 封鎖分支 → `block ip`; `logBoot` 3 個呼叫點不含值) | 4(`typeof url`、入口檔路徑、固定詞彙 2) | — |
+  | `srv.mjs` | 1 | 1(error 事件 → `getDiagBriefErr`) | — | — |
+  | `src/fetchSsoMsg.mjs`(helper, 引用方後端) | 1 | 1(診斷明細移除 `url`) | — | — |
+  | `src/**/*.vue`、`src/main.js`、`src/plugins/mUI.mjs`、`src/baselineOf.mjs`(瀏覽器端) | 54 | — | 7(固定詞彙、內部值) | 47(錯誤值、列物件、URL 參數) |
+  | `g_initialData.mjs`、`g_initialTestData.mjs`(離線種子腳本) | 4 | 2(`catch` 之例外物件 → `getDiagBriefErr`; 與 w-web-task 同處置) | 2(`finish.`) | — |
+  | `g.mjs`(時間字串試算之草稿腳本) | 2 | — | 2(只印試算用之時間值) | — |
+
+- **對應測試**: `test/unit-consoleNoLeak.test.mjs`(CNL-C01~C09 `procCore`、CNL-P01~P04 `procProtect`、CNL-W01~W02 `WWebSso` 建構期、CNL-F01 helper、CNL-H01 輔助函數、SITE-CNL-001~005 站點全集)、`test/api-consoleNoLeak.test.mjs`(CNL-A01~A05, 獨立後端 `test/tools/srvConsoleLeak.mjs` 埠 11309); 既有測試之調整: `unit-queryKey` QK-008、`unit-diaglog` DGX-04 與 SITE-DG-008. 識別值 `ZZ-secret-9317`(置於使用者物件、請求本體、建構參數)與後端錯誤標記 `ZZ-errtext-4408`(置於資料表 / 寄信之 reject); 斷言 console 五個方法之輸出皆不含.
+- **既知限制**: 第三方套件自身之 console(如 `w-serv-hapi` 於無 `error` 監聽者時 `console.error('[w-serv-hapi]', maskDiagErr(err))`、啟動時之 `Server running at`)不在本套件之站點內; `checkTokenByObj`(含一處 console 站點)全庫無呼叫者, 行為不可達, 僅由 `SITE-CNL` 鎖定其引數形態.
 
 ### R-PERM-01: 需系統管理者之權限閘須同時宣告 app token 所需權限 `perm`(2026-09-25, ADR-069)
 
@@ -162,7 +194,7 @@
   1. 單一擁有者 `server/procCore.mjs` 之 `getUserInfor(key, value)`: `key` 非字串或不在 `keysUserQuery`(`server/srLog.mjs` 匯出之 `['id', 'account', 'email', 'name']`, `maskKv` 同用)者 → `Promise.reject('invalidUserQueryKey')`, 不查資料庫. reject 值為固定 key(procLang 有 eng + cht), **不含 key 與 value 之任何內容**. 白名單以陣列比對(非物件鍵查詢): `constructor`、`__proto__`、`toString` 等一律在外.
   2. 順序: 檢查置於 `checkToken` **之後**(未授權者先得 `tokenExpired`, 不得藉此回應探測白名單); 且置於 `WWebSso` 兩個入口(HTTP `/api/getSsoUserInfor`、kpfun `getUserInfor`)之 `srLog.info` **之後**——被拒之查詢仍留稽核痕跡(記 `key` 與已遮罩之 `value`), `maskKv` 對白名單外欄位之遮罩因此仍可由真後端觀察(`api-srlog-noleak` LOG-003).
   3. HTTP `key=token` 在 `WWebSso` 上游分流至 `checkTokenAndGetUserByToken`, 不經欄位選擇器, 不受白名單影響; kpfun `getUserInfor` 無此分支, `key='token'` 屬白名單外 → 被拒(全庫無任何呼叫端以 kpfun 傳 `key='token'`).
-  4. `procCore._getGenUserByKV` 的 `srLog.debug`(`userNotFound` / `userDuplicate`)之 `valueUser` 以 `maskKv(keyUser, valueUser)` 遮罩(與同函式 console 一致); 內部呼叫端固定傳 `account` / `id`, 此為縱深防禦.
+  4. `procCore._getGenUserByKV` 的 `srLog.debug`(`userNotFound` / `userDuplicate`)之 `valueUser` 以 `maskKv(keyUser, valueUser)` 遮罩(與同函式 console 一致〔🔁 2026-10-31 ADR-101 / R-LOG-01: 同函式 console 已改為不輸出查詢值, 只給型別; srLog 側維持本條〕); 內部呼叫端固定傳 `account` / `id`, 此為縱深防禦.
   5. 對外 helper(`getUserByToken` / `getUserByUserId` / `getUsersByToken`)之網址範本檢查改為「恰一個完整參數」比對: `src/fetchSsoMsg.mjs` 之 `hasUrlParam(url, name, value)` ——參數名之前須為字串起點或 `?` `&` `"` 空白、參數值之後須為字串終點或 `& # "` 空白(以參數分隔字元定界; `"` 與空白供單元測試以 `data:` 網址〔佔位符在 JSON 字串內、無 `?`〕模擬 SSO), 且同名參數恰出現一次. 原 `indexOf('key=token')` 子字串檢查使 `key=tokenVerify`、`xkey=token`、`token={sysToken}x` 皆通過; 初版(run02 前半)改以「前後不得為參數字元 `[A-Za-z0-9_.~%-]`」排除, 外審(minimax MM-C-01 / 02、agy-opus F-C1 / F-C2)指出仍通過 `key=token+`〔server 實得 `token `〕、`key=token;x`、`a=key=token`、`&amp;key=token`、路徑 `/key=token`、片段 `#key=token`、重複參數 `key=token&key=id` 等偽陽性, 改為分隔字元定界 + 恰一個.
   6. log 衛生(外審 minimax MM-B-01 / 02、MM-D-02 提出, 本輪採納): 使用端給定之欄位名 `key` 與識別欄之查詢值 `value`(白名單內者原樣記供追查)寫入 `srLog` 前一律經 `srLog.capText`: 控制字元(< 32、127)置換為 `?`(`safeText`), 長度超過 `LOG_TEXT_MAX`(256)者截斷並附 `...(len=N)`; 短字串原樣. 站點: `WWebSso` 兩入口 `srLog.info` 之 `key`、`maskKv` 識別欄分支、`procCore._getGenUserByKV` `srLog.debug` 之 `keyUser`. 非識別欄之值仍一律 `maskToken`(規則 4). (pino JSON 已跳脫控制字元, 不致換行注入; 此規則限制使用端可控之 log 量並與 `maskToken` 同一紀律.)
 - **理由**: 修前欄位名由呼叫者(系統管理者或具 `readUsers` 之應用系統金鑰)任意指定並直接作為資料庫選擇器鍵: ①誤用 `key=userId`(`users.userId` 為建立者主鍵欄)不報錯而查到建立者; ②可對憑證欄(`tokenVerify`、`password`)以值探測存在性; ③非識別欄之值可能即憑證, 需靠 log 遮罩補救(R-SEC-01). 全庫正式用法僅 `token`(上游分流)、`id`、`account`、`name`(srv.mjs 註解範例).

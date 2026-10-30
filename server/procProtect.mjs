@@ -28,6 +28,7 @@ import arrHas from 'wsemi/src/arrHas.mjs'
 import pm2resolve from 'wsemi/src/pm2resolve.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
+import getDiagBriefErr from 'wsemi/src/getDiagBriefErr.mjs'
 import ds from '../src/schema/index.mjs'
 import wrapTimer from './wrapTimer.mjs'
 import { maskToken, safeText } from './srLog.mjs'
@@ -328,7 +329,7 @@ function proc(woItems, p, opt = {}) {
                     //blockAccount, 封鎖使用者, 亦會直接刪除使用userId之token
                     await blockAccount(account)
                         .catch((err) => {
-                            console.log(err)
+                            console.log('err', getDiagBriefErr(err)) //下層錯誤原文(含失敗筆主鍵、資料庫錯誤)不印, 只給錯誤摘要 (ADR-101)
                         })
                 }
 
@@ -540,7 +541,7 @@ function proc(woItems, p, opt = {}) {
                 //blockAccountByToken, 沒封鎖token, 是通過封鎖使用者且直接刪除使用userId之token; 逐token攔下, 一筆失敗不中斷其他token
                 await blockAccountByToken(token)
                     .catch((err) => {
-                        console.log(err)
+                        console.log('err', getDiagBriefErr(err))
                     })
 
             }
@@ -1009,7 +1010,7 @@ function proc(woItems, p, opt = {}) {
                 //blockIpByIp, 逐ip攔下, 一筆失敗不中斷其他ip
                 await blockIpByIp(ip)
                     .catch((err) => {
-                        console.log(err)
+                        console.log('err', getDiagBriefErr(err))
                     })
 
             }

@@ -29,7 +29,7 @@ import getDiagSecrets from 'wsemi/src/getDiagSecrets.mjs'
 import genDiagFunLog from 'wsemi/src/genDiagFunLog.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
-import srLogInit, { maskToken, maskUrl, maskKv, capText } from './srLog.mjs'
+import srLogInit, { maskToken, maskUrl, maskKv, capText, logType } from './srLog.mjs'
 import srEmailInit from './srEmail.mjs'
 import guardOrm from './guardOrm.mjs'
 import procCore from './procCore.mjs'
@@ -116,7 +116,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
     //check WOrm
     if (!isfun(WOrm)) {
-        console.log('invalid WOrm', WOrm)
+        console.log('invalid WOrm', logType(WOrm)) //建構參數之傳入值一律不輸出, 只給型別 (ADR-101)
         throw new Error('invalid WOrm')
     }
 
@@ -128,7 +128,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
     //check db
     if (!isestr(db)) {
-        console.log('invalid db', db)
+        console.log('invalid db', logType(db))
         throw new Error('invalid db')
     }
 
@@ -417,9 +417,9 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         if (fsIsFile(fp)) {
             return fs.readFileSync(fp, 'utf8')
         }
-        //疑似檔案路徑(相對/絕對/磁碟機開頭或常見模板副檔名)但檔案不存在: 印WARN(含resolve後絕對路徑, 供排查cwd差異), 仍原樣視為文字
+        //疑似檔案路徑(相對/絕對/磁碟機開頭或常見模板副檔名)但檔案不存在: 印WARN(只含 settings 鍵名, 不含路徑值: 設定值屬傳入值, ADR-101), 仍原樣視為文字
         if (/^(\.{1,2}[\\/]|[\\/]|[A-Za-z]:[\\/])/.test(v) || /\.(html|txt)$/i.test(v)) {
-            logBoot('warn', `settings.${label} 疑似檔案路徑但檔案不存在(${fp}), 將原樣視為文字`)
+            logBoot('warn', `settings.${label} 疑似檔案路徑但檔案不存在, 將原樣視為文字`) //設定值(路徑)不輸出, 部署方自查該鍵 (ADR-101)
         }
         return v
     }
@@ -479,8 +479,8 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         wp = WServOrm(ds, WOrm, url, db, { funLog })
     }
     catch (err) {
-        let errMasked = diag.err(err) //建構錯誤(資料庫連線初始化)可含連線字串, 輸出與重拋前經遮罩
-        console.log('WServOrm init failed', errMasked)
+        let errMasked = diag.err(err) //建構錯誤(資料庫連線初始化)可含連線字串, 重拋前經遮罩(對外錯誤值只遮憑證, dspec D3)
+        console.log('WServOrm init failed', diag.brief(err)) //console 只印錯誤摘要, 不印原文 (ADR-101, dspec D2)
         throw errMasked
     }
     let { woItems: woItemsRaw, procOrm, withTabLocks, guardWrite } = wp //withTabLocks / guardWrite: 每表一鍵之表鎖(多人同時編輯之寫入契約, 原則 10), procCore 與 procProtect 共用同一組
@@ -548,7 +548,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
     let pathTemplate = get(opt, 'pathTemplate', '')
     if (!isestr(pathTemplate) || !fsIsFolder(pathTemplate)) {
         if (isestr(pathTemplate)) {
-            logBoot('warn', `settings.pathTemplate 指定之資料夾不存在(${pathTemplate}), 改採套件內建模板`)
+            logBoot('warn', 'settings.pathTemplate 指定之資料夾不存在, 改採套件內建模板')
         }
         pathTemplate = pathTemplateDefault
     }
@@ -573,7 +573,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
             logBoot('info', `應用系統金鑰升級遷移完成: 本次定案 ${r.marked} 筆(視為系統服務用途 ${r.system}、已失效 ${r.retired})`)
         })
         .catch((err) => {
-            logBoot('error', `應用系統金鑰升級遷移失敗(${err}): 尚未定案之舊列在重啟成功前依升級前規則判定(已逾期者仍失效, 未逾期者尚未改為不設期限)`)
+            logBoot('error', `應用系統金鑰升級遷移失敗(${JSON.stringify(diag.brief(err))}): 尚未定案之舊列在重啟成功前依升級前規則判定(已逾期者仍失效, 未逾期者尚未改為不設期限)`) //錯誤原文可含失敗筆主鍵, 只印摘要 (ADR-101)
         })
 
     let pp = procProtect(woItems, p, {
@@ -642,7 +642,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
         fs.writeFileSync(fpEntryOut, c, 'utf8')
     }
     catch (err) {
-        console.log(err)
+        console.log('err', diag.brief(err))
         console.log(`can not generate ${fnEntryOut}`)
     }
 
@@ -1148,7 +1148,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
             //logshow
             if (!b) {
-                console.log(`block ip[${ip}]`) //[tag:測試:顯示被封鎖ip]
+                console.log('block ip') //來源 IP 為請求之值, 不輸出(verifyConn 之 srLog.info 已記 ip 供稽核); [tag:測試:顯示被封鎖ip] 改為只顯示事件 (ADR-101)
             }
 
             return b
