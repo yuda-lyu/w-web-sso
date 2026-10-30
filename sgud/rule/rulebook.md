@@ -33,7 +33,7 @@
 
 本套件須宣告與做到者(逐條對應 `rulebook_orm.md` R-ORM-04 與 `test/unit-diaglog.test.mjs` SITE-DG-001~009):
 
-1. `WServOrm` 之 opt 只給 `{ funLog }`, `funLog` 由 `genDiagFunLog((o) => srLog.warn(o))` 產生; 無 detail、不 console 雙寫、等級 warn.
+1. `WServOrm` 之 opt 只給 `{ funLog }`, `funLog` 由 `genDiagFunLog((o) => srLog.warn(o), { safeKeys: SAFE_KEYS })` 產生(`SAFE_KEYS` 自 w-serv-orm 公開入口 `w-serv-orm/src/safeKeys.mjs` 匯入, 2026-10-30 起; 名單外之 safe 頂層鍵丟棄, `errType`、`errCode` 恆保留); 無 detail、不 console 雙寫、等級 warn. 出貨碼只匯入 w-serv-orm 之公開入口(`WServOrm.mjs`、`baseline.mjs`、`safeKeys.mjs`), 唯一內部檔例外 `getIgnoredOrmKeys.mjs`(`checkOptRemoved.mjs`, R-ORM-02), 全表見 R-ORM-04 第 7 條與 SITE-DG-011.
 2. 秘密來源 = 資料庫連線字串 `url` + 寄信帳密(`emSrcEmail` / `emSrcPW`), 以 `getDiag({}, { secrets: getDiagSecrets(...) })` 建 `diag`.
 3. **外來值(資料庫驅動、SMTP 之 reject)於「進入本套件」之入口遮罩**: `guardOrm(diag, woItems)`、`srEmail.send` 之 catch、`WServOrm` 建構錯誤、`ormWrite` 逐筆 err; 其後之 console、srLog、kpfun、HTTP 端點皆已遮罩.
 4. **本套件以固定詞彙組成之 reject 不得包 `diag.err` / `diag.mask`**(dspec R07).

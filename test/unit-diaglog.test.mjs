@@ -3,9 +3,9 @@ import fs from 'fs'
 import net from 'net'
 import util from 'util'
 import WServOrm from 'w-serv-orm/src/WServOrm.mjs'
+import { SAFE_KEYS } from 'w-serv-orm/src/safeKeys.mjs'
 import getDiag from 'wsemi/src/getDiag.mjs'
 import getDiagSecrets from 'wsemi/src/getDiagSecrets.mjs'
-import genDiagFunLog from 'wsemi/src/genDiagFunLog.mjs'
 import diagCases from 'wsemi/src/_diagCases.mjs'
 import ds from '../src/schema/index.mjs'
 import WWebSso from '../server/WWebSso.mjs'
@@ -13,6 +13,7 @@ import guardOrm from '../server/guardOrm.mjs'
 import ormWrite from '../server/ormWrite.mjs'
 import srEmailInit from '../server/srEmail.mjs'
 import { buildProc, mkSrLog, mkTable, mkProcOrm } from './tools/unitProc.mjs'
+import { pathRoot, pathWWebSso, stripComments, getWiredExpr, mkWiredFunLog } from './tools/diagWire.mjs'
 
 
 //
@@ -20,6 +21,8 @@ import { buildProc, mkSrLog, mkTable, mkProcOrm } from './tools/unitProc.mjs'
 //
 // 遮罩與摘要之實作全在 wsemi(getDiag / genDiagFunLog 等), 形態類案(輸入形態 × 期望)由 wsemi 共用語料 _diagCases 驅動, 本檔只驗「本套件的站點有接上」:
 //   DGF  w-serv-orm 之 funLog 經 genDiagFunLog 轉寫 srLog.warn: 只有 label 與安全摘要、無 detail、無 console 雙寫(dspec Q1); 轉接器失效不影響 procOrm; 語料 A01 / A07 以本套件之轉接器重跑
+//         本檔所用之 funLog 一律由 test/tools/diagWire.mjs 自 server/WWebSso.mjs 原始碼取出接線運算式求值(不手寫第二份轉接器)
+//   DGS  轉接器之白名單(第二道防線, R-ORM-04 / R-DIAG-02): 以 genDiagFunLog(…, { safeKeys: SAFE_KEYS }) 接管, 名單外之鍵不入日誌、名單內(w-serv-orm 實際產出)之鍵不丟失
 //   DGX  外來值入口遮罩: 資料表(guardOrm)、寄信(srEmail)與逐筆 err(ormWrite)之 reject 含憑證者被遮, 本套件以固定詞彙組成之 reject 原樣(語料 T01 / T07 / R01 / R02 / R04 / R07 / R11 / R12 以本套件之呼叫點重跑)
 //   DGC  建構期: 連線字串不回顯於輸出; 資料庫連線初始化錯誤遮罩後才輸出與重拋
 //   SITE 站點全集(原始碼盤點): 接線處恰在預期位置, 已刪之自寫遮罩不復存在
@@ -74,8 +77,8 @@ async function countUnhandled(fn) {
 }
 
 
-//mkFunLog: 同 server/WWebSso.mjs 之接線(SITE-DG-002 以原始碼盤點鎖定該行)
-let mkFunLog = (srLog) => genDiagFunLog((o) => srLog.warn(o)).funLog
+//mkFunLog: server/WWebSso.mjs 之接線(自原始碼取出該行運算式求值, 見 test/tools/diagWire.mjs; SITE-DG-002 / SITE-DG-010 以原始碼盤點鎖定該行)
+let mkFunLog = (srLog) => mkWiredFunLog(srLog).funLog
 
 
 //mkOrm: 以 StubWOrm 令各表即所給之替身資料表, 組出真實 WServOrm; optServ 即 WServOrm 之 opt(未給即不傳, 同 1.1.20 之預設)
@@ -235,7 +238,7 @@ describe('DGF genDiagFunLog 轉接: w-serv-orm 之 funLog → srLog.warn (dspec 
         for (let [name, warn] of [['同步拋錯', warnThrow], ['rejected promise', warnReject]]) {
             let tablesB = mkTables()
             setup(tablesB)
-            let ormB = mkOrm(tablesB, { funLog: genDiagFunLog(warn).funLog })
+            let ormB = mkOrm(tablesB, { funLog: mkWiredFunLog({ warn }).funLog })
             let rb = null
             let lb = null
             let nu = await countUnhandled(async () => {
@@ -266,13 +269,15 @@ describe('DGF genDiagFunLog 轉接: w-serv-orm 之 funLog → srLog.warn (dspec 
     })
 
     it(`DGF-corpus-A01 語料 A01 以本套件之轉接器重跑: ${caseOf('A01').label}`, function() {
+        //語料 A01 之轉接器未給白名單(預期 safe 原樣 { a: 1 }); 本套件之轉接器帶 { safeKeys: SAFE_KEYS }, 名單外之 a 被丟棄, 故 safe 改以名單內之 n 斷言「第 3 引數不讀」與「safe 照寫」, 其餘判定(getter 0 次)沿用語料
         let c = caseOf('A01')
         let ctx = mkCtx()
         let srLog = mkSrLog()
         //funLog 收到第 3 引數(細節)時不讀(getter 0 次)
-        mkFunLog(srLog)('lb', { a: 1 }, c.make(ctx))
-        let err = diagCases.verify(c, srLog.logs.warn, ctx)
-        assert.strictEqual(err, null, String(err))
+        mkFunLog(srLog)('lb', { n: 1, a: 1 }, c.make(ctx))
+        assert.deepStrictEqual(srLog.logs.warn, [{ event: 'orm-diag', label: 'lb', safe: { n: 1 } }])
+        assert.strictEqual(c.expect.userCode, 0, '語料 A01 之期望含 getter 0 次')
+        assert.strictEqual(diagCases.verify({ expect: { userCode: c.expect.userCode } }, srLog.logs.warn, ctx), null, 'getter 0 次')
     })
 
     it(`DGF-corpus-A07 語料 A07 以本套件之轉接器重跑: ${caseOf('A07').label}`, function() {
@@ -280,9 +285,146 @@ describe('DGF genDiagFunLog 轉接: w-serv-orm 之 funLog → srLog.warn (dspec 
         let c = caseOf('A07')
         let ctx = mkCtx()
         let srLog = mkSrLog()
-        getDiag({ funLog: mkFunLog(srLog) }, { safeKeys: ['mode'] })('lb', { mode: 'm' }, c.make(ctx))
-        assert.deepStrictEqual(srLog.logs.warn, [{ event: 'orm-diag', label: 'lb', safe: { mode: 'm' } }])
+        //safe 之鍵取 SAFE_KEYS 內之 n(語料原用 mode, 非本套件名單內之鍵, 會被轉接器之白名單丟棄)
+        getDiag({ funLog: mkFunLog(srLog) }, { safeKeys: ['n'] })('lb', { n: 1 }, c.make(ctx))
+        assert.deepStrictEqual(srLog.logs.warn, [{ event: 'orm-diag', label: 'lb', safe: { n: 1 } }])
         assert.strictEqual(diagCases.verify({ expect: { userCode: 0 } }, srLog.logs.warn, ctx), null, 'getDetail 0 次')
+    })
+
+})
+
+
+//
+// DGS 轉接器之白名單(第二道防線)
+//   w-serv-orm 1.1.23 起公開 SAFE_KEYS(其 funLog 所產生 safe 之頂層鍵, 凍結陣列, w-serv-orm/src/safeKeys.mjs), WWebSso 以 genDiagFunLog((o) => srLog.warn(o), { safeKeys: SAFE_KEYS }) 接管:
+//   srLog 是 safe 的最後出口, 即使產生端(w-serv-orm 或日後換版)多給了名單外之鍵(密碼、憑證、整個物件), 也在寫入前丟棄; errType、errCode 由 wsemi 恆保留
+//
+describe('DGS 轉接器白名單: genDiagFunLog(…, { safeKeys: SAFE_KEYS }) (R-ORM-04 / R-DIAG-02)', function() {
+
+    let PW = 'Zq#8765Wm-NOT-FOR-LOG'
+
+    it('DGS-01 safe 含白名單外之鍵(password、token、url、巢狀物件): srLog.warn 只收 SAFE_KEYS 內之鍵與 errType / errCode, 名單外之值不入日誌', function() {
+        //spec(派工 b-sso 第 1 點、dspec D2): 轉接器為寫入日誌之最後出口, 名單外之鍵一律丟棄(修前未給 safeKeys 時全數寫入)
+        let srLog = mkSrLog()
+        let safe = { n: 1, ks: [0], errType: 'Error', errCode: '23505', password: PW, token: PW, url: `mongodb://u:${PW}@h/db`, sub: { password: PW }, nested: { n: 1 } }
+        mkFunLog(srLog)('users.save fail', safe)
+        assert.deepStrictEqual(srLog.logs.warn, [{ event: 'orm-diag', label: 'users.save fail', safe: { n: 1, ks: [0], errType: 'Error', errCode: '23505' } }])
+        assert.ok(!strs(srLog.logs).includes(PW), '名單外之值不得入日誌')
+        //輸入之原物件不被改動
+        assert.deepStrictEqual(Object.keys(safe), ['n', 'ks', 'errType', 'errCode', 'password', 'token', 'url', 'sub', 'nested'])
+    })
+
+    it('DGS-02 SAFE_KEYS 內每個鍵逐一保留(不丟失本套件宣告之鍵); errType / errCode 不在名單內仍恆保留', function() {
+        //spec(派工 b-sso 第 2 點): w-serv-orm 實際產出之鍵經轉接後不丟失; 名單為 w-serv-orm 公開之單一來源, 不手寫第二份
+        assert.ok(Array.isArray(SAFE_KEYS) && SAFE_KEYS.length > 0 && Object.isFrozen(SAFE_KEYS), 'SAFE_KEYS 為非空之凍結陣列')
+        assert.ok(!SAFE_KEYS.includes('errType') && !SAFE_KEYS.includes('errCode'), '名單不列恆含之 errType / errCode')
+        let srLog = mkSrLog()
+        let funLog = mkFunLog(srLog)
+        for (let k of SAFE_KEYS) {
+            funLog(`lb-${k}`, { [k]: 1 })
+        }
+        assert.deepStrictEqual(srLog.logs.warn.map((o) => o.safe), SAFE_KEYS.map((k) => ({ [k]: 1 })), '每個名單內之鍵皆保留')
+        let srLog2 = mkSrLog()
+        mkFunLog(srLog2)('lb', { errType: 'Error', errCode: 'ECONNREFUSED' })
+        assert.deepStrictEqual(srLog2.logs.warn[0].safe, { errType: 'Error', errCode: 'ECONNREFUSED' })
+    })
+
+    it('DGS-03 safe 的鍵全在名單外: 事件照寫, safe 為空物件(label 保留); safe 未給仍為 undefined', function() {
+        let srLog = mkSrLog()
+        let funLog = mkFunLog(srLog)
+        funLog('lb1', { password: PW, mode: 'm' })
+        funLog('lb2')
+        assert.deepStrictEqual(srLog.logs.warn, [
+            { event: 'orm-diag', label: 'lb1', safe: {} },
+            { event: 'orm-diag', label: 'lb2', safe: undefined },
+        ])
+    })
+
+    //情境: 本套件既有之 ORM 失敗情境(同 DGF-01~06), 各驅動真實 WServOrm, 比對 w-serv-orm 交給 funLog 之原產出與轉接後寫入 srLog 者
+    let scenarios = [
+        {
+            id: 'save 逐筆失敗',
+            setup: (t) => {
+                t.users.save = async (data) => data.map(() => ({ n: 1, nInserted: 0, nModified: 0, ok: 0, err: SECRET_ERR }))
+            },
+            exec: (orm) => orm.procOrm('op-user', 'users', 'save', [ROW]),
+            keys: ['n', 'ks'],
+        },
+        {
+            id: 'del 逐筆失敗',
+            setup: (t) => {
+                t.tokens.del = async (data) => data.map(() => ({ n: 1, nDeleted: 0, ok: 0, err: SECRET_ERR }))
+            },
+            exec: (orm) => orm.procOrm('op-user', 'tokens', 'del', [{ id: SECRET_ID }]),
+            keys: ['n', 'ks'],
+        },
+        {
+            id: 'insert 整批 reject',
+            setup: (t) => {
+                t.users.insert = async () => Promise.reject(new Error(SECRET_ERR))
+            },
+            exec: (orm) => orm.procOrm('op-user', 'users', 'insert', [ROW]),
+            keys: ['errType'],
+        },
+        {
+            id: 'insert 整批 reject(帶 SQLSTATE 代碼)',
+            setup: (t) => {
+                t.users.insert = async () => Promise.reject(Object.assign(new Error(SECRET_ERR), { code: '23505' }))
+            },
+            exec: (orm) => orm.procOrm('op-user', 'users', 'insert', [ROW]),
+            keys: ['errType', 'errCode'],
+        },
+        {
+            id: 'insert 聚合 ok 為 0',
+            setup: (t) => {
+                t.users.insert = async () => ({ n: 1, nInserted: 0, ok: 0, err: SECRET_ERR, id: SECRET_ID })
+            },
+            exec: (orm) => orm.procOrm('op-user', 'users', 'insert', [ROW]),
+            keys: ['ok'],
+        },
+        {
+            id: '被拒之查詢條件',
+            setup: () => {},
+            exec: (orm) => orm.procOrm('op-user', 'users', 'select', { email: SECRET_EMAIL, [Symbol('sym')]: 1 }),
+            keys: ['reason'],
+        },
+    ]
+
+    it('DGS-04 w-serv-orm 實際產出之診斷經轉接後鍵不丟失: 各既有 ORM 失敗情境, 轉接後 srLog 之 safe 與 w-serv-orm 交給 funLog 之原產出完全相同, 且原產出之鍵皆在 SAFE_KEYS 內或為 errType / errCode', async function() {
+        //spec(派工 b-sso 第 2 點②): 白名單不得誤傷本套件實際會遇到之診斷; 比對原產出(記錄替身)與轉接後, 不手寫期望之第二份
+        let seen = new Set()
+        for (let sc of scenarios) {
+            //原產出: 記錄替身 funLog(帶 noDetail, 同 genDiagFunLog 所產生者, w-serv-orm 不取細節)
+            let raws = []
+            let spy = Object.assign((label, safe) => {
+                raws.push({ label, safe })
+            }, { noDetail: true })
+            let tablesA = mkTables()
+            sc.setup(tablesA)
+            await captureConsole(async () => {
+                await sc.exec(mkOrm(tablesA, { funLog: spy })).catch(() => {})
+            })
+            //轉接後: 本套件之接線
+            let srLog = mkSrLog()
+            let tablesB = mkTables()
+            sc.setup(tablesB)
+            await captureConsole(async () => {
+                await sc.exec(mkOrm(tablesB, { funLog: mkFunLog(srLog) })).catch(() => {})
+            })
+            assert.strictEqual(raws.length, 1, `${sc.id}: w-serv-orm 恰產出一筆診斷`)
+            let raw = raws[0]
+            let rawKeys = Object.keys(raw.safe)
+            for (let k of sc.keys) {
+                assert.ok(rawKeys.includes(k), `${sc.id}: 情境確實產出 ${k}(情境失效不得靜默少覆蓋), 實際 ${rawKeys.join(',')}`)
+                seen.add(k)
+            }
+            for (let k of rawKeys) {
+                assert.ok(SAFE_KEYS.includes(k) || k === 'errType' || k === 'errCode', `${sc.id}: w-serv-orm 產出之鍵 ${k} 須在 SAFE_KEYS 內`)
+            }
+            assert.deepStrictEqual(srLog.logs.warn, [{ event: 'orm-diag', label: raw.label, safe: raw.safe }], `${sc.id}: 轉接後與原產出一致(鍵不丟失)`)
+            assertNoSecret(srLog.logs, `DGS-04 ${sc.id}`)
+        }
+        assert.deepStrictEqual([...seen].sort(), ['errCode', 'errType', 'ks', 'n', 'ok', 'reason'], '情境涵蓋之鍵')
     })
 
 })
@@ -639,14 +781,14 @@ describe('SITE-DG 站點全集(原始碼盤點; R-ORM-04 / R-DIAG-01)', function
         assert.deepStrictEqual(sites.sort(), ['./g_mOrm.mjs', './server/WWebSso.mjs'])
     })
 
-    it('SITE-DG-002 server/WWebSso.mjs: WServOrm 之 opt 恰為 { funLog }, funLog 恰由 genDiagFunLog((o) => srLog.warn(o)) 產生(只寫安全摘要), srLog 先於 WServOrm 建立', function() {
+    it('SITE-DG-002 server/WWebSso.mjs: WServOrm 之 opt 恰為 { funLog }, funLog 恰由 genDiagFunLog((o) => srLog.warn(o), { safeKeys: SAFE_KEYS }) 產生(只寫安全摘要與白名單內之鍵), srLog 先於 WServOrm 建立', function() {
         let src = fs.readFileSync('./server/WWebSso.mjs', 'utf8')
         let c = code('./server/WWebSso.mjs')
         let m = c.match(/^\s*wp = WServOrm\((.*)\)\s*$/m)
         assert.ok(m, '找到 wp = WServOrm(...) 呼叫')
         assert.strictEqual(m[1], 'ds, WOrm, url, db, { funLog }')
         assert.strictEqual((c.match(/\bgenDiagFunLog\(/g) || []).length, 1, 'genDiagFunLog 恰呼叫一次')
-        assert.ok(/let \{ funLog \} = genDiagFunLog\(\(o\) => srLog\.warn\(o\)\)/.test(c), 'funLog 由 genDiagFunLog((o) => srLog.warn(o)) 產生')
+        assert.ok(/let \{ funLog \} = genDiagFunLog\(\(o\) => srLog\.warn\(o\), \{ safeKeys: SAFE_KEYS \}\)/.test(c), 'funLog 由 genDiagFunLog((o) => srLog.warn(o), { safeKeys: SAFE_KEYS }) 產生')
         assert.ok(src.indexOf('let srLog = srLogInit(opt)') < src.indexOf('wp = WServOrm('), 'srLog 先建立')
         assert.ok(/import genDiagFunLog from 'wsemi\/src\/genDiagFunLog\.mjs'/.test(src), '匯入 genDiagFunLog')
     })
@@ -719,6 +861,104 @@ describe('SITE-DG 站點全集(原始碼盤點; R-ORM-04 / R-DIAG-01)', function
             './server/procCore.mjs': 12, //資料表(guardOrm)與寄信(srEmail)之 reject
             './server/procProtect.mjs': 3, //資料表(guardOrm)之 reject
         })
+    })
+
+    it('SITE-DG-010 白名單接線: server/WWebSso.mjs 自 w-serv-orm 公開入口 safeKeys.mjs 匯入 SAFE_KEYS(恰一次), 不自宣告第二份; 接線運算式恰為 genDiagFunLog((o) => srLog.warn(o), { safeKeys: SAFE_KEYS })', function() {
+        //spec(派工 b-sso 第 1、2 點③): 名單單一來源在 w-serv-orm; 本套件不手寫名單、不匯入 w-serv-orm 內部檔取名單
+        let src = fs.readFileSync(pathWWebSso, 'utf8')
+        let c = stripComments(src)
+        let impLine = 'import { SAFE_KEYS } from \'w-serv-orm/src/safeKeys.mjs\''
+        assert.strictEqual(c.split(/\r?\n/).filter((x) => x === impLine).length, 1, `匯入行恰一行: ${impLine}`)
+        assert.strictEqual((c.match(/\bSAFE_KEYS\b/g) || []).length, 2, 'SAFE_KEYS 僅匯入與接線兩處(無自宣告之第二份)')
+        assert.strictEqual(getWiredExpr(), 'genDiagFunLog((o) => srLog.warn(o), { safeKeys: SAFE_KEYS })')
+        assert.ok(src.indexOf(impLine) < src.indexOf('let { funLog } = genDiagFunLog('), '先匯入後使用')
+    })
+
+    //w-serv-orm 之匯入全表: 檔 → 模組 → 判定; 公開入口(w-serv-orm README): 主入口 WServOrm.mjs、純函數子模組 baseline.mjs、白名單 safeKeys.mjs; 其餘皆為內部檔
+    //內部檔只允許: 測試與測試輔助(組真實 procOrm)、維運腳本(根目錄 g_*.mjs)、與唯一之出貨例外 server/getIgnoredOrmKeys.mjs(checkOptRemoved, R-ORM-02: 上游註解明載供包裝層檢查自身之 opt)
+    //新增、刪除或改動任一匯入須先更新此表並寫明判定(spec/evidence/ 為歷史取證腳本, 不出貨亦不執行, 不在盤點範圍)
+    let OPEN = ['w-serv-orm/src/WServOrm.mjs', 'w-serv-orm/src/baseline.mjs', 'w-serv-orm/src/safeKeys.mjs']
+    let IMPORTS = [
+        ['./server/WWebSso.mjs', 'w-serv-orm/src/WServOrm.mjs'],
+        ['./server/WWebSso.mjs', 'w-serv-orm/src/safeKeys.mjs'],
+        ['./server/procCore.mjs', 'w-serv-orm/src/baseline.mjs'],
+        ['./src/baselineOf.mjs', 'w-serv-orm/src/baseline.mjs'],
+        ['./server/getIgnoredOrmKeys.mjs', 'w-serv-orm/src/checkOptRemoved.mjs'], //出貨例外: 內部檔, 與診斷輸出無關
+        ['./g_mOrm.mjs', 'w-serv-orm/src/WServOrm.mjs'],
+        ['./g_backupDb.mjs', 'w-serv-orm/src/getDb.mjs'], //維運腳本
+        ['./g_initialTestData.mjs', 'w-serv-orm/src/genTestData.mjs'], //維運腳本
+        ['./test/api-concurrency.test.mjs', 'w-serv-orm/src/baseline.mjs'],
+        ['./test/unit-writeContract.test.mjs', 'w-serv-orm/src/baseline.mjs'],
+        ['./test/unit-diaglog.test.mjs', 'w-serv-orm/src/WServOrm.mjs'],
+        ['./test/unit-diaglog.test.mjs', 'w-serv-orm/src/safeKeys.mjs'],
+        ['./test/unit-ignoredOrmKeys.test.mjs', 'w-serv-orm/src/getMapOrm.mjs'], //測試: 直接組 procOrm
+        ['./test/unit-ignoredOrmKeys.test.mjs', 'w-serv-orm/src/getProc.mjs'],
+        ['./test/tools/unitProc.mjs', 'w-serv-orm/src/WServOrm.mjs'],
+        ['./test/tools/unitProc.mjs', 'w-serv-orm/src/getMapOrm.mjs'], //測試輔助: 以替身資料表組真實 procOrm
+        ['./test/tools/unitProc.mjs', 'w-serv-orm/src/getProc.mjs'],
+        ['./test/tools/diagWire.mjs', 'w-serv-orm/src/safeKeys.mjs'],
+    ]
+    let EXCEPT_PROD = './server/getIgnoredOrmKeys.mjs'
+
+    //listImports: 掃 server/、src/、toolg/、test/(不含 _tmp、pics、staLogs-golden)與根目錄 *.mjs, 取出所有 w-serv-orm 模組之匯入
+    //靜態匯入只認行首之 import … from '…'、多行匯入收尾之 } from '…'、import '…', 動態形式認 import('…')、require('…')、import.meta.resolve('…'); 不認字串內容中夾帶之 from '…'(本檔斷言訊息會寫到)
+    let RE_IMPORTS = [
+        /^[ \t]*import\b[^\n'"`]*?\bfrom[ \t]*(['"`])(w-serv-orm[^'"`\n]*)\1/gm,
+        /^[ \t]*\}[ \t]*from[ \t]*(['"`])(w-serv-orm[^'"`\n]*)\1/gm,
+        /^[ \t]*import[ \t]+(['"`])(w-serv-orm[^'"`\n]*)\1/gm,
+        /\b(?:import|require|import\.meta\.resolve)[ \t]*\([ \t]*(['"`])(w-serv-orm[^'"`\n]*)\1/g,
+    ]
+    function listImports() {
+        let found = []
+        let root = pathRoot.replace(/\\/g, '/')
+        let scan = (p) => {
+            let c = stripComments(fs.readFileSync(`${root}/${p}`, 'utf8'))
+            for (let re of RE_IMPORTS) {
+                for (let m of c.matchAll(re)) {
+                    found.push([`./${p}`, m[2]])
+                }
+            }
+        }
+        let walk = (dir) => {
+            for (let f of fs.readdirSync(`${root}/${dir}`, { withFileTypes: true })) {
+                if (f.isDirectory()) {
+                    if (!['_tmp', 'pics', 'staLogs-golden', 'node_modules'].includes(f.name)) {
+                        walk(`${dir}/${f.name}`)
+                    }
+                }
+                else if (/\.(mjs|js|vue)$/.test(f.name)) {
+                    scan(`${dir}/${f.name}`)
+                }
+            }
+        }
+        for (let d of ['server', 'src', 'toolg', 'test']) {
+            if (fs.existsSync(`${root}/${d}`)) {
+                walk(d)
+            }
+        }
+        for (let f of fs.readdirSync(root)) {
+            if (/\.mjs$/.test(f)) {
+                scan(f)
+            }
+        }
+        return found
+    }
+
+    it('SITE-DG-011 w-serv-orm 之匯入全表(封閉集合): 出貨碼只匯入公開入口(主入口 WServOrm.mjs、baseline.mjs、safeKeys.mjs), 內部檔只在測試、測試輔助、維運腳本與唯一之出貨例外 getIgnoredOrmKeys.mjs; 不匯入 getDiagBrief.mjs 等診斷內部檔', function() {
+        let found = listImports()
+        let key = (a) => a.map((x) => x.join(' <- ')).sort()
+        assert.deepStrictEqual(key(found), key(IMPORTS), '實際匯入與全表一致(新增、刪除或改動匯入須先更新全表並寫明判定)')
+        for (let [file, spec] of found) {
+            assert.ok(spec.startsWith('w-serv-orm/src/'), `${file} 匯入 ${spec}: 只可深層匯入 src/ 下之模組(主入口為 src/WServOrm.mjs)`)
+            if (OPEN.includes(spec)) {
+                continue
+            }
+            let okLoc = /^\.\/test\//.test(file) || /^\.\/g_[^/]+\.mjs$/.test(file) || file === EXCEPT_PROD
+            assert.ok(okLoc, `${file} 匯入內部檔 ${spec}: 出貨碼不得匯入 w-serv-orm 之內部檔`)
+        }
+        let internalProd = found.filter(([file, spec]) => !OPEN.includes(spec) && /^\.\/(server|src|toolg)\//.test(file))
+        assert.deepStrictEqual(internalProd, [[EXCEPT_PROD, 'w-serv-orm/src/checkOptRemoved.mjs']], '出貨碼之內部檔匯入僅一處例外')
+        assert.ok(!found.some(([, spec]) => /getDiagBrief|getDiag\.mjs/.test(spec)), '不匯入 w-serv-orm 之診斷內部檔')
     })
 
 })

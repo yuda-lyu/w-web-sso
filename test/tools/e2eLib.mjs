@@ -1,6 +1,8 @@
 //e2e 共用設施之單一引用點: 指向 w-package-tools-e2e(devDependency, 規格見其 README).
 //2026-09-29 起由本專案原 ./srcPack 改指套件 1.0.2(srcPack 已移入該套件並刪除); w-web-perm / w-web-api / w-web-task 亦同.
 //2026-09-30 升 1.0.3: 新增 probeStuckTooltip(原四專案各自手寫於 e2e-setup 之同一實作收斂至套件)、gridContentBox 空表訊息外擴、runIsolatedE2e 之 targets.
+//2026-10-30 升 1.0.12: 套件移除 parseListenerPids(含 src/parseListenerPids.mjs; 其解析 netstat 之「狀態為 LISTENING」或條件會把對外連線誤判為監聽), 本檔刪該轉出(本專案無使用者);
+//  查埠一律用 listenerPids(查詢失敗回 null, [] 只代表已確認無人)/ killPortListeners(查詢失敗不下殺), 二者改委由 wsemi execProcessPortPidsSync, 本專案之呼叫(run-e2e-isolated 與 createServiceManager)未傳 opt.exec, 不受 exec 形狀改變影響.
 //共用層與測試檔一律自本檔 import, 不直接引用套件路徑; 套件之 src/launchChromium.mjs 不經本檔匯出, 由 launchBrowser 內部使用.
 export { default as assertBaselineMatch } from 'w-package-tools-e2e/src/assertBaselineMatch.mjs'
 export { default as assertTextSpec } from 'w-package-tools-e2e/src/assertTextSpec.mjs'
@@ -33,7 +35,6 @@ export { default as openCasePage } from 'w-package-tools-e2e/src/openCasePage.mj
 export { default as overlayImageAt } from 'w-package-tools-e2e/src/overlayImageAt.mjs'
 export { default as overlayRegions } from 'w-package-tools-e2e/src/overlayRegions.mjs'
 export { default as pageHasText } from 'w-package-tools-e2e/src/pageHasText.mjs'
-export { default as parseListenerPids } from 'w-package-tools-e2e/src/parseListenerPids.mjs'
 export { default as pidExists } from 'w-package-tools-e2e/src/pidExists.mjs'
 export { default as pollUntil } from 'w-package-tools-e2e/src/pollUntil.mjs'
 export { default as probeHttp } from 'w-package-tools-e2e/src/probeHttp.mjs'

@@ -59,6 +59,17 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 - **建構期輸出**：`url` 型別無效時 console 只印型別（不印值）；資料庫連線初始化失敗（`WServOrm init failed`）之輸出與重拋之錯誤已遮罩連線字串與密碼；寄信密碼（`emSrcPW`）型別無效時，錯誤訊息為 `invalid srcPW`（不回顯其值）。
 - 受影響者：以 `orm-diag` 之 `detail`、等級 50 或 stdout 診斷行為依據之日誌分析／告警規則（本套件內無此類消費者）。
 
+### Breaking changes（ORM 診斷日誌只保留白名單鍵）
+
+依賴升級：`wsemi ^1.9.33`（`genDiagFunLog` 新增 `opt.safeKeys`）、`w-serv-orm ^1.1.23`（公開 `SAFE_KEYS`）。`WWebSso` 改以 `genDiagFunLog((o) => srLog.warn(o), { safeKeys: SAFE_KEYS })` 接管 w-serv-orm 之 `funLog`（`SAFE_KEYS` 自 `w-serv-orm/src/safeKeys.mjs` 匯入，本套件不手寫名單）：
+
+- **`orm-diag` 之 `safe` 只保留白名單鍵**：srLog 為診斷輸出的最後出口，寫入前只留 `SAFE_KEYS` 內之頂層鍵（目前為 `n`、`ks`、`skipped`、`ok`、`type`、`reason`、`msgs`、`table`、`tables`、`keys`、`nOther`）加上恆保留之 `errType`、`errCode`；名單外之頂層鍵（如 `password`、`token`、整個物件）一律丟棄，事件本身與 `label` 照寫。
+- **對現行日誌內容無差異**：w-serv-orm 1.1.23 自身產出之鍵皆在名單內（本套件既有之 ORM 失敗情境，如 `{ n: 1, ks: [0] }`、`{ ok: 0 }`、`{ errType: 'Error', errCode: '23505' }`、`{ reason }`，轉接前後完全相同）；此為第二道防線，防止日後 w-serv-orm 換版或擴充時多帶出名單外之鍵而被寫進日誌。
+- **名單隨 w-serv-orm 版本更新**：w-serv-orm 新增 `safe` 鍵時須升級至公告該鍵之版本，否則該鍵會被丟棄（寧缺勿洩）。
+- 限制：名單只過濾 `safe` 之**頂層**鍵，名單內之鍵其巢狀值不再依鍵名過濾（由 wsemi 與 w-serv-orm 負責其內容安全）。
+- 受影響者：依賴 `orm-diag` 之 `safe` 內名單外之鍵作排障或告警者（本套件內無此類消費者）。
+- 測試：`test/unit-diaglog.test.mjs` 之 DGS（白名單外之鍵不入日誌、名單內之鍵逐一保留、既有 ORM 失敗情境轉接後鍵不丟失）、SITE-DG-010／011（接線與 w-serv-orm 匯入全表，出貨碼不匯入其內部檔）；接線取樣自 `server/WWebSso.mjs` 原始碼求值（`test/tools/diagWire.mjs`），不手寫第二份轉接器。
+
 ### Upgrading from 1.1.15 and earlier
 
 **框架系統函數之身分關卡（行為變更，ADR-096）**：升級 `w-serv-hapi` 至 `^1.1.8`（連帶 `w-serv-webdata` 1.1.16、`w-serv-broadcast` 1.1.12），並重建前端（前端元件輪詢改帶 token 鍵）。框架預設三個系統函數皆公開；本版起本套件顯式設定 `sysFuncsPublic: ['[sys:getFuncList]', '[sys:polling]']`，只列未登入之登入頁確實需要且無敏感內容者。以真瀏覽器擷取登入頁、註冊畫面、重寄驗證信畫面與登入後各頁之請求，開機流程相同（第 3 欄為擷取所見）：
