@@ -4,6 +4,7 @@
 //  expected: test/staLogs-golden/expected-{hr,day}.json —— 以「改造前」(git 5d341b8^) 之
 //            test/staLogs-golden/legacy/{staToken,staIp,staUserAccountLogin}.mjs
 //            在假時鐘 FIXED=1788150896789 (2026-08-31 12:34:56.789 +08:00) 下產出, 為本測試之真理來源
+//            唯一之刻意差異 (R-STA-01, ADR-102; 2026-11-03): 輸出以「現在」所屬桶為上界, legacy 多出之未來時間桶 (fixture 之 7.7.7.7 行) 於產出時剔除 (gen-expected.mjs 之 dropFuture)
 //  重產方式: node test/staLogs-golden/gen-expected.mjs fixture
 //            → node --import ./test/staLogs-golden/fakeDate.mjs test/staLogs-golden/gen-expected.mjs expected
 import './staLogs-golden/setTz.mjs'
@@ -80,9 +81,11 @@ describe('unit-staLogs-golden', function() {
     })
 
 
-    //GOLD-001 (R01): hr 輸出與舊實作 expected 深比較 (169 桶 token/login, 170 桶 ip 含未來時間桶)
+    //GOLD-001 (R01, R-STA-01): hr 輸出與舊實作 expected 深比較 (token / ip / login 皆 169 桶; legacy 之 ip 為 170 桶, 多出之未來時間桶 2026-09-01T13 已於 expected 剔除)
+    //  fixture 確含該未來行 (7.7.7.7, FIXED 之隔日 13 時), 且現在所屬桶 (2026-08-31T12) 內有晚於 FIXED 之紀錄 (須保留, 見 expected 之該桶計數)
     it('GOLD-001-hr-outputs-deep-equal-legacy-expected', async function() {
         clearCache()
+        assert.ok(fs.readFileSync(path.join(fdLog, '2026-08-31T12.log'), 'utf8').includes('"ip":"7.7.7.7"'), 'fixture 須含未來時間行, 否則上界斷言為空洞')
         let opt = { fdLog, timeNow: FIXED }
         let token = await staToken(7, 'hr', opt)
         let ip = await staIp(7, 'hr', opt)
@@ -90,10 +93,15 @@ describe('unit-staLogs-golden', function() {
         assert.deepStrictEqual(token, expectedHr.token, 'staToken hr 應與舊實作 expected 一致')
         assert.deepStrictEqual(ip, expectedHr.ip, 'staIp hr 應與舊實作 expected 一致')
         assert.deepStrictEqual(login, expectedHr.login, 'staUserAccountLogin hr 應與舊實作 expected 一致')
+        //R-STA-01: 最末桶為現在所屬桶, 無晚於它之桶
+        for (let rs of [token, ip, login]) {
+            assert.strict.equal(rs.length, 169)
+            assert.strict.equal(rs[rs.length - 1].time, '2026-08-31T12')
+        }
     })
 
 
-    //GOLD-002 (R01): day 輸出與舊實作 expected 深比較
+    //GOLD-002 (R01, R-STA-01): day 輸出與舊實作 expected 深比較 (legacy 之 ip 多出之未來時間桶 2026-09-01 已於 expected 剔除)
     it('GOLD-002-day-outputs-deep-equal-legacy-expected', async function() {
         clearCache()
         let opt = { fdLog, timeNow: FIXED }
@@ -103,6 +111,10 @@ describe('unit-staLogs-golden', function() {
         assert.deepStrictEqual(token, expectedDay.token)
         assert.deepStrictEqual(ip, expectedDay.ip)
         assert.deepStrictEqual(login, expectedDay.login)
+        for (let rs of [token, ip, login]) {
+            assert.strict.equal(rs.length, 8)
+            assert.strict.equal(rs[rs.length - 1].time, '2026-08-31')
+        }
     })
 
 
@@ -112,7 +124,7 @@ describe('unit-staLogs-golden', function() {
         assert.strict.equal(sumKey(ip, '9.9.9.9'), 1, 'ISO 字串 time 之 verifyConn 應計入 1 筆')
         assert.strict.equal(sumKey(ip, '8.8.8.8'), 0, 'time 為 garbage 之行不計入')
         assert.strict.equal(sumKey(ip, '1.1.1.1'), 1, '恰等 tStart 不計, tStart+1ms 計 → 1 筆')
-        assert.strict.equal(sumKey(ip, '7.7.7.7'), 1, '未來時間桶以聯集保留')
+        assert.strict.equal(sumKey(ip, '7.7.7.7'), 0, '未來時間桶不輸出 (R-STA-01; 修前為 1: 以聯集保留)')
     })
 
 

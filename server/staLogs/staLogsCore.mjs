@@ -18,6 +18,7 @@ import filterVpfsByWindow from './filterVpfsByWindow.mjs'
 //  4. single-flight: 同參數併發呼叫共用同一 in-flight promise
 //  輸出形狀與原三檔一致 (golden test: test/unit-staLogs-golden.test.mjs 以改造前實作產出之 expected 深比較)
 //  刻意差異: 無 time (或 time 無法解析) 之行不計入任何桶 (原實作 ot(undefined) 視為 now 而計入當前桶)
+//  刻意差異 (R-STA-01, ADR-102): 輸出以「現在」所屬桶為上界, 晚於它之未來時間桶不輸出 (原實作只有下界, 未來桶併入輸出); 現在所屬桶內略晚於現在者保留; 只在輸出層過濾, 掃描與快取不動
 //  token / ip 各桶之明細鍵為 log 之 userId / ip (ip 取自 X-Forwarded-For 標頭第一段, 未登入者可植入任意字串), 規則 R-KEY-01 / R-OBJ-ITER-01:
 //    明細容器 (kp) 一律無原型 (constructor、__proto__、toString 等為一般鍵, 不致累加成字串或指派被忽略); 輸出之 count 為該桶總筆數 (保留字),
 //    ip / userId 恰為 "count" 者之筆數已含於總數, 不另列、不覆寫總數; 其餘鍵 (含 length) 皆為一般鍵 (消費端迭代須依自有鍵, 見 procStaInfor)
@@ -73,7 +74,10 @@ function genPlan(timeLength = 7, timeInterval = 'hr', opt = {}) {
         tCurr = tCurr.add(1, unit)
     }
 
-    return { fdLog, timeInterval: ti, fmt, unit, tStart, tStartMs, kpTime, timeNow: now.valueOf() }
+    //labelEnd, 「現在」所屬桶之標籤 (輸出之上界, 見 buildOutputs); 窗非空時即 kpTime 之最末桶
+    let labelEnd = tEnd.format(fmt)
+
+    return { fdLog, timeInterval: ti, fmt, unit, tStart, tStartMs, kpTime, labelEnd, timeNow: now.valueOf() }
 }
 
 
@@ -326,9 +330,22 @@ function mergeAgg(target, agg) {
 }
 
 
-function buildOutputs(merged, kpTime) {
+//桶標籤是否不晚於上界桶 labelEnd (規則 R-STA-01): 標籤為定寬 4 位數年之字串 (YYYY-MM-DDTHH / YYYY-MM-DD), 字典序即時間序;
+//  年份達 5 位數以上 (垃圾 time) 者字典序會錯置 (如 '12000-…' < '2026-…'), 一律視為晚於上界; labelEnd 非字串 (呼叫端未給且 kpTime 為空) 時不設上界
+function isLabelNotAfter(label, labelEnd) {
+    if (typeof labelEnd !== 'string') {
+        return true
+    }
+    return /^\d{4}-/.test(label) && label <= labelEnd
+}
 
-    //對齊原 merge({}, kpTime, gsLog) + Object.keys().sort(): 窗內桶補零, 資料桶 (含未來時間桶) 聯集
+
+//buildOutputs, labelEnd 為輸出之上界桶 (「現在」所屬之桶), 省略時取 kpTime 之最末桶
+function buildOutputs(merged, kpTime, labelEnd = kpTime[kpTime.length - 1]) {
+
+    //窗內桶補零, 資料桶以 labelEnd 為上界 (R-STA-01): 晚於「現在」所屬桶之未來時間桶不輸出 (紀錄之 time 取寫入當下之真實時鐘, 而「現在」可由 opt.timeNow 或程序級假時鐘釘住,
+    //  或時鐘回撥, 兩者不一致時會多出窗外之桶, 使圖表多出刻度並主導 Y 軸); 「現在」所屬桶內略晚於現在者保留 (上界以桶為單位, 統計執行期間新寫入之紀錄不被丟棄).
+    //  只在輸出層過濾, 掃描與快取不動 (彙總照存, timeNow 前進到該桶時即輸出). 原重構時對齊 merge({}, kpTime, gsLog) 而保留之「資料桶聯集」並非功能需求 (ADR-102)
 
     let toRs = (kpZero, kpData, toData) => {
         let kp = {}
@@ -336,6 +353,9 @@ function buildOutputs(merged, kpTime) {
             kp[label] = kpZero()
         }
         for (let label in kpData) {
+            if (!isLabelNotAfter(label, labelEnd)) {
+                continue
+            }
             kp[label] = toData(kpData[label])
         }
         return Object.keys(kp)
@@ -489,7 +509,7 @@ async function run(plan, opt = {}) {
     }
 
     //outputs
-    let r = buildOutputs(merged, plan.kpTime)
+    let r = buildOutputs(merged, plan.kpTime, plan.labelEnd)
     r.stat = {
         nFiles: files.length,
         nScanned: toScan.length,

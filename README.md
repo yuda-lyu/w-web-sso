@@ -37,6 +37,13 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 ## Upgrade Notes
 
+### 統計之時間桶輸出不含未來時間桶（修正，R-STA-01）
+
+**後台統計之時間桶輸出以「現在」所屬桶為上界（修正）**：後台統計（`getStaToken`、`getStaIp`、`getStaUserAccountLogin`，各以小時桶輸出近 7 天）原只限制時間下界，紀錄時間晚於「現在」所屬之桶者會多出一個窗外之桶：紀錄之 `time` 取寫入當下之真實時鐘，而統計之「現在」若被釘住（測試以假時鐘或 `opt.timeNow`）或系統時鐘回撥，兩者不一致，圖表因此多出一格刻度、Y 軸被該桶主導，`getStaIpSummary` 之近 24 小時連線數（`conn24h`）亦併入該桶之筆數。本版起三種輸出（權杖、IP、登入）之最末桶為「現在」所屬之桶，晚於它之桶不輸出；「現在」所屬桶內略晚於現在之紀錄照計；輸出形狀與參數不變。
+
+- **對使用端之影響**：正式環境（時鐘未回撥）輸出與修前逐位元相同，無須調整；時鐘回撥期間寫入之紀錄，於時間走到該桶時才計入（紀錄不被丟棄）。以假時鐘釘住「現在」之測試，其統計圖不再因測試自身之事件多出未來日期之一格，須把統計區移出像素比對者可改為納入比對；已凍入未來時間桶之標準圖須重產。
+- 測試：`test/unit-staLogs-futureBucket.test.mjs`（FUT-001～008：hr／day、三種輸出、現在所屬桶與桶邊界、快取、窗為空、垃圾年份、`conn24h`）、`test/unit-staLogs-golden.test.mjs`（golden 之 `ip` 各少該未來列）；設計見 spec/設計要點與取捨.md ADR-102。
+
 ### Upgrading from 1.1.19 and earlier
 
 **w-serv-orm 診斷輸出導入 srLog（log 行為變更，R-ORM-04）**：升級 `w-serv-orm` 至 `^1.1.20`。1.1.20 起 w-serv-orm 的診斷輸出（寫入失敗、輸入被拒等）預設只在 console 列標籤與不含個資之摘要，完整細節（失敗列主鍵、ORM 錯誤原文）只交 `opt.funLog`；沒有接上者，console 雖不再洩漏主鍵，卻也失去寫入失敗之原因（ORM 錯誤原文）。本版 `WWebSso` 以 wsemi 之 `genDiagFunLog` 產生之 `funLog` 接管（`WServOrm` 之 opt 只給此一項，其餘行為不變；診斷輸出之選項與規則見 wsemi 之 `getDiag`／`genDiagFunLog` 說明與跨套件規格，本套件不另提供 `logDetail`／`funLog` 選項）：

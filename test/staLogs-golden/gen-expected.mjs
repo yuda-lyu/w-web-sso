@@ -5,6 +5,8 @@
 //      → 以「改造前實作」(./legacy/staToken.mjs, ./legacy/staIp.mjs, ./legacy/staUserAccountLogin.mjs, 即 git 5d341b8^ 之原碼) 於假時鐘產 expected-hr.json / expected-day.json
 //FIXED now = 1788150896789 = 2026-08-31 12:34:56.789 (+08:00); tStart(7d) = 2026-08-24 12:34:56.789
 //擴充 fixture 時: 改本檔 → 依序重跑 fixture 與 expected → 跑 test/unit-staLogs-golden.test.mjs; expected 永遠由 legacy 產出, 不得手改。
+//唯一之刻意差異 (R-STA-01, ADR-102; 2026-11-03 起): 新規則輸出以「現在」所屬桶為上界, legacy (改造前原碼, 只有下界) 之輸出多出之未來時間桶, 於 legacy 輸出之後剔除 (dropFuture);
+//  其餘列 (含現在所屬桶內略晚於 FIXED 之紀錄) 一律為 legacy 原樣, legacy 本身不改其語意。
 import './setTz.mjs'
 import fs from 'fs'
 import path from 'path'
@@ -112,7 +114,7 @@ function genFixture() {
             lines.push(JSON.stringify({ level: 30, time: 'garbage', event: 'verifyConn', ip: '8.8.8.8' }))
         }
 
-        //當前小時檔: 加一行未來時間(時鐘偏移), 兩實作皆應以聯集多出一桶
+        //當前小時檔: 加一行未來時間(時鐘偏移): legacy 以聯集多出一桶, 新規則 (R-STA-01) 不輸出該桶 (expected 產出時由 dropFuture 剔除, 以驗新規則之上界)
         if (t.valueOf() === tEnd.valueOf()) {
             lines.push(line(ot(FIXED).add(1, 'day').startOf('hour').add(1, 'hour').valueOf(), { event: 'verifyConn', ip: '7.7.7.7' }))
         }
@@ -159,10 +161,21 @@ async function genExpected() {
     let staIp = (await import('./legacy/staIp.mjs')).default
     let staUserAccountLogin = (await import('./legacy/staUserAccountLogin.mjs')).default
     console.log('now(fake)', Date.now(), ot().format())
+
+    //dropFuture, 剔除標籤晚於 FIXED 所屬桶之列 (R-STA-01); 桶標籤為定寬 YYYY-MM-DDTHH / YYYY-MM-DD, 字典序即時間序
+    let dropFuture = (rows, fmt, name) => {
+        let labelEnd = ot(FIXED).format(fmt)
+        let rs = rows.filter((r) => r.time <= labelEnd)
+        let dropped = rows.filter((r) => r.time > labelEnd).map((r) => r.time)
+        console.log('dropFuture', name, { labelEnd, dropped })
+        return rs
+    }
+
     for (let ti of ['hr', 'day']) {
-        let token = await staToken(7, ti, { fdLog })
-        let ip = await staIp(7, ti, { fdLog })
-        let login = await staUserAccountLogin(7, ti, { fdLog })
+        let fmt = ti === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM-DDTHH'
+        let token = dropFuture(await staToken(7, ti, { fdLog }), fmt, `${ti}/token`)
+        let ip = dropFuture(await staIp(7, ti, { fdLog }), fmt, `${ti}/ip`)
+        let login = dropFuture(await staUserAccountLogin(7, ti, { fdLog }), fmt, `${ti}/login`)
         let fp = path.join(fdRoot, `expected-${ti}.json`)
         fs.writeFileSync(fp, JSON.stringify({ token, ip, login }, null, 2))
         console.log('expected done', fp, { token: token.length, ip: ip.length, login: login.length })
