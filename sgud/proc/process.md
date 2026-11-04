@@ -14,7 +14,7 @@
 
 - **關聯**: `package.json` scripts 之 `test`(唯一 script, 全域 §16.5 標準字串); 各層指令與 runner 見 rulebook「執行入口」.
 - **判斷**: `npm test` 是跨套件批次維護、確認套件能完整測試之保證手段, **字串固定不得改, 不因專案測試結構調整 glob, 不加任何變體**. agent 自身要驗證什麼, 一律自編指令執行(單層 / 單檔 / 全套 / 重產), 不進 scripts.
-- **處理**: 起跑前 `netstat -ano | grep -E ":(11007|8080) " | grep LISTENING` 看是誰的——非自己起的先回報不殺(harness 之 `killPort(11007)` 為明文例外, 見 `CLAUDE.md` 服務 port 要點); e2e 全套約 100 分鐘走 `run_in_background`; **同一時間只有一條鏈**(重產與 mocha 共用 11007 後端與 DB); log 檔名每輪不重用. 背景起 dev server 後**須等其 log 出現 `App running at` 才跑 api / e2e**——api 與 e2e 之 `startServersOnce` 見 8080 尚未監聽即自起前端, 與編譯中之 dev server 搶埠, 一方 `EADDRINUSE` 退出(2026-09-24 實際踩到: 起 dev server 後隨即跑 unit+api, dev server 綁定失敗). 跑完判準不只綠: `test/_tmp/` 無殘留、`./testPending/` 無本輪新增(或已分析)、`netstat` 無自己起的殘留、`dist/index.html` 已刪(見下節)、`./tmp/` 清乾淨.
+- **處理**: 起跑前 `netstat -ano | grep -E ":(11007|8080) " | grep LISTENING` 看是誰的——非自己起的先回報不殺(harness 之 `killPort(11007)` 為明文例外, 見 `CLAUDE.md` 服務 port 要點); e2e 全套(單一序列)約 100 分鐘走 `run_in_background`(2026-11-04 起「全套」改走多開, 見下「e2e 全套跑法(多開)」); **同一時間只有一條鏈**(重產與 mocha 共用 11007 後端與 DB); log 檔名每輪不重用. 背景起 dev server 後**須等其 log 出現 `App running at` 才跑 api / e2e**——api 與 e2e 之 `startServersOnce` 見 8080 尚未監聽即自起前端, 與編譯中之 dev server 搶埠, 一方 `EADDRINUSE` 退出(2026-09-24 實際踩到: 起 dev server 後隨即跑 unit+api, dev server 綁定失敗). 跑完判準不只綠: `test/_tmp/` 無殘留、`./testPending/` 無本輪新增(或已分析)、`netstat` 無自己起的殘留、`dist/index.html` 已刪(見下節)、`./tmp/` 清乾淨.
 
 ## api 測試層之強制退出與檔級清理
 
@@ -42,6 +42,18 @@
   - 套件升版: 先以 `npm pack w-package-tools-e2e@<版>` 取 tarball 與已安裝版逐檔 diff, 列出**行為差異清單**(只改註解 / 排版者不算); `npm install -D w-package-tools-e2e@<版>`(四專案同步). **驗證範圍依差異清單決定, 不預設重跑全套**: 無行為差異 → 橋接檔載入檢查(全部匯出皆為函式, 1.0.3 為 53 個)＋抽查一個 e2e 檔即可; 會改像素之變更 → 先以呼叫處與分支盤出受影響之案例, 以 `--write-mode changed` 只重產該些案例(`[write]`／`[keep]` 逐張印原因, 可與盤點互證), 產前後全目錄 md5 比對只變預期者, 逐張審圖後經 `runIsolatedE2e` 之 `targets` 比對(1.0.3 之做法, ADR-078); 有差異 → 只跑用到該模組之測試(截圖 / 紅框 / 遮罩 / 管線之變更會動到標準圖, 依套件 README「改版須知」與等價驗證協定: 快照 → `E2E_BASELINE_OUT_DIR` 產到 `test/_tmp/` → `compareImageDirs` 對 `test/pics` → `--write-mode changed` 須零寫出). 殷鑑: 2026-09-29 切換 1.0.2 時已證明程式碼一致仍四專案全套重跑, 業主指正浪費時間.
   - **差異清單要含依賴, 不只看 `src/`**: 套件之 `dependencies` 升版(尤其 `playwright`)即換截圖用之 Chromium, 每張標準圖都可能變, 此時依差異推出之驗證範圍就是全部 e2e 比對(1.0.6 實例: src 與 1.0.3 逐檔相同, 但 playwright `^1.62.1` → `^1.63.0` 使 Chromium 151 → 153, ADR-079). 先查 `node_modules/playwright-core/browsers.json` 之 chromium revision 新舊是否不同, 相同則不必全跑.
   - 盤點 CLI: `node node_modules/w-package-tools-e2e/tools/auditBoxes.mjs <pics目錄>`、`node node_modules/w-package-tools-e2e/tools/auditWaits.mjs <專案根>`.
+
+## e2e 全套跑法(多開; 2026-11-04 ws302, 排程第 302 項, R-E2E-SHARD-01)
+
+- **關聯**: `test/tools/e2eShard.json`(分組設定)、`test/tools/e2e-setup.mjs`(`resolveE2ePort`、`genTempSettings`、`argsOf`)、`test/tools/run-e2e-isolated.mjs`、`vue.config.js`(proxy 目標讀 `E2E_PORT_OFFSET`)、`node_modules/w-package-tools-e2e/tools/shardE2e.mjs`(README §2.11)、主控 `C:/opensrcOper/tools/full-suite.mjs`; 規則與判準見 `sgud/rule/rulebook_test.md`「e2e 分組多開」.
+- **判斷**: 「全套」只有**最末輪由主控於凍結碼跑**, 或提示詞明寫要你跑時才跑(其餘輪只跑受影響之測試, 見 rulebook「改動範圍 → 測試檔」); 此時用本節跑法, 不再用 `npm test` / `run-e2e-isolated.mjs` 單一序列(約 100~116 分). `npm test` 與未設 `E2E_PORT_OFFSET` 時之一切行為不變, 單檔 / 受影響測試照舊以單一 mocha 在正式目錄跑. 分組工具只比對、不寫標準圖.
+- **處理**:
+  1. **起跑前**: `netstat -ano | grep -E ":(11007|8080) " | grep LISTENING` 確認正式埠無人(**先停開發服務**: 實例複製 `db` 時若正式後端正在寫入, lmdb 可能不一致); 預檢會對每個實例之每個埠試綁定, 未過即報錯並列占用者, 不沿用.
+  2. **指令**: `node C:/opensrcOper/tools/full-suite.mjs <套件根> --log-base <路徑前綴>`——內部自取鎖(`rest` 段 `--lock`、e2e 段 `--lock-exclusive`), **不要自己再包鎖**; 可能先等鎖, 故以 detached 啟動(`nohup … > ./tmp/<名>.out 2>&1 &`, 外層可用不帶鎖之 `quiet-run` 包住並給足 `--timeout`)、分段等待(單段 ≤ 9 分鐘之 until 迴圈)。log: `<前綴>.rest.log`、`<前綴>.e2e.log`、各組 `<前綴>.e2e-out/group<N>.log` 與 `group<N>.result.json`。只看分組不跑: `node node_modules/w-package-tools-e2e/tools/shardE2e.mjs --plan`(不取鎖、不建實例)。
+  3. **耗時分組**: 把一次全套之實測耗時寫回設定——`node node_modules/w-package-tools-e2e/tools/shardE2e.mjs --update-durations --out-dir <新夾>`(取 `quiet-run --lock-exclusive`)——只寫 `durations`, 不改其他鍵; 之後 `--plan` 看分組是否更平均. 新增 / 刪除 e2e 檔不必改 json(動態列舉, 缺 durations 者以平均估算)。
+  4. **新增 / 改寫 e2e 檔後**: 依 R-E2E-SHARD-01 第 3 條判定是否畫面含埠(標準圖顯示使用者之 `redir`、`baseUrl` / `apiUrl` 衍生之網址文字), 是則加入 `officialOnly`; 否則不必動. 判定法: 以 `E2E_PORT_OFFSET=100` 起臨時實例、`E2E_BASELINE_OUT_DIR` 產圖、`compareImageDirs` 對 `test/pics`(不動標準圖; 作法見全域技能 full-run-and-instances §5)。
+  5. **結束後**: 工具自行收尾並回驗(實例、連結、埠); 仍須確認 `netstat` 無 11007 / 8080 / 位移埠之殘留、`./tmp/e2e-shards/` 為空、`git status test/pics` 為空、`./testPending/` 無本輪新增、`dist/index.html` 已刪(見下節)。工具被硬殺(`taskkill /F`)時不會收尾, 由**下次開跑**清除殘留實例, 不要手動遞迴刪 `tmp/e2e-shards`(實例內有 junction 連回正式 `node_modules` 與 `test/pics`)。
+  6. **紅燈**: 先看 `group<N>.log` 之失敗案例與檔; 以 `E2E_PORT_OFFSET` 之組序判斷是否與位移有關(同一檔位移 0 綠、位移 N 紅 → 查是否畫面含埠或某處固定埠); 負載造成之 timing 失敗依 `sgud/exp/experience.md` 之失敗率作法判定, 不加長等待、不放寬容差。
 
 ## 標準圖之審查與判定由 agent 先行
 

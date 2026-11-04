@@ -11,10 +11,10 @@
 
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
-import { runIsolatedE2e, killPortListeners } from './e2eLib.mjs'
+import { runIsolatedE2e, killPortListeners, resolveE2ePort } from './e2eLib.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url)) //test/tools
-const BACKEND_PORT = 11007
+const BACKEND_PORT = resolveE2ePort(11007) //基準埠 11007 依 E2E_PORT_OFFSET 位移 (臨時實例); 未設時仍為 11007
 
 let { failed } = await runIsolatedE2e({
     projRoot: join(__dirname, '..', '..'),

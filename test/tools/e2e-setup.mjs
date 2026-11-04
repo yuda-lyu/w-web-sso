@@ -28,7 +28,8 @@ import {
     createServiceManager,
     registerCleanupHooks,
     itemsUnionBox,
-    probeStuckTooltip as pkgProbeStuckTooltip
+    probeStuckTooltip as pkgProbeStuckTooltip,
+    resolveE2ePort
 } from './e2eLib.mjs'
 
 //REGEN: 標準圖產製模式 (各檔直跑 --baseline 或 env E2E_REGEN=1). 供「只在 regen 才允許之副作用」判斷 (如 _staref 自舉)
@@ -43,16 +44,44 @@ async function launchBrowser() {
 //
 // e2e 共用 base URL: 一律 127.0.0.1 不用 localhost (webpack-dev-server 只綁 IPv4, localhost 先試 ::1 每連線多 ~155ms)
 //
-let baseUrl = 'http://127.0.0.1:8080'
-let apiUrl = 'http://127.0.0.1:11007'
+//多開 (2026-11-04 ws302): 基準埠寫死 (前端 8080、後端 11007), 實際埠經 resolveE2ePort 依環境變數 E2E_PORT_OFFSET 位移 (供 shardE2e 之臨時實例);
+//未設或為 0 時 resolveE2ePort 原樣回傳基準埠, 下列各處與導入前逐字相同.
+//本專案之後端埠只由 settings.json 之 serverPort 決定 (環境變數與命令列皆不能覆寫), 故位移時須另寫臨時 settings 帶實際埠 (見 genTempSettings、argsOf).
+const BACKEND_BASE_PORT = 11007
+const FRONTEND_BASE_PORT = 8080
+let baseUrl = `http://127.0.0.1:${resolveE2ePort(FRONTEND_BASE_PORT)}`
+let apiUrl = `http://127.0.0.1:${resolveE2ePort(BACKEND_BASE_PORT)}`
+let isPortShifted = resolveE2ePort(BACKEND_BASE_PORT) !== BACKEND_BASE_PORT
 
 
 //臨時 settings: 以 ./settings.json (JSON5) 淺合併 overrides 寫出純 JSON 至 test/_tmp/ (gitignore; ./tmp 為 AI 暫存區不可用),
 //供需不同設定啟動 backend 之情境 (如 allowUserRegistration=false); cleanup() 逐檔刪除
-let { genTempSettings, cleanupTempSettings } = createTempSettings({
+let { genTempSettings: genTempSettingsInner, cleanupTempSettings } = createTempSettings({
     basePath: './settings.json',
     tmpDir: path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '_tmp'),
 })
+
+//位移時於基底設定之上先注入三鍵 (再套呼叫端之 overrides): serverPort 為後端實際監聽埠; verifyBaseUrl 為驗證信內連結之後端網址
+//(少了它連結仍指向基準埠, 即他實例或無人之埠, e2e-login 之驗證信流程會連錯); siteUrl 為前端網址 (目前後端不讀取, 與 settings.json 同形保持一致).
+//主機維持 settings.json 原有之 localhost 形式. 未位移時不注入任何鍵: 臨時設定與導入前逐字相同.
+function genTempSettings(overrides = {}) {
+    let portOverrides = isPortShifted ? {
+        serverPort: resolveE2ePort(BACKEND_BASE_PORT),
+        verifyBaseUrl: `http://localhost:${resolveE2ePort(BACKEND_BASE_PORT)}`,
+        siteUrl: `http://localhost:${resolveE2ePort(FRONTEND_BASE_PORT)}`,
+    } : {}
+    return genTempSettingsInner({ ...portOverrides, ...overrides })
+}
+
+//位移時 srv.mjs 之設定路徑引數須指向帶實際埠之臨時設定: 預設 (未給或 './settings.json') 改走 genTempSettings({}), 已是臨時設定者 (測試以 genTempSettings 產生) 原樣.
+//未位移時 args 原樣傳入.
+function argsOf(args) {
+    if (!isPortShifted) {
+        return args
+    }
+    let a0 = args[0]
+    return [!a0 || a0 === './settings.json' ? genTempSettings({}) : a0, ...args.slice(1)]
+}
 
 
 //
@@ -70,17 +99,19 @@ let services = createServiceManager({
     services: [
         {
             name: 'backend',
-            port: 11007,
+            port: BACKEND_BASE_PORT, //基準埠; 實際埠由 createServiceManager 經 resolveE2ePort 位移
             readyTimeoutMs: 30000,
-            spawn: ({ args, env }) => spawn('node', ['srv.mjs', ...args], { stdio: 'ignore', env }),
+            spawn: ({ args, env }) => spawn('node', ['srv.mjs', ...argsOf(args)], { stdio: 'ignore', env, windowsHide: true }),
         },
         {
             name: 'frontend',
-            port: 8080,
+            port: FRONTEND_BASE_PORT,
             readyTimeoutMs: 90000, //vue-cli-service serve 首次編譯約 15~30 秒
             startNote: 'first compile ~15-30s',
             //單一指令字串: shell:true 帶參數陣列會觸發 Node 24 DEP0190(參數只被串接、不跳脫; 2026-09-30 改, 指令列相同)
-            spawn: () => spawn('npm run serve', { stdio: 'ignore', shell: true }),
+            //位移時以收到之 port 指定 dev server 埠 (未指定時 vue-cli 遇占用會自動遞增, 而本檔仍等實際埠); 未位移時維持原指令 'npm run serve'.
+            //dev server 之 proxy 目標由 vue.config.js 依同一環境變數位移 (子行程繼承 process.env)
+            spawn: ({ port }) => spawn(port === FRONTEND_BASE_PORT ? 'npm run serve' : `npm run serve -- --port ${port}`, { stdio: 'ignore', shell: true, windowsHide: true }),
         },
     ],
     killForeignOnRestart: true,
