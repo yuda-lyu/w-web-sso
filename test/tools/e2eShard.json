@@ -1,23 +1,22 @@
 {
     "ports": [11007, 8080],
     "instances": 5,
-    "officialOnly": ["e2e-adduser.test.mjs", "e2e-autologin.test.mjs", "e2e-login.test.mjs", "e2e-logout.test.mjs", "e2e-modifyuser.test.mjs"],
     "exclude": ["user_data"],
     "durations": {
-        "e2e-adduser.test.mjs": 19.65,
-        "e2e-autologin.test.mjs": 2.36,
-        "e2e-login.test.mjs": 8.02,
-        "e2e-logout.test.mjs": 2.92,
-        "e2e-modifyuser.test.mjs": 15.31,
-        "e2e-autoblock.test.mjs": 10.15,
-        "e2e-init.test.mjs": 1.03,
-        "e2e-stainfor.test.mjs": 7.04,
-        "e2e-changepassword.test.mjs": 4.33,
-        "e2e-ips.test.mjs": 3.62,
-        "e2e-tokens.test.mjs": 8.16,
-        "e2e-concurrency.test.mjs": 4.11,
-        "e2e-register.test.mjs": 8.15,
-        "e2e-deleteuser.test.mjs": 5.4,
-        "e2e-resetpassword.test.mjs": 8.45
+        "e2e-adduser.test.mjs": 20.75,
+        "e2e-autologin.test.mjs": 2.46,
+        "e2e-login.test.mjs": 8.69,
+        "e2e-logout.test.mjs": 2.93,
+        "e2e-modifyuser.test.mjs": 15.42,
+        "e2e-autoblock.test.mjs": 11.8,
+        "e2e-concurrency.test.mjs": 3.86,
+        "e2e-changepassword.test.mjs": 5.18,
+        "e2e-ips.test.mjs": 3.71,
+        "e2e-resetpassword.test.mjs": 9.14,
+        "e2e-deleteuser.test.mjs": 6.03,
+        "e2e-init.test.mjs": 1.42,
+        "e2e-tokens.test.mjs": 8.72,
+        "e2e-register.test.mjs": 10.06,
+        "e2e-stainfor.test.mjs": 7.51
     }
 }

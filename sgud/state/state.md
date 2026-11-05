@@ -55,7 +55,7 @@
 
 - **現況**: 已導入(見功能現況表). 改動: 新增 `test/tools/e2ePorts.mjs`(基準埠單一定義＋`reserveE2ePorts`)、`test/tools/e2ePortOverlay.mjs`(畫面含埠覆蓋); `e2e-setup.mjs`(自 `e2ePorts` 取基準埠、服務管理器帶 `reservation`、前端 dev server 輸出 pipe＋就緒後核對實際埠、截圖登記含埠區域＋`portCompareBuf`、後處理包裝延用區域、位移實例產製標準圖之守門)、`run-e2e-isolated.mjs`(`killPortListeners` → `reservation.killOwnListeners`, 遇他人占用 / 查不到即中止)、`e2eLib.mjs`(轉出 `reserveE2ePorts`, 移除 `killPortListeners`)、15 個 `e2e-*.test.mjs`(各 +`compareBuf: portCompareBuf` 與匯入, 共 3 行)、`api-serverport.test.mjs`(位移時略過)、歷史證據腳本 `spec/evidence/2026-10-25-sysfuncs/scripts/rerun.mjs`; 新增 `unit-e2ePortReserve`、`unit-e2ePortOverlay`. 未動 `src/`、`server/`、`srv.mjs`、`settings.json`、`vue.config.js`、`e2eShard.json`、`package.json` 版本、標準圖(`git status test/pics` 空)、`CLAUDE*.md`.
 - **驗證**(證據夾與數字見報告 `ws309-修正報告.md`): 修前以真實占用者對現況碼跑紅——占 11007 跑 `e2e-init` 10 passing / 離開碼 0 但占用者被殺; 占 8080 跑 `e2e-logout` 沿用占用者之服務(打到 19 次, 多案逾時); 逐檔 runner 於第一檔前即殺占用者. 修後同情境全綠、整組位移 `[11107, 8180]`、占用者 PID 不變且仍回應、被測碼打到 0 次. 位元組級等價(基準埠 vs 位移埠, 38 張): 16 張含埠圖覆蓋後與基準圖差異 0 且全落在覆蓋矩形內. 最近一次全套(2026-11-05 ws309 凍結碼, `full-suite.mjs`): **GREEN 1104 passing / 0 failing / 0 pending**——`rest` 814(含新增 29 案)、e2e 290(組 0 基準埠 120、組 1~4 位移 100~400 共 170); `test/pics` 0 變動; 變異測試 30/30 擊殺.
-- **officialOnly 5 檔仍維持**(覆蓋已證, 可移出, 待主控裁示; 移出須連同 `durations` 重分組).
+- **officialOnly 已移除(2026-11-05, 主控裁定)**: 畫面含埠之 16 張已由比對端覆蓋「:埠」處理且驗過位元組級等價, 5 檔不再綁組 0; `durations` 改用當日實測值重分組. 移除前組 0 約 50 分、其餘 4 組 16~18 分; 移除後實測見下一次全套紀錄. 上方兩條 officialOnly 敘述為移除前之歷史.
 - **已知限制**: 見 `rulebook_test.md` R-E2E-PORT-01 規則 9.
 
 ## 已知缺口與待辦(索引; 全文見 `rulebook_gaps.md`)
