@@ -14,7 +14,7 @@
 
 - **關聯**: `package.json` scripts 之 `test`(唯一 script, 全域 §16.5 標準字串); 各層指令與 runner 見 rulebook「執行入口」.
 - **判斷**: `npm test` 是跨套件批次維護、確認套件能完整測試之保證手段, **字串固定不得改, 不因專案測試結構調整 glob, 不加任何變體**. agent 自身要驗證什麼, 一律自編指令執行(單層 / 單檔 / 全套 / 重產), 不進 scripts.
-- **處理**: 起跑前 `netstat -ano | grep -E ":(11007|8080) " | grep LISTENING` 看是誰的——非自己起的先回報不殺(harness 之 `killPort(11007)` 為明文例外, 見 `CLAUDE.md` 服務 port 要點); e2e 全套(單一序列)約 100 分鐘走 `run_in_background`(2026-11-04 起「全套」改走多開, 見下「e2e 全套跑法(多開)」); **同一時間只有一條鏈**(重產與 mocha 共用 11007 後端與 DB); log 檔名每輪不重用. 背景起 dev server 後**須等其 log 出現 `App running at` 才跑 api / e2e**——api 與 e2e 之 `startServersOnce` 見 8080 尚未監聽即自起前端, 與編譯中之 dev server 搶埠, 一方 `EADDRINUSE` 退出(2026-09-24 實際踩到: 起 dev server 後隨即跑 unit+api, dev server 綁定失敗). 跑完判準不只綠: `test/_tmp/` 無殘留、`./testPending/` 無本輪新增(或已分析)、`netstat` 無自己起的殘留、`dist/index.html` 已刪(見下節)、`./tmp/` 清乾淨.
+- **處理**: 起跑前 `netstat -ano | grep -E ":(11007|8080) " | grep LISTENING` 看是誰的——非自己起的先回報不殺(harness 亦只殺身分已確認屬本實例者, 他人占用時整組換埠而不殺, 見 `CLAUDE.md` 服務 port 要點與 R-E2E-PORT-01); e2e 全套(單一序列)約 100 分鐘走 `run_in_background`(2026-11-04 起「全套」改走多開, 見下「e2e 全套跑法(多開)」); **同一時間只有一條鏈**(重產與 mocha 共用 11007 後端與 DB); log 檔名每輪不重用. 背景起 dev server 後**須等其 log 出現 `App running at` 才跑 api / e2e**——api 與 e2e 之 `startServersOnce` 見 8080 尚未監聽即自起前端, 與編譯中之 dev server 搶埠, 一方 `EADDRINUSE` 退出(2026-09-24 實際踩到: 起 dev server 後隨即跑 unit+api, dev server 綁定失敗). 跑完判準不只綠: `test/_tmp/` 無殘留、`./testPending/` 無本輪新增(或已分析)、`netstat` 無自己起的殘留、`dist/index.html` 已刪(見下節)、`./tmp/` 清乾淨.
 
 ## api 測試層之強制退出與檔級清理
 
@@ -54,6 +54,18 @@
   4. **新增 / 改寫 e2e 檔後**: 依 R-E2E-SHARD-01 第 3 條判定是否畫面含埠(標準圖顯示使用者之 `redir`、`baseUrl` / `apiUrl` 衍生之網址文字), 是則加入 `officialOnly`; 否則不必動. 判定法: 以 `E2E_PORT_OFFSET=100` 起臨時實例、`E2E_BASELINE_OUT_DIR` 產圖、`compareImageDirs` 對 `test/pics`(不動標準圖; 作法見全域技能 full-run-and-instances §5)。
   5. **結束後**: 工具自行收尾並回驗(實例、連結、埠); 仍須確認 `netstat` 無 11007 / 8080 / 位移埠之殘留、`./tmp/e2e-shards/` 為空、`git status test/pics` 為空、`./testPending/` 無本輪新增、`dist/index.html` 已刪(見下節)。工具被硬殺(`taskkill /F`)時不會收尾, 由**下次開跑**清除殘留實例, 不要手動遞迴刪 `tmp/e2e-shards`(實例內有 junction 連回正式 `node_modules` 與 `test/pics`)。
   6. **紅燈**: 先看 `group<N>.log` 之失敗案例與檔; 以 `E2E_PORT_OFFSET` 之組序判斷是否與位移有關(同一檔位移 0 綠、位移 N 紅 → 查是否畫面含埠或某處固定埠); 負載造成之 timing 失敗依 `sgud/exp/experience.md` 之失敗率作法判定, 不加長等待、不放寬容差。
+
+## e2e 單開遇埠被占用(自動換埠; 2026-11-05 ws309, R-E2E-PORT-01)
+
+- **關聯**: `test/tools/e2ePorts.mjs`(基準埠與保留)、`e2e-setup.mjs`、`run-e2e-isolated.mjs`、`e2ePortOverlay.mjs`; 規格 `C:/opensrcOper/dspec/e2e埠與多套件同跑.md`; 套件 README §2.12; 規則見 `sgud/rule/rulebook_test.md` R-E2E-PORT-01.
+- **判斷**: 單檔 / 受影響測試(在正式目錄以單一 mocha 跑)啟動時若 11007 或 8080 被別的套件占用, 輸出會有 `[e2e-port] 基準埠 [11007, 8080] → 實際埠 [11107, 8180](位移 100)` 與占用者(PID、映像)——這是預期, 不是錯誤, 測試照跑; 沒有占用時無此行(或印 `埠 [11007, 8080](基準埠)`). 8080 常被 w-pubsub、w-serv-broadcast、w-flow-vue 占用.
+- **處理**:
+  1. **不殺占用者**: 看到位移就接受; 要沿用本機自己已起之開發服務(後端 11007 / 前端 8080)才手動設 `E2E_PORT_OFFSET=0`(此時 `restartBackend` 遇他人占用拋錯而不殺; 逐檔 runner 每檔前遇非本實例之監聽者會中止).
+  2. **位移實例不得產製標準圖**: `--baseline` / `E2E_REGEN=1` 在位移實例(未設 `E2E_BASELINE_OUT_DIR`)載入 `e2e-setup` 即拋錯; 要產標準圖待基準埠空閒再產(定點重產仍須授權, 見上).
+  3. **位移時畫面含埠之 5 流程**(adduser、modifyuser、login、logout、autologin)由比對端覆蓋「:埠」; 比對失敗時 `./testPending/` 之 diff 若只在 redir 儲存格而非埠字形, 是真迴歸.
+  4. **查「誰占著」**: `netstat` 在本機會列錯狀態 / 漏列新起的監聽(實測), 判定埠是否空閒用 `reserveE2ePorts` 同法——四個位址(127.0.0.1、0.0.0.0、::、::1)實際綁定; 判「某 PID 是否在監聽」看 `Get-NetTCPConnection` 之 `RemotePort -eq 0` 列, 不看 State 欄.
+  5. **單元測試**(`unit-e2ePortReserve`、`unit-e2ePortOverlay`)占用者占動態埠, 不碰真實 8080 / 11007, 可在任何時候跑; 新增任何寫死的監聽埠須同步 `e2ePorts.mjs` 之 `OTHER_TEST_PORTS`(PR-013 會紅).
+  6. **新增 / 改寫 e2e 檔**: `runBaselineCase` 必帶 `compareBuf: portCompareBuf`(PR-014); 截圖一律經 `e2e-setup` 之 `captureStable` / `captureStableWithBox`(不直接用 `e2eLib` 轉出之原生版, 否則位移時不登記含埠區域).
 
 ## 標準圖之審查與判定由 agent 先行
 

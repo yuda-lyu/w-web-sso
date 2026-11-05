@@ -7,7 +7,7 @@ import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
 import procLang from '../server/procLang.mjs'
 import { mdiKeyPlus } from '@mdi/js/mdi.js'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, launchBrowser, waitUntilExist, typeIntoInput } from './tools/e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, portCompareBuf, launchBrowser, waitUntilExist, typeIntoInput } from './tools/e2e-setup.mjs'
 import { callFapi } from './tools/api-setup.mjs' //僅 mocha 端之端到端不變式(app token 實際可否呼叫)使用; regen 端不呼叫, 不建立連線
 //產製端與比對端同一案例管線 (2026-09-27 起, 規格詳 w-package-tools-e2e 之 README.md §2.1-2.2)
 import { runBaselineCase, createBaselineGate, assertTextSpec, pageHasText, collectDomText, waitGridIdle, gridContentBox, itemsUnionBox } from './tools/e2eLib.mjs'
@@ -1501,6 +1501,7 @@ async function runCase(mode, lang, c, extra = {}) {
         pathOf: bp,
         labelOf: (lg, key) => `tokens-${lg}-${key}`,
         match: c.pendingBaseline ? matchPendingBaseline : assertBaselineMatch,
+        compareBuf: portCompareBuf, //位移(單開被占用而自動換埠)時含實際埠之區域由比對端覆蓋; 未位移為 null(R-E2E-PORT-01)
         prepare: async () => {
             await deleteTestUsersAndTokens()
             await insertTestUsersAndTokensAndTestTokens()

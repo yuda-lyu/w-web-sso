@@ -5,7 +5,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, assertBaselineMatch, launchBrowser } from './tools/e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, assertBaselineMatch, portCompareBuf, launchBrowser } from './tools/e2e-setup.mjs'
 //產製端與比對端同一案例管線 (2026-09-28 起, 規格詳 w-package-tools-e2e 之 README.md §2.1-2.2)
 import { runBaselineCase, createBaselineGate, assertTextSpec, gridContentBox } from './tools/e2eLib.mjs'
 
@@ -934,6 +934,7 @@ async function runCase(mode, lang, c, extra = {}) {
         pathOf: bp,
         labelOf: (lg, key) => `resetpassword-${lg}-${key}`,
         match: assertBaselineMatch,
+        compareBuf: portCompareBuf, //位移(單開被占用而自動換埠)時含實際埠之區域由比對端覆蓋; 未位移為 null(R-E2E-PORT-01)
         prepare: async (ctx) => {
             ctx.target = targetOf(lang)
             await seedRp()

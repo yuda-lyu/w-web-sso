@@ -8,7 +8,7 @@
 
 | 要查什麼 | 檔 | 內容 |
 |---|---|---|
-| 測試配置全節、**R-E2E-SHARD-01** | `rulebook_test.md` | 測試配置全節: 執行入口、spec→測試檔對照、unit / api / e2e 各層、工具層、目錄與資產、seed、e2e 契約映射; **R-E2E-SHARD-01**(e2e 分組多開: 基準埠 + `E2E_PORT_OFFSET` 位移、畫面含埠之檔列 `officialOnly`、全套跑法; 2026-11-04 ws302, 排程第 302 項) |
+| 測試配置全節、**R-E2E-SHARD-01** | `rulebook_test.md` | 測試配置全節: 執行入口、spec→測試檔對照、unit / api / e2e 各層、工具層、目錄與資產、seed、e2e 契約映射; **R-E2E-SHARD-01**(e2e 分組多開: 基準埠 + `E2E_PORT_OFFSET` 位移、畫面含埠之檔列 `officialOnly`、全套跑法; 2026-11-04 ws302, 排程第 302 項); **R-E2E-PORT-01**(e2e 單開自動換埠: 基準埠被他人占用時整組位移、只殺身分已確認屬本實例者、畫面含埠由比對端覆蓋; 2026-11-05 ws309, 排程第 309 項, ADR-104) |
 | 專案特有機制(含補充)、R-STA-01 | `rulebook_mechanism.md` | 專案特有機制(含補充): 統計頁確定性資料、XFF 本機注入、雙擊 / 並發契約、app token、email、語系、對外查詢 helper 等; **R-STA-01**(統計之桶輸出以「現在」所屬桶為上界, 未來時間桶不輸出; 2026-11-03 ss56, ADR-102) |
 | R-VUE-01、R-VUE-02、R-UI-01、R-UI-02、R-UI-03 | `rulebook_ui.md` | R-VUE-01、R-VUE-02、R-UI-01、R-UI-02、R-UI-03 |
 | R-SEC-01、R-LOG-01、R-PERM-01、R-SESS-01、R-APPTOK-01、R-SYS-01、R-IP-01、R-QKEY-01 | `rulebook_security.md` | R-SEC-01、R-LOG-01(console 診斷不輸出資料值, 2026-10-31 第 191 項, ADR-101; 取代 R-SEC-01 之 console 處置)、R-PERM-01、R-SESS-01(改密碼後之 session 處置, 2026-10-23 第 117 項)、R-APPTOK-01(應用系統金鑰兩種用途與身分驗證缺口 S-1~S-6, 2026-10-24 sso-run01)、R-SYS-01(框架系統函數之身分關卡 `sysFuncsPublic`, 2026-10-25 sso-run01, ADR-096)、R-IP-01、R-QKEY-01 |

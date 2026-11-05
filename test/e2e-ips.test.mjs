@@ -5,7 +5,7 @@ import ot from 'dayjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, launchBrowser, waitUntilExist, typeIntoNthInput } from './tools/e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, assertBaselineMatch, portCompareBuf, launchBrowser, waitUntilExist, typeIntoNthInput } from './tools/e2e-setup.mjs'
 //產製端與比對端同一案例管線 (規格詳 w-package-tools-e2e 之 README.md §2.1-2.2); 頁面文字走訪與 text 斷言取自 w-package-tools-e2e (原檔內手寫 pageHasText / collectVisibleText, 內容相同)
 import { runBaselineCase, createBaselineGate, assertTextSpec, pageHasText, collectDomText, waitGridIdle, gridContentBox } from './tools/e2eLib.mjs'
 
@@ -713,6 +713,7 @@ async function runCase(mode, lang, c, extra = {}) {
         pathOf: bp,
         labelOf: (lg, key) => `ips-${lg}-${key}`,
         match: assertBaselineMatch,
+        compareBuf: portCompareBuf, //位移(單開被占用而自動換埠)時含實際埠之區域由比對端覆蓋; 未位移為 null(R-E2E-PORT-01)
         prepare: async () => {
             await deleteTestUsersAndTokensAndIps()
             await insertTestUsersAndTokensAndIps()

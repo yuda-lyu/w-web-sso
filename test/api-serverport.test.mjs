@@ -15,6 +15,7 @@ import { fileURLToPath } from 'url'
 import JSON5 from 'json5'
 import { startServersOnce, apiUrl } from './tools/api-setup.mjs'
 import { restartBackend } from './tools/e2e-setup.mjs'
+import { BACKEND_PORT, reservation } from './tools/e2ePorts.mjs'
 
 
 let fdTmp = path.join(path.dirname(fileURLToPath(import.meta.url)), '_tmp', 'api-serverport')
@@ -53,6 +54,12 @@ describe('部署設定之 serverPort 缺省 / 無效時之監聽埠 (ADR-085)', 
     ]
     for (let [id, label, mutate] of cases) {
         it(`${id} ${label}: 後端於 11007 就緒並回應`, async function() {
+            //本案斷言產品之預設埠 11007 本身(缺鍵／無效時後端須聽 11007): 前提是 11007 為本實例所有。基準埠被他人占用而整組位移(ws309 自動換埠)、
+            //或多開實例位移時, 本實例之後端埠不是 11007——預設埠無從驗起(強行啟動會綁到別人的 11007 或逾時), 且不得為此下殺占用者(規格 E4)。
+            //明確略過並寫明原因(不靜默通過); 沒有位移(全套之 rest 段、單開且 11007 空閒)時照常驗, 此為環境前提而非常態略過。
+            if (reservation.portOf(BACKEND_PORT) !== BACKEND_PORT) {
+                this.skip()
+            }
             let fp = writeSettings(id, mutate)
             //spec: 後端監聽 11007——restartBackend 等 11007 就緒, 逾時即拋錯(修改前後端改聽 8080 而逾時)
             await restartBackend(fp)

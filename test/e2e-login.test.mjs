@@ -6,7 +6,7 @@ import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import ds from '../src/schema/index.mjs'
 import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
-import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, launchBrowser, backstageMenuBox, waitUntilExist } from './tools/e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStable, captureStableWithBox, assertBaselineMatch, portCompareBuf, baseUrl, resetToBaseSeed, deleteNonBaseSeed, typeIntoInput, launchBrowser, backstageMenuBox, waitUntilExist } from './tools/e2e-setup.mjs'
 import { runBaselineCase, createBaselineGate, pageHasText, collectDomText, itemsUnionBox, waitAlertGone } from './tools/e2eLib.mjs'
 import { mdiEye, mdiEyeOff } from '@mdi/js/mdi.js'
 
@@ -982,6 +982,7 @@ async function runCase(mode, lang, c, extra = {}) {
         pathOf: bp,
         labelOf: (lg, key) => (c.compareOnly ? `login-${lg}-${c.name}-shared-${key}` : `login-${lg}-${key}`),
         match: assertBaselineMatch,
+        compareBuf: portCompareBuf, //位移(單開被占用而自動換埠)時含實際埠之區域由比對端覆蓋; 未位移為 null(R-E2E-PORT-01)
         prepare: seedDb
             ? async () => {
                 await deleteTestUsers()

@@ -7,7 +7,7 @@ import hashPassword from '../server/hashPassword.mjs'
 import { woItems } from '../g_mOrm.mjs'
 import { buildBaseUsers, buildBaseTokens } from '../g_initialData.mjs'
 import procLang from '../server/procLang.mjs'
-import { startServersOnce, cleanup, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, cleanKpIpCallApi, assertBaselineMatch, launchBrowser, waitUntilExist } from './tools/e2e-setup.mjs'
+import { startServersOnce, cleanup, captureStableWithBox, baseUrl, resetToBaseSeed, deleteNonBaseSeed, cleanKpIpCallApi, assertBaselineMatch, portCompareBuf, launchBrowser, waitUntilExist } from './tools/e2e-setup.mjs'
 import { runBaselineCase, createBaselineGate, pageHasText, collectDomText, waitGridIdle, pollUntil } from './tools/e2eLib.mjs'
 
 
@@ -537,6 +537,7 @@ async function runCase(mode, lang, c, extra = {}) {
         pathOf: bp,
         labelOf: (lg, key) => `concurrency-${lg}-${key}`,
         match: assertBaselineMatch,
+        compareBuf: portCompareBuf, //位移(單開被占用而自動換埠)時含實際埠之區域由比對端覆蓋; 未位移為 null(R-E2E-PORT-01)
         prepare: async () => {
             //每案自行重設為固定種子狀態, 不依賴前序測試之殘留(skill role-coder-for-test-e2e §6):
             //① 先清 server 記憶體之 IP 調用計數: ips 表之列不只來自 DB 寫入, ipDetectNew 計時器(每 2 秒)會把計數內「表中尚無」之 IP 補登進表,

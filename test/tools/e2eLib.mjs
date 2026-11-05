@@ -4,6 +4,7 @@
 //2026-10-30 升 1.0.12: 套件移除 parseListenerPids(含 src/parseListenerPids.mjs; 其解析 netstat 之「狀態為 LISTENING」或條件會把對外連線誤判為監聽), 本檔刪該轉出(本專案無使用者);
 //  查埠一律用 listenerPids(查詢失敗回 null, [] 只代表已確認無人)/ killPortListeners(查詢失敗不下殺), 二者改委由 wsemi execProcessPortPidsSync, 本專案之呼叫(run-e2e-isolated 與 createServiceManager)未傳 opt.exec, 不受 exec 形狀改變影響.
 //2026-11-04 ws302 升 1.0.20 並導入分組多開: 新增轉出 resolveE2ePort(依 E2E_PORT_OFFSET 把基準埠位移為實際埠; 未設或 0 時原值, 行為與導入前相同); 多開由 node_modules/w-package-tools-e2e/tools/shardE2e.mjs 驅動(設定見 ./e2eShard.json, 全套跑法見 sgud/proc/process.md).
+//2026-11-05 ws309 導入單開自動換埠(w-package-tools-e2e >= 1.0.22 README §2.12): 新增轉出 reserveE2ePorts(只由 ./e2ePorts.mjs 呼叫); 移除 killPortListeners 轉出(依埠下殺會殺到別的套件正在跑之服務, 規格 E4; 下殺一律改 reservation.killOwnListeners, 見 R-E2E-PORT-01).
 //共用層與測試檔一律自本檔 import, 不直接引用套件路徑; 套件之 src/launchChromium.mjs 不經本檔匯出, 由 launchBrowser 內部使用.
 export { default as assertBaselineMatch } from 'w-package-tools-e2e/src/assertBaselineMatch.mjs'
 export { default as assertTextSpec } from 'w-package-tools-e2e/src/assertTextSpec.mjs'
@@ -27,7 +28,6 @@ export { default as inkRect, INK_PAD } from 'w-package-tools-e2e/src/inkRect.mjs
 export { default as isChildAlive } from 'w-package-tools-e2e/src/isChildAlive.mjs'
 export { default as itemsUnionBox } from 'w-package-tools-e2e/src/itemsUnionBox.mjs'
 export { default as killOwnTree } from 'w-package-tools-e2e/src/killOwnTree.mjs'
-export { default as killPortListeners } from 'w-package-tools-e2e/src/killPortListeners.mjs'
 export { default as launchBrowser } from 'w-package-tools-e2e/src/launchBrowser.mjs'
 export { default as listenerPids } from 'w-package-tools-e2e/src/listenerPids.mjs'
 export { default as maskRegions } from 'w-package-tools-e2e/src/maskRegions.mjs'
@@ -41,6 +41,7 @@ export { default as pollUntil } from 'w-package-tools-e2e/src/pollUntil.mjs'
 export { default as probeHttp } from 'w-package-tools-e2e/src/probeHttp.mjs'
 export { default as probeStuckTooltip } from 'w-package-tools-e2e/src/probeStuckTooltip.mjs'
 export { default as registerCleanupHooks } from 'w-package-tools-e2e/src/registerCleanupHooks.mjs'
+export { default as reserveE2ePorts } from 'w-package-tools-e2e/src/reserveE2ePorts.mjs'
 export { default as resolveE2ePort } from 'w-package-tools-e2e/src/resolveE2ePort.mjs'
 export { default as resetAgGridScroll } from 'w-package-tools-e2e/src/resetAgGridScroll.mjs'
 export { default as rowBoxSel } from 'w-package-tools-e2e/src/rowBoxSel.mjs'

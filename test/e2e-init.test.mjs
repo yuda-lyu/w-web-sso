@@ -1,7 +1,7 @@
 import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
-import { cleanup, captureStableWithBox, apiUrl, genTempSettings, restartBackend, assertBaselineMatch, launchBrowser } from './tools/e2e-setup.mjs'
+import { cleanup, captureStableWithBox, apiUrl, genTempSettings, restartBackend, assertBaselineMatch, portCompareBuf, launchBrowser } from './tools/e2e-setup.mjs'
 //產製端與比對端同一案例管線 (規格詳 w-package-tools-e2e 之 README.md §2.1-2.2)
 import { runBaselineCase, createBaselineGate, openCasePage, itemsUnionBox } from './tools/e2eLib.mjs'
 
@@ -191,6 +191,7 @@ async function runCase(mode, lang, c, extra = {}) {
         pathOf: bp,
         labelOf: (lg, key) => `init-${lg}-${key}`,
         match: assertBaselineMatch,
+        compareBuf: portCompareBuf, //位移(單開被占用而自動換埠)時含實際埠之區域由比對端覆蓋; 未位移為 null(R-E2E-PORT-01)
         prepare: async () => {
             await restartBackend(genTempSettings({ language: lang }))
         },
