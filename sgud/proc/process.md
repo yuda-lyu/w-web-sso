@@ -54,6 +54,7 @@
   4. **新增 / 改寫 e2e 檔後**: 依 R-E2E-SHARD-01 第 3 條判定是否畫面含埠(標準圖顯示使用者之 `redir`、`baseUrl` / `apiUrl` 衍生之網址文字), 是則加入 `officialOnly`; 否則不必動. 判定法: 以 `E2E_PORT_OFFSET=100` 起臨時實例、`E2E_BASELINE_OUT_DIR` 產圖、`compareImageDirs` 對 `test/pics`(不動標準圖; 作法見全域技能 full-run-and-instances §5)。
   5. **結束後**: 工具自行收尾並回驗(實例、連結、埠); 仍須確認 `netstat` 無 11007 / 8080 / 位移埠之殘留、`./tmp/e2e-shards/` 為空、`git status test/pics` 為空、`./testPending/` 無本輪新增、`dist/index.html` 已刪(見下節)。工具被硬殺(`taskkill /F`)時不會收尾, 由**下次開跑**清除殘留實例, 不要手動遞迴刪 `tmp/e2e-shards`(實例內有 junction 連回正式 `node_modules` 與 `test/pics`)。
   6. **紅燈**: 先看 `group<N>.log` 之失敗案例與檔; 以 `E2E_PORT_OFFSET` 之組序判斷是否與位移有關(同一檔位移 0 綠、位移 N 紅 → 查是否畫面含埠或某處固定埠); 負載造成之 timing 失敗依 `sgud/exp/experience.md` 之失敗率作法判定, 不加長等待、不放寬容差。
+  7. **TIME_WAIT 偏高(主控監看 `[ports] HIGH`、同機他測試 `connect EADDRINUSE`)**: 修後(2026-11-07 ss324)本套件分拆 e2e 之全機 TIME_WAIT 峰值約 400; 再見上萬者先回原始紀錄看**本機埠與遠端埠兩欄**(伺服端先關者本機埠為服務埠), 再查 `vue.config.js` 之 proxy 是否仍帶 keep-alive agent(R-E2E-PROXY-01); 量測法見 `sgud/exp/experience.md`〈TIME_WAIT 量測〉。
 
 ## e2e 單開遇埠被占用(自動換埠; 2026-11-05 ws309, R-E2E-PORT-01)
 

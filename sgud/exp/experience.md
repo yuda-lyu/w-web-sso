@@ -295,3 +295,12 @@
 - **獨立審查(唯讀 sonnet 子代理)有效, 且改完要再審一次**: 第一輪 13 條(中 3、低 10)——整行覆蓋吞真差異、後處理 Buffer 查不到區域、單元測試受外層 `E2E_BASELINE_OUT_DIR` 影響; 第二輪複審 14 條(高 1、中 4、低 9)——高度那條正是第一輪修正引入之回歸(`composeBox` 丟 `opt`), 另有守門正規式對 `process.kill(pid, 0)` 假陽性、夾邊斷言無鑑別力(白蓋白)、單元測試對真實 11007／8080 做瞬間綁定探測、子行程收尾固定耗滿 15 秒。皆已處理或據實列限制. 提示詞要給「要實際讀碼查證」與具體檔案, 並要求依埠 / 名稱 / 命令列分開盤點下殺; 複審提示詞要列「上一輪發現編號與修法」請其逐項核對並找新引入問題.
 - **斷言要有鑑別力**: 夾邊測試第一版比對的範圍在純白區, 夾邊程式碼拿掉照樣綠; 改為合成圖在覆蓋範圍外一格放紅點、範圍內放紅點, 拿掉夾邊即紅. 靜態守門之正規式要附正反例驗證(`process.kill(pid, 0)` 合法、`process.kill(-pid)`／跨行／`SIGKILL` 違規).
 - **`api-serverport` 這類斷言產品預設埠本身的測試**, 位移時無從驗(強行啟動會綁到別人的 11007 或逾時), 明確 `this.skip()` 並寫明原因, 列為已知限制, 不為此下殺占用者.
+
+## TIME_WAIT 量測: 本機埠與遠端埠兩欄都看; 以「新增之四元組」計量而非現存數; 加一層 node 連線計數 preload 才分得出是誰連出(2026-11-07, ss324, 排程第 324 項, R-E2E-PROXY-01)
+
+- **方向別讀反**: 伺服端先關時, TIME_WAIT 之**本機埠**是服務埠(11207、8280), 遠端才是臨時埠. 主控監看之 `[ports] HIGH` 行只印 `RemotePort` 分組, 11-05 那次印出「遠端 8280×1,772、11207×1,282」, 同一筆紀錄之 `twLocal` 卻是 11207×6,960、8280×6,552——主體在另一欄. 派工前提「遠端埠為主 → 本機為用戶端先關」因此不成立; 先回原始紀錄兩欄都看再推論.
+- **量測法**(腳本 `twSampler.mjs`、`sockcount.cjs`、`analyze.mjs` 之副本隨 ss324 報告證據保存, repo 內 `tmp/ss324/` 已清; 方法留此): ①每 5 秒 `netstat -ano` 取樣, 以「本輪新出現之 TIME_WAIT 四元組」計「新增量」(TIME_WAIT 存活約 2 分鐘 > 取樣間隔, 每次關閉都會被看到), 現存數只用來看峰值; 另記「本機埠 ≥ 49152 之端點數」當動態埠占用; ②每秒讀分拆各組 log 之新行加時戳, 依描述字樣(`AddUser E2E`…)對到檔、依下一個完成之 `✔` 對到案例; ③TIME_WAIT 之 PID 恆 0 看不出是誰, 故以 `NODE_OPTIONS=--require <preload>` 對分拆實例內全部 node 行程包 `net.Socket.prototype.connect` 與 `net.Server.prototype.emit('connection')`, 依遠端 / 本機埠記連線數(只記錄、不改行為; 不加 `error` 監聽——那會吞掉原本會拋出之錯誤). 「誰先關」以時間戳判會失準(同毫秒雙方都記成本機先關), 以 netstat 為準.
+- **數字直接指出源頭**: 修前後端接受 29,833 條連線中 29,592 條由 dev server proxy 連出; 經 proxy 之 12,001 次請求(`e2e-autoblock` E2E-006)一案新增 1.8 萬個 TIME_WAIT, 同組直打後端之 1,001 次只增約 23 個——瀏覽器與後端本身會重用連線, 問題只在 proxy(http-proxy 未給 agent 即 `agent:false` + `Connection: close`, 回應之 close 又轉回瀏覽器).
+- **修 proxy 前先驗 dev server 收不收新選項**: webpack-dev-server 對 proxy 設定有驗證、vue-cli 之 `prepareProxy` 會合併預設值; 修後先單跑一支小 e2e(真 dev server)並掛 preload 看連線數, 確認 dev server 起得來、連線確實重用, 才發動只有一次機會之修後全套.
+- **單元測試走實際建構路徑**: `unit-devProxyKeepAlive` 以 `prepareProxy(vueConfig.devServer.proxy)` → `createProxyMiddleware(context, config)`(webpack-dev-server 同法)掛在 `listen(0)` 之本機服務, 斷言「N 請求後端 1 條、用戶端 1 條、回應無 `Connection: close`、內容不變」; 修前 20 / 20 紅.
+- **排鎖期間不能用前景等**: 他套件之 `--lock-exclusive` 負載試驗會連續插隊(本輪單元測試等了 13 分鐘); 背景指令 10 分鐘會被收掉, 一律以 detached 啟動器(輸出寫檔、結束追加 `EXIT <碼>`)起跑再以前景 until 迴圈分段輪詢. shell 重導向寫檔會被主控守門擋, 啟動器以 Write 寫成 `.mjs`.

@@ -1,6 +1,6 @@
 # 現況(state)
 
-本檔只記**現況**(各功能做到哪裡、對應之規則帳本條目與測試檔、已知缺口與待辦、最近一次驗證或發布之版本); 不寫過程(過程入 `sgud/exp/experience.md`). 接續工作先讀本檔. 完成一項功能或結束一輪工作時更新. 2026-10-22 建立(第 111 項 inv01 盤點輪); 2026-10-23 更新(第 111 項第二波 sso-run01 實作輪; sso-run02 e2e 隔離修正; sso-run03 清單存檔不得新增 session 列; sso-run04 改密碼後之 session 處置〔第 117 項〕與清單 redir 檢查範圍〔第 116 項〕); 2026-10-26 更新(sso-run01 角色名稱統一為「系統管理者」, Gitea issue #17; sso-run02 角色用詞全面統一, ADR-097); 2026-10-31 更新(sso-run01 console 診斷不輸出資料值, 第 191 項, ADR-101); 2026-11-03 更新(ss56 統計之桶輸出不含未來時間桶, Gitea #56, ADR-102 / R-STA-01); 2026-11-04 更新(ws302 e2e 分組多開導入, 排程第 302 項, R-E2E-SHARD-01); 2026-11-05 更新(ws309 e2e 單開自動換埠導入, 排程第 309 項, R-E2E-PORT-01).
+本檔只記**現況**(各功能做到哪裡、對應之規則帳本條目與測試檔、已知缺口與待辦、最近一次驗證或發布之版本); 不寫過程(過程入 `sgud/exp/experience.md`). 接續工作先讀本檔. 完成一項功能或結束一輪工作時更新. 2026-10-22 建立(第 111 項 inv01 盤點輪); 2026-10-23 更新(第 111 項第二波 sso-run01 實作輪; sso-run02 e2e 隔離修正; sso-run03 清單存檔不得新增 session 列; sso-run04 改密碼後之 session 處置〔第 117 項〕與清單 redir 檢查範圍〔第 116 項〕); 2026-10-26 更新(sso-run01 角色名稱統一為「系統管理者」, Gitea issue #17; sso-run02 角色用詞全面統一, ADR-097); 2026-10-31 更新(sso-run01 console 診斷不輸出資料值, 第 191 項, ADR-101); 2026-11-03 更新(ss56 統計之桶輸出不含未來時間桶, Gitea #56, ADR-102 / R-STA-01); 2026-11-04 更新(ws302 e2e 分組多開導入, 排程第 302 項, R-E2E-SHARD-01); 2026-11-05 更新(ws309 e2e 單開自動換埠導入, 排程第 309 項, R-E2E-PORT-01); 2026-11-07 更新(ss324 dev server proxy 重用連線, 排程第 324 項, R-E2E-PROXY-01).
 
 ## 版本與依賴
 
@@ -29,6 +29,7 @@
 | console 診斷不輸出資料值(第 191 項; 跨套件規格 dspec〈診斷輸出與遮罩〉D2「預設不輸出資料值」與〈輸入參數之檢測機制〉V20; 使用者 2026-10-29 裁示) | **已做**(2026-10-31 sso-run01, ADR-101 取代 ADR-068 M 契約之 console 規則、ADR-098 / 099 範圍外觀察之 console 部分): 修前活碼 console 站點 125 處全表判定——輸出資料值而**已改** 40(`server/` 36〔`procCore` 27、`procProtect` 3、`WWebSso` 6 含 `logBoot` 3 個呼叫點〕、`srv.mjs` 1、`src/fetchSsoMsg.mjs` 1、離線種子腳本 2)、不輸出資料值 38(固定詞彙、標頭名稱、伺服器時鐘等)、**瀏覽器端 47 處輸出列物件 / 後端回傳值 / 錯誤值 / URL 參數而不改**(派工限定伺服端、不改畫面; 列待裁示). 規則: console 只印固定詞彙、鍵名(`logKey`: 限資料表欄位名單)、型別(`logType` → `(typeof x)`)、錯誤摘要(`diag.brief` / `getDiagBriefErr` → `{ errType, errCode }`)與程式自產之值; 查詢值(含識別欄)、IP、`timeEnd`、設定值、語系值、後端 / 驅動 / SMTP 錯誤原文一律不印; 被封鎖 IP 改只印 `block ip`(IP 仍在 verifyConn 之 `srLog.info`); helper 診斷行不再印網址範本. **srLog 欄位(`err` 含主鍵等)、reject 訊息帶值、瀏覽器端 console 為範圍外, 未改**(ADR-101 範圍外觀察) | R-LOG-01(`rulebook_security.md`; 取代 R-SEC-01 之 console 處置) | `unit-consoleNoLeak`(22: CNL-C / P / W / F / H、SITE-CNL-001~005)、`api-consoleNoLeak`(5: CNL-A01~A05); 調整: `unit-queryKey` QK-008、`unit-diaglog` DGX-04 與 SITE-DG-008 |
 | e2e 全套多開(測試基礎設施; 排程第 302 項, 2026-11-04 ws302) | **已導入**: `test/tools/e2eShard.json` + `E2E_PORT_OFFSET` / `resolveE2ePort` 接線(`e2e-setup.mjs`、`run-e2e-isolated.mjs`、`vue.config.js`); 全套 = `node C:/opensrcOper/tools/full-suite.mjs <套件根>`(非 e2e 在正式目錄單一 mocha、e2e 以 `shardE2e` 5 組多開); `officialOnly` 5 檔(畫面含埠); 未設 `E2E_PORT_OFFSET` 時行為與導入前相同, `npm test` 不變. 實測耗時與待辦見下〈第 302 項〉 | R-E2E-SHARD-01(`rulebook_test.md`) | `test/tools/e2eShard.json`(設定,非測試檔); 全套 `full-suite.mjs` |
 | e2e 單開自動換埠(測試基礎設施; 排程第 309 項, 2026-11-05 ws309) | **已導入**: 基準埠 11007 / 8080 被他人占用時整組位移、只殺身分已確認屬本實例者(runner 與服務管理器)、畫面含埠 5 流程 16 張由比對端覆蓋(標準圖 0 變動)、前端 dev server 就緒後核對實際埠; 沒有占用時埠與行為與導入前相同. 細節與驗證見下〈第 309 項〉 | R-E2E-PORT-01(`rulebook_test.md`) | `unit-e2ePortReserve`(17)、`unit-e2ePortOverlay`(12); 15 個 e2e 檔 `compareBuf` 接線 |
+| dev server `/api` proxy 重用連線(測試基礎設施; 排程第 324 項, 2026-11-07 ss324) | **已做**: `vue.config.js` 之 proxy 帶 keep-alive agent(原 http-proxy 預設每請求新開連線並送 `Connection: close`, 兩段各留 TIME_WAIT); 分拆 e2e 之 TIME_WAIT 峰值 17,979 → 407; 細節見下〈第 324 項〉 | R-E2E-PROXY-01(`rulebook_test.md`) | `unit-devProxyKeepAlive`(3) |
 | 外部匯入(例:業主 AD 使用者清單) | **未做**(預期功能;無入口.2026-06 雛形被當死碼誤刪;現外部只能以 app 權杖整表存檔,會刪光清單外使用者);排程第 113 項 | R-IMPORT-01(`rulebook_import.md`) | — |
 
 ## 第 111 項: 多人同時編輯之寫入契約(第二波已實作, 2026-10-23 sso-run01)
@@ -58,6 +59,13 @@
 - **officialOnly 已移除(2026-11-05, 主控裁定)**: 畫面含埠之 16 張已由比對端覆蓋「:埠」處理且驗過位元組級等價, 5 檔不再綁組 0; `durations` 改用當日實測值重分組. 移除前組 0 約 50 分、其餘 4 組 16~18 分; 移除後實測見下一次全套紀錄. 上方兩條 officialOnly 敘述為移除前之歷史.
 - **已知限制**: 見 `rulebook_test.md` R-E2E-PORT-01 規則 9.
 
+## 第 324 項: dev server proxy 重用連線(2026-11-07 ss324; R-E2E-PROXY-01, ADR-105)
+
+- **現況**: 已做. 改動: `vue.config.js`(+7 行: 模組層 `new http.Agent({ keepAlive: true })`, `/api` proxy 帶 `agent`); 新增 `unit-devProxyKeepAlive`(PX-001～003, 修前 PX-001 / 002 紅). 未動 `src/`、`server/`、`test/tools/`、e2e 檔、標準圖(`git status test/pics` 空)、`package.json`、他套件.
+- **源頭**: http-proxy 1.18.1 未給 agent 時 `agent:false` + 強制 `Connection: close`, 後端回應之 close 又轉回瀏覽器 → 每個 `/api` 請求兩段各一條新連線, 伺服端先關(TIME_WAIT 之**本機埠**為服務埠; 主控監看行只印遠端埠, 11-05 原始紀錄之本機埠 11207×6,960、8280×6,552 才是主體). 最大宗為 `e2e-autoblock` E2E-006(經 proxy 12,001 次, 規格語意不改).
+- **修前 / 修後**(分拆 e2e 各一次, 每 5 秒 netstat 抽樣, 窗口 = e2e 期間 + 2 分): 全機 TIME_WAIT 峰值 17,979 → 407; 實例埠峰值 17,826 → 245; 動態埠占用峰值 5,310 → 263; 實例埠新增 49,343 → 3,038; 後端接受連線 29,833 → 1,120(dev server 連出 29,592 → 899); E2E-006 單案時間窗之 8280 / 11207 新增 eng 18,285 → 39、cht 18,413 → 39.
+- **觀察(未改, 列報告待主控)**: ①w-web-perm / w-web-api / w-web-task 之 `vue.config.js` 為同型 proxy(無 agent); ②主控 `watch-ports` 之 `[ports] HIGH` 行只印遠端埠分組.
+
 ## 已知缺口與待辦(索引; 全文見 `rulebook_gaps.md`)
 
 - **console 診斷不輸出資料值之範圍外待裁示(2026-10-31 sso-run01, ADR-101 範圍外觀察)**: ①瀏覽器端 console 47 處輸出列物件(勾選之使用者 / 金鑰 / IP 列、`row`)、後端回傳之 `res`、錯誤值或 URL 之 `view` 參數(`src/**/*.vue`、`main.js`、`mUI.mjs`、`baselineOf.mjs`; 本輪派工限定伺服端、不改畫面); ②srLog 欄位: `err` 記 procOrm 之 reject 訊息(含失敗筆主鍵, 約 21 處)、`srLog.debug` 之 `valueUser` 識別欄照記、`srLog.info` 之 `account` / `userId` / `key` / `value` / `ip`; ③reject / throw 訊息帶值(dspec V20 亦及): `invalid timeBlocked[...]`、`srEmail` 之 `invalid toEmails[...]` 等; ④`procCore.checkTokenByObj` 全庫無呼叫者(含測試與匯出), 疑為孤兒函式(依死碼規則只提出, 不刪; 其內含一處 console 站點, 已改為只印摘要); ⑤第三方 `w-serv-hapi` 於無 `error` 監聽者時 `console.error('[w-serv-hapi]', maskDiagErr(err))` 印出經遮憑證之事件內容(含使用端自填之函數名), 屬該套件範圍.
@@ -77,6 +85,7 @@
 
 ## 最近一次驗證
 
+- **2026-11-07 ss324(dev server proxy 重用連線)**: 全套(`full-suite.mjs`, 修後碼)**GREEN**——`rest` 817 passing / 0 failing / 0 pending(含新增 `unit-devProxyKeepAlive` 3 案)、e2e 290 passing / 0 / 0(5 組 43 / 60 / 40 / 81 / 66, 25.2 分); 修前分拆 e2e 亦 290 passing; `test/pics` 0 變動、`testPending` 無新增; 修前 / 修後 TIME_WAIT 數據見〈第 324 項〉.
 - 測試計數(`rulebook_test.md`, 2026-10-23 第 111 項第二波後): unit 23 檔 326 case、api 17 檔 153 case、e2e 15 flow 282 case(eng + cht); 2026-10-23 sso-run03 後: unit 330、api 156(`mocha --dry-run` 載入 768 案).
 - **2026-10-23 sso-run01(第 111 項第二波)驗證**: unit 23 檔 326 案全過; 受影響 api 15 檔 147 案全過(未跑 `api-stainfor`、`api-serverport`: 與本輪改動無涉); 受影響 e2e 12 檔 252 案全過、既有標準圖 0 張變動(無新 `testPending`); 新增 `e2e-concurrency` 6 案〈見下〉; 變異驗證 52 項全數被抓到(對照組全綠); 外審 sol 14 條 + beam 4 條逐條核對, 4 條採納修補、1 條採納後撤回、其餘補測試或記為已知限制(見 `rulebook_concurrency.md`〈外審 sol 後之修補〉). 盤點輪(2026-10-22 inv01)探測腳本留存於 `C:\opensrcOper\dnow\20261022221854\agent-out\sso-inv01-probes\`.
 - `e2e-concurrency`(2026-10-23 新增, 3 案 × 2 語系): 6 張標準圖(`test/pics/concurrency/`, 被拒訊息框; 每案僅 1 張, 偏離 skill「每步兩張」之理由見 ADR-091 / 報告 D12)經 agent 逐張審圖(紅框框住訊息框面板、訊息為 `儲存○○數據失敗: 資料自您載入後已被其他使用者或系統更動…` 之 eng + cht 原文)後, 比對 6 案全過. 系統管理者 session 金鑰之 token 字串須固定(`cc-token-admin-session`), 否則該列顯示於金鑰清單畫面使 E2E-CC-002 標準圖每次差 127~130 px(首次比對因此失敗, 已修正並只重產 E2E-CC-002 兩張).
