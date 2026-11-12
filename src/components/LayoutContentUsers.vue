@@ -1202,7 +1202,8 @@ export default {
             let core = async () => {
 
                 //二次確認 (CheckYesNo 設計: Yes → resolve(); No → reject('close')); 開框前釋放按鈕鎖 (見 modifyItemPasswordById)
-                let confirmText = vo.$t('adminResetPasswordConfirm').replace('{account}', account)
+                //替換值以函數回傳: account 為使用者自填文字, 替換「字串」中的 $& $' $` $$ 會被展開而使確認文字顯示錯誤的帳號 (R-VAL-03)
+                let confirmText = vo.$t('adminResetPasswordConfirm').replace('{account}', () => account)
                 let agree = false
                 unlockBtn()
                 await vo.$dg.showCheckYesNo(confirmText)
@@ -1245,7 +1246,7 @@ export default {
 
                 //成功
                 vo.$ui.updateLoading(false)
-                let msg = vo.$t('adminResetPasswordSuccess').replace('{email}', email)
+                let msg = vo.$t('adminResetPasswordSuccess').replace('{email}', () => email) //同上, email 為使用者自填文字 (R-VAL-03)
                 await vo.$dg.showCheckYes(msg, { type: 'success' })
 
                 return 'ok'

@@ -628,7 +628,76 @@ describe('updateTabItems - 清單儲存之寫入失敗 (ADR-080)', function() {
         assert.deepStrictEqual(snapTables(env), before)
     })
 
-    it('A22 判準與上游等價(語料): SSO 拒絕之主鍵即真 procOrm 新增時拒絕者, 拒絕之一般欄值即真 procOrm 會改寫者', async function() {
+    it('A21b 清單儲存之 rows 含非物件或空物件之元素(不經 kpfun 守門之呼叫; 三清單): 整次拒收 invalidRows, 資料庫無變更、無寫入、記錄不含輸入值', async function() {
+        //ADR-081 擴及元素層級: rows 之每個元素須為非空物件(wsemi iseobj), 於 ltdtmapping 之前、取鎖與任何寫入之前檢查.
+        //ltdtmapping 內以 isearr 守門, 僅含單一無效元素([null]、[{}]、['']、[[]])之陣列於 wsemi 新舊版皆被化為空陣列 [], 比對時舊表全數歸為刪除(修改前: ips 全數刪除、tokens / users 同走寫入階段);
+        //多元素時各無效元素在 wsemi 1.9.58 前被補成全欄 ''、之後成為 {}, 兩者皆因主鍵空而由 ckKey 回 invalidRows(此為純回歸, 不依賴新檢查).
+        let leak = 'leak-marker-7f3a91' //輸入值: 回應與記錄皆不得出現
+        let kinds = [
+            ['null', null],
+            ['{}', {}],
+            ['空字串', ''],
+            ['非空字串', leak],
+            ['[]', []],
+            ['數字 0', 0],
+        ]
+        let callRaw = {
+            //users 直呼 updateUsersList(繞過 checkToken 與自我保護, 即 app 權杖操作者之下一層)
+            users: (p, rows) => p.updateUsersList(rows, { lang: 'eng', operatorId: 'u-admin' }),
+            tokens: callOf.tokens,
+            ips: callOf.ips,
+        }
+        let nCase = 0
+        for (let woName of ['users', 'tokens', 'ips']) {
+            let env = await mkEnv()
+            let before = snapTables(env)
+            let w0 = writesOf(env.users) + writesOf(env.tokens) + writesOf(env.ips)
+            let valid = listRows(env[woName])
+            for (let [kindName, e] of kinds) {
+                let shapes = [
+                    ['單一元素', [e]],
+                    ['合法列之後', [...valid, e]],
+                    ['合法列之前', [e, ...valid]],
+                ]
+                for (let [shapeName, rows] of shapes) {
+                    let ctx = `${woName} / ${kindName} / ${shapeName}`
+                    let err = await errOf(callRaw[woName](env.p, rows))
+                    assert.strictEqual(err, 'invalidRows', ctx)
+                    assert.deepStrictEqual(snapTables(env), before, ctx)
+                    assert.strictEqual(writesOf(env.users) + writesOf(env.tokens) + writesOf(env.ips) - w0, 0, ctx)
+                    nCase++
+                }
+            }
+            //稀疏陣列之洞(直呼可達, JSON 傳輸不可達): Array.prototype.some / every 略過洞, 檢查須把洞視為無效元素
+            let ctxHole = `${woName} / 稀疏陣列之洞 / 單一元素`
+            assert.strictEqual(await errOf(callRaw[woName](env.p, new Array(1))), 'invalidRows', ctxHole)
+            assert.deepStrictEqual(snapTables(env), before, ctxHole)
+            assert.strictEqual(writesOf(env.users) + writesOf(env.tokens) + writesOf(env.ips) - w0, 0, ctxHole)
+            nCase++
+            //此層不另記 srLog.warn(ADR-081 決策 6: kpfun 包裝已記 reject 之 key; 同層既有 invalidRows 驗證亦不另記), 且全部記錄不含輸入值
+            assert.strictEqual(JSON.stringify(env.srLog.logs).includes(leak), false, `${woName}: 記錄不得含輸入值`)
+        }
+        assert.strictEqual(nCase, 57) //3 清單 × (6 種無效元素 × 3 種擺位 + 1 種洞)
+    })
+
+    it('A21c 對照(三清單): 合法整表存檔(含無變更重送)照常成功, A21b 之檢查不誤擋', async function() {
+        let env = await mkEnv()
+        //無變更重送: 解析, 且資料庫內容不變
+        let before = snapTables(env)
+        await env.p.updateUsersList(listRows(env.users), { lang: 'eng', operatorId: 'u-admin' })
+        await callOf.tokens(env.p, listRows(env.tokens))
+        await callOf.ips(env.p, listRows(env.ips))
+        let after = snapTables(env)
+        assert.deepStrictEqual(after.tokens, before.tokens)
+        assert.deepStrictEqual(after.ips, before.ips)
+        //有變更: 刪除與修改皆落地(證明上列非「一律拒收」之空轉)
+        let rowsIp = listRows(env.ips).filter((r) => r.id !== 'ip-2').map((r) => ({ ...r, ip: '10.0.0.9' }))
+        await callOf.ips(env.p, rowsIp)
+        assert.deepStrictEqual([...env.ips.kp.keys()], ['ip-1'])
+        assert.strictEqual(env.ips.get('ip-1').ip, '10.0.0.9')
+    })
+
+    it('A22判準與上游等價(語料): SSO 拒絕之主鍵即真 procOrm 新增時拒絕者, 拒絕之一般欄值即真 procOrm 會改寫者', async function() {
         let corpus = ['<x>u', '<b>u', '<b onclick=1>u', '<i>u</i>', 'u<1', 'a < b', 'u>1', 'a>b<c', 'u-new<', 'a<!--x-->b', 'a << b', '<!x', '</x', '<?x', '<img src=x onerror=1>', 'R&D', 'n-ok']
         for (let s of corpus) {
             //上游: 以真 w-serv-orm procOrm 新增(主鍵為 s 者看是否拒絕; 欄位 ip 為 s 者看儲存值是否被改寫)

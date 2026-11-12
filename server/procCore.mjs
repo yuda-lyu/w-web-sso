@@ -208,11 +208,15 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
     }
 
     //email body 以內建語系鍵(kpLang 之 *EmContent)為字串模板做 placeholder 替換(值經 htmlEscape 防注入)
+    //替換值一律以函數回傳 (replaceAll(token, () => 值)): 替換「字串」中的 $& $' $` $$ $<name> 是特殊樣式, 會被展開成匹配文字或前後文,
+    //而代入值為使用者自填文字或隨機新密碼 (特殊字元池含 $ & < >, 如 '$>' 經 htmlEscape 成 '$&gt;' 即被 $& 展開), 直接代入會使信中之值與實際值不同 (R-VAL-03).
+    //函數回傳值不展開特殊樣式, 信中之值逐字等於 htmlEscape 之結果
     let renderEmailText = (key, lang, kvMap = {}) => {
         if (lang !== 'eng' && lang !== 'cht') { lang = 'eng' }
         let content = get(kpLang, `${lang}.${key}`, '')
         for (let k in kvMap) {
-            content = content.replaceAll(`{${k}}`, htmlEscape(kvMap[k]))
+            let v = htmlEscape(kvMap[k])
+            content = content.replaceAll(`{${k}}`, () => v)
         }
         return content
     }
@@ -1866,7 +1870,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
     //  只比對系統管理者有修改或刪除之列; 載入後新增者不刪; 已不在庫內者不復活; 系統續期而系統管理者未動者不寫; 系統管理者有動且庫內已變者拒收.
     //分驗證與寫入兩階段 (ADR-080):
     //- 驗證階段: 全部驗證於任何寫入之前完成, 任一失敗即 reject 該驗證之 key, 資料庫無任何變更 (ADR-021).
-    //  凡可於寫入前判定、寫入時才會被拒或被靜默改寫之輸入一律於此拒絕 (ADR-081): rows 非陣列、主鍵非字串 / 重複 / 超過鍵長上限 → 'invalidRows';
+    //  凡可於寫入前判定、寫入時才會被拒或被靜默改寫之輸入一律於此拒絕 (ADR-081): rows 非陣列、rows 之元素非物件或為空物件 (元素層級, 於 ltdtmapping 之前; 單一無效元素之陣列會被 ltdtmapping 化為 [] 而使舊表全數歸為刪除)、主鍵非字串 / 重複 / 超過鍵長上限 → 'invalidRows';
     //  新增或修改列之欄位值會被 clearXSS 改寫 → 'htmlMarkupNotAllowed'. keyDetect 之三呼叫端皆為 'id', 與 procOrm 判準所用之主鍵欄相同.
     //- 寫入階段: 依刪除、新增、修改之順序寫入, 任一步 reject 即停止後續步驟並 reject 'saveWriteFail', 其前已寫入者不回滾 (ADR-044);
     //  procOrm 遇逐筆失敗亦 reject 且其餘筆已寫入 (w-serv-orm 1.1.7 起). 寫入階段一經進入, 不論成敗皆執行寫入後副作用:
@@ -1904,6 +1908,14 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
 
         //check, rows 須為陣列 (ADR-081): 非陣列經 ltdtmapping 成空陣列, 比對時舊表全數歸為刪除
         if (!isarr(rows)) {
+            return Promise.reject('invalidRows')
+        }
+
+        //check, rows 之每個元素須為非空物件 (ADR-081 元素層級; 須在 ltdtmapping 之前, 亦在取鎖與任何寫入之前):
+        //非物件 (null / 字串 / 數字 / 陣列, 含稀疏陣列之洞) 與空物件經 ltdtmapping, 多元素時於 wsemi 1.9.58 前被補成全欄 '', 其後成為 {} (主鍵皆空, 由下方 ckKey 回 invalidRows);
+        //僅含單一此類元素之陣列 ([null]、[{}]、['']、[[]]) 則因 ltdtmapping 內 isearr 守門而整個成為 [] (wsemi 新舊版皆然), ckKey 無列可驗而通過, 比對時舊表全數歸為刪除.
+        //Array.from 使洞成為 undefined 而被檢出 (some 會略過洞). 整次拒收, 不帶輸入值; 不另記 srLog.warn (同 ADR-081 決策 6: kpfun 包裝已記 reject 之 key, 同層既有 invalidRows 驗證亦不另記)
+        if (Array.from(rows).some((r) => !iseobj(r))) {
             return Promise.reject('invalidRows')
         }
 

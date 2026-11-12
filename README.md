@@ -37,6 +37,23 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 ## Upgrade Notes
 
+### Breaking changes（存檔 rows 元素層級檢查）
+
+為避免 wsemi 1.9.58 起 `dtmapping`／`ltdtmapping` 對非物件元素行為改變所衍生之歧義，後台三清單存檔（`updateUsersList`／`updateTokensList`／`updateIpsList` 之底層 `updateTabItems`）新增元素層級檢查：
+
+- **存檔之 `rows` 含非物件或空物件之列（`null`、`{}`、字串、數字、陣列，含稀疏陣列之洞）改為整次拒收，回 `invalidRows`，資料表零變更**；沿用既有鍵，訊息不帶輸入值。檢查在 `ltdtmapping`、取鎖與任何寫入之前。
+- 修改前：僅含單一此類元素之陣列（`[null]`、`[{}]`、`['']`、`[[]]`）經 `ltdtmapping` 化為空陣列，直呼 procCore 時會使舊表全數歸為刪除（wsemi 新舊版皆然）；經 RPC 入口原已被拒（入口守門），故正常使用與前端操作不受影響。
+- 受影響者：直呼 procCore 之存檔函數或繞過入口守門送出此類 `rows` 者（本套件內無此類呼叫）；`rows` 非陣列之處置不變。
+- 測試：`test/unit-ormWriteFail.test.mjs` A21b／A21c、`test/api-saverows.test.mjs` SAVEROWS-A-001～004。
+
+### 信件內文之置換值逐字代入（修正，R-VAL-03）
+
+**重設密碼信中之新密碼與資料庫不一致（缺陷修正）**：信件內文以語系鍵為字串模板，發信時將 `{sender}`、`{name}`、`{account}`、`{newPassword}`、`{verifyUrl}` 等置換符代入值（值先經 HTML 跳脫）。原以字串作為 `replaceAll` 之替換值，而替換字串中之 `$&`、`` $` ``、`$'`、`$$`、`$<name>` 是特殊樣式、會被展開成比對到之文字或前後文。隨機新密碼之特殊字元池含 `$`、`&`、`<`、`>`，`$` 後接經 HTML 跳脫成 `&…;` 之字元（如 `$>` → `$&gt;`）或 `$$`、`$'` 時，信中之密碼即與寫入資料庫之密碼不同（實測：`'…{newPassword}'.replaceAll('{newPassword}', 'FbA$&gt;bHv42=D')` 得 `…FbA{newPassword}gt;bHv42=D`），收信者無法以信中密碼登入。本版起替換值改以函數回傳（`replaceAll(token, () => 值)`），信中之值逐字等於 HTML 跳脫後之結果；註冊驗證信、重寄驗證信、變更密碼通知信之置換值（`{sender}`、`{name}`、`{verifyUrl}`）同形問題一併修復。後台「重設密碼」之確認對話框與成功訊息（前端）代入 `{account}`、`{email}` 亦同（帳號、email 含 `$&` 等字樣時原顯示錯誤文字）。
+
+- **對使用端之影響**：不含 `$` 之置換值（絕大多數）輸出與修前逐位元相同，無須調整；修前發出之重設信若因新密碼含上述樣式而信中密碼不可用，須由系統管理者再次重設。客製之信件模板（`resetPwEmContent` 等）不須修改，置換符與跳脫規則不變。
+- 注意：置換為逐鍵依序進行，值內若恰含後面鍵之置換符（如姓名填 `{newPassword}`）仍會被其後之置換展開，此行為未變（值為使用者自填文字時，信件收件者即本人）。
+- 測試：`test/unit-emailRender.test.mjs`（ER-01～06：四個寄信點以含 `$&`、`$'`、`` $` ``、`$$`、`$<x>` 之值代入，斷言內文逐字等於 HTML 跳脫後之值；以 `$` 為唯一特殊字元之密碼策略走一次重設流程，及字元池 `$ & < >` 重設 20 次，信中密碼皆為資料庫可登入之密碼）、`test/unit-replaceSites.test.mjs`（`server/`、`src/` 字串替換站點全集守護）。
+
 ### 統計之時間桶輸出不含未來時間桶（修正，R-STA-01）
 
 **後台統計之時間桶輸出以「現在」所屬桶為上界（修正）**：後台統計（`getStaToken`、`getStaIp`、`getStaUserAccountLogin`，各以小時桶輸出近 7 天）原只限制時間下界，紀錄時間晚於「現在」所屬之桶者會多出一個窗外之桶：紀錄之 `time` 取寫入當下之真實時鐘，而統計之「現在」若被釘住（測試以假時鐘或 `opt.timeNow`）或系統時鐘回撥，兩者不一致，圖表因此多出一格刻度、Y 軸被該桶主導，`getStaIpSummary` 之近 24 小時連線數（`conn24h`）亦併入該桶之筆數。本版起三種輸出（權杖、IP、登入）之最末桶為「現在」所屬之桶，晚於它之桶不輸出；「現在」所屬桶內略晚於現在之紀錄照計；輸出形狀與參數不變。

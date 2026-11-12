@@ -304,3 +304,25 @@
 - **修 proxy 前先驗 dev server 收不收新選項**: webpack-dev-server 對 proxy 設定有驗證、vue-cli 之 `prepareProxy` 會合併預設值; 修後先單跑一支小 e2e(真 dev server)並掛 preload 看連線數, 確認 dev server 起得來、連線確實重用, 才發動只有一次機會之修後全套.
 - **單元測試走實際建構路徑**: `unit-devProxyKeepAlive` 以 `prepareProxy(vueConfig.devServer.proxy)` → `createProxyMiddleware(context, config)`(webpack-dev-server 同法)掛在 `listen(0)` 之本機服務, 斷言「N 請求後端 1 條、用戶端 1 條、回應無 `Connection: close`、內容不變」; 修前 20 / 20 紅.
 - **排鎖期間不能用前景等**: 他套件之 `--lock-exclusive` 負載試驗會連續插隊(本輪單元測試等了 13 分鐘); 背景指令 10 分鐘會被收掉, 一律以 detached 啟動器(輸出寫檔、結束追加 `EXIT <碼>`)起跑再以前景 until 迴圈分段輪詢. shell 重導向寫檔會被主控守門擋, 啟動器以 Write 寫成 `.mjs`.
+
+## 下游處置 wsemi 函數行為改變: 派工前提先以新舊兩版實測; 單一無效元素之陣列才是真正的洞; 多層守門時修前紅只能在最內層驗(2026-11-12, ds-sso, wsemi 1.9.58 `dtmapping` / `ltdtmapping`; ADR-081 補記)
+
+- **派工前提只對一半成立**: 前提「`ltdtmapping` 對非物件元素由補成全欄 `''` 變為 `{}`, 故 `updateTabItems` 之走向改變」對 `ltdtmapping` 單獨成立, 對 `updateTabItems` 之多元素陣列不成立——無效元素新舊版主鍵皆空, 都由 `ckKey('id')` 回 `invalidRows`. 真正的洞是**單一無效元素之陣列**(`[null]`、`[{}]`、`['']`、`[[]]`): `ltdtmapping` 內以 `isearr` 守門(長度 1 且唯一元素廣義無效即視為無效陣列)整個回 `[]`, `ckKey` 無列可驗, 比對時舊表全數歸為刪除; 新舊版 wsemi 相同, 與 `rows` 非陣列同形(ADR-081 原已記). 接到「某函數行為改變」類派工, 先對**呼叫端的整條路徑**(不只函數本身)以新舊版各跑一次探測再下結論.
+- **探測法(不動 `node_modules`)**: 先 `cp -r node_modules/wsemi <備份>`, 再 `npm i <tgz> --no-save` 裝新版; 舊版行為以 `node --import <register.mjs>` 註冊 resolve hook, 把 `wsemi/src/dtmapping.mjs` / `ltdtmapping.mjs` 重導到備份, 同一支探測腳本新舊各跑一次再 diff 輸出. 探測以 `test/tools/unitProc.mjs` 的 `buildProc` + `mkTable` 直呼 procCore(不起 server).
+- **探測腳本順序陷阱**: 同一個環境先跑 users 全刪會撤銷 admin 權杖, 後面 tokens / ips 呼叫變 `tokenExpired`, 看起來像「被拒收」而其實是前一格造成; 每格(每個表 × 輸入 × 擺位)各建獨立環境.
+- **兩層守門時, 修前紅只能在最內層驗**: 入口 `WWebSso` 已以 `isearr(rows)` + 每列 id 非空字串守門, 故 api 層新案(`api-saverows`)修前即綠; 內層檢查之修前紅(`unit-ormWriteFail` A21b, 57 格中 15 格紅)與變異(M1 停用新檢查)在直呼 procCore 層才看得到. 要讓 api 案轉紅須同時停用外層(M3). 派工若寫「api 層修前紅」, 先探測再依實得結果回報, 不為符合預期而改測試.
+- **稀疏陣列之洞**: `Array.prototype.some` / `every` 略過洞, `new Array(1)` 通過 `isarr`、被 `ltdtmapping` 化為 `[]` 而清空資料表; 檢查改 `Array.from(rows).some(...)` 使洞成為 `undefined`. JSON 傳輸不可達, 但直呼可達; 變異 M2(拿掉 `Array.from`)由 A21b 之洞格抓到.
+- **A21b 之矩陣設計**: 三清單 × 6 種無效元素(null、`{}`、空字串、非空字串、`[]`、`0`)× 3 種擺位(單一元素、合法列之後、合法列之前)+ 洞; 每格斷言錯誤鍵、整表快照、寫入次數; 非空字串元素當輸入值標記, 驗證回應與 `srLog` 不含它. users 以 `updateUsersList` 直呼(`checkTokenAndUpdateUsersList` 之系統管理者操作者會先回 `cannotDeleteSelf`, 該自我保護先於 `updateTabItems`, 屬既有行為).
+- **變異驗證時偶發紅可能是別處既有缺陷**: M2 單獨跑 `unit-ormWriteFail` 時 B4 偶發紅, 追到 `renderEmailText` 以 `replaceAll(token, 字串)` 代入隨機密碼, 密碼含 `$` 且被 HTML 跳脫成 `$&…;` 時 `$&` 被當特殊樣式展開(實測重現), 與本輪無關, 列入 `rulebook_gaps.md` 範圍外未修. 遇偶發紅先看斷言訊息中的實際值, 不重跑到綠.
+- **eslint 的雷**: `Edit` 的 `new_string` 結尾若為「`let x = `」(尾端空白), 空白可能被修掉而成 `let x =expr`(`space-infix-ops`); 編完對改動檔跑 `npx eslint -f unix <檔>` 並只看自己的行號(procCore 另有既存 16 項未使用匯入等錯誤, 非本輪).
+
+## 字串替換值之 `$` 特殊樣式; 整份快照比對與後端計時器之競態(2026-11-12, ds-sso2; R-VAL-03 / R-TEST-SNAP-01)
+
+- **`replace` / `replaceAll` 以字串為替換值是陷阱**: 替換字串中的 `$&`、`` $` ``、`$'`、`$$`、`$<name>` 會被展開(`$'` 插入比對點之後的全文, 整個模板被複製進輸出). 代入使用者自填文字或隨機值一律 `() => 值`. HTML 跳脫後 `$` 後面常接 `&…;`(`$>` → `$&gt;`), 所以即使密碼本身沒有 `$&` 也會中. 修前頻率: 以 B4 所用策略產生 20000 個密碼代入, 119 個(約 0.6%)信中值與實際值不同, 修後 0 個——單檔連跑 5 次全綠不算證據, 要用大樣本模擬或把字元池收窄到必中(`forbiddenChars` 排除其餘特殊字元, 池只剩 `$` 則 `genRandomPassword` 必產出 12 個 `$`, 修前確定紅).
+- **測試「各寄信點全接線」**: 四個寄信點共用 `renderEmailText`, 但各點傳入之置換符不同(`{sender}{name}{verifyUrl}`、`{sender}{name}`、`{sender}{name}{account}{newPassword}`); 每點各一案, 模板含該點全部置換符並重複 `{name}`(驗證全部置換), 期望值以測試端獨立的函數式 HTML 跳脫實作組出(不重用 procCore 之 `htmlEscape`, 也不用字串替換值). 自助註冊之帳號 / 姓名 / email 含 `<` 會被 `clearXSS` 拒收(B8), 該點之測試值不含 `<`; 其他點的列值直接寫進記憶體表.
+- **站點全集用守護測試而非一次性 Grep**: `unit-replaceSites` 掃描 `server/`、`src/` 之替換呼叫(自寫小型引數切分器: 略過字串、樣板字串、正規式字面量內之括號與逗號; 以行首 `//` 與行內 `//` 略過註解), 分類 func / const / literal$ / value, 非函數且非常數者須登記允許清單並寫理由; 掃描器自驗(SITE-RP-00)與掃描範圍(站點數下限 + 必含已知站點)防止「掃描壞掉時回空」. eslint 的 `no-template-curly-in-string` 會擋字串常數內的 `${`, 以串接 `'{$' + '{k}}'` 組出.
+- **變異驗證改檔時行尾會被吞**: 以 Edit 在行尾附加敘述(`; await … //MUTATION`)再移除, 還原後該行與下一行被接成一行(換行消失), `git diff` 才看得出; 還原後務必 `git diff -U0 <檔>` 只剩預期改動, 並對檔跑 `node --check`. 變異用單行附加, 不要碰行尾換行.
+- **後端週期計時器會寫測試所比對之表**: `ipDetectNew`(每 2 秒)把「計數內有、ips 表尚無」之 IP 補登; `resetToBaseSeed` 清空 ips 後, 任一請求使本機 IP 再入計數, 0~2 秒內被補回. 凡「取整份資料快照 → 被測操作 → 再取快照」皆暴露(CC-A-021、api-saverows 之 SAVEROWS-A-001~003 同型; 另 `loadIps()` 取基準後存檔亦可能被拒 `saveStale`). 作法是比對前先等該 IP 的列出現(`test/tools/api-clientIp.mjs`), 仍比對完整三表; 排除該列會讓「被測操作寫入同形列」被吞, 以變異證明未放寬(拒收前先 `procOrm('system', 'ips', 'insert', [{ ip: '127.0.0.1' }])` → CC-A-021 仍紅).
+- **量化競態命中率要隨機化相位**: 迭代間隔(約 25 ms)遠短於計時器週期(2 秒)時, 各迭代共用同一次觸發, 命中率失真(首次 300 迭代只含約 4 次觸發); 每迭代前隨機等 0~2 秒才得到「單次案例命中率」(無壓力 3 / 150, 約 2%). 低優先權(`PRIORITY_LOW`)CPU 壓力行程不會明顯放寬窗口(2 / 150), 窗口寬度取決於被測操作之往返時間; 要看極端情形在兩次快照間固定等 4.5 秒(修前 6 / 6, 修後 0 / 6)——這個固定等待只用於探測腳本放大窗口, 不是測試之同步手段.
+- **`cmd` 與 Git Bash 之 `$'\r'`**: 本工具之 Bash 中 `grep -c $'\r' 檔` 的 `$'\r'` 被吃成空字串, 結果等於行數(無法判斷行尾); 要看行尾用 `git ls-files --eol <檔>`(`w/lf` / `w/crlf`)或 `od -c`.
+- **quiet-run 不即時輸出**: 以 nohup 起 `quiet-run` 時, 其 stdout 到結束才寫入; 分段等待要看被包裝程式自己寫出之結果檔(本輪每階段寫 `out-*.json`), 不要等包裝層之 log.

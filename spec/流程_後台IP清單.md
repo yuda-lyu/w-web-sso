@@ -106,7 +106,7 @@
 | 儲存失敗（後端 reject） | `ipSaveIpsFail`（後接錯誤字串） | `showCheckYes` 持久 modal | 同上 |
 | 儲存失敗（載入後資料已被他人或系統更動／資料已不存在／基準格式不識；2026-10-23） | `ipSaveIpsFail` 接 `saveStale`／`saveRowNotFound`／`saveBaselineFormat`（文字見 `流程_多人同時編輯.md`） | `showCheckYes` 持久 modal | 整次拒收、零寫入、草稿保留、提示重新載入 |
 | 儲存失敗（寫入資料庫失敗，部分變更可能已生效） | `ipSaveIpsFail` 接 `saveWriteFail`（「資料寫入未全部完成，部分變更可能已生效，請重新整理頁面確認後再操作」/「Not all changes were written, and some may have taken effect. Please reload the page and check before making changes.」） | `showCheckYes` 持久 modal | UI 不可達：僅資料庫寫入例外（procOrm 整批錯誤或逐筆失敗）時發生，以 `test/unit-ormWriteFail.test.mjs` A6 驗證；procOrm 原文只寫 log，已寫入之列不回滾，IP 清單快取照清（ADR-080） |
-| 儲存失敗（列格式錯誤：rows 非陣列、主鍵非字串 / 表內重複 / 超過鍵長上限） | `ipSaveIpsFail` 接 `invalidRows`（「資料格式錯誤。」/「Invalid data format.」） | `showCheckYes` 持久 modal | UI 不可達：主鍵由伺服器產生、清單無新增列；僅直打 API 時發生。驗證階段拒絕，資料庫無任何變更（ADR-081；修改前 rows 非陣列者經比對成「全數刪除」、重複主鍵者後列覆蓋前列）；`test/unit-ormWriteFail.test.mjs` A18、A19、A21 |
+| 儲存失敗（列格式錯誤：rows 非陣列、rows 含非物件或空物件之元素、主鍵非字串 / 表內重複 / 超過鍵長上限） | `ipSaveIpsFail` 接 `invalidRows`（「資料格式錯誤。」/「Invalid data format.」） | `showCheckYes` 持久 modal | UI 不可達：主鍵由伺服器產生、清單無新增列、送出之列皆為表格資料列；僅直打 API 時發生。驗證階段拒絕，資料庫無任何變更（ADR-081；修改前 rows 非陣列者經比對成「全數刪除」、僅含單一無效元素之陣列〔`[null]`、`[{}]`、`['']`、`[[]]`〕亦經 `ltdtmapping` 化為空陣列而全數刪除〔2026-11-12 補〕、重複主鍵者後列覆蓋前列）；`test/unit-ormWriteFail.test.mjs` A18、A19、A21、A21b，`test/api-saverows.test.mjs` SAVEROWS-A-003 |
 | 儲存失敗（欄位含會被 XSS 清除改寫之 HTML 標記，如 IP 欄輸入 `<x>`） | `ipSaveIpsFail` 接 `htmlMarkupNotAllowed`（「輸入內容含有不允許的 HTML 標記（如「<」後接英文字母），請移除後再試一次。」/「The input contains HTML markup that is not allowed (such as "<" followed by a letter). Please remove it and try again.」） | `showCheckYes` 持久 modal | UI 可達（IP 欄可編輯）；驗證階段拒絕，資料庫無任何變更（ADR-081；原為存成 `&lt;` 之形式，封鎖比對之 IP 隨之不符）；`test/unit-ormWriteFail.test.mjs` A12、A13、A22 |
 | 非預期例外（外層 catch） | `anUnexpectedErrorOccurred` | `$alert` toast（4 秒自動消失） | 非預期錯誤刻意低調呈現，不阻斷 |
 
@@ -125,7 +125,7 @@
 - **粒度**：操作結果（成功 / 失敗）一律 `showCheckYes` 持久 modal（須確認讀過、可做 e2e pixel + 語意斷言）；非預期例外才用 `$alert` toast。
 - **邊界**：`isError` 恆為 `''`，前端驗證攔截分支為死碼；無「手動新增」列。
 - **契約**：Save 前開 loading、`finally` 一處關 loading；每個 `await showCheckYes(...)` 前先關 loading（modal 阻斷，避免 loading 疊著）。
-- **寫入前驗證**（ADR-021 / ADR-081）：任何寫入之前，依序驗列格式（rows 為陣列；主鍵非空、表內不重複、UTF-8 不超過 1978 位元組 → `invalidRows`）與新增 / 修改列之欄位值不會被 clearXSS 改寫（`htmlMarkupNotAllowed`）；與 DB 相同之列不寫入、不檢查（含由後端直接寫入、未經清除之舊列，如以請求標頭記錄之 IP）。
+- **寫入前驗證**（ADR-021 / ADR-081）：任何寫入之前，依序驗列格式（rows 為陣列且每個元素為非空物件〔2026-11-12 補，於 `ltdtmapping` 之前〕；主鍵非空、表內不重複、UTF-8 不超過 1978 位元組 → `invalidRows`）與新增 / 修改列之欄位值不會被 clearXSS 改寫（`htmlMarkupNotAllowed`）；與 DB 相同之列不寫入、不檢查（含由後端直接寫入、未經清除之舊列，如以請求標頭記錄之 IP）。
 - **寫入失敗**（ADR-080）：寫入階段依刪除、新增、修改之順序寫入，任一步失敗即停止後續步驟、回 `saveWriteFail`，其前已寫入者不回滾；IP 清單之 30 秒快取（統計頁所讀）不論寫入成敗皆於寫入階段後清除。
 - **送出入口與連按**（ADR-074）：「儲存」鈕（WButtonCircle，`:promiseUnlock="true"`）之按鈕鎖交給 `runSubmit('saveIps')`，於請求結束時釋放；流程自觸發至結果訊息框關閉，期間再觸發即略過。後端以「updateIpsList:操作者 id」占位，同一操作者處理中再送出回 `saveInProgress`、不寫入。
 - **載入狀態**（ADR-076）：清單載入中顯示等待訊息；載入失敗顯示「取得數據失敗，請稍後再試」（`getDataError`），不顯示空表格。
@@ -135,6 +135,7 @@
 每條帶分類標籤（缺陷（待修）／設計事實（記錄備查）／待裁示（業主決定）／已修復（附修復紀錄））；修復後不刪、改標已修復。
 
 - **已修復（附修復紀錄）** 2026-10-12（部署設定 `useCheckUser`）：部署方給 `useCheckUser: true`（或非布林值如 `null`）時，IP 清單之儲存必定失敗，modal「儲存IP數據失敗: 資料寫入未全部完成，部分變更可能已生效，請重新整理頁面確認後再操作」（`saveWriteFail`），不論是否給 getUserById、操作者為系統管理者或應用系統金鑰——本清單不帶操作者（userId 為空字串），w-serv-orm 之使用者檢查直接拒絕。修復：本套件不再啟用該檢查，給予即忽略並於啟動時記警告（ADR-083）；`test/api-ormopts.test.mjs` ORMOPT-007、008 於修改前失敗、修改後通過；以該設定啟動之後端實跑 e2e 修改 IP 儲存案例（eng），與既有標準圖相符。
+- **已修復（附修復紀錄）** 2026-11-12（ADR-081 元素層級；wsemi 1.9.58 `dtmapping` / `ltdtmapping` 行為改變之下游處置；設計事實＋縱深缺陷，UI 不可達）：直呼 procCore 之 `checkTokenAndUpdateIpsList` 時，`rows` 僅含單一無效元素（`[null]`、`[{}]`、`['']`、`[[]]`）會經 `ltdtmapping` 內 `isearr` 守門化為 `[]`（wsemi 新舊版皆然），`ckKey` 無列可驗而通過，比對時庫內全部 IP 歸為刪除並寫入，resolve 回 `[]`（實測：內存資料表 2 筆 → 0 筆）；經 RPC 不可達（`WWebSso.updateIpsList` 入口已以 `isearr` 與每列 id 須非空字串守門）。修復：`updateTabItems` 於 `ltdtmapping` 之前檢查每個元素為非空物件，不符整次拒收 `invalidRows`、零寫入。`test/unit-ormWriteFail.test.mjs` A21b 於修改前失敗（單一元素擺位）、修改後通過；`test/api-saverows.test.mjs` SAVEROWS-A-003 經 RPC 守護。
 - **已修復（附修復紀錄）** 2026-10-12（w-serv-orm 1.1.8 適配）：①IP 欄輸入含會被 XSS 清除改寫之 HTML 標記時，原會儲存成功但存成 `&lt;` 之形式（UI 可達）；②直打 API 時，新增列主鍵含標記或超過 LMDB 鍵長上限且與刪除同批者，刪除落地後才被拒（回 `saveWriteFail`）；表內重複主鍵者後列覆蓋前列而靜默寫入；rows 非陣列者經比對成「全數刪除」（僅內部呼叫可達）。修復：一律於驗證階段拒絕（`htmlMarkupNotAllowed` / `invalidRows`，ADR-081）。`test/unit-ormWriteFail.test.mjs` A12、A13、A18、A19、A21、A22 於修改前失敗、修改後通過；e2e IP 修改與刪除案例（兩語系）與既有標準圖相符。
 
 - **已修復（附修復紀錄）** 2026-09-29（ADR-076）：載入 IP 清單失敗時畫面只剩空表格（「No Rows To Show」）而無任何訊息，載入中亦先顯示空表格——與金鑰清單同一成因與修法，見 `spec/流程_後台金鑰清單.md` 之同日條目（真瀏覽器驗證修正前後）。

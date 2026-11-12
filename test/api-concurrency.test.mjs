@@ -18,6 +18,7 @@ import { baselineOfUsers, baselineOfTokens, baselineOfIps } from '../src/baselin
 import hashPassword from '../server/hashPassword.mjs'
 import { startServersOnce, callFapi } from './tools/api-setup.mjs'
 import { resetToBaseSeed, deleteNonBaseSeed, restartBackend, genTempSettings } from './tools/e2e-setup.mjs'
+import { awaitClientIpRegistered } from './tools/api-clientIp.mjs'
 
 
 let SALT = '{salt}' //同 settings.json 之 salt 與 g_initialData
@@ -75,6 +76,8 @@ async function loadTokens() {
     return { rows: r.val, ...baselineOfTokens(r.val) }
 }
 async function loadIps() {
+    //載入前先等後端 ipDetectNew 計時器把來源 IP 登錄進 ips 表: 否則該系統寫入若落在「載入 → 存檔」之間, 持載入時基準之存檔會被拒 saveStale (同 snapshot 之競態, 見 tools/api-clientIp.mjs)
+    await awaitClientIpRegistered()
     let r = await callFapi('getIpsList', [ADMIN])
     assert.strict.equal(r.ok, true, JSON.stringify(r))
     return { rows: r.val, baseline: baselineOfIps(r.val) }
@@ -87,7 +90,11 @@ let optT = (b) => ({ baseline: b.baseline, baselineSession: b.baselineSession })
 
 
 //snapshot: 三表全部列(依主鍵排序)
+//取快照前先等後端 ipDetectNew 計時器 (procProtect.mjs, 每 2 秒) 把本測試行程之來源 IP 登錄進 ips 表: resetToBaseSeed 清空 ips 後, 該計時器之系統寫入
+//(ips 多一筆 ip 127.0.0.1、userIdUpdate 'system') 可能剛好落在「取快照 → 被測操作 → 再取快照」之間, 使「零寫入」誤判 (CC-A-021 全套負載下偶發紅).
+//列出現後計時器不再為此 IP 寫入, 兩次快照一致; 比對仍是完整三表, 被測操作若寫入任何列 (含 ips) 仍會轉紅 (見 tools/api-clientIp.mjs).
 async function snapshot() {
+    await awaitClientIpRegistered()
     let one = async (t) => (await woItems[t].select()).sort((a, b) => (a.id < b.id ? -1 : 1))
     return { users: await one('users'), tokens: await one('tokens'), ips: await one('ips') }
 }

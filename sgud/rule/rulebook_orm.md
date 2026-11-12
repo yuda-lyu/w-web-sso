@@ -23,7 +23,7 @@
 
 - **規則**:
   1. 經 procOrm 寫入之輸入, 驗證須作用於「最終儲存值」: procOrm 寫入時對各欄位 clearXSS(w-serv-orm getMapOrm 之 adjustData), 故新增 / 修改列(與註冊三欄)之欄位值會被 clearXSS 改寫者(`!isEqual(clearXSS(v), v)`, 引同一 `wsemi/src/clearXSS.mjs`)即拒絕 `htmlMarkupNotAllowed`; 明文 password 於雜湊前不檢查; 刪除與比對後未變更之列不檢查.
-  2. 清單儲存之列格式(三清單共用): rows 為陣列、主鍵為非空字串、本批不重複、UTF-8 位元組數不超過 1978(LMDB 鍵長上限)→ 否則 `invalidRows`; users 之 email 空 / 重複回 `userEmailEmpty` / `userEmailDuplicate`. 驗證錯誤一律回語系鍵, 不得以 template literal 組原始字串(ADR-034).
+  2. 清單儲存之列格式(三清單共用): rows 為陣列且**每個元素為非空物件**(`iseobj`; 2026-11-12 補, 於 `ltdtmapping` 之前檢查, 否則僅含單一無效元素之陣列〔`[null]`、`[{}]`、`['']`、`[[]]`〕會被 `ltdtmapping` 內 `isearr` 守門化為 `[]` 而使舊表全數歸為刪除)、主鍵為非空字串、本批不重複、UTF-8 位元組數不超過 1978(LMDB 鍵長上限)→ 否則 `invalidRows`; users 之 email 空 / 重複回 `userEmailEmpty` / `userEmailDuplicate`. 驗證錯誤一律回語系鍵, 不得以 template literal 組原始字串(ADR-034).
   3. 新增驗證時自問「此輸入寫入時會不會被 ORM 拒絕或改寫」: 會者必前移至驗證階段, 並補「與刪除同批」之案例(驗證階段之拒絕須無任何寫入: 整表快照與寫入次數).
   4. 判準複製自上游者須有語料等價測試(真 procOrm 對照); 升版查核加 `npm ls wsemi` 須只有一份(判準與上游共用同一實體之前提).
 - **理由**: 本套件無交易(ADR-044), 寫入階段任一步失敗時其前步驟已落地; 寫入時之改寫使儲存值與送入值不同, 以送入值比對之唯一性、登入與重寄即失準(帳號 `john<doe` 存成 `john&lt;doe` 後無法登入, 與 `john&lt;doe` 可重複註冊). 見 ADR-081.
@@ -32,6 +32,14 @@
   - Grep `Promise\.reject\(\`` 於 `server/procCore.mjs` → 2026-10-12 之 30 筆皆為查找 / 權杖類內部不變量(`failed to find …`、`duplicate …`、`invalid token` 等, 對外經 checkToken 等收斂為語系鍵, ADR-034)或以反引號書寫之語系鍵(`failedLoginForCatch`、`tokenExpired`); `updateTabItems` 與 `createUser` 之驗證段不得有命中.
   - Grep `clearXSS` 於 `server/` → 只在 procCore 之 `updateTabItems`(欄位檢查)與 `createUser`(三欄檢查).
 - **站點全集(2026-10-12)**: `updateTabItems`(users / tokens / ips 三清單)、`createUser`; 皆已套. 測試: `unit-ormWriteFail` A11～A22、B8; `api-adduser` API-011～013(以 HEAD 版 procCore 對真後端驗紅、修改後綠).
+- **元素層級站點全集(2026-11-12, ADR-081 補記)**: 以外部輸入呼叫 `ltdtmapping` / `dtmapping` / `ltdtDiffByKey` 者, Grep `ltdtmapping|dtmapping|ltdtDiffByKey` 於 `server/` 與 `src/`:
+  | 站點 | 輸入來源 | 處置 |
+  |---|---|---|
+  | `server/procCore.mjs` `updateTabItems`(`ltdtmapping(rows, ds[woName].keys)`) | 清單存檔 `rows`(三清單共用; 直呼或經 RPC) | **已套**(`Array.from(rows).some((r) => !iseobj(r))` 於 `ltdtmapping` 前, 為真則 `invalidRows`); RPC 入口 `server/WWebSso.mjs` `updateUsersList / updateTokensList / updateIpsList` 另有 `isearr` + 每列 id 須非空字串之守門(第一層) |
+  | `server/procLang.mjs`、`server/procProtect.mjs` 之 `import ltdtDiffByKey / ltdtmapping` | 僅有 import 行, 全檔無呼叫(既存未使用之 import, 不相關死碼, 未動) | 不可達 |
+  | `src/schema/tables/{users,tokens,ips}.mjs` 之 `funNew(ndata = {})` 內 `dtmapping(ndata, keys(settings))` | 內部呼叫: 伺服器端 `procCore.mjs` 之 `funNew({...})`、`procProtect.mjs` 之 `funNew({...})` 皆傳物件字面量; 前端 `LayoutContentUsers.vue` 之 `funNew()` 無參數(預設 `{}`, 補滿全欄); 預設參數僅在 `undefined` 時生效, 無外部輸入可使 `ndata` 為非物件 | 不可達(核實) |
+  - 回歸判準: 新增以外部輸入呼叫 `ltdtmapping` / `dtmapping` 之站點時, 須先判斷元素是否為物件(非物件在 wsemi 1.9.58 前補成全欄 `''`、其後成 `{}`; 且單一無效元素之陣列會整個化為 `[]`).
+  - 測試: `unit-ormWriteFail` A21b(三清單 × 〔6 種無效元素 × 3 種擺位 + 稀疏陣列之洞〕= 57 格, 直呼 procCore, 修改前 15 格紅: 12 格單一元素擺位 + 3 格洞)、A21c(對照); `api-saverows` SAVEROWS-A-001～004(經 RPC 之端到端守護).
 
 ### R-VAL-02: 後台使用者清單之 redir 檢查——只攔系統管理者本次新增或由非空改為空之列; 載入時即為空之既有列(自助註冊者)不擋存檔、不標警示(2026-10-23, sso-run04 第 116 項; ADR-094; 原則 3)
 
@@ -48,6 +56,31 @@
 - **測試**: `unit-usersRedir`(UR-U-001～014 邏輯 × 列來源與動作〔含基準 null、Map 與真 Vue data、基準重讀更新〕; UR-W01～03 接線靜態守護〔去行尾註解後計數、兩處賦值各緊接 baseline 賦值〕)、`e2e-modifyuser` E2E-016(新, 兩語系 4 張新標準圖; 既有 416 張 sha256 0 變動)與 E2E-007(既有列改空仍攔)、`e2e-adduser` E2E-008(新增列留空仍攔).
 - **修前紅**: 換入 HEAD 版 `LayoutContentUsers.vue`(sha256 回驗還原): E2E-016 兩語系皆失敗(自助註冊者之空 redir 格被標警示圖示, 儲存前斷言 `img` 數 1 ≠ 0; HEAD 之儲存被擋見 sso-verify01 X3c / X8d).
 - **變異驗證(2026-10-23, 外審修補後最終版)**: unit 層 9 項(U1～U5 含 U3b 邏輯、V1 / V2 / V4 接線)全數被抓到(對照組 18 案全綠); V3(元件呼叫檢查時不傳基準)只有 e2e 抓得到: 外審 sol#4 後語意為「基準 null 時只檢查新增列」, 故 V3 下 E2E-016 仍綠(實測 2 / 2 過, 即未被 E2E-016 抓到), 應由 E2E-007(既有列非空改空須被攔)偵測; 該次真瀏覽器層重驗(R-U1、R-V3)於 2026-10-23 因事故中止, **未完成(INCONCLUSIVE, 待補)**, 驅動為歸檔之 `mutate-repo.mjs`(R-V3 之偵測案已改為 E2E-007).
+
+### R-VAL-03: 字串替換代入使用者自填文字或隨機值時, 替換值一律以函數回傳, 輸出逐字等於代入值(2026-11-12, ds-sso2; 前一輪 ds-sso 於變異驗證中發現之既有缺陷)
+
+- **規則**:
+  1. `String.prototype.replace` / `replaceAll` 以**字串**為替換值時, `$&`、`` $` ``、`$'`、`$$`、`$<name>` 是特殊樣式, 會被展開成比對到之文字或前後文. 凡代入「使用者自填文字(帳號、姓名、email)或隨機值(隨機新密碼、驗證權杖)」者, 替換值一律寫成函數: `replaceAll(token, () => 值)`, 使輸出逐字等於代入值.
+  2. 信件內文: `server/procCore.mjs` `renderEmailText`(四個寄信點共用: 註冊驗證信、重寄驗證信、變更密碼通知信、重設密碼信)——替換值為 `htmlEscape(kvMap[k])` 之結果, 以函數回傳; 信中之值逐字等於 htmlEscape 之結果, 重設密碼信中之新密碼(收信端還原 HTML 跳脫後)即資料庫雜湊所對應之密碼.
+  3. 前端: `src/components/LayoutContentUsers.vue` 之後台「重設密碼」確認文字 `{account}` 與成功訊息 `{email}` 同樣以函數回傳.
+  4. 站點全集由 `test/unit-replaceSites.test.mjs` 守護: 掃描 `server/`、`src/` 之 `.replace(` / `.replaceAll(` / wsemi `replace(c, t, r)` 呼叫, 替換值若為非常數之字串運算式(變數、呼叫結果)或含 `$` 之字串常數, 必須在其允許清單內並寫明理由; 清單內已不存在之條目亦失敗(防腐化). 新增此類站點時: 值為使用者自填文字 / 隨機值 → 改函數替換值; 值為數字、固定集合、部署方設定文字 → 登記允許清單.
+- **理由**: 隨機新密碼之特殊字元池含 `$ & < >`(`server/genRandomPassword.mjs`), `$` 後接經 HTML 跳脫成 `&…;` 之字元(`$>` → `$&gt;`)或 `$$`、`$'` 時, 字串替換值中之 `$&` 等被展開, 信中之密碼與資料庫不同, 收信者無法登入(實測: `'…{newPassword}'.replaceAll('{newPassword}', 'FbA$&gt;bHv42=D')` → `…FbA{newPassword}gt;bHv42=D`); `unit-ormWriteFail` B4 以隨機密碼偶發紅即此.
+- **盤點指令**: `node node_modules/mocha/bin/mocha.js --no-parallel test/unit-replaceSites.test.mjs`(掃描並比對允許清單); 或 Grep `replaceAll\(|\.replace\(` 於 `server/`、`src/`.
+- **站點全集(2026-11-12, 掃描 `server/`、`src/`)**:
+
+  | 站點 | 替換值來源 | 判定 |
+  |---|---|---|
+  | `procCore.mjs` `renderEmailText`(`replaceAll(\`{${k}}\`, () => v)`) | 使用者自填文字(姓名、帳號)、隨機新密碼、含隨機權杖之驗證網址、部署方設定之站名 | **已套**(函數替換值) |
+  | `LayoutContentUsers.vue` `{account}`、`{email}`(2 處) | 使用者自填文字 | **已套** |
+  | `procCore.mjs` `htmlEscape` 之 5 個 `replaceAll` | 字串常數(不含 `$`) | 不適用(常數) |
+  | `PageLogin.vue`、`mUI.mjs` 之 `{minLength}`、`{maxLength}`、`{consecutiveCharsMinMatch}`(5 處) | 密碼政策數字 | 不適用(數字) |
+  | `mUI.mjs` `goUrl` 之 `{token}`、`{lang}` | UUID v7 權杖(wsemi `genIDSeq`, 十六進位與連字號)、`eng` / `cht` | 不適用(固定字元集) |
+  | `fetchSsoMsg.mjs` `esc` 之 `'\\$&'` | 特殊樣式本身即所需(正規式跳脫) | 刻意不套 |
+  | `WWebSso.mjs` 之 wsemi `replace(c, t, r)` 4 處(`{sfd}`、`{language}`、`{title}`、`{message}`) | 部署方於 settings 自填之子路徑 / 語系 / 站名 / 結果頁訊息, 非外部輸入或隨機值 | 刻意不套(wsemi `replace` 內部為 `replaceAll(字串)`, 設定文字若含 `$&` / `$$` 仍會被展開; 自有套件之問題, 已列回饋 `sgud/feedback/feedback.md`, 不在本套件繞道) |
+  | `filterVpfsByWindow.mjs` `replace(/\.log$/, '')` | 字串常數 | 不適用(常數) |
+- **已知限制**: 置換為逐鍵依序進行, 值內若恰含後面鍵之置換符(如姓名填 `{newPassword}`)仍會被其後之置換展開(未變; 值為使用者自填文字時信件收件者即本人; 若要根除須改單趟置換, 屬另案).
+- **測試**: `unit-emailRender`(ER-01～06: 四個寄信點以含 `$&`、`$'`、`` $` ``、`$$`、`$<x>` 之值代入, 斷言內文逐字等於測試端獨立實作之 HTML 跳脫結果; ER-04 以 `$` 為唯一特殊字元之密碼策略〔`forbiddenChars` 排除其餘特殊字元, `genRandomPassword` 必產出 12 個 `$`〕走一次重設流程, ER-05 字元池 `$ & < >` 重設 20 次, 信中密碼皆為資料庫可登入之密碼; ER-06 對照)、`unit-replaceSites`(SITE-RP-00～03)、`unit-ormWriteFail` B4(端到端不變式, 原偶發紅).
+- **修前紅 / 變異**: `unit-emailRender` 對未修碼 6 案中 5 案紅(ER-06 為對照); 變異 M1(還原函數替換值)→ ER-01～05 紅 + SITE-RP-02 / 03 紅; M2(拿掉 `htmlEscape`)→ ER-01～04 紅(見 `state.md` 與該輪修正報告).
 
 ### R-ORM-02: 本套件不轉交 w-serv-orm 已移除之使用者檢查設定; settings / optExt 給予上游會拒絕之值者忽略並於啟動時記警告(2026-10-14 改寫, ADR-085; 原 2026-10-12, ADR-083)
 

@@ -8,12 +8,12 @@
 
 | 要查什麼 | 檔 | 內容 |
 |---|---|---|
-| 測試配置全節、**R-E2E-SHARD-01** | `rulebook_test.md` | 測試配置全節: 執行入口、spec→測試檔對照、unit / api / e2e 各層、工具層、目錄與資產、seed、e2e 契約映射; **R-E2E-SHARD-01**(e2e 分組多開: 基準埠 + `E2E_PORT_OFFSET` 位移、畫面含埠之檔列 `officialOnly`、全套跑法; 2026-11-04 ws302, 排程第 302 項); **R-E2E-PORT-01**(e2e 單開自動換埠: 基準埠被他人占用時整組位移、只殺身分已確認屬本實例者、畫面含埠由比對端覆蓋; 2026-11-05 ws309, 排程第 309 項, ADR-104); **R-E2E-PROXY-01**(dev server `/api` proxy 以 keep-alive agent 重用連線, 免每請求兩段各留 TIME_WAIT; 判讀 TIME_WAIT 本機埠 / 遠端埠兩欄都看; 2026-11-07 ss324, 排程第 324 項, ADR-105) |
+| 測試配置全節、**R-E2E-SHARD-01**、**R-TEST-SNAP-01** | `rulebook_test.md` | 測試配置全節: 執行入口、spec→測試檔對照、unit / api / e2e 各層、工具層、目錄與資產、seed、e2e 契約映射; **R-TEST-SNAP-01**(api 層整份資料快照比對須先等來源 IP 登錄: 後端 `ipDetectNew` 計時器之系統寫入不得落在兩次快照之間; 2026-11-12 ds-sso2, 排程第 425 項); **R-E2E-SHARD-01**(e2e 分組多開: 基準埠 + `E2E_PORT_OFFSET` 位移、畫面含埠之檔列 `officialOnly`、全套跑法; 2026-11-04 ws302, 排程第 302 項); **R-E2E-PORT-01**(e2e 單開自動換埠: 基準埠被他人占用時整組位移、只殺身分已確認屬本實例者、畫面含埠由比對端覆蓋; 2026-11-05 ws309, 排程第 309 項, ADR-104); **R-E2E-PROXY-01**(dev server `/api` proxy 以 keep-alive agent 重用連線, 免每請求兩段各留 TIME_WAIT; 判讀 TIME_WAIT 本機埠 / 遠端埠兩欄都看; 2026-11-07 ss324, 排程第 324 項, ADR-105) |
 | 專案特有機制(含補充)、R-STA-01 | `rulebook_mechanism.md` | 專案特有機制(含補充): 統計頁確定性資料、XFF 本機注入、雙擊 / 並發契約、app token、email、語系、對外查詢 helper 等; **R-STA-01**(統計之桶輸出以「現在」所屬桶為上界, 未來時間桶不輸出; 2026-11-03 ss56, ADR-102) |
 | R-VUE-01、R-VUE-02、R-UI-01、R-UI-02、R-UI-03 | `rulebook_ui.md` | R-VUE-01、R-VUE-02、R-UI-01、R-UI-02、R-UI-03 |
 | R-SEC-01、R-LOG-01、R-PERM-01、R-SESS-01、R-APPTOK-01、R-SYS-01、R-IP-01、R-QKEY-01 | `rulebook_security.md` | R-SEC-01、R-LOG-01(console 診斷不輸出資料值, 2026-10-31 第 191 項, ADR-101; 取代 R-SEC-01 之 console 處置)、R-PERM-01、R-SESS-01(改密碼後之 session 處置, 2026-10-23 第 117 項)、R-APPTOK-01(應用系統金鑰兩種用途與身分驗證缺口 S-1~S-6, 2026-10-24 sso-run01)、R-SYS-01(框架系統函數之身分關卡 `sysFuncsPublic`, 2026-10-25 sso-run01, ADR-096)、R-IP-01、R-QKEY-01 |
 | R-OBJ-ITER-01、R-KEY-01、R-CNT-01 | `rulebook_inputkeys.md` | R-OBJ-ITER-01、R-KEY-01、R-CNT-01 |
-| R-ORM-01、R-VAL-01、R-VAL-02、R-ORM-02、R-ORM-03、R-ORM-04 | `rulebook_orm.md` | R-ORM-01、R-VAL-01、R-VAL-02(後台使用者清單 redir 檢查範圍, 2026-10-23 第 116 項)、R-ORM-02、R-ORM-03、R-ORM-04(w-serv-orm 診斷輸出導入 srLog 與外來值入口遮罩, 2026-10-28 第 154 項導入; 2026-10-29 第 161 項改依 wsemi 共用模組, ADR-099) |
+| R-ORM-01、R-VAL-01、R-VAL-02、R-VAL-03、R-ORM-02、R-ORM-03、R-ORM-04 | `rulebook_orm.md` | R-ORM-01、R-VAL-01、R-VAL-02(後台使用者清單 redir 檢查範圍, 2026-10-23 第 116 項)、R-VAL-03(字串替換代入使用者自填文字或隨機值時替換值以函數回傳、站點全集與守護測試 `unit-replaceSites`, 2026-11-12 ds-sso2)、R-ORM-02、R-ORM-03、R-ORM-04(w-serv-orm 診斷輸出導入 srLog 與外來值入口遮罩, 2026-10-28 第 154 項導入; 2026-10-29 第 161 項改依 wsemi 共用模組, ADR-099) |
 | R-ERR-01、R-PKG-01 | `rulebook_runtime.md` | R-ERR-01、R-PKG-01 |
 | 已知缺口 / 待辦(對照技能 audit)全節 | `rulebook_gaps.md` | 已知缺口 / 待辦(對照技能 audit)全節 |
 | 多人同時編輯(原則 10): 欄位三分類、寫入者全集、寫入契約、現存缺陷、第二波規劃與**實作結果**(V1~V14 對應、缺陷 → 測試、變異驗證、改動範圍 → 測試檔) | `rulebook_concurrency.md` | 2026-10-22 盤點輪(第 111 項 inv01)新增; 2026-10-23 第二波實作輪(sso-run01)補「第二波實作結果」 |

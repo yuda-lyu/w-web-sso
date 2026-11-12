@@ -1,6 +1,6 @@
 # 現況(state)
 
-本檔只記**現況**(各功能做到哪裡、對應之規則帳本條目與測試檔、已知缺口與待辦、最近一次驗證或發布之版本); 不寫過程(過程入 `sgud/exp/experience.md`). 接續工作先讀本檔. 完成一項功能或結束一輪工作時更新. 2026-10-22 建立(第 111 項 inv01 盤點輪); 2026-10-23 更新(第 111 項第二波 sso-run01 實作輪; sso-run02 e2e 隔離修正; sso-run03 清單存檔不得新增 session 列; sso-run04 改密碼後之 session 處置〔第 117 項〕與清單 redir 檢查範圍〔第 116 項〕); 2026-10-26 更新(sso-run01 角色名稱統一為「系統管理者」, Gitea issue #17; sso-run02 角色用詞全面統一, ADR-097); 2026-10-31 更新(sso-run01 console 診斷不輸出資料值, 第 191 項, ADR-101); 2026-11-03 更新(ss56 統計之桶輸出不含未來時間桶, Gitea #56, ADR-102 / R-STA-01); 2026-11-04 更新(ws302 e2e 分組多開導入, 排程第 302 項, R-E2E-SHARD-01); 2026-11-05 更新(ws309 e2e 單開自動換埠導入, 排程第 309 項, R-E2E-PORT-01); 2026-11-07 更新(ss324 dev server proxy 重用連線, 排程第 324 項, R-E2E-PROXY-01).
+本檔只記**現況**(各功能做到哪裡、對應之規則帳本條目與測試檔、已知缺口與待辦、最近一次驗證或發布之版本); 不寫過程(過程入 `sgud/exp/experience.md`). 接續工作先讀本檔. 完成一項功能或結束一輪工作時更新. 2026-10-22 建立(第 111 項 inv01 盤點輪); 2026-10-23 更新(第 111 項第二波 sso-run01 實作輪; sso-run02 e2e 隔離修正; sso-run03 清單存檔不得新增 session 列; sso-run04 改密碼後之 session 處置〔第 117 項〕與清單 redir 檢查範圍〔第 116 項〕); 2026-10-26 更新(sso-run01 角色名稱統一為「系統管理者」, Gitea issue #17; sso-run02 角色用詞全面統一, ADR-097); 2026-10-31 更新(sso-run01 console 診斷不輸出資料值, 第 191 項, ADR-101); 2026-11-03 更新(ss56 統計之桶輸出不含未來時間桶, Gitea #56, ADR-102 / R-STA-01); 2026-11-04 更新(ws302 e2e 分組多開導入, 排程第 302 項, R-E2E-SHARD-01); 2026-11-05 更新(ws309 e2e 單開自動換埠導入, 排程第 309 項, R-E2E-PORT-01); 2026-11-07 更新(ss324 dev server proxy 重用連線, 排程第 324 項, R-E2E-PROXY-01); 2026-11-12 更新(ds-sso 清單存檔 rows 元素層級檢查; ds-sso2 信件置換值逐字代入 R-VAL-03、api 層快照比對等來源 IP 登錄 R-TEST-SNAP-01, 排程第 425 項).
 
 ## 版本與依賴
 
@@ -66,6 +66,22 @@
 - **修前 / 修後**(分拆 e2e 各一次, 每 5 秒 netstat 抽樣, 窗口 = e2e 期間 + 2 分): 全機 TIME_WAIT 峰值 17,979 → 407; 實例埠峰值 17,826 → 245; 動態埠占用峰值 5,310 → 263; 實例埠新增 49,343 → 3,038; 後端接受連線 29,833 → 1,120(dev server 連出 29,592 → 899); E2E-006 單案時間窗之 8280 / 11207 新增 eng 18,285 → 39、cht 18,413 → 39.
 - **觀察(未改, 列報告待主控)**: ①w-web-perm / w-web-api / w-web-task 之 `vue.config.js` 為同型 proxy(無 agent); ②主控 `watch-ports` 之 `[ports] HIGH` 行只印遠端埠分組.
 
+## 清單存檔 rows 元素層級檢查(2026-11-12 ds-sso; wsemi 1.9.58 `dtmapping` / `ltdtmapping` 行為改變之下游處置; ADR-081 補記 / R-VAL-01)
+
+- **現況: 已做, 未發布**. `server/procCore.mjs` `updateTabItems` 於 `isarr(rows)` 之後、`ltdtmapping` 之前、取鎖與任何寫入之前, 檢查 rows 每個元素為非空物件(`iseobj`; 稀疏陣列之洞視為無效), 不符整次拒收 `invalidRows`(訊息不帶輸入值; 不另記 `srLog.warn`, 同 ADR-081 決策 6, kpfun 包裝已記 key). 其餘行為(含非陣列 rows 之處置)不變.
+- **實測前提(新舊版 wsemi 皆同)**: 僅含單一無效元素之陣列(`[null]`、`[{}]`、`['']`、`[[]]`)會被 `ltdtmapping` 內 `isearr` 守門化為 `[]`, 直呼 procCore 時三清單可被清空(users 全刪並撤銷 session 權杖、tokens 刪光應用系統金鑰列、ips 全刪); 多元素時無效元素由 `ckKey('id')` 回 `invalidRows`(新舊版一致). 經 RPC 不可達(`server/WWebSso.mjs` 三個存檔入口先守門), 前端三頁送出之列皆為表格資料列.
+- 規則帳本: `rulebook_orm.md` R-VAL-01 規則 2 與「元素層級站點全集」(`ltdtmapping` / `dtmapping` / `ltdtDiffByKey` 外部輸入站點 1 處已套、其餘不可達).
+- 測試: `unit-ormWriteFail` A21b(57 格)、A21c; `api-saverows` SAVEROWS-A-001～004. 驗證與變異見「最近一次驗證」.
+- 待辦(主控): README〈Breaking changes〉條文(見該輪修正報告)隨發布加入; e2e 由主控於發布前之全套閘門跑(改動範圍 → e2e 檔見 `rulebook_test.md`: `server/procCore.mjs` 之 `updateTabItems` 列).
+
+## 信件置換值逐字代入; api 層快照比對等來源 IP 登錄(2026-11-12 ds-sso2; R-VAL-03 / R-TEST-SNAP-01; 排程第 425 項)
+
+- **現況: 已做, 未發布**(與 ds-sso 之未提交改動同工作樹、同窗發布).
+- **信件置換值(R-VAL-03)**: `server/procCore.mjs` `renderEmailText`(註冊驗證信、重寄驗證信、變更密碼通知信、重設密碼信共用)之替換值改以函數回傳(`replaceAll(token, () => 值)`), 信中之值逐字等於 `htmlEscape` 之結果; 修前 `$&`、`$'`、`` $` ``、`$$`、`$<x>` 被展開, 隨機新密碼含 `$` 且其後字元經跳脫成 `&…;`(如 `$>` → `$&gt;`)時信中密碼與資料庫不同(收信者無法登入). 前端 `LayoutContentUsers.vue` 之確認文字 `{account}`、成功訊息 `{email}` 同修. 站點全集(`server/`、`src/`)由 `unit-replaceSites` 守護, 其餘站點為數字 / 固定字元集 / 常數 / 部署方設定文字(wsemi `replace` 4 處, 列回饋), 見 `rulebook_orm.md` R-VAL-03. 測試: `unit-emailRender`(6)、`unit-replaceSites`(4)、`unit-ormWriteFail` B4(原偶發紅, 以 settings 策略模擬修前約 0.6% / 次, 修後 0 / 20000). 已知限制: 置換為逐鍵依序, 值內含後面鍵之置換符仍會被展開(未變).
+- **api 層快照比對(R-TEST-SNAP-01)**: `api-concurrency` CC-A-021 之「零寫入」誤判成因為後端 `ipDetectNew` 計時器(`server/procProtect.mjs:929-980`, 每 2 秒)於 `resetToBaseSeed` 清空 ips 後把本機 IP `127.0.0.1` 補回(`userIdUpdate: 'system'`), 落在兩次快照之間. 修: 新增 `test/tools/api-clientIp.mjs` 之 `awaitClientIpRegistered()`(輪詢至該 IP 的 ips 列出現, 可觀察條件, 逾時拋錯), `api-concurrency` 與 `api-saverows` 之 `snapshot()` 及 ips 載入前先呼叫; 比對仍為完整三表. 量化與變異見該輪修正報告(修前 3 / 150 與 2 / 150、極端視窗 6 / 6, 修後 0 / 100 與 0 / 6; 變異: 拒收前多寫 tokens 列或系統戳記之 `127.0.0.1` ips 列, CC-A-021 皆轉紅).
+- 待辦(主控): e2e 由主控於發布前之全套閘門跑(改動範圍 → e2e 檔見 `rulebook_test.md`: `renderEmailText` / `LayoutContentUsers.vue` 之列); README〈Upgrade Notes〉已加兩節(Breaking changes〈存檔 rows 元素層級檢查〉、〈信件內文之置換值逐字代入〉).
+- 對 wsemi 之回饋 #3(`replace` 字串替換值之特殊樣式)與全域技能回饋 #4 見 `sgud/feedback/feedback.md`.
+
 ## 已知缺口與待辦(索引; 全文見 `rulebook_gaps.md`)
 
 - **console 診斷不輸出資料值之範圍外待裁示(2026-10-31 sso-run01, ADR-101 範圍外觀察)**: ①瀏覽器端 console 47 處輸出列物件(勾選之使用者 / 金鑰 / IP 列、`row`)、後端回傳之 `res`、錯誤值或 URL 之 `view` 參數(`src/**/*.vue`、`main.js`、`mUI.mjs`、`baselineOf.mjs`; 本輪派工限定伺服端、不改畫面); ②srLog 欄位: `err` 記 procOrm 之 reject 訊息(含失敗筆主鍵, 約 21 處)、`srLog.debug` 之 `valueUser` 識別欄照記、`srLog.info` 之 `account` / `userId` / `key` / `value` / `ip`; ③reject / throw 訊息帶值(dspec V20 亦及): `invalid timeBlocked[...]`、`srEmail` 之 `invalid toEmails[...]` 等; ④`procCore.checkTokenByObj` 全庫無呼叫者(含測試與匯出), 疑為孤兒函式(依死碼規則只提出, 不刪; 其內含一處 console 站點, 已改為只印摘要); ⑤第三方 `w-serv-hapi` 於無 `error` 監聽者時 `console.error('[w-serv-hapi]', maskDiagErr(err))` 印出經遮憑證之事件內容(含使用端自填之函數名), 屬該套件範圍.
@@ -84,6 +100,9 @@
 - 前端 8080 沿用時不驗身分; logFd 解析時點不一致; 套件自帶檔以 cwd 相對路徑定位(皆設計限制 / 觀察).
 
 ## 最近一次驗證
+
+- **2026-11-12 ds-sso2(信件置換值逐字代入 R-VAL-03; api 層快照比對等來源 IP 登錄 R-TEST-SNAP-01; README Upgrade Notes 兩節)**: unit + api(`npx mocha --no-parallel "test/unit-*.test.mjs" "test/api-*.test.mjs"`, `quiet-run --lock`)修後 **833 passing / 0 failing / 0 pending**(ds-sso 收尾 823, +6 `unit-emailRender`、+4 `unit-replaceSites`); 新案對未修碼(兩處替換值還原): 10 案中 7 紅(`unit-emailRender` ER-01～05 紅、ER-06 對照綠; `unit-replaceSites` SITE-RP-02 / 03 紅、RP-00 / 01 綠). 變異: 還原函數替換值 → ER-01～05 與 SITE-RP-02 / 03 紅; 拿掉 `htmlEscape` → ER-01～04 紅; 前端 `{email}` 還原字串替換值 → SITE-RP-02 / 03 紅; CC-A-021 於拒收前多寫 tokens 列或系統戳記之 `127.0.0.1` ips 列 → 「零寫入」紅. 負載對照: 修前 3 / 150(無壓力)、2 / 150(5 個低優先權 CPU 壓力行程)、極端視窗 6 / 6, 修後 0 / 100、0 / 6. B4: 修後連跑 5 次綠(含 ER 共 7 案), 以 settings 策略模擬修前約 0.6% / 次(119 / 20000)、修後 0. `e2e-resetpassword`(單檔, `LayoutContentUsers.vue` 之確認文字改動所在流程)26 passing / 0 failing, `git status test/pics` 空; 其餘 e2e 由主控全套閘門跑.
+- **2026-11-12 ds-sso(清單存檔 rows 元素層級檢查; wsemi 1.9.58 下游處置; ADR-081 補記)**: 以 wsemi 新版工作樹打包檔(`npm i <tgz> --no-save`, 版號字串仍為 1.9.57)為測試基準. unit + api(`npx mocha --no-parallel "test/unit-*.test.mjs" "test/api-*.test.mjs"`, `quiet-run --lock`): 修改前 **817 passing / 0 failing / 0 pending**(新版 wsemi, 未改碼); 修改後 **823 passing / 0 failing**(+2 unit: A21b、A21c; +4 api: SAVEROWS-A-001～004). 修前紅: 新案對未改碼, A21b 紅(`users / null / 單一元素` 直呼 resolve 且表被清空; 57 格中 15 格未被拒收: 12 格單一元素擺位 + 3 格洞, 新舊版 wsemi 結果相同, 修後 0 格), `api-saverows` 4 案修前即綠(入口守門, 屬兩層縱深). 變異: M1 停用新檢查 → A21b 紅、api 綠; M2 `Array.from(rows).some` 改 `rows.some`(略過洞) → A21b 在洞格紅; M3 同時停用新檢查與三處 RPC 入口守門 → SAVEROWS-A-001～003 紅(A-004 綠); M4 只停用 RPC 入口守門(新檢查在) → tokens / ips 綠、users 回既有之 `cannotDeleteSelf`(自我保護先於 updateTabItems)而 A-001 紅. e2e 未跑(改動為驗證階段拒收, UI 不可達; 由主控全套閘門跑), `test/pics` 0 張改變.
 
 - **2026-11-07 ss324(dev server proxy 重用連線)**: 全套(`full-suite.mjs`, 修後碼)**GREEN**——`rest` 817 passing / 0 failing / 0 pending(含新增 `unit-devProxyKeepAlive` 3 案)、e2e 290 passing / 0 / 0(5 組 43 / 60 / 40 / 81 / 66, 25.2 分); 修前分拆 e2e 亦 290 passing; `test/pics` 0 變動、`testPending` 無新增; 修前 / 修後 TIME_WAIT 數據見〈第 324 項〉.
 - 測試計數(`rulebook_test.md`, 2026-10-23 第 111 項第二波後): unit 23 檔 326 case、api 17 檔 153 case、e2e 15 flow 282 case(eng + cht); 2026-10-23 sso-run03 後: unit 330、api 156(`mocha --dry-run` 載入 768 案).
