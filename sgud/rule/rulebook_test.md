@@ -280,3 +280,15 @@ baseline 共 398 張(2026-09-28 login E2E-001 試點 +6) + 12 張 `_` 前綴參�
 | 3. 大量請求之 e2e 案例走 proxy 時須確認連線重用 | 現有: `e2e-autoblock` E2E-006 經 `$fapi.getWebInfor()` 送 12,001 次(規格語意, 不改次數); 修前此案兩語系共新增約 3.7 萬個 TIME_WAIT(全套 5.1 萬之 71%), 峰值 17,979、動態埠占用 5,310. 直打後端 `apiUrl` 者(E2E-005 之 1,001 次)瀏覽器本即重用(只增約 23 個) | 抽樣器與 preload 量測法見 `sgud/exp/experience.md`〈TIME_WAIT 量測〉 |
 | 4. 判讀 TIME_WAIT 方向 | 伺服端先關之 TIME_WAIT 其**本機埠**為服務埠(遠端為臨時埠); 只看「遠端埠」會漏掉這一大半(主控監看之 `[ports] HIGH` 行只印遠端埠, 11-05 當次本機埠 11207×6,960、8280×6,552 才是主體). 判讀時本機埠 / 遠端埠兩欄都看 | — |
 | 5. 已知限制 | ①每案例 fresh browser, 瀏覽器關閉時之少量連線(每案約 6 條)屬正常; ②agent 之閒置連線依後端 `Keep-Alive: timeout=5` 提示於約 4 秒後由用戶端關閉, 案例間隔較長時仍會新開(每案約 2 條); ③後端被 `restartBackend` 終止時, 池中連線隨對端關閉而移除, 理論上存在「剛好送在將被關閉之連線上」之毫秒級窗口(全套修後實測見 state) | — |
+
+### e2e 就緒訊號: 頁面平滑捲動須等捲動終態(R-E2E-SCROLL-01; 2026-11-17 sso492, 排程第 503 項)
+
+起因: 全庫連動後 `e2e-changepassword` 之 E2E-001 / 002(兩語系)穩定紅(8627 / 17062 / 9103 / 17573 px); 與任何套件升級無關(wsemi 與變動之 19 個套件全數還原後仍紅), 成因為頁面之平滑捲動動畫與測試步驟競態, 見 `sgud/exp/experience.md`〈平滑捲動動畫 × 測試步驟之競態〉.
+
+| 規則 | 內容 | 盤點 / 驗證 |
+|---|---|---|
+| 1. 站點全集 | 本專案頁面以平滑捲動者只有 `src/components/PageUser.vue` 之 `clickChangePassword`(`el.scrollIntoView({ behavior: 'smooth', block: 'start' })`, 約 330 ms 動畫); 強制變更密碼模式於 `mounted` 亦呼叫同一函數 | `git grep -n "scrollIntoView\|behavior *: *'smooth'\|scroll-behavior" src` 應只命中 `PageUser.vue` |
+| 2. 就緒訊號須為捲動終態 | 展開變更密碼表單後, 進入截圖(`captureStableWithBox`: 內含 `scrollIntoViewIfNeeded`, 會截斷進行中之動畫)或會自動捲入之 Playwright 動作(點「送出」)前, 須等 `.sb` 之捲動終止: 點擊前於 `.sb` 掛 `scrollend` 監聽(`window.__sbScrollEnd`), `waitUntilExist` 條件加「已觸發, 或 `scrollHeight <= clientHeight`(本無可捲)」. 不用固定等待, 不用「`scrollTop` 連續 N ms 不變」之時間窗(主機卡頓時動畫停滯超過窗長會在中途誤判終態). 實測 `scrollend` 於 `scrollTop` 抵終點後約 12 ms 觸發 | `Grep -n "__sbScrollEnd" test/` 應命中 `e2e-changepassword.test.mjs`; 修前逐案紅燈率 4 / 5～7 / 7(7 次執行)、修後整檔 20 / 20、E001 / E002 連跑 5 輪 20 / 20、瞬間捲動(`--disable-smooth-scrolling`)環境 4 / 4 |
+| 3. 標準圖之前提 | `changepassword` 之 E2E-001 / 002 標準圖之幾何為「動畫已終止」之終態(`.sb.scrollTop` 267 / 277); 瀏覽器之平滑捲動開或關(環境之動畫設定)皆須得到相同畫面, 不因環境而重產 | 副本量測見經驗節; 標準圖 0 張改變 |
+| 4. 同類站點(未改) | `e2e-resetpassword` 之強制變更模式以 `waitForTimeout(800 / 1500)` 涵蓋動畫(`captureForceFormExpanded` / `captureAfterSuccess`), 目前綠(26 / 26); 屬固定等待涵蓋非同步來源, 日後改偵測終態時須注意 `mounted` 時無法於點擊前掛監聽(改以 `scrollTop` 變化加 `scrollend` 併用) | `Grep -n "waitForTimeout(1500)\|waitForTimeout(800)" test/e2e-resetpassword.test.mjs` |
+| 5. 已知限制 | ①`scrollend` 需 Chromium 114+(現用 156); ②為何 11-16 之跟跑全綠未能證實(環境之動畫設定未查明); ③共用層 `captureStableWithBox` 之 `scrollIntoViewIfNeeded` 截斷動畫之強化建議見根目錄 `建議w-package-tools-e2e修正.md` | — |

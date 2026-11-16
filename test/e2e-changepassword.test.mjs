@@ -240,17 +240,34 @@ async function gotoUserViewAndOpenChangePw(page, lang) {
     //等 autoLogin 完成: 偵測使用者頁之「變更密碼」鈕可見(技能 §4.4; 原固定 5 秒, 2026-09-28 改)
     await page.locator(`text="${t.changePassword}"`).first().waitFor({ state: 'visible', timeout: 60000 })
 
+    // 點擊前先掛 .sb 之 scrollend 監聽(事件同步): 點擊後 PageUser 以 scrollIntoView({behavior:'smooth'}) 捲入表單, scrollend 即該捲動(含動畫)終止之事件, 須於點擊前掛上以免漏接(見 Step 4)
+    await page.evaluate(() => {
+        let sb = document.querySelector('.sb')
+        window.__sbScrollEnd = false
+        sb.addEventListener('scrollend', () => {
+            window.__sbScrollEnd = true
+        })
+    })
+
     // Step 3: 點「變更密碼」按鈕
     await page.locator(`text="${t.changePassword}"`).first().click()
 
     // Step 4: 語意斷言 (spec E2E-001 驗證 2): 展開後卡片最末列「帳號是否有效」整列完整落在捲動容器 .sb 內.
     // 部署方 2026-09-14 回報 1600×900 下末列只露出上半; PageUser 改以 scrollIntoView block:'start' 把表單捲至頂端使其下各列一併可見.
     // 每個 case 都經此前置, 故每案皆驗; 量測 DOM 幾何不截圖, 與 baseline 尺寸無關.
-    // 先偵測表單已展開(三個密碼欄)且平滑捲動已把末列帶入 .sb, 取代固定 0.8 + 0.6 秒(負載高時捲動未完即量, 2026-09-28);
+    // 先偵測表單已展開(三個密碼欄)且平滑捲動已走到終態、末列已帶入 .sb, 取代固定 0.8 + 0.6 秒(負載高時捲動未完即量, 2026-09-28);
+    // 就緒訊號須為捲動終態, 不能只看「末列已入 .sb」: PageUser 以 scrollIntoView({behavior:'smooth'}) 捲入表單, 為約 330 ms 之動畫(scrollTop 0→…→267),
+    // 末列於動畫中途(實測 scrollTop 約 191)即已落入 .sb, 此時放行會讓後續步驟與動畫競態——captureStableWithBox 之 scrollIntoViewIfNeeded 把動畫截斷於中途(E2E-001 終點 254, 標準圖為 267),
+    // 點「送出」之自動捲入又於動畫尾段多捲(E2E-002 終點 319, 標準圖為 277); 瀏覽器之平滑捲動關閉(瞬間捲動)時兩者皆恰為標準圖之 267 / 277, 故標準圖之前提是「進入後續步驟前捲動已終止」(2026-11-17 實測)
+    // 終態判準: 點擊前所掛之 scrollend 已觸發(實測於 scrollTop 抵達終點後約 12 ms 觸發: 終點於點擊後 326 ms, scrollend 於 336～338 ms);
+    // 內容本就不可捲(scrollHeight <= clientHeight)時不會有捲動, 不等 scrollend. 以瀏覽器原生事件為準, 不用固定等待或「scrollTop 連續 N ms 不變」之時間窗
     // 逾時不在此拋錯, 交由下方斷言附幾何詳情報錯
-    await waitUntilExist(page, `展開後最末列「${t.isActive}」完整落在 .sb 內`, (lastText) => {
+    await waitUntilExist(page, `展開後捲動已終止且最末列「${t.isActive}」完整落在 .sb 內`, (lastText) => {
         let sb = document.querySelector('.sb')
         if (!sb || document.querySelectorAll('input[type="password"]').length < 3) {
+            return false
+        }
+        if (!window.__sbScrollEnd && sb.scrollHeight > sb.clientHeight) {
             return false
         }
         let sbr = sb.getBoundingClientRect()
