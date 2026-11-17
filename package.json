@@ -1,13 +1,13 @@
 {
   "name": "w-web-sso",
-  "version": "1.1.49",
+  "version": "1.1.50",
   "main": "dist/w-web-sso.umd.js",
   "dependencies": {
     "json5": "^2.2.3",
-    "w-aggrid-vue": "^2.1.37",
-    "w-component-vue": "^2.5.59",
+    "w-aggrid-vue": "^2.1.38",
+    "w-component-vue": "^2.5.60",
     "w-data-collector": "^1.0.68",
-    "w-echarts-vue": "^1.0.39",
+    "w-echarts-vue": "^1.0.40",
     "w-email": "^1.1.29",
     "w-serv-hapi": "^1.1.33",
     "w-serv-orm": "^1.1.43",
@@ -30,7 +30,7 @@
     "w-orm-lmdb": "^1.0.68",
     "w-package-tools": "^1.1.28",
     "w-package-tools-e2e": "^1.0.38",
-    "w-screenctl": "^1.0.51"
+    "w-screenctl": "^1.0.52"
   },
   "scripts": {
     "serve": "vue-cli-service serve",
