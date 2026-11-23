@@ -26,10 +26,11 @@ import WServOrm from 'w-serv-orm/src/WServOrm.mjs'
 import { SAFE_KEYS } from 'w-serv-orm/src/safeKeys.mjs'
 import getDiag from 'wsemi/src/getDiag.mjs'
 import getDiagSecrets from 'wsemi/src/getDiagSecrets.mjs'
+import getDiagShape from 'wsemi/src/getDiagShape.mjs'
 import genDiagFunLog from 'wsemi/src/genDiagFunLog.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
-import srLogInit, { maskToken, maskUrl, maskKv, capText, logType } from './srLog.mjs'
+import srLogInit, { maskToken, maskUrl, maskKv, capText } from './srLog.mjs'
 import srEmailInit from './srEmail.mjs'
 import guardOrm from './guardOrm.mjs'
 import procCore from './procCore.mjs'
@@ -116,7 +117,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
     //check WOrm
     if (!isfun(WOrm)) {
-        console.log('invalid WOrm', logType(WOrm)) //建構參數之傳入值一律不輸出, 只給型別 (ADR-101)
+        console.log('invalid WOrm', getDiagShape(WOrm)) //建構參數之傳入值一律不輸出, 只給型別 (ADR-101)
         throw new Error('invalid WOrm')
     }
 
@@ -128,7 +129,7 @@ function WWebSso(WOrm, url, db, pathSettings, optExt = {}) {
 
     //check db
     if (!isestr(db)) {
-        console.log('invalid db', logType(db))
+        console.log('invalid db', getDiagShape(db))
         throw new Error('invalid db')
     }
 

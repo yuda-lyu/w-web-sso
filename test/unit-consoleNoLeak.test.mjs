@@ -125,14 +125,14 @@ describe('procCore 之 console 站點不輸出資料值 (R-LOG-01, ADR-101)', fu
             r = await errOf(env.p.getIpByKV('ip', SECRET))
         })
         assert.strictEqual(r, 'failed to find ip')
-        assertClean(lines, 'getIpByKV 資料表錯誤', ['failed to find ip', 'keyIp ip', 'valueIp (typeof string)'])
+        assertClean(lines, 'getIpByKV 資料表錯誤', ['failed to find ip', 'keyIp ip', 'valueIp (string)'])
 
         //資料表錯誤分支: 欄位名為 SECRET(外來欄位名不印)
         lines = await captureConsole(async () => {
             r = await errOf(env.p.getIpByKV(SECRET, 'x'))
         })
         assert.strictEqual(r, 'failed to find ip')
-        assertClean(lines, 'getIpByKV 資料表錯誤(外來欄位名)', ['failed to find ip', 'keyIp (typeof string)'])
+        assertClean(lines, 'getIpByKV 資料表錯誤(外來欄位名)', ['failed to find ip', 'keyIp (string)'])
 
         //重複分支: 值為 SECRET; 欄位名為 SECRET
         let env2 = mkEnvSso()
@@ -313,7 +313,7 @@ describe('procCore 之 console 站點不輸出資料值 (R-LOG-01, ADR-101)', fu
         lines = await captureConsole(async () => {
             r = await env3.p.checkTokenAndChangePassword('tk-a1', SECRET, PW_INIT, 'New@5678')
         })
-        assertClean(lines, '改密碼 invalid sender(語系字典含值)', ['get(kpLang, lang) (typeof object)', 'lang (typeof string)'])
+        assertClean(lines, '改密碼 invalid sender(語系字典含值)', ['get(kpLang, lang) (keys: webName,note)', 'lang (string)'])
     })
 
 })
@@ -467,25 +467,72 @@ describe('對外查詢 helper 之診斷行不輸出傳入值 (R-LOG-01, ADR-101;
 })
 
 
-describe('輔助函數 logType / logKey (server/srLog.mjs)', function() {
-
-    it('CNL-H01 logType 只給型別: 任何值(字串、物件、陣列、null、數字)皆不含其內容; logKey 名單內照印, 名單外與非字串只給型別', async function() {
-        let { logType, logKey } = await import('../server/srLog.mjs')
-        assert.strictEqual(logType(SECRET), '(typeof string)')
-        assert.strictEqual(logType({ a: SECRET }), '(typeof object)')
-        assert.strictEqual(logType([SECRET]), '(typeof array)')
-        assert.strictEqual(logType(null), '(typeof null)')
-        assert.strictEqual(logType(undefined), '(typeof undefined)')
-        assert.strictEqual(logType(12345), '(typeof number)')
-        assert.strictEqual(logType(() => SECRET), '(typeof function)')
-        assert.strictEqual(logKey('account', ['id', 'account']), 'account')
-        assert.strictEqual(logKey(SECRET, ['id', 'account']), '(typeof string)')
-        assert.strictEqual(logKey('', ['id', 'account']), '(typeof string)')
-        assert.strictEqual(logKey(['id'], ['id', 'account']), '(typeof array)')
-        assert.strictEqual(logKey('id', undefined), '(typeof string)')
-        for (let k of ['__proto__', 'constructor', 'toString']) {
-            assert.strictEqual(logKey(k, ['id', 'account']), '(typeof string)', `原型鏈名稱 ${k} 非名單內`)
+//listFiles: 目錄下全部 .mjs／.js／.vue(遞迴)
+let listFiles = (dir) => {
+    let out = []
+    for (let f of fs.readdirSync(dir, { withFileTypes: true })) {
+        let p = `${dir}/${f.name}`
+        if (f.isDirectory()) {
+            out.push(...listFiles(p))
         }
+        else if (/\.(mjs|js|vue)$/.test(f.name)) {
+            out.push(p)
+        }
+    }
+    return out
+}
+
+
+describe('輔助函數 logKey (server/srLog.mjs) 與形狀摘要之單一實作(wsemi getDiagShape; 第 603 項, ADR-109)', function() {
+
+    it('CNL-H01 logKey 名單內照印, 名單外與非字串只給 wsemi 形狀摘要(不含其內容)', async function() {
+        let { logKey } = await import('../server/srLog.mjs')
+        assert.strictEqual(logKey('account', ['id', 'account']), 'account')
+        assert.strictEqual(logKey(SECRET, ['id', 'account']), '(string)')
+        assert.strictEqual(logKey('', ['id', 'account']), '(string, empty)')
+        assert.strictEqual(logKey(['id'], ['id', 'account']), '(array, length=1)')
+        assert.strictEqual(logKey('id', undefined), '(string)')
+        assert.strictEqual(logKey({ [`k-${SECRET}`]: 1 }, ['id', 'account']), `(keys: k-${SECRET})`, '物件只列鍵名(鍵名屬結構, 規格 D2); 值不印')
+        for (let k of ['__proto__', 'constructor', 'toString']) {
+            assert.strictEqual(logKey(k, ['id', 'account']), '(string)', `原型鏈名稱 ${k} 非名單內`)
+        }
+        //永不拋錯(修前之 logType 對已撤銷之 Proxy 同步拋 TypeError: Cannot perform 'IsArray' on a proxy that has been revoked)
+        let r = Proxy.revocable({}, {})
+        r.revoke()
+        assert.doesNotThrow(() => logKey(r.proxy, ['id']), '已撤銷之 Proxy 不得使 console 診斷拋錯')
+        assert.strictEqual(logKey(r.proxy, ['id']), '(proxy)')
+    })
+
+    it('CNL-H02 單一實作(規格 D1): server/ 與 src/ 內無本地形狀摘要函數(logType / describeShape / describeErr / safeCtl)之定義、匯出或匯入; 使用 getDiagShape( 之檔皆自 wsemi 匯入; srLog 不再匯出 logType', async function() {
+        let srLog = await import('../server/srLog.mjs')
+        assert.strictEqual(srLog.logType, undefined, 'srLog 不得再匯出 logType(形狀摘要一律 wsemi getDiagShape)')
+        assert.strictEqual(fs.existsSync('./src/describeShape.mjs'), false, '本地模組 src/describeShape.mjs 已刪除, 不得復活')
+        let defs = []
+        let bad = []
+        for (let f of [...listFiles('./server'), ...listFiles('./src'), './srv.mjs']) {
+            let c = stripComments(fs.readFileSync(f, 'utf8'))
+            if (/function (logType|describeShape|describeErr|safeCtl)\s*\(|(?:const|let|var) (logType|describeShape|describeErr|safeCtl)\s*=|\b(logType|describeShape|describeErr)\b/.test(c)) {
+                defs.push(f)
+            }
+            if (/\bgetDiagShape\(/.test(c) && !/import getDiagShape from 'wsemi\/src\/getDiagShape\.mjs'/.test(c)) {
+                bad.push(`${f}: 使用 getDiagShape( 但未自 wsemi/src/getDiagShape.mjs 匯入`)
+            }
+        }
+        assert.deepStrictEqual(defs, [], `不得有本地形狀摘要函數之定義或殘留名稱: ${defs}`)
+        assert.deepStrictEqual(bad, [])
+    })
+
+    it('CNL-H03 伺服端形狀摘要之呼叫數依檔鎖定(procCore 10、WWebSso 2、srLog 1[logKey 之名單外]): 站點改回舊寫法或漏接線即失敗', function() {
+        let n = (f) => (stripComments(fs.readFileSync(f, 'utf8')).match(/\bgetDiagShape\(/g) || []).length
+        assert.deepStrictEqual({
+            'server/procCore.mjs': n('./server/procCore.mjs'),
+            'server/WWebSso.mjs': n('./server/WWebSso.mjs'),
+            'server/srLog.mjs': n('./server/srLog.mjs'),
+        }, {
+            'server/procCore.mjs': 10,
+            'server/WWebSso.mjs': 2,
+            'server/srLog.mjs': 1,
+        })
     })
 
 })
@@ -493,7 +540,7 @@ describe('輔助函數 logType / logKey (server/srLog.mjs)', function() {
 
 //
 // 站點全集(原始碼盤點): server/ 全部與 srv.mjs 之活碼 console 呼叫, 其每個引數皆須屬下列允許形態之一; 新增或改寫站點若輸出原始變數(使用者物件、請求值、錯誤物件、設定值)即失敗,
-// 須改用 logType / logKey / diag.brief 或先登錄於 DYN_ARGS(附判定理由)。站點之數量依檔鎖定, 新增站點須同時更新(盤點表見 sgud/rule/rulebook_security.md R-LOG-01)。
+// 須改用 getDiagShape(wsemi)/ logKey / diag.brief 或先登錄於 DYN_ARGS(附判定理由)。站點之數量依檔鎖定, 新增站點須同時更新(盤點表見 sgud/rule/rulebook_security.md R-LOG-01)。
 //
 describe('SITE-CNL 站點全集(原始碼盤點; R-LOG-01)', function() {
 
@@ -624,7 +671,7 @@ describe('SITE-CNL 站點全集(原始碼盤點; R-LOG-01)', function() {
         if (/^diag\.brief\(\w+\)$/.test(a) || /^getDiagBriefErr\(\w+\)$/.test(a)) {
             return true
         }
-        if (isCall(a, 'logType')) {
+        if (isCall(a, 'getDiagShape')) {
             return true
         }
         if (isCall(a, 'logKey') && /^logKey\(\w+, [\w.]+\)$/.test(a)) {
@@ -636,7 +683,11 @@ describe('SITE-CNL 站點全集(原始碼盤點; R-LOG-01)', function() {
     //盤點範圍: server/ 全部、srv.mjs(示範入口)、g_initialData.mjs 與 g_initialTestData.mjs(離線種子腳本之 catch); g.mjs 為時間字串試算之草稿腳本(只印試算用之時間值), 不在此列
     let files = [...listMjs('./server'), './srv.mjs', './g_initialData.mjs', './g_initialTestData.mjs']
 
-    it('SITE-CNL-001 每個活碼 console 呼叫之引數皆為固定字串、logType / logKey、diag.brief / getDiagBriefErr 或 DYN_ARGS 登錄者(不輸出原始變數)', function() {
+    it('SITE-CNL-001 每個活碼 console 呼叫之引數皆為固定字串、getDiagShape / logKey、diag.brief / getDiagBriefErr 或 DYN_ARGS 登錄者(不輸出原始變數)', function() {
+        //允許之形態釘住: 本地舊函數 logType(…) 與前端舊名 describeShape(…) 已不是允許之呼叫(復活即失敗)
+        assert.ok(isOkArg('getDiagShape(valueUser)'))
+        assert.ok(!isOkArg('logType(valueUser)'), '舊 logType 非允許之呼叫(ADR-109 已刪)')
+        assert.ok(!isOkArg('describeShape(valueUser)'))
         let bad = []
         let total = 0
         for (let f of files) {

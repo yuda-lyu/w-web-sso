@@ -1,0 +1,226 @@
+[
+  {
+    "id": "CONTROL-unit",
+    "what": "未變異對照組",
+    "pass": 44,
+    "fail": 0,
+    "code": 0,
+    "verdict": "GREEN(預期)"
+  },
+  {
+    "id": "F1",
+    "what": "PageLogin 登入失敗站點改印錯誤本體(err)",
+    "expectKilledBy": "CNVF-001",
+    "pass": 42,
+    "fail": 2,
+    "code": 2,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "F2",
+    "what": "App.vue autoLogin 站點改印 view 值",
+    "expectKilledBy": "CNVF-001",
+    "pass": 42,
+    "fail": 2,
+    "code": 2,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "F3",
+    "what": "main.js getWebInfor catch 改用 getDiagShape(allowed 但錯誤函數)",
+    "expectKilledBy": "CNVF-006",
+    "pass": 43,
+    "fail": 1,
+    "code": 1,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "F4",
+    "what": "Layout.vue 缺 getDiagBriefErr 匯入",
+    "expectKilledBy": "CNVF-003",
+    "pass": 43,
+    "fail": 1,
+    "code": 1,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "F5",
+    "what": "PageUser logout 站點把錯誤摘要物件內插於樣板字串",
+    "expectKilledBy": "CNVF-006",
+    "pass": 43,
+    "fail": 1,
+    "code": 1,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "F6",
+    "what": "復活本地模組 src/describeShape.mjs",
+    "expectKilledBy": "CNVF-003",
+    "pass": 42,
+    "fail": 2,
+    "code": 2,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "F7",
+    "what": "新增未盤點之前端站點(印使用者物件)",
+    "expectKilledBy": "CNVF-001/002",
+    "pass": 42,
+    "fail": 2,
+    "code": 2,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "F8",
+    "what": "LayoutContentUsers 一站改回舊名 describeShape(未匯入)",
+    "expectKilledBy": "CNVF-001/003",
+    "pass": 40,
+    "fail": 4,
+    "code": 4,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "F9",
+    "what": "App.vue getDiagShape 匯入指向錯誤之 wsemi 模組",
+    "expectKilledBy": "CNVF-003",
+    "pass": 42,
+    "fail": 2,
+    "code": 2,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "F10",
+    "what": "mUI 兩個 getDiagShape 站點之一改印值(圖示名 icon)",
+    "expectKilledBy": "CNVF-001",
+    "pass": 42,
+    "fail": 2,
+    "code": 2,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "S1",
+    "what": "procCore valueUser 站點改印原值",
+    "expectKilledBy": "SITE-CNL-001 / CNL-C01",
+    "pass": 40,
+    "fail": 4,
+    "code": 4,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "S2",
+    "what": "procCore 復活本地 logType(自寫形狀摘要)並使用",
+    "expectKilledBy": "CNL-H02 / SITE-CNL-001",
+    "pass": 40,
+    "fail": 4,
+    "code": 4,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "S3",
+    "what": "srLog logKey 名單外改回傳原值",
+    "expectKilledBy": "CNL-H01 / CNL-C01",
+    "pass": 38,
+    "fail": 6,
+    "code": 6,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "S4",
+    "what": "srLog logKey 名單判定改恆真",
+    "expectKilledBy": "CNL-H01",
+    "pass": 39,
+    "fail": 5,
+    "code": 5,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "S5",
+    "what": "WWebSso invalid db 站點改印原值",
+    "expectKilledBy": "SITE-CNL-001 / CNL-H03",
+    "pass": 41,
+    "fail": 3,
+    "code": 3,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "S6",
+    "what": "srLog 重新匯出 logType",
+    "expectKilledBy": "CNL-H02",
+    "pass": 43,
+    "fail": 1,
+    "code": 1,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "S7",
+    "what": "procCore 缺 getDiagShape 匯入",
+    "expectKilledBy": "CNL-H02",
+    "pass": 37,
+    "fail": 7,
+    "code": 7,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "S8",
+    "what": "procCore 語系字典站點改印字典本體",
+    "expectKilledBy": "CNL-C09 / SITE-CNL-001",
+    "pass": 41,
+    "fail": 3,
+    "code": 3,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "S9",
+    "what": "procCore 一個 timeEnd 站點改印 String(值)",
+    "expectKilledBy": "SITE-CNL-001 / CNL-H03",
+    "pass": 41,
+    "fail": 3,
+    "code": 3,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "S10",
+    "what": "srLog logKey 名單外改 getDiagShape 之取代: 回 typeof 字串(未走 wsemi, 輸出契約改變)",
+    "expectKilledBy": "CNL-H01",
+    "pass": 40,
+    "fail": 4,
+    "code": 4,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "E1",
+    "what": "PageLogin 登入失敗站點改印錯誤本體",
+    "expectKilledBy": "E2E-CN-001",
+    "pass": 1,
+    "fail": 1,
+    "code": 1,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "E2",
+    "what": "App.vue autoLogin 站點改印 view 值",
+    "expectKilledBy": "E2E-CN-001",
+    "pass": 1,
+    "fail": 1,
+    "code": 1,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "E3",
+    "what": "main.js getWebInfor catch 改印錯誤本體",
+    "expectKilledBy": "E2E-CN-002",
+    "pass": 1,
+    "fail": 1,
+    "code": 1,
+    "verdict": "擊殺"
+  },
+  {
+    "id": "PRE",
+    "what": "修前碼(HEAD 版 App.vue／PageLogin.vue／main.js 與本地模組 describeShape.mjs 覆蓋回去; 新測試不變)",
+    "expectKilledBy": "E2E-CN-001 與 E2E-CN-002",
+    "pass": 0,
+    "fail": 2,
+    "code": 2,
+    "verdict": "擊殺"
+  }
+]

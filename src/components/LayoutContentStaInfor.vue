@@ -428,7 +428,7 @@ import { mdiShieldAccountOutline, mdiAccountGroupOutline, mdiAccountCheckOutline
 import WIcon from 'w-component-vue/src/components/WIcon.vue'
 import WIconLoading from 'w-component-vue/src/components/WIconLoading.vue'
 import WTextSelect from 'w-component-vue/src/components/WTextSelect.vue'
-import { describeErr } from '../describeShape.mjs'
+import getDiagBriefErr from 'wsemi/src/getDiagBriefErr.mjs'
 
 
 //時間粒度下拉之結構寬度(px): 左右內距 8+8、左右邊框 1+1、展開圖標 18、圖標與文字間隙 2 (同 w-web-api LayoutContentStats 之 SEL_STRUCT_WIDTH)
@@ -521,7 +521,7 @@ export default {
         //getAndRelaData, 各區塊資料到達即各自渲染 (先到先畫), 任一 reject 才整頁切為 errMsg
         vo.getAndRelaData()
             .catch((err) => {
-                console.log(describeErr(err))
+                console.log(getDiagBriefErr(err))
                 vo.errMsg = vo.$t('getDataError')
             })
 
@@ -747,7 +747,7 @@ export default {
                     vo.userOverview = res
                 })
                 .catch((err) => {
-                    console.log('getStaUserSummary catch', describeErr(err))
+                    console.log('getStaUserSummary catch', getDiagBriefErr(err))
                     throw err
                 })
                 .finally(() => {
@@ -769,7 +769,7 @@ export default {
                     vo.tokenStatus = res
                 })
                 .catch((err) => {
-                    console.log('getStaTokenSummary catch', describeErr(err))
+                    console.log('getStaTokenSummary catch', getDiagBriefErr(err))
                     throw err
                 })
                 .finally(() => {
@@ -791,7 +791,7 @@ export default {
                     vo.ipCharacteristic = res
                 })
                 .catch((err) => {
-                    console.log('getStaIpSummary catch', describeErr(err))
+                    console.log('getStaIpSummary catch', getDiagBriefErr(err))
                     throw err
                 })
                 .finally(() => {
@@ -814,7 +814,7 @@ export default {
                     vo.optLogin = vo.genOpt(vo.$t('userLoginFrequency'), vo.freqLogin, ['attempt', 'success', 'error'], vo.timeGroupLogin)
                 })
                 .catch((err) => {
-                    console.log('getStaUserAccountLogin catch', describeErr(err))
+                    console.log('getStaUserAccountLogin catch', getDiagBriefErr(err))
                     throw err
                 })
 
@@ -835,7 +835,7 @@ export default {
                     vo.calculateTokenUsageSummary(res)
                 })
                 .catch((err) => {
-                    console.log('getStaToken catch', describeErr(err))
+                    console.log('getStaToken catch', getDiagBriefErr(err))
                     throw err
                 })
 
@@ -856,7 +856,7 @@ export default {
                     vo.calculateIpUsageSummary(res)
                 })
                 .catch((err) => {
-                    console.log('getStaIp catch', describeErr(err))
+                    console.log('getStaIp catch', getDiagBriefErr(err))
                     throw err
                 })
 
@@ -879,7 +879,7 @@ export default {
             //任一 rejected → throw 給 mounted 外層 catch 顯示 errMsg
             let rejected = results.filter((r) => r.status === 'rejected')
             if (rejected.length > 0) {
-                rejected.forEach((r) => console.log('getAndRelaData rejected', describeErr(r.reason)))
+                rejected.forEach((r) => console.log('getAndRelaData rejected', getDiagBriefErr(r.reason)))
                 throw rejected[0].reason
             }
         },

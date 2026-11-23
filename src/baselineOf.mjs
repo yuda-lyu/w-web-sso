@@ -1,6 +1,6 @@
 import { buildBaseline, digestRow } from 'w-serv-orm/src/baseline.mjs'
 import contracts from './writeContracts/index.mjs'
-import { describeErr } from './describeShape.mjs'
+import getDiagBriefErr from 'wsemi/src/getDiagBriefErr.mjs'
 
 
 //後台三個清單頁(使用者 / 金鑰 / IP)共用之基準工具 (多人同時編輯之寫入契約, 原則 10; 規則帳本 rulebook_concurrency R-CONC-05):
@@ -15,7 +15,7 @@ function safeBaseline(rows, contract) {
         return buildBaseline(rows, contract)
     }
     catch (err) {
-        console.log('buildBaseline catch', describeErr(err))
+        console.log('buildBaseline catch', getDiagBriefErr(err))
         return null
     }
 }

@@ -425,7 +425,8 @@ import WTimeminute from 'w-component-vue/src/components/WTimeminute.vue'
 import WButtonChip from 'w-component-vue/src/components/WButtonChip.vue'
 import { baselineOfUsers } from '../baselineOf.mjs'
 import { redirOrigOfUsers, redirErrIdsOfUsers } from '../usersRedirCheck.mjs'
-import { describeShape, describeErr } from '../describeShape.mjs'
+import getDiagShape from 'wsemi/src/getDiagShape.mjs'
+import getDiagBriefErr from 'wsemi/src/getDiagBriefErr.mjs'
 
 
 export default {
@@ -585,7 +586,7 @@ export default {
                 vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
             })
             .catch((err) => {
-                console.log(describeErr(err))
+                console.log(getDiagBriefErr(err))
                 vo.errMsg = vo.$t('getDataError')
             })
             .finally(() => {
@@ -1217,7 +1218,7 @@ export default {
                             return
                         }
                         //非預期錯誤 (CheckYesNo 本身故障等), log 但不擾使用者
-                        console.log('showCheckYesNo unexpected error', describeErr(err))
+                        console.log('showCheckYesNo unexpected error', getDiagBriefErr(err))
                     })
                 if (!agree) {
                     return
@@ -1254,7 +1255,7 @@ export default {
             }
             return core()
                 .catch((err) => {
-                    console.log('modifyItemPasswordById catch', describeErr(err))
+                    console.log('modifyItemPasswordById catch', getDiagBriefErr(err))
                     vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
                 })
                 .finally(() => {
@@ -1376,7 +1377,7 @@ export default {
 
             //check
             if (size(vo.itemsCheck) !== 1) {
-                console.log(`size(vo.itemsCheck) !== 1`, describeShape(vo.itemsCheck))
+                console.log(`size(vo.itemsCheck) !== 1`, getDiagShape(vo.itemsCheck))
                 vo.$alert(`${vo.$t('anUnexpectedErrorOccurred')}`, { type: 'error' })
                 return
             }
@@ -1403,7 +1404,7 @@ export default {
 
             //check
             if (!iseobj(row)) {
-                console.log(`!iseobj(row)`, describeShape(row))
+                console.log(`!iseobj(row)`, getDiagShape(row))
                 vo.$alert(`${vo.$t('anUnexpectedErrorOccurred')}`, { type: 'error' })
                 return
             }
@@ -1445,7 +1446,7 @@ export default {
 
             //check
             if (size(vo.itemsCheck) === 0) {
-                console.log(`size(vo.itemsCheck) === 0`, describeShape(vo.itemsCheck))
+                console.log(`size(vo.itemsCheck) === 0`, getDiagShape(vo.itemsCheck))
                 vo.$alert(`${vo.$t('anUnexpectedErrorOccurred')}`, { type: 'error' })
                 return
             }
@@ -1588,7 +1589,7 @@ export default {
                         vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
                     })
                     .catch((err) => {
-                        console.log('refresh getUsersList catch', describeErr(err))
+                        console.log('refresh getUsersList catch', getDiagBriefErr(err))
                         vo.baseline = null //重新讀取失敗: 舊基準已過期, 不沿用; 其後再存檔被後端拒收並提示重新載入(不降級為不帶基準)
                         vo.redirOrig = null //同上, redir 比對基準亦不沿用(null 時只檢查新增列; 後端無基準之存檔一律拒收並提示重新載入)
                     })
@@ -1609,7 +1610,7 @@ export default {
                     //     console.log('then', res)
                     // })
                     .catch((err) => {
-                        console.log('catch', describeErr(err))
+                        console.log('catch', getDiagBriefErr(err))
                         vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
                     })
                     .finally(() => {

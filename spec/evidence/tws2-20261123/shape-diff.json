@@ -1,0 +1,396 @@
+[
+  {
+    "kind": "shape",
+    "input": "string",
+    "describeShape(舊,前端)": "(typeof string)",
+    "logType(舊,伺服端)": "(typeof string)",
+    "getDiagShape(新)": "(string)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "empty string",
+    "describeShape(舊,前端)": "(typeof string, empty)",
+    "logType(舊,伺服端)": "(typeof string)",
+    "getDiagShape(新)": "(string, empty)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "number",
+    "describeShape(舊,前端)": "(typeof number)",
+    "logType(舊,伺服端)": "(typeof number)",
+    "getDiagShape(新)": "(number)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "NaN",
+    "describeShape(舊,前端)": "(typeof number)",
+    "logType(舊,伺服端)": "(typeof number)",
+    "getDiagShape(新)": "(number)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "boolean",
+    "describeShape(舊,前端)": "(typeof boolean)",
+    "logType(舊,伺服端)": "(typeof boolean)",
+    "getDiagShape(新)": "(boolean)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "function",
+    "describeShape(舊,前端)": "(typeof function)",
+    "logType(舊,伺服端)": "(typeof function)",
+    "getDiagShape(新)": "(function)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "bigint",
+    "describeShape(舊,前端)": "(typeof bigint)",
+    "logType(舊,伺服端)": "(typeof bigint)",
+    "getDiagShape(新)": "(bigint)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "symbol",
+    "describeShape(舊,前端)": "(typeof symbol)",
+    "logType(舊,伺服端)": "(typeof symbol)",
+    "getDiagShape(新)": "(symbol)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "null",
+    "describeShape(舊,前端)": "(null)",
+    "logType(舊,伺服端)": "(typeof null)",
+    "getDiagShape(新)": "(null)",
+    "sameAsDescribeShape": true,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "undefined",
+    "describeShape(舊,前端)": "(undefined)",
+    "logType(舊,伺服端)": "(typeof undefined)",
+    "getDiagShape(新)": "(undefined)",
+    "sameAsDescribeShape": true,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "array(3)",
+    "describeShape(舊,前端)": "(array, length=3)",
+    "logType(舊,伺服端)": "(typeof array)",
+    "getDiagShape(新)": "(array, length=3)",
+    "sameAsDescribeShape": true,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "empty array",
+    "describeShape(舊,前端)": "(array, length=0)",
+    "logType(舊,伺服端)": "(typeof array)",
+    "getDiagShape(新)": "(array, length=0)",
+    "sameAsDescribeShape": true,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "object",
+    "describeShape(舊,前端)": "(keys: id,name)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(keys: id,name)",
+    "sameAsDescribeShape": true,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "empty object",
+    "describeShape(舊,前端)": "(keys: none)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(keys: none)",
+    "sameAsDescribeShape": true,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "null-prototype object",
+    "describeShape(舊,前端)": "(keys: k)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(keys: k)",
+    "sameAsDescribeShape": true,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "class instance",
+    "describeShape(舊,前端)": "(keys: x)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(keys: x)",
+    "sameAsDescribeShape": true,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "circular",
+    "describeShape(舊,前端)": "(keys: a,self)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(keys: a,self)",
+    "sameAsDescribeShape": true,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "25 keys",
+    "describeShape(舊,前端)": "(keys: k0,k1,k2,k3,k4,k5,k6,k7,k8,k9,k10,k11,k12,k13,k14,k15,k16,k17,k18,k19,...+5)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(keys: k0,k1,k2,k3,k4,k5,k6,k7,k8,k9,k10,k11,k12,k13,k14,k15,k16,k17,k18,k19,...+5)",
+    "sameAsDescribeShape": true,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "key len 35",
+    "describeShape(舊,前端)": "(keys: KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(keys: KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK...)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "key len 60",
+    "describeShape(舊,前端)": "(keys: KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK...)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(keys: KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK...)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "control/format char keys",
+    "describeShape(舊,前端)": "(keys: a?b,c?d,e?f,g?h,i?j,k​l,m﻿n,o­p)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(keys: a?b,c?d,e?f,g?h,i?j,k?l,m?n,o?p)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "Proxy ownKeys throws",
+    "describeShape(舊,前端)": "(typeof object)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(proxy)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "revoked Proxy",
+    "describeShape(舊,前端)": "(typeof object)",
+    "logType(舊,伺服端)": "THROWS TypeError",
+    "getDiagShape(新)": "(proxy)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "Map",
+    "describeShape(舊,前端)": "(keys: none)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(map, size=1)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "Set",
+    "describeShape(舊,前端)": "(keys: none)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(set, size=1)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "Uint8Array",
+    "describeShape(舊,前端)": "(keys: 0,1,2,3)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(binary, byteLength=4)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "Date",
+    "describeShape(舊,前端)": "(keys: none)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(date)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "RegExp",
+    "describeShape(舊,前端)": "(keys: none)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(regexp)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "Promise",
+    "describeShape(舊,前端)": "(keys: none)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(promise)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "Error object",
+    "describeShape(舊,前端)": "(keys: none)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(error)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "boxed String",
+    "describeShape(舊,前端)": "(keys: 0,1,2)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(boxed)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "shape",
+    "input": "WeakMap",
+    "describeShape(舊,前端)": "(keys: none)",
+    "logType(舊,伺服端)": "(typeof object)",
+    "getDiagShape(新)": "(opaque)",
+    "sameAsDescribeShape": false,
+    "sameAsLogType": false
+  },
+  {
+    "kind": "logKey",
+    "input": "logKey 名單內",
+    "logKey(舊)": "account"
+  },
+  {
+    "kind": "logKey",
+    "input": "logKey 名單外字串",
+    "logKey(舊)": "(typeof string)"
+  },
+  {
+    "kind": "logKey",
+    "input": "logKey 空字串",
+    "logKey(舊)": "(typeof string)"
+  },
+  {
+    "kind": "logKey",
+    "input": "logKey 陣列",
+    "logKey(舊)": "(typeof array)"
+  },
+  {
+    "kind": "logKey",
+    "input": "logKey 名單未給",
+    "logKey(舊)": "(typeof string)"
+  },
+  {
+    "kind": "err",
+    "input": "Error",
+    "describeErr(舊)": "(Error)",
+    "getDiagBriefErr(新)": {
+      "errType": "Error"
+    }
+  },
+  {
+    "kind": "err",
+    "input": "TypeError",
+    "describeErr(舊)": "(TypeError)",
+    "getDiagBriefErr(新)": {
+      "errType": "TypeError"
+    }
+  },
+  {
+    "kind": "err",
+    "input": "Error code ENOENT",
+    "describeErr(舊)": "(Error ENOENT)",
+    "getDiagBriefErr(新)": {
+      "errType": "Error",
+      "errCode": "ENOENT"
+    }
+  },
+  {
+    "kind": "err",
+    "input": "自訂類別且 name 自設為識別字",
+    "describeErr(舊)": "(Error)",
+    "getDiagBriefErr(新)": {
+      "errType": "Error"
+    }
+  },
+  {
+    "kind": "err",
+    "input": "字串(含語系鍵)",
+    "describeErr(舊)": "(string)",
+    "getDiagBriefErr(新)": {
+      "errType": "string"
+    }
+  },
+  {
+    "kind": "err",
+    "input": "null",
+    "describeErr(舊)": "(null)",
+    "getDiagBriefErr(新)": {
+      "errType": "null"
+    }
+  },
+  {
+    "kind": "err",
+    "input": "undefined",
+    "describeErr(舊)": "(undefined)",
+    "getDiagBriefErr(新)": {
+      "errType": "undefined"
+    }
+  },
+  {
+    "kind": "err",
+    "input": "{ message }",
+    "describeErr(舊)": "(object)",
+    "getDiagBriefErr(新)": {
+      "errType": "object"
+    }
+  },
+  {
+    "kind": "err",
+    "input": "number",
+    "describeErr(舊)": "(number)",
+    "getDiagBriefErr(新)": {
+      "errType": "number"
+    }
+  },
+  {
+    "kind": "err",
+    "input": "revoked Proxy",
+    "describeErr(舊)": "(Proxy)",
+    "getDiagBriefErr(新)": {
+      "errType": "Proxy"
+    }
+  }
+]

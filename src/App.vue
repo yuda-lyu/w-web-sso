@@ -46,7 +46,8 @@ import LayoutState from './components/LayoutState.vue'
 import PageLogin from './components/PageLogin.vue'
 import Layout from './components/Layout.vue'
 import PageUser from './components/PageUser.vue'
-import { describeShape, describeErr } from './describeShape.mjs'
+import getDiagShape from 'wsemi/src/getDiagShape.mjs'
+import getDiagBriefErr from 'wsemi/src/getDiagBriefErr.mjs'
 
 
 export default {
@@ -105,7 +106,7 @@ export default {
                     //提交變更viewState前往指定功能頁
                     vo.$ui.updateViewState(view)
                     vo.autoLogining = false
-                    console.log(`autoLogin, goto view[${describeShape(view)}] page`)
+                    console.log(`autoLogin, goto view[${getDiagShape(view)}] page`)
 
                 })
                 .catch((err) => {
@@ -113,7 +114,7 @@ export default {
                     //錯誤發生時提交變更viewState返回登入頁
                     vo.$ui.updateViewState('login')
                     vo.autoLogining = false
-                    console.log(`autoLogin err[${describeErr(err)}], goto view['login'] page`)
+                    console.log('autoLogin err', getDiagBriefErr(err), `goto view['login'] page`)
 
                 })
         }

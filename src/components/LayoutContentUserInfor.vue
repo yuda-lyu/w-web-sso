@@ -250,7 +250,7 @@ import WIcon from 'w-component-vue/src/components/WIcon.vue'
 import ot from 'dayjs'
 import get from 'lodash-es/get.js'
 import istimemsTZ from 'wsemi/src/istimemsTZ.mjs'
-import { describeErr } from '../describeShape.mjs'
+import getDiagBriefErr from 'wsemi/src/getDiagBriefErr.mjs'
 
 
 export default {
@@ -310,7 +310,7 @@ export default {
                 vo.user = res
             })
             .catch((err) => {
-                console.log(describeErr(err))
+                console.log(getDiagBriefErr(err))
                 vo.errMsg = vo.$t('getDataError')
             })
             .finally(() => {

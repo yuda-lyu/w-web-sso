@@ -44,7 +44,8 @@ import replace from 'wsemi/src/replace.mjs'
 import timemsTZ2past from 'wsemi/src/timemsTZ2past.mjs'
 import convertToTree from 'wsemi/src/convertToTree.mjs'
 import submitGuard from './submitGuard.mjs'
-import { describeShape, describeErr } from '../describeShape.mjs'
+import getDiagShape from 'wsemi/src/getDiagShape.mjs'
+import getDiagBriefErr from 'wsemi/src/getDiagBriefErr.mjs'
 
 
 let vo = Vue.prototype
@@ -319,7 +320,7 @@ function parseUrlParams() {
 
     }
     catch (err) {
-        console.log('err', describeErr(err))
+        console.log('err', getDiagBriefErr(err))
     }
     // console.log('kp', kp)
 
@@ -340,7 +341,7 @@ function getUrlView() {
         view = 'login'
     }
     if (view !== 'login' && view !== 'backstage' && view !== 'user') {
-        console.log(`invalid view[${describeShape(view)}]`)
+        console.log(`invalid view[${getDiagShape(view)}]`)
         view = 'login'
     }
     // console.log('view', view)
@@ -773,7 +774,7 @@ let kpIcon = {
 function getIcon(icon) {
     let c = get(kpIcon, icon, '')
     if (!isestr(c)) {
-        console.log(`invalid icon[${describeShape(icon)}]`)
+        console.log(`invalid icon[${getDiagShape(icon)}]`)
     }
     return c
 }

@@ -39,6 +39,7 @@ import delay from 'wsemi/src/delay.mjs'
 import nowms2str from 'wsemi/src/nowms2str.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
 import getDiag from 'wsemi/src/getDiag.mjs'
+import getDiagShape from 'wsemi/src/getDiagShape.mjs'
 import clearXSS from 'wsemi/src/clearXSS.mjs'
 import ds from '../src/schema/index.mjs'
 import * as s from '../src/plugins/mShare.mjs'
@@ -46,7 +47,7 @@ import hashPassword, { verifyPassword } from './hashPassword.mjs'
 import genRandomPassword from './genRandomPassword.mjs'
 import createLockSave from './lockSave.mjs'
 import ormWrite from './ormWrite.mjs'
-import { maskToken, maskKv, keysUserQuery, capText, logType, logKey } from './srLog.mjs'
+import { maskToken, maskKv, keysUserQuery, capText, logKey } from './srLog.mjs'
 import { hasAppPerm, isAppPermsValue, normAppPerms } from '../src/appPerms.mjs'
 import { getAppUsage, getAppId, isAppUsageValue, isAppIdLike, isLegacyAppToken, classifyLegacyAppToken, keyAppUsageRetired } from '../src/appUsage.mjs'
 import contracts from '../src/writeContracts/index.mjs'
@@ -244,7 +245,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
             //console 只印欄位名(名單內者)、值之型別與錯誤摘要, 不印查詢值(識別欄亦然)與錯誤原文 (ADR-101; keyUser 可由對外查詢指定, 名單外者只給型別)
             console.log('err', diag.brief(errTemp))
             console.log('keyUser', logKey(keyUser, keysUserQuery))
-            console.log('valueUser', logType(valueUser))
+            console.log('valueUser', getDiagShape(valueUser))
             console.log(`failed to find user`)
             return Promise.reject(`failed to find user`)
         }
@@ -382,7 +383,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
         if (errTemp) {
             console.log('err', diag.brief(errTemp))
             console.log('keyIp', logKey(keyIp, ds.ips.keys))
-            console.log('valueIp', logType(valueIp))
+            console.log('valueIp', getDiagShape(valueIp))
             console.log(`failed to find ip`)
             return Promise.reject(`failed to find ip`)
         }
@@ -401,7 +402,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
         //check
         if (noips >= 2) {
             console.log('keyIp', logKey(keyIp, ds.ips.keys))
-            console.log('valueIp', logType(valueIp))
+            console.log('valueIp', getDiagShape(valueIp))
             console.log(`duplicate ip by keyIp[${logKey(keyIp, ds.ips.keys)}]`)
             return Promise.reject(`duplicate ip by keyIp[${keyIp}]`)
         }
@@ -495,7 +496,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
 
         //check
         if (!ispnum(minExpired)) {
-            console.log(`minExpired`, logType(minExpired))
+            console.log(`minExpired`, getDiagShape(minExpired))
             console.log(`invalid minExpired`)
             return Promise.reject(`invalid minExpired`)
         }
@@ -672,7 +673,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
         if (actor.kind === 'user') {
             let timeEnd = get(tk, 'timeEnd', '')
             if (!istimemsTZ(timeEnd)) {
-                console.log(`timeEnd`, logType(timeEnd))
+                console.log(`timeEnd`, getDiagShape(timeEnd))
                 console.log(`invalid timeEnd`)
                 return Promise.reject(`invalid timeEnd`)
             }
@@ -957,7 +958,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
         //check
         if (!istimemsTZ(timeEnd)) {
             // console.log(`token`, token)
-            console.log(`timeEnd`, logType(timeEnd))
+            console.log(`timeEnd`, getDiagShape(timeEnd))
             console.log(`invalid timeEnd`)
             return Promise.reject(`invalid timeEnd`)
         }
@@ -969,7 +970,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
         if (tn >= timeEnd) { //現在時間>=到期時間, 代表已到期, 禁止更新token
             // console.log(`token`, token)
             console.log(`tn`, tn) //伺服器時鐘(程式自產, 非輸入)
-            console.log(`timeEnd`, logType(timeEnd)) //權杖列之值, 只給型別
+            console.log(`timeEnd`, getDiagShape(timeEnd)) //權杖列之值, 只給型別
             console.log(`token expired`)
             return Promise.reject(`tokenExpired`)
         }
@@ -1579,8 +1580,8 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
                 //sender
                 let sender = get(kpLang, `${lang}.webName`, '')
                 if (!isestr(sender)) {
-                    console.log('get(kpLang, lang)', logType(get(kpLang, lang))) //整本語系字典與請求之 lang 值皆不印, 只給型別
-                    console.log('lang', logType(lang))
+                    console.log('get(kpLang, lang)', getDiagShape(get(kpLang, lang))) //整本語系字典與請求之 lang 值皆不印, 只給形狀摘要(字典只列頂層鍵名)
+                    console.log('lang', getDiagShape(lang))
                     //須用 throw 讓下方 catch 接住對齊「寄送 email 失敗時, 不能報錯中斷流程」設計
                     //(async function 內 return Promise.reject 不被 try/catch 攔截 → 跳過外圍 catch
                     //→ 密碼已寫但 API reject 給前端, 使用者以為失敗實際舊密碼已失效).
@@ -1593,7 +1594,7 @@ function proc(woItems, procOrm, { srLog, diag = getDiag(), srEmail, salt, minExp
                 //title, 取 kpLang 之 chpwEmTitle 鍵(settings 信件鍵與 kpLangExt 已於初始化覆寫入 kpLang)
                 let title = getEmailTitle('chpwEmTitle', lang)
                 if (!isestr(title)) {
-                    console.log('chpwEmTitle 取不到, lang', logType(lang))
+                    console.log('chpwEmTitle 取不到, lang', getDiagShape(lang))
                     throw new Error(`invalid title`)
                 }
 

@@ -51,9 +51,9 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 承「console 診斷不再輸出資料值」（伺服端，ADR-101），**前端（瀏覽器端）之 console 亦改為只印固定詞彙、型別、筆數、鍵名與錯誤類別**（ADR-107；畫面與功能不變）：
 
-- 原印出之內容：後台三清單之選取列陣列與整列資料、後端回應物件、錯誤本體、網址參數 `view` 與圖示名、`$alert` 之訊息文字與選項等共 48 處（13 個檔）；現改為 `(array, length=N)`、`(keys: a,b,c)`、`(typeof string)`、`(Error)`／`(string)` 等摘要（`src/describeShape.mjs`；暫行單一模組，日後收斂為 wsemi 之共用函數）。前端 catch 之錯誤多為伺服端回傳之語系鍵，現只印 `(string)`；需要時請查伺服端 srLog 之固定詞彙事件。
-- **對使用端之影響**：只影響瀏覽器開發者工具之 console 內容（以 console 輸出作自動化判斷或蒐集者須改）；第三方前端函式庫自身之 console 不在本套件控制內。
-- 測試：`test/unit-consoleNoValuesFront.test.mjs`（站點全集與掃描器，CNVF-001～005）、`test/e2e-consoleNoValues.test.mjs`（真瀏覽器登入並逐頁瀏覽，收集全部 console 並斷言不含使用者資料、密碼與權杖）。
+- 原印出之內容：後台三清單之選取列陣列與整列資料、後端回應物件、錯誤本體、網址參數 `view` 與圖示名、`$alert` 之訊息文字與選項等共 48 處（13 個檔）；現改為 wsemi 共用函數 `getDiagShape`（形狀：`(array, length=N)`、`(keys: a,b,c)`、`(string)`）與 `getDiagBriefErr`（錯誤：物件 `{ errType, errCode? }`，直接作為 console 引數）之摘要；伺服端 console 之形狀摘要亦同改用 `getDiagShape`（`(string)`、物件列鍵名 `(keys: a,b)`；原為 `(typeof string)`、`(typeof object)`）。前端 catch 之錯誤多為伺服端回傳之語系鍵，現只印 `{ errType: 'string' }`；需要時請查伺服端 srLog 之固定詞彙事件。
+- **對使用端之影響**：只影響瀏覽器開發者工具與伺服器標準輸出之 console 內容（以 console 輸出作自動化判斷或蒐集者須改：字樣由 `(typeof string)` 改為 `(string)`、錯誤由字串 `(Error)` 改為物件 `{ errType: 'Error' }`、伺服端物件值由 `(typeof object)` 改為 `(keys: …)`）；第三方前端函式庫自身之 console 不在本套件控制內。
+- 測試：`test/unit-consoleNoValuesFront.test.mjs`（站點全集、掃描器、wsemi 摘要契約與呼叫數，CNVF-001～006）、`test/unit-consoleNoLeak.test.mjs`（伺服端，含單一實作 CNL-H01～H03）、`test/e2e-consoleNoValues.test.mjs`（真瀏覽器登入並逐頁瀏覽，收集全部 console 並斷言不含使用者資料、密碼與權杖；另有資料通道請求失敗之錯誤摘要案）。
 
 ### Breaking changes（存檔 rows 元素層級檢查）
 

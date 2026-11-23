@@ -220,9 +220,9 @@ describe('以使用端給定之欄位名查使用者——白名單 id / account
         assert.ok(!text.includes(secret), 'console 不得含非識別欄之查詢值明文')
         assert.ok(!text.includes(maskKv('tokenVerify', secret)), 'console 不得含遮罩形式(值本身不印, ADR-101)')
         assert.ok(!text.includes('nobody-here'), '識別欄之值亦不印(原照記, ADR-101 取代)')
-        assert.ok(text.includes('valueUser (typeof string)'), 'valueUser 只給型別')
+        assert.ok(text.includes('valueUser (string)'), 'valueUser 只給形狀摘要(wsemi getDiagShape)')
         assert.ok(text.includes('keyUser account'), '識別欄之欄位名照印')
-        assert.ok(text.includes('keyUser (typeof string)'), '名單外之欄位名(tokenVerify)只給型別')
+        assert.ok(text.includes('keyUser (string)'), '名單外之欄位名(tokenVerify)只給形狀摘要')
     })
 
     it('QK-009 log 衛生(規則 6): 使用端可控之 key 與識別欄 value 寫入 log 前置換控制字元並限制長度, 短字串原樣; 非識別欄仍 maskToken', async function() {

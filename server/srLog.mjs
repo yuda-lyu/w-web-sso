@@ -3,6 +3,7 @@ import isestr from 'wsemi/src/isestr.mjs'
 import isarr from 'wsemi/src/isarr.mjs'
 import ispint from 'wsemi/src/ispint.mjs'
 import cint from 'wsemi/src/cint.mjs'
+import getDiagShape from 'wsemi/src/getDiagShape.mjs'
 import WSyslog from 'w-syslog/src/WSyslog.mjs'
 import maskUrl from '../src/maskUrl.mjs'
 
@@ -98,20 +99,17 @@ export function maskKv(key, value) {
 }
 
 
-//logType: 值寫入 console 前之處置(ADR-101, 取代 ADR-068 M 契約中 console 之 maskKv 規則; 依 dspec〈診斷輸出與遮罩〉D2 預設不輸出資料值):
-//使用者物件、請求本體、傳入參數值、資料表與後端之回傳值一律不輸出其值, 只給型別 '(typeof x)'(null 與陣列另標), 不論字串長短、是否為識別欄
-export function logType(v) {
-    let t = v === null ? 'null' : (Array.isArray(v) ? 'array' : typeof v)
-    return `(typeof ${t})`
-}
+//值寫入 console 前之處置(ADR-101, 取代 ADR-068 M 契約中 console 之 maskKv 規則; 依 dspec〈診斷輸出與遮罩〉D2 預設不輸出資料值):
+//使用者物件、請求本體、傳入參數值、資料表與後端之回傳值一律不輸出其值, 只給形狀摘要——一律經 wsemi getDiagShape(單一實作, 規格 D1; 2026-11-23 起取代本檔原自寫之 logType, ADR-109), 本檔不再定義形狀摘要函數
 
 
-//logKey: 欄位名寫入 console 前之處置(ADR-101): 只在 allowed(本套件資料表欄位名單)內才照印, 使用端可自填之欄位名不在名單內者只給型別, 與 logType 同形
+//logKey: 欄位名寫入 console 前之處置(ADR-101): 只在 allowed(本套件資料表欄位名單)內才照印, 使用端可自填之欄位名不在名單內者只給形狀摘要(getDiagShape)
+//  名單內才照印為本套件之判定(欄位名單屬本套件之資料表), wsemi 無等價函數, 故保留於本檔
 export function logKey(key, allowed) {
     if (isestr(key) && isarr(allowed) && allowed.includes(key)) {
         return key
     }
-    return logType(key)
+    return getDiagShape(key)
 }
 
 

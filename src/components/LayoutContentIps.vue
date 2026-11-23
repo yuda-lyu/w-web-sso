@@ -241,7 +241,8 @@ import WAggridVue from 'w-aggrid-vue/src/components/WAggridVue.vue'
 import WTimeminute from 'w-component-vue/src/components/WTimeminute.vue'
 import contracts from '../writeContracts/index.mjs'
 import { baselineOfIps, isSameSnapshot } from '../baselineOf.mjs'
-import { describeShape, describeErr } from '../describeShape.mjs'
+import getDiagShape from 'wsemi/src/getDiagShape.mjs'
+import getDiagBriefErr from 'wsemi/src/getDiagBriefErr.mjs'
 
 
 export default {
@@ -339,7 +340,7 @@ export default {
                 vo.markDataReload() //程式端寫入資料, 其後續 rowsChange 非使用者變更
             })
             .catch((err) => {
-                console.log(describeErr(err))
+                console.log(getDiagBriefErr(err))
                 vo.errMsg = vo.$t('getDataError')
             })
             .finally(() => {
@@ -690,7 +691,7 @@ export default {
 
             //check
             if (size(vo.itemsCheck) === 0) {
-                console.log(`size(vo.itemsCheck) === 0`, describeShape(vo.itemsCheck))
+                console.log(`size(vo.itemsCheck) === 0`, getDiagShape(vo.itemsCheck))
                 vo.$alert(`${vo.$t('anUnexpectedErrorOccurred')}`, { type: 'error' })
                 return
             }
@@ -799,7 +800,7 @@ export default {
                         }
                     })
                     .catch((err) => {
-                        console.log('refresh getIpsList catch', describeErr(err))
+                        console.log('refresh getIpsList catch', getDiagBriefErr(err))
                         vo.baseline = null
                     })
 
@@ -819,7 +820,7 @@ export default {
                     //     console.log('then', res)
                     // })
                     .catch((err) => {
-                        console.log('catch', describeErr(err))
+                        console.log('catch', getDiagBriefErr(err))
                         vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
                     })
                     .finally(() => {

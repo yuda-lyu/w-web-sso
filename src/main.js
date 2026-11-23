@@ -10,7 +10,8 @@ import store from './store/index.mjs'
 import ui from './plugins/mUI.mjs'
 import * as s from './plugins/mShare.mjs'
 import ds from './schema/index.mjs'
-import { describeShape, describeErr } from './describeShape.mjs'
+import getDiagShape from 'wsemi/src/getDiagShape.mjs'
+import getDiagBriefErr from 'wsemi/src/getDiagBriefErr.mjs'
 // console.log('ds', ds)
 
 
@@ -20,7 +21,7 @@ Vue.config.productionTip = false
 //$alert
 Vue.prototype.$alert = function() {
     let [msg, type] = arguments
-    console.log('$alert', describeShape(msg), describeShape(type))
+    console.log('$alert', getDiagShape(msg), getDiagShape(type))
     if (msg !== 'close') {
         WAlert(msg, type)
     }
@@ -71,7 +72,7 @@ WServHapiClient({
 
             })
             .catch((err) => {
-                console.log(describeErr(err))
+                console.log(getDiagBriefErr(err))
                 ui.updateConnState('csErrConn')
             })
 
