@@ -1,0 +1,315 @@
+[
+  {
+    "id": "CONTROL-301",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "GREEN",
+    "passing": 68,
+    "failing": 0,
+    "firstFail": ""
+  },
+  {
+    "id": "CONTROL-206",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "GREEN",
+    "passing": 7,
+    "failing": 0,
+    "firstFail": ""
+  },
+  {
+    "id": "M301-01",
+    "file": "server/staLogs/staLogsCore.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "KILLED",
+    "passing": 4,
+    "failing": 1,
+    "firstFail": "TL-002-x-NaN"
+  },
+  {
+    "id": "M301-02",
+    "file": "server/staLogs/staLogsCore.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "KILLED",
+    "passing": 0,
+    "failing": 1,
+    "firstFail": "TL-001 parseTimeLength: 0～3650 之整數與其數字字串有效(回轉換後 number); 其餘一律 null(不拋錯)"
+  },
+  {
+    "id": "M301-03",
+    "file": "server/staLogs/staLogsCore.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "KILLED",
+    "passing": 1,
+    "failing": 1,
+    "firstFail": "TL-004 single-flight: staLogs(7) 與 staLogs('7') 共用同一 promise(K4)"
+  },
+  {
+    "id": "M301-04",
+    "file": "server/staLogs/staLogsCore.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "KILLED",
+    "passing": 4,
+    "failing": 1,
+    "firstFail": "TL-002-x-NaN"
+  },
+  {
+    "id": "M301-05",
+    "file": "server/staLogs/staLogsCore.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "KILLED",
+    "passing": 56,
+    "failing": 1,
+    "firstFail": "TL-005-fallback-now-date-max"
+  },
+  {
+    "id": "M301-06",
+    "file": "server/staLogs/staLogsCore.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "KILLED",
+    "passing": 0,
+    "failing": 1,
+    "firstFail": "TL-001 parseTimeLength: 0～3650 之整數與其數字字串有效(回轉換後 number); 其餘一律 null(不拋錯)"
+  },
+  {
+    "id": "M301-07",
+    "file": "server/staLogs/staLogsCore.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "KILLED",
+    "passing": 0,
+    "failing": 1,
+    "firstFail": "TL-001 parseTimeLength: 0～3650 之整數與其數字字串有效(回轉換後 number); 其餘一律 null(不拋錯)"
+  },
+  {
+    "id": "M301-08",
+    "file": "server/staLogs/staLogsCore.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "KILLED",
+    "passing": 57,
+    "failing": 1,
+    "firstFail": "TL-005-fallback-now-date-min"
+  },
+  {
+    "id": "M301-09",
+    "file": "server/staLogs/staLogsCore.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "KILLED",
+    "passing": 66,
+    "failing": 1,
+    "firstFail": "TL-006b staLogsCore.genPlan: parseTimeLength 先於 now.subtract 與 kpTime 迴圈; 無效 thr"
+  },
+  {
+    "id": "M301-10",
+    "file": "server/procLang.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "KILLED",
+    "passing": 3,
+    "failing": 1,
+    "firstFail": "TL-007 procLang 有 errTimeLengthInvalid 之 eng 與 cht 文字"
+  },
+  {
+    "id": "M301-11",
+    "file": "server/procStaInfor.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "KILLED",
+    "passing": 67,
+    "failing": 1,
+    "firstFail": "TL-006c 伺服端呼叫統計者(procStaInfor)第一引數皆為常數 7; WWebSso 之 getSta* 遠端函數不收 timeLength"
+  },
+  {
+    "id": "M301-12",
+    "file": "server/staLogs/staLogsCore.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "KILLED",
+    "passing": 4,
+    "failing": 1,
+    "firstFail": "TL-002-x-NaN"
+  },
+  {
+    "id": "M301-13",
+    "file": "server/staLogs/staLogsCore.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "SURVIVED",
+    "passing": 68,
+    "failing": 0,
+    "firstFail": ""
+  },
+  {
+    "id": "M301-14",
+    "file": "server/staLogs/staLogsCore.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "KILLED",
+    "passing": 2,
+    "failing": 1,
+    "firstFail": "TL-004b single-flight: 無效 timeNow 與未給共用同一 promise; timeNow 為 BigInt、循環物件、toJSON "
+  },
+  {
+    "id": "M301-15",
+    "file": "server/staLogs/staLogsCore.mjs",
+    "test": "test/unit-staLogs-timeLength.test.mjs",
+    "verdict": "KILLED",
+    "passing": 0,
+    "failing": 1,
+    "firstFail": "TL-001 parseTimeLength: 0～3650 之整數與其數字字串有效(回轉換後 number); 其餘一律 null(不拋錯)"
+  },
+  {
+    "id": "M206-16",
+    "file": "src/describeShape.mjs",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 5,
+    "failing": 1,
+    "firstFail": "CNVF-004 摘要不含值: 選取列、授權字串、請求回應、錯誤訊息之識別值皆不出現; 輸出有界; 永不拋錯"
+  },
+  {
+    "id": "M206-17",
+    "file": "src/describeShape.mjs",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 5,
+    "failing": 1,
+    "firstFail": "CNVF-004 摘要不含值: 選取列、授權字串、請求回應、錯誤訊息之識別值皆不出現; 輸出有界; 永不拋錯"
+  },
+  {
+    "id": "M206-18",
+    "file": "src/main.js",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 2,
+    "failing": 1,
+    "firstFail": "CNVF-002b console 之引用皆為 console.(log|error|warn|info|debug)( 形式: 無別名、解構、括號存取、`.c"
+  },
+  {
+    "id": "M206-01",
+    "file": "src/components/LayoutContentTokens.vue",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 0,
+    "failing": 1,
+    "firstFail": "CNVF-001 前端 src 檔: 每個可執行 console 呼叫之每個引數皆為固定字面值／typeof／describeShape／describeErr"
+  },
+  {
+    "id": "M206-02",
+    "file": "src/components/LayoutContentTokens.vue",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 0,
+    "failing": 1,
+    "firstFail": "CNVF-001 前端 src 檔: 每個可執行 console 呼叫之每個引數皆為固定字面值／typeof／describeShape／describeErr"
+  },
+  {
+    "id": "M206-03",
+    "file": "src/describeShape.mjs",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 5,
+    "failing": 1,
+    "firstFail": "CNVF-004 摘要不含值: 選取列、授權字串、請求回應、錯誤訊息之識別值皆不出現; 輸出有界; 永不拋錯"
+  },
+  {
+    "id": "M206-04",
+    "file": "src/describeShape.mjs",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 5,
+    "failing": 1,
+    "firstFail": "CNVF-004 摘要不含值: 選取列、授權字串、請求回應、錯誤訊息之識別值皆不出現; 輸出有界; 永不拋錯"
+  },
+  {
+    "id": "M206-05",
+    "file": "src/describeShape.mjs",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 4,
+    "failing": 1,
+    "firstFail": "CNVF-003 describeShape／describeErr 單一實作(src/describeShape.mjs): src 與 server 內無第"
+  },
+  {
+    "id": "M206-06",
+    "file": "src/main.js",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 2,
+    "failing": 1,
+    "firstFail": "CNVF-002b console 之引用皆為 console.(log|error|warn|info|debug)( 形式: 無別名、解構、括號存取、`.c"
+  },
+  {
+    "id": "M206-07",
+    "file": "src/App.vue",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 1,
+    "failing": 1,
+    "firstFail": "CNVF-002 站點全集: 各檔之可執行 console 呼叫數與已盤點者相同; 範圍涵蓋進入檔與全部元件"
+  },
+  {
+    "id": "M206-08",
+    "file": "src/main.js",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 0,
+    "failing": 1,
+    "firstFail": "CNVF-001 前端 src 檔: 每個可執行 console 呼叫之每個引數皆為固定字面值／typeof／describeShape／describeErr"
+  },
+  {
+    "id": "M206-09",
+    "file": "src/components/LayoutContentUsers.vue",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 4,
+    "failing": 1,
+    "firstFail": "CNVF-003 describeShape／describeErr 單一實作(src/describeShape.mjs): src 與 server 內無第"
+  },
+  {
+    "id": "M206-10",
+    "file": "src/App.vue",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 4,
+    "failing": 1,
+    "firstFail": "CNVF-003 describeShape／describeErr 單一實作(src/describeShape.mjs): src 與 server 內無第"
+  },
+  {
+    "id": "M206-11",
+    "file": "src/baselineOf.mjs",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 0,
+    "failing": 1,
+    "firstFail": "CNVF-001 前端 src 檔: 每個可執行 console 呼叫之每個引數皆為固定字面值／typeof／describeShape／describeErr"
+  },
+  {
+    "id": "M206-12",
+    "file": "src/components/PageLogin.vue",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 0,
+    "failing": 1,
+    "firstFail": "CNVF-001 前端 src 檔: 每個可執行 console 呼叫之每個引數皆為固定字面值／typeof／describeShape／describeErr"
+  },
+  {
+    "id": "M206-13",
+    "file": "src/describeShape.mjs",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 5,
+    "failing": 1,
+    "firstFail": "CNVF-004 摘要不含值: 選取列、授權字串、請求回應、錯誤訊息之識別值皆不出現; 輸出有界; 永不拋錯"
+  },
+  {
+    "id": "M206-14",
+    "file": "src/describeShape.mjs",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 5,
+    "failing": 1,
+    "firstFail": "CNVF-004 摘要不含值: 選取列、授權字串、請求回應、錯誤訊息之識別值皆不出現; 輸出有界; 永不拋錯"
+  },
+  {
+    "id": "M206-15",
+    "file": "src/components/LayoutContentUsers.vue",
+    "test": "test/unit-consoleNoValuesFront.test.mjs",
+    "verdict": "KILLED",
+    "passing": 0,
+    "failing": 1,
+    "firstFail": "CNVF-001 前端 src 檔: 每個可執行 console 呼叫之每個引數皆為固定字面值／typeof／describeShape／describeErr"
+  }
+]

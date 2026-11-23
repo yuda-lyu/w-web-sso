@@ -1,0 +1,120 @@
+    1) TL-001 parseTimeLength: 0～3650 之整數與其數字字串有效(回轉換後 number); 其餘一律 null(不拋錯)
+    2) TL-004 single-flight: staLogs(7) 與 staLogs('7') 共用同一 promise(K4)
+    3) TL-004b single-flight: 無效 timeNow 與未給共用同一 promise; timeNow 為 BigInt、循環物件、toJSON 拋錯之物件時 staLogs 不同步拋�
+    4) TL-007 procLang 有 errTimeLengthInvalid 之 eng 與 cht 文字
+      5) TL-002-x-NaN
+      6) TL-002-x-Infinity
+      7) TL-002-x-negInfinity
+      8) TL-002-x-neg1
+      9) TL-002-x-negHuge
+      10) TL-002-x-float1.5
+      11) TL-002-x-3651
+      12) TL-002-x-str3651
+      13) TL-002-x-2e53
+      14) TL-002-x-100000
+      15) TL-002-x-1e20
+      16) TL-002-x-1e308
+      17) TL-002-x-strAbc
+      18) TL-002-x-strEmpty
+      19) TL-002-x-strSpace
+      20) TL-002-x-strHex
+      21) TL-002-x-strInfinity
+      22) TL-002-x-strNaN
+      23) TL-002-x-strFloat
+      24) TL-002-x-strNeg
+      25) TL-002-x-strHuge
+      26) TL-002-x-strMarker
+      27) TL-002-x-null
+      28) TL-002-x-true
+      29) TL-002-x-false
+      30) TL-002-x-obj
+      31) TL-002-x-objValueOf
+      32) TL-002-x-arr
+      33) TL-002-x-arr7
+      34) TL-002-x-bigint
+      35) TL-002-x-symbol
+      36) TL-002-x-numberObj
+      37) TL-002-x-fn
+      38) TL-002-x-revokedProxy
+      39) TL-002-x-date
+      ✔ TL-003-v-0 (301ms)
+      ✔ TL-003-v-negzero (296ms)
+      ✔ TL-003-v-1 (302ms)
+      ✔ TL-003-v-7 (305ms)
+      ✔ TL-003-v-undef (308ms)
+      ✔ TL-003-v-str7 (323ms)
+      ✔ TL-003-v-str-spaced (370ms)
+      ✔ TL-003-v-str-sci (347ms)
+      ✔ TL-003-v-str-plus (339ms)
+      ✔ TL-003-v-30 (379ms)
+      ✔ TL-003-v-3650 (3840ms)
+      40) TL-005-fallback-now-NaN
+      41) TL-005-fallback-now-Infinity
+      42) TL-005-fallback-now-neg-Infinity
+      43) TL-005-fallback-now-1e300
+      44) TL-005-fallback-now-neg1e300
+      ✔ TL-005-fallback-now-str (311ms)
+      45) TL-005-fallback-now-date-max
+      46) TL-005-fallback-now-date-min
+      47) TL-005-fallback-now-date-max-minus-5d
+      48) TL-005-fallback-now-date-min-plus-5d
+      49) TL-005-fallback-now-beyond-2100
+      50) TL-005-fallback-now-year-9999
+      51) TL-005-fallback-now-negative-epoch
+      ✔ TL-005-pinned-now-ok-epoch0 (331ms)
+      ✔ TL-005-pinned-now-ok-2100 (309ms)
+      ✔ TL-006a 使用 timeLength 之伺服端檔案為已盤點之全集(皆在 staLogs/ 內; WWebSso.mjs 與 procStaInfor.mjs 不提及 timeLength)
+      52) TL-006b staLogsCore.genPlan: parseTimeLength 先於 now.subtract 與 kpTime 迴圈; 無效 throw errTimeLengthInvalid; parseTimeLength 於 server/ 唯
+      ✔ TL-006c 伺服端呼叫統計者(procStaInfor)第一引數皆為常數 7; WWebSso 之 getSta* 遠端函數不收 timeLength
+  1) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  2) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  3) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  4) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  5) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  6) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  7) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  8) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  9) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  10) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  11) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  12) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  13) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  14) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  15) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  16) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  17) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  18) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  19) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  20) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  21) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  22) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  23) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  24) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  25) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  26) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  27) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  28) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  29) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  30) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  31) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  32) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  33) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  34) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  35) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  36) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  37) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  38) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  39) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  40) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  41) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  42) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  43) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  44) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  45) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  46) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  47) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  48) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  49) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  50) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  51) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)
+  52) unit-staLogs-timeLength (統計 timeLength 入口檢測, 排程第 301 項)

@@ -176,14 +176,22 @@ describe('unit-staLogs-futureBucket', function() {
     })
 
 
-    //FUT-005 (R1): 窗為空 (timeLength 為負, 窗之起點晚於現在) 時不拋錯, 因無任何紀錄屬於「現在所屬桶以前」, 三種輸出皆為空陣列
+    //FUT-005 (R1): 原「窗為空」案(timeLength 為負, 窗之起點晚於現在, 輸出為空陣列)於 2026-11-23 改為「負值於入口被拒」(排程第 301 項, ADR-106: timeLength 為 0～3650 之整數, 負值無效, 與 w-web-api、w-web-perm 同):
+    //  ①負值 reject 固定鍵 errTimeLengthInvalid(不拋同步例外、不卡住); ②窗最小之合法值 timeLength=0(窗僅含現在所屬桶)與 1、7 時, 上界仍為現在所屬桶, 未來紀錄不輸出, 最末桶即現在所屬桶
     for (let ti of ['hr', 'day']) {
-        it(`FUT-005-${ti}: 窗為空時未來紀錄不輸出, 不拋錯`, async function() {
-            let r = await staLogs(-1, ti, { fdLog: fdDirty, timeNow: NOW, useCache: false })
-            for (let key of KEYS) {
-                assert.deepStrictEqual(r[key], [], `${ti}/${key}`)
-            }
+        it(`FUT-005-${ti}-negative-rejected: 負 timeLength 被拒(固定鍵 errTimeLengthInvalid)`, async function() {
+            let err = await staLogs(-1, ti, { fdLog: fdDirty, timeNow: NOW, useCache: false }).then(() => null, (e) => e)
+            assert.strictEqual(err, 'errTimeLengthInvalid')
         })
+        for (let n of [0, 1, 7]) {
+            it(`FUT-005-${ti}-timeLength-${n}: 未來紀錄不輸出, 最末桶為現在所屬桶, 不拋錯`, async function() {
+                let r = await staLogs(n, ti, { fdLog: fdDirty, timeNow: NOW, useCache: false })
+                for (let key of KEYS) {
+                    assert.ok(r[key].length >= 1, `${ti}/${key}/${n}: 窗至少含現在所屬桶`)
+                    assert.strictEqual(lastLabel(r, key), NOW_T.format(FMT[ti]), `${ti}/${key}/${n}: 最末桶為現在所屬桶`)
+                }
+            })
+        }
     }
 
 

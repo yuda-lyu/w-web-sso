@@ -939,6 +939,11 @@ let kpLang = {
         eng: 'Failed to retrieve statistics data.',
         cht: '統計資料取得失敗。',
     },
+    //統計核心(staLogsCore.genPlan)之 timeLength 入口檢測失敗之固定鍵 (排程第 301 項; 目前無遠端入口傳入 timeLength, procStaInfor 固定傳 7, 此鍵供內部呼叫之 reject 與日後入口使用)
+    errTimeLengthInvalid: {
+        eng: 'Invalid time length.',
+        cht: '時間長度無效。',
+    },
     // msgSendChangePasswordEmailSuccess: {
     //     eng: 'Verification email sent. Please check your inbox and click the link to change your password.',
     //     cht: '驗證信已發送，請至信箱收取並點擊連結以變更密碼。',

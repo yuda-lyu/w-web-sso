@@ -354,6 +354,7 @@ import WText from 'w-component-vue/src/components/WText.vue'
 import WTextSelect from 'w-component-vue/src/components/WTextSelect.vue'
 import WButtonChip from 'w-component-vue/src/components/WButtonChip.vue'
 import { mdiAccount, mdiLock, mdiEye, mdiEyeOff, mdiLockCheck, mdiRenameBox, mdiEmail } from '@mdi/js/mdi.js'
+import { describeShape, describeErr } from '../describeShape.mjs'
 
 
 export default {
@@ -652,7 +653,7 @@ export default {
             return vo.$ui.runSubmit('register', () => {
                 return core()
                     .catch((err) => {
-                        console.log('catch', err)
+                        console.log('catch', describeErr(err))
                         vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
                     })
                     .finally(() => {
@@ -720,7 +721,7 @@ export default {
             return vo.$ui.runSubmit('resendVerifyEmail', () => {
                 return core()
                     .catch((err) => {
-                        console.log('catch', err)
+                        console.log('catch', describeErr(err))
                         vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
                     })
                     .finally(() => {
@@ -806,7 +807,7 @@ export default {
                     else {
                         //提交變更viewState前往指定功能頁
                         vo.$ui.updateViewState(view)
-                        console.log(`login, goto view[${view}] page`)
+                        console.log(`login, goto view[${describeShape(view)}] page`)
                     }
 
                     //r: mUI.login 之結果('redir' 轉址中 / 'done'), 供 login 之 runSubmit 判斷是否保持占位
@@ -834,13 +835,13 @@ export default {
                         let t = isestr(err) ? vo.$tErr(err) : ''
                         vo.loginError = (isestr(t) && t !== err) ? t : vo.$t('loginUnknownError')
                         if (!isestr(t) || t === err) {
-                            console.log('login unknown error', err)
+                            console.log('login unknown error', describeErr(err))
                         }
                     }
 
                     //錯誤發生時提交變更viewState返回登入頁
                     vo.$ui.updateViewState('login')
-                    console.log(`login err[${JSON.stringify(err)}], goto view['login'] page`)
+                    console.log(`login err[${describeErr(err)}], goto view['login'] page`)
 
                 })
 

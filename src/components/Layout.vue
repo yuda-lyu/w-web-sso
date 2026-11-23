@@ -287,6 +287,7 @@ import WTooltip from 'w-component-vue/src/components/WTooltip.vue'
 import WTextSelect from 'w-component-vue/src/components/WTextSelect.vue'
 import WButtonCircle from 'w-component-vue/src/components/WButtonCircle.vue'
 import LayoutContent from './LayoutContent.vue'
+import { describeErr } from '../describeShape.mjs'
 
 
 //寬窄版判斷用之固定寬(px), 須與template之寬版結構一致
@@ -429,7 +430,7 @@ export default {
                         }
                     })
                     .catch((err) => {
-                        console.log('checkToken catch', err)
+                        console.log('checkToken catch', describeErr(err))
                         vo.logout() //登出與轉跳登入頁
                     })
 
@@ -697,7 +698,7 @@ export default {
 
                     })
                     .catch((err) => {
-                        console.log(`logout err[${err}]`)
+                        console.log(`logout err[${describeErr(err)}]`)
                     })
             })
 

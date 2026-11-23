@@ -1,0 +1,8 @@
+    1) CNVF-001 前端 src 檔: 每個可執行 console 呼叫之每個引數皆為固定字面值／typeof／describeShape／describeErr(修前 2026-11-23 於 54 處站�
+    ✔ CNVF-002 站點全集: 各檔之可執行 console 呼叫數與已盤點者相同; 範圍涵蓋進入檔與全部元件 (41ms)
+    ✔ CNVF-002b console 之引用皆為 console.(log|error|warn|info|debug)( 形式: 無別名、解構、括號存取、`.catch(console.log)` 式傳遞、其他方法�
+    ✔ CNVF-002c 掃描器自測: 對 .vue 之 <script> 區與各種盲點寫法確實回報(防掃描器空轉)
+    ✔ CNVF-003 describeShape／describeErr 單一實作(src/describeShape.mjs): src 與 server 內無第二份定義; 用到者皆自該模組匯入; 依賴閉包不含
+    ✔ CNVF-004 摘要不含值: 選取列、授權字串、請求回應、錯誤訊息之識別值皆不出現; 輸出有界; 永不拋錯
+    ✔ CNVF-005 前端掃描範圍外之 src 站點只有 fetchSsoMsg(引用方後端執行; 其診斷行由 unit-consoleNoLeak SITE-CNL-004 逐字釘住)
+  1) unit-consoleNoValuesFront (前端 console 不印資料值, 排程第 206 項)

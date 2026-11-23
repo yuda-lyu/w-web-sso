@@ -37,6 +37,24 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 
 ## Upgrade Notes
 
+### 統計核心之 `timeLength`／`opt.timeNow` 入口檢測（修正，R-STA-TIMELENGTH-01）
+
+**後台統計之核心函數（`server/staLogs/staLogsCore.mjs` 之 `genPlan`／`staLogs`，三支統計共用）對無效之 `timeLength` 原會陷入同步無窮迴圈（缺陷修正）**：`timeLength`（往回統計之天數）為 `NaN`、`±Infinity`、`'abc'`、`{}`、`1e20`、`100000` 等時，建桶迴圈永不結束（佔死主執行緒，後端停止回應）；`-1`、`1.5`、`''`、`null`、`true`、`[]` 則被悄悄當成 0／1 天處理，且無上限（`3651` 天建出約 8.8 萬桶）。`opt.timeNow`（測試掛鉤）為 `NaN`、`±Infinity` 或 Date 之極值亦同。本版起：
+
+- **`timeLength` 須為 0～3650 之整數或其數字字串**（`'7'`、`' 7 '` 收下並以轉換後之數值為準）；其餘一律拒絕：`genPlan` 同步 `throw new Error('errTimeLengthInvalid')`，`staLogs`（回傳 Promise）`reject('errTimeLengthInvalid')`（固定鍵字串，不回顯輸入值）；語系鍵 `errTimeLengthInvalid` 已入 `procLang`（eng／cht）。
+- **負值由「回空輸出」改為「被拒」**（行為變更，取代 ADR-102 第 4 點）。
+- **`opt.timeNow` 須為 1970～2100 年內之毫秒時刻**，其餘視為未給、退回現在。
+- **對使用端之影響**：本套件之後台統計只經 `procStaInfor`，其呼叫統計時 `timeLength` 恆為常數 7，**無任何遠端或使用者可傳入之路徑**，合法輸入之輸出與修前逐位元相同，無須調整；只有直接呼叫 `staLogs`／`genPlan`（本套件之內部函數，非對外 API）並傳入上列無效值者受影響。
+- 測試：`test/unit-staLogs-timeLength.test.mjs`（TL-001～007，含子行程逾時保護之各層實測）、`test/unit-staLogs-futureBucket.test.mjs` FUT-005；設計見 spec/設計要點與取捨.md ADR-106。
+
+### 前端瀏覽器 console 不再輸出資料值（R-LOG-02）
+
+承「console 診斷不再輸出資料值」（伺服端，ADR-101），**前端（瀏覽器端）之 console 亦改為只印固定詞彙、型別、筆數、鍵名與錯誤類別**（ADR-107；畫面與功能不變）：
+
+- 原印出之內容：後台三清單之選取列陣列與整列資料、後端回應物件、錯誤本體、網址參數 `view` 與圖示名、`$alert` 之訊息文字與選項等共 48 處（13 個檔）；現改為 `(array, length=N)`、`(keys: a,b,c)`、`(typeof string)`、`(Error)`／`(string)` 等摘要（`src/describeShape.mjs`；暫行單一模組，日後收斂為 wsemi 之共用函數）。前端 catch 之錯誤多為伺服端回傳之語系鍵，現只印 `(string)`；需要時請查伺服端 srLog 之固定詞彙事件。
+- **對使用端之影響**：只影響瀏覽器開發者工具之 console 內容（以 console 輸出作自動化判斷或蒐集者須改）；第三方前端函式庫自身之 console 不在本套件控制內。
+- 測試：`test/unit-consoleNoValuesFront.test.mjs`（站點全集與掃描器，CNVF-001～005）、`test/e2e-consoleNoValues.test.mjs`（真瀏覽器登入並逐頁瀏覽，收集全部 console 並斷言不含使用者資料、密碼與權杖）。
+
 ### Breaking changes（存檔 rows 元素層級檢查）
 
 為避免 wsemi 1.9.58 起 `dtmapping`／`ltdtmapping` 對非物件元素行為改變所衍生之歧義，後台三清單存檔（`updateUsersList`／`updateTokensList`／`updateIpsList` 之底層 `updateTabItems`）新增元素層級檢查：
@@ -109,7 +127,7 @@ To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-
 - **離線種子腳本**（`g_initialData.mjs`、`g_initialTestData.mjs`）：`catch` 只印錯誤摘要，不再印例外物件。
 - **不變**：固定詞彙（如 `invalid token`、`duplicate tokens`、`failed to find user`）、標頭名稱（取不到來源 IP 時之 `headers(keys)`，值不印）、權杖之 `maskToken` 遮罩（srLog）、對外 reject 之固定 key（K 契約）、對外 reject／throw 之遮罩副本。
 - 受影響者：以 stdout 擷取錯誤原文、被封鎖 IP、查詢值之維運腳本或告警規則（本套件內無此類消費者）；請改讀 srLog。
-- 範圍：本輪只改伺服端 console；srLog 欄位（如 `err` 記 procOrm 之 reject 訊息）、reject／throw 訊息帶值之處與瀏覽器端 console 不在此列（見 `spec/設計要點與取捨.md` ADR-101 範圍外觀察）。
+- 範圍：本輪只改伺服端 console；srLog 欄位（如 `err` 記 procOrm 之 reject 訊息）、reject／throw 訊息帶值之處不在此列（見 `spec/設計要點與取捨.md` ADR-101 範圍外觀察）；瀏覽器端 console 已於其後之版本處理（見上〈前端瀏覽器 console 不再輸出資料值〉，ADR-107）。
 - 測試：`test/unit-consoleNoLeak.test.mjs`（同一組識別值置於使用者物件、請求本體、建構參數與錯誤原文，觸發各站點並斷言 console 不含；站點全集守門 SITE-CNL）、`test/api-consoleNoLeak.test.mjs`（獨立後端真行程之 stdout／stderr）。
 
 ### Upgrading from 1.1.15 and earlier

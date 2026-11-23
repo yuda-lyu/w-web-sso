@@ -36,6 +36,28 @@
 - **測試**: `test/unit-staLogs-futureBucket.test.mjs`(FUT-001～008); `test/unit-staLogs-golden.test.mjs`(GOLD-001 / 002 / 003 + WORKER-001, expected 由 `gen-expected.mjs` 之 `dropFuture` 剔除 legacy 多出之未來列, 其餘與 legacy 逐位元相同).
 - **標準圖**: `test/pics/stainfor` 0 張改變(e2e 以真實時鐘、`./logs` 與 fixture log 皆無未來時間紀錄; 修前修後輸出對真實 `./logs` 逐位元相同).
 
+## R-STA-TIMELENGTH-01: 統計核心之 `timeLength` 以 `parseTimeLength` 單一擁有者檢測, 無效以固定鍵 `errTimeLengthInvalid` 拒絕; `opt.timeNow` 限 1970～2100 年(2026-11-23 tws1, 排程第 301 項, ADR-106; 比照 w-web-perm 1.1.58、w-web-api; 取代 ADR-102 第 4 點「窗為空」)
+
+- **規則**:
+  1. `server/staLogs/staLogsCore.mjs` 之 `parseTimeLength(v)` 為 `timeLength` 之唯一檢測(單一擁有者): wsemi `iseint(v, { min: 0, max: 3650 })`(`MAX_TIME_LENGTH_DAY` 3650); 有效為 0～3650 之整數或其數字字串(含頭尾空白), **其後只用轉換後之值**(K4; `Number(trim)`); 其餘回 `null`; 永不拋錯(讀取即拋之值回 `null`)、不回顯值(K9). 不得於他處另寫等價檢測.
+  2. `genPlan` 首動作呼叫之(先於 `subtract` 與 `kpTime` 迴圈), 無效同步 `throw new Error('errTimeLengthInvalid')`; `staLogs()` 回 `Promise.reject('errTimeLengthInvalid')`(固定鍵字串, 不同步 throw); single-flight 鍵全用檢測後之值: `plan.timeLength`(轉換後; `-0` 正規化為 `+0`)與 `plan.timeNowPinned ? plan.timeNow : null`(無效 `timeNow` 與未給同鍵; TL-004b).
+  3. `opt.timeNow` 須為 number 且在 `[0, 4102444800000]` 內, 否則視為未給(退回現在); 不以 `isValid()` 判定(`8.64e15` 本身有效而其後溢位).
+  4. **無遠端入口傳入 `timeLength`**: `procStaInfor` 呼叫三支統計時第一引數恆為常數 7, `WWebSso` 之 `getSta*` 只收 `(_t, token)`(TL-006c 釘住); 日後新增入口須先經 `parseTimeLength`(或使用 `staLogs` 之固定鍵 reject).
+  5. 語系鍵 `errTimeLengthInvalid`(eng + cht)入 `procLang`.
+- **站點判準表**(`Grep -n "timeLength" server --glob "*.mjs"` 全集 8 檔, 由 TL-006a 鎖定):
+
+| 站點 | 角色 | 狀態 |
+|---|---|---|
+| `staLogs/staLogsCore.mjs` `genPlan` / `staLogs` | 檢測與拒絕(單一擁有者) | **已套** |
+| `staLogs/staLogsCore.callWorker.mjs`、`staToken.mjs`、`staIp.mjs`、`staUserAccountLogin.mjs` 與各 `.callWorker.mjs` | 預設值 7 之轉交, 皆經 `staLogs` 核心 | 已套(經核心; TL-002 逐層驗) |
+| `procStaInfor.mjs` | 呼叫端, 第一引數恆為 `7` | 不適用(無外部輸入; TL-006c) |
+| `WWebSso.mjs` `getSta*` | 遠端函數, 不收 `timeLength` | 不適用(TL-006c) |
+
+- **盤點指令**: `Grep -n "timeLength" server --glob "*.mjs"`(8 檔, 皆在 `server/staLogs/`); `Grep -n "parseTimeLength" server`(唯一定義於 `staLogsCore.mjs`).
+- **測試**: `test/unit-staLogs-timeLength.test.mjs`(TL-001 判準全表、TL-002 無效 35 候選 × 9 層〔genPlan 同步 throw, 其餘 reject 固定鍵; 子行程 + 逾時〕、TL-003 有效 11 候選 × 9 層桶數、TL-004 single-flight(7／'7'／' 7 ' 同一 promise)、TL-004b single-flight 鍵之 `timeNow` 只在被採用時入鍵(無效 `timeNow`〔含 BigInt、循環物件、`toJSON` 拋錯者〕與未給同鍵且不使 `staLogs` 同步拋錯)、TL-005 `timeNow` 範圍外 13 種退回現在 + 範圍內 2 種採用、TL-006a～c 站點不變式、TL-007 語系鍵; 共 68 案); `test/tools/timeLengthChild.mjs`(子行程); `unit-staLogs-futureBucket` FUT-005 改為負值被拒與 `timeLength ∈ {0,1,7}`. 修前紅(修前碼鏡像根): 見 `sgud/state/state.md`〈第 301／206／389 項〉; 變異驗證見 `sgud/state/state.md`.
+- **為何子行程**: 修前之無效值使 `genPlan` 為同步無窮迴圈, 同行程內 mocha 之逾時計時器亦無法觸發; 父行程以 `spawnSync` 之 `timeout`(`TL_CHILD_TIMEOUT_MS`, 預設 15 秒)終止, 逾時即判該層卡住.
+- **已知限制**: 與 w-web-api 之寬嚴不同(本套件收數字字串、w-web-api 之 `Number.isInteger` 拒字串), 收斂列主控待辦; 上限 3650 對 `hr` 仍可建約 8.8 萬桶(約 1～3 秒).
+
 ## 專案特有機制(補充)
 
 - email 信件文字(標題/內文)統一存於 `server/procLang.mjs`(`regVerifyEm*` / `chpwEm*` / `resetPwEm*` 等鍵), settings 之 `kpLangExtEmail` 逐語系覆寫、`kpLangExt` 最終覆寫(2026-08-20 `2f03bc5` 起, 原 `server/template/*.html` 信件模板已移除); `procLang({})` 回傳形狀為 `r[lang][key]`.

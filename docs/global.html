@@ -29,7 +29,7 @@
 <nav >
     
     
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="WWebSso.html">WWebSso</a></li></ul><h3>Global</h3><ul><li><a href="global.html#calcUsageSummary">calcUsageSummary</a></li><li><a href="global.html#convertUser">convertUser</a></li><li><a href="global.html#createLockSave">createLockSave</a></li><li><a href="global.html#fetchSsoMsg">fetchSsoMsg</a></li><li><a href="global.html#getFreqVal">getFreqVal</a></li><li><a href="global.html#getIgnoredOrmKeys">getIgnoredOrmKeys</a></li><li><a href="global.html#groupFreq">groupFreq</a></li><li><a href="global.html#guardOrm">guardOrm</a></li><li><a href="global.html#httpGetJson">httpGetJson</a></li><li><a href="global.html#maskUrl">maskUrl</a></li><li><a href="global.html#ormWrite">ormWrite</a></li><li><a href="global.html#resolveShellWorker">resolveShellWorker</a></li><li><a href="global.html#submitGuard">submitGuard</a></li><li><a href="global.html#sumFreqVal">sumFreqVal</a></li><li><a href="global.html#wrapTimer">wrapTimer</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="WWebSso.html">WWebSso</a></li></ul><h3>Global</h3><ul><li><a href="global.html#calcUsageSummary">calcUsageSummary</a></li><li><a href="global.html#convertUser">convertUser</a></li><li><a href="global.html#createLockSave">createLockSave</a></li><li><a href="global.html#describeErr">describeErr</a></li><li><a href="global.html#describeShape">describeShape</a></li><li><a href="global.html#fetchSsoMsg">fetchSsoMsg</a></li><li><a href="global.html#getFreqVal">getFreqVal</a></li><li><a href="global.html#getIgnoredOrmKeys">getIgnoredOrmKeys</a></li><li><a href="global.html#groupFreq">groupFreq</a></li><li><a href="global.html#guardOrm">guardOrm</a></li><li><a href="global.html#httpGetJson">httpGetJson</a></li><li><a href="global.html#maskUrl">maskUrl</a></li><li><a href="global.html#ormWrite">ormWrite</a></li><li><a href="global.html#parseTimeLength">parseTimeLength</a></li><li><a href="global.html#resolveShellWorker">resolveShellWorker</a></li><li><a href="global.html#safeCtl">safeCtl</a></li><li><a href="global.html#submitGuard">submitGuard</a></li><li><a href="global.html#sumFreqVal">sumFreqVal</a></li><li><a href="global.html#wrapTimer">wrapTimer</a></li></ul>
     
 </nav>
 
@@ -703,6 +703,329 @@ operatorId 可為操作者 id 或「操作者 id + 列識別」(只擋同一列�
     <dd>
         
 <span class="param-type">function</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="describeErr"><span class="type-signature"></span>describeErr<span class="signature">(err)</span><span class="type-signature"> &rarr; {String}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>錯誤摘要: console 診斷只印錯誤類別與白名單內之機器代碼, 不印訊息文字(訊息可能含資料值、路徑或驅動原文)
+經 wsemi getDiagBriefErr(單一實作, 規格 D1), 不自寫; 回 '(Error)' 或 '(Error ENOENT)'; 字串錯誤(含伺服端回傳之語系鍵)回 '(string)'; 永不拋錯</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="src_describeShape.mjs.html">src/describeShape.mjs</a>, <a href="src_describeShape.mjs.html#line84">line 84</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>err</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">*</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>輸入錯誤或任意值</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>回傳不含訊息文字之摘要字串</p>
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">String</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="describeShape"><span class="type-signature"></span>describeShape<span class="signature">(v)</span><span class="type-signature"> &rarr; {String}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>形狀摘要: console 診斷只印型別、鍵名或筆數, 絕不印任何值(D2「預設不輸出資料值」; V20)</p>
+<ul>
+<li>null → '(null)'; undefined → '(undefined)'; 字串 → '(typeof string)'(空字串另標 empty, 便於區分「空」與「非字串」); 其他非物件 → '(typeof 型別)'</li>
+<li>陣列 → '(array, length=N)'; 物件 → '(keys: a,b,c)'(自有可列舉之字串鍵, 至多 20 個、單鍵至多 40 字, 控制字元換 '?'; 無鍵 '(keys: none)')</li>
+<li>永不拋錯(存取器、Proxy 陷阱之例外回 '(typeof object)')</li>
+<li>注意: 物件之鍵名若本身即資料(如以使用者 id 為鍵之表)亦會被印出; 此類物件請改印 <code>.length</code>／筆數, 不要交給本函數</li>
+</ul></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="src_describeShape.mjs.html">src/describeShape.mjs</a>, <a href="src_describeShape.mjs.html#line42">line 42</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>v</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">*</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>輸入任意值(使用者物件、請求本體、查詢參數、傳入參數等)</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>回傳不含值之摘要字串</p>
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">String</span>
 
 
 
@@ -2536,6 +2859,174 @@ procOrm 自 w-serv-orm 1.1.7 起已內含此檢查(逐筆失敗即 reject), 經 
 
     
 
+    <h4 class="name" id="parseTimeLength"><span class="type-signature"></span>parseTimeLength<span class="signature">(timeLength)</span><span class="type-signature"> &rarr; {Number|null}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>檢測並轉換 timeLength (往回統計之天數; 規格〈輸入參數之檢測機制〉: 個數類之必須參數, N2 非負整數, 範圍 0～MAX_TIME_LENGTH_DAY; 單一擁有者, genPlan 為其唯一呼叫點)</p>
+<ul>
+<li>有效: 0～3650 之整數, 或其數字字串(含頭尾空白, 如 '7'、' 7 '; 其後只用轉換後之數值, K4); 回傳轉換後之 number</li>
+<li>無效(回傳 null): NaN、±Infinity、負數、小數、超過上限、非數字字串、null、布林、物件、陣列、包裝物件、BigInt 等</li>
+<li>為什麼須在 dayjs subtract 之前擋: dayjs 對 NaN、±Infinity、非數字字串、超出 Date 範圍之值回 Invalid Date, 其 isAfter 恆為 false,
+使 genPlan 之 <code>while (!tCurr.isAfter(tEnd))</code> 成為同步無窮迴圈(佔死主執行緒, 整個後端停止回應); 過大之有效值(如 100000)則建出數百萬筆 kpTime 而長時間阻塞</li>
+<li>永不拋錯、不回顯輸入值; 呼叫端依回傳 null 以固定鍵 errTimeLengthInvalid 失敗(K9)</li>
+</ul></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="server_staLogs_staLogsCore.mjs.html">server/staLogs/staLogsCore.mjs</a>, <a href="server_staLogs_staLogsCore.mjs.html#line67">line 67</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>timeLength</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">*</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>輸入待檢測之值</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>回傳有效之天數(number), 無效回傳 null</p>
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Number</span>
+|
+
+<span class="param-type">null</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
     <h4 class="name" id="resolveShellWorker"><span class="type-signature"></span>resolveShellWorker<span class="signature">(p)</span><span class="type-signature"> &rarr; {String}</span></h4>
 
     
@@ -2975,6 +3466,165 @@ procOrm 自 w-serv-orm 1.1.7 起已內含此檢查(逐筆失敗即 reject), 經 
         
 <div class="param-desc">
     <p>回傳 worker 檔之絕對路徑</p>
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">String</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="safeCtl"><span class="type-signature"></span>safeCtl<span class="signature">(s)</span><span class="type-signature"> &rarr; {String}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>控制字元換 '?': 避免請求端或使用者資料以 CR/LF 偽造 log 行
+涵蓋 C0 控制字元(碼位 &lt; 32)、DEL(127)、C1 控制字元(0x80～0x9F, 含 U+0085 NEL)、行／段分隔(U+2028、U+2029)與雙向文字控制(U+202A～U+202E、U+2066～U+2069; 可使檢視器之顯示順序與實際不同)</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="src_describeShape.mjs.html">src/describeShape.mjs</a>, <a href="src_describeShape.mjs.html#line18">line 18</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>s</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>輸入字串</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>回傳上列字元已換成 '?' 之字串</p>
 </div>
 
 
@@ -3578,7 +4228,7 @@ why: 計時器之 async 回呼 reject 時無人接手, Node 預設即結束行�
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Sat Nov 21 2026 20:10:02 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Mon Nov 23 2026 08:18:15 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>

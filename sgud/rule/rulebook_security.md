@@ -47,7 +47,7 @@
   2. 其餘值一律不印: 使用者物件與其欄位(含識別欄 id / account / email / name)、請求本體與查詢值、來源 IP、權杖列欄位(`timeEnd` 等)、建構參數與設定值(含路徑)、語系值與語系字典、後端 / 驅動 / SMTP 錯誤原文(**遮罩只遮憑證, 不遮主鍵、信箱、列內容**, 故經 `diag.err` 之錯誤仍不得印)、框架 `error` 事件之內容.
   3. 啟動期 `logBoot`(console 與 srLog 雙寫)之訊息, 插值只能是: settings 鍵名(`label`)、被忽略之設定鍵名清單、程式自算之計數與預設網址、`diag.brief` 摘要(`SITE-CNL-005` 鎖定全集).
   4. 新增 console 呼叫時, 引數須屬上列五類; 輸出原始變數(`err`、`user`、`row`、`payload`、`body`、`res`、`input`)者 `SITE-CNL-001 / 003` 失敗. 確有需要直接輸出之程式自產值, 於 `unit-consoleNoLeak` 之 `DYN_ARGS` 登錄並附判定理由.
-- **不在本規則內**(派工限定 console, 未改; 待主控裁示): srLog 欄位(`err` 記 procOrm 之 reject 訊息含失敗筆主鍵約 21 處; `srLog.debug` 之 `valueUser` 識別欄照記; `srLog.info` 之 `account`、`userId`、`key` / `value`、verifyConn 之 `ip`)、reject / throw 訊息帶值之處(`invalid timeBlocked[...]`、`srEmail` 之 `invalid toEmails[...]` 等)、瀏覽器端 console(54 處, 其中 47 處輸出列物件、後端回傳值、錯誤值或 URL 參數值).
+- **不在本規則內**(派工限定 console, 未改; 待主控裁示): srLog 欄位(`err` 記 procOrm 之 reject 訊息含失敗筆主鍵約 21 處; `srLog.debug` 之 `valueUser` 識別欄照記; `srLog.info` 之 `account`、`userId`、`key` / `value`、verifyConn 之 `ip`)、reject / throw 訊息帶值之處(`invalid timeBlocked[...]`、`srEmail` 之 `invalid toEmails[...]` 等)、瀏覽器端 console(54 處, 其中 47 處輸出列物件、後端回傳值、錯誤值或 URL 參數值; 〔🔁 2026-11-23 tws1 已處置: 逐站重新盤點為 48 處印值, 全數改摘要, 見 R-LOG-02 / ADR-107〕).
 - **理由**: 見 ADR-101. 原 ADR-068 M 契約以 `maskKv` 遮罩 console 之查詢值(識別欄照記, 其餘露首尾字元), ADR-098 / 099 將 `console.log(errTemp)` 列為範圍外觀察; D2 要求預設不輸出資料值, 且錯誤原文可夾帶主鍵(`refreshToken` 寫入失敗之 reject 訊息含 `id[...]`)、收件者(SMTP 錯誤)、列內容.
 - **盤點指令**(可重跑; 以規則為軸):
   - Grep `console\.(log|warn|error|info|debug)\(` 於 `server/`、`srv.mjs`、`g_initialData.mjs`、`g_initialTestData.mjs` 並去註解(測試內以 `SITE-CNL` 之 `consoleCalls` 求得) → 63 + 1 + 4 站(`procCore` 48、`procProtect` 5、`WWebSso` 10、`srv.mjs` 1、`g_initialData` 2、`g_initialTestData` 2; `SITE-CNL-002` 鎖定); 每站之每個引數屬上列五類(`SITE-CNL-001`).
@@ -68,6 +68,20 @@
 
 - **對應測試**: `test/unit-consoleNoLeak.test.mjs`(CNL-C01~C09 `procCore`、CNL-P01~P04 `procProtect`、CNL-W01~W02 `WWebSso` 建構期、CNL-F01 helper、CNL-H01 輔助函數、SITE-CNL-001~005 站點全集)、`test/api-consoleNoLeak.test.mjs`(CNL-A01~A05, 獨立後端 `test/tools/srvConsoleLeak.mjs` 埠 11309); 既有測試之調整: `unit-queryKey` QK-008、`unit-diaglog` DGX-04 與 SITE-DG-008. 識別值 `ZZ-secret-9317`(置於使用者物件、請求本體、建構參數)與後端錯誤標記 `ZZ-errtext-4408`(置於資料表 / 寄信之 reject); 斷言 console 五個方法之輸出皆不含.
 - **既知限制**: 第三方套件自身之 console(如 `w-serv-hapi` 於無 `error` 監聽者時 `console.error('[w-serv-hapi]', maskDiagErr(err))`、啟動時之 `Server running at`)不在本套件之站點內; `checkTokenByObj`(含一處 console 站點)全庫無呼叫者, 行為不可達, 僅由 `SITE-CNL` 鎖定其引數形態.
+
+### R-LOG-02: 前端瀏覽器 console 不輸出資料值——只印固定字面值、`typeof`、`describeShape`(鍵名／筆數／型別)與 `describeErr`(錯誤類別)(2026-11-23 tws1, 排程第 206 項, ADR-107; 補 R-LOG-01 範圍外之瀏覽器端)
+
+- **依據**: 規格〈診斷輸出與遮罩〉D2「預設不輸出資料值」、〈輸入參數之檢測機制〉V20; 承 R-LOG-01 之「不在本規則內: 瀏覽器端 console(54 處)」, 本輪補.
+- **規則**(適用 `src/` 下全部可執行之 console 呼叫: `.vue` 之 `<script>`、`main.js`、`.mjs`; **不含**引用方後端執行之 `src/fetchSsoMsg.mjs`, 其由 R-LOG-01 與 SITE-CNL-004 涵蓋):
+  1. console 之引數只能是四類: ①固定字面值(無插值之字串或樣板字串); ②`typeof 識別字`; ③`describeShape(v)`——物件只列鍵名(至多 20 個、單鍵至多 40 字)、陣列只列筆數、字串只標 `(typeof string)`、其他標 `(typeof 型別)`; ④`describeErr(err)`——錯誤類別與白名單內之機器代碼(經 wsemi `getDiagBriefErr`, 不印訊息文字; 字串錯誤〔含伺服端回傳之語系鍵〕為 `(string)`). 樣板字串之插值只能是②～④.
+  2. 不印: 選取列(`vo.itemsCheck`)與整列資料(`row`)、後端回應物件(`res`)、錯誤本體、網址參數(`view`)、`$alert` 之訊息文字與選項、圖示名、授權字串.
+  3. **單一實作**: `describeShape`／`describeErr`／`safeCtl` 只定義於 `src/describeShape.mjs`(暫行單一模組; 日後收斂為 wsemi 共用函數, 主控排程第 603 項; 屆時刪本檔並改 import, 站點與測試不須變更); 依賴閉包不含 Node 內建模組(瀏覽器可載入, 由 CNVF-003 守護). 伺服端 console 不用本模組(沿用 R-LOG-01 之 `logType`／`logKey`／`diag.brief`).
+  4. 新增前端 console 呼叫時: 引數須屬上列四類, 並更新 `unit-consoleNoValuesFront` 之 `SITES` 站點數與本條; 使用 `console` 之別名、解構、括號存取、傳遞(`.catch(console.log)`)、`console.table` 等其他方法者 CNVF-002b 失敗.
+- **站點全集(2026-11-23)**: 55 站(`src/**` 去註解): `fetchSsoMsg.mjs` 1(範圍外, SITE-CNL-004); 前端 54 站——**48 站印出值而已改**(13 檔; 逐站修前／修後逐字見 `spec/evidence/tws1-20261123/206-inventory.tsv`)、6 站固定詞彙不動(`Layout.vue:696`、`LayoutContentIps.vue:708`、`LayoutContentTokens.vue:1136`、`LayoutContentUsers.vue:1463`、`PageLogin.vue:804`、`PageUser.vue:563`). 各檔站點數: `App.vue` 2、`baselineOf.mjs` 1、`AppTokenAddDialog.vue` 3、`Layout.vue` 3、`LayoutContentIps.vue` 5、`LayoutContentStaInfor.vue` 8、`LayoutContentTokens.vue` 5、`LayoutContentUserInfor.vue` 1、`LayoutContentUsers.vue` 9、`PageLogin.vue` 6、`PageUser.vue` 6、`main.js` 2、`plugins/mUI.mjs` 3(`unit-consoleNoValuesFront` CNVF-002 鎖定).
+- **權杖字串之核實**: `LayoutContentTokens.vue:1120` 原印 `vo.itemsCheck`(金鑰清單選取列, 列物件含 `token` 字串), 該站只在 `size(vo.itemsCheck) === 0` 分支執行, 執行當下為空集合, 不外洩實值; 判準為站點之引數形態, 一併改為 `describeShape`. 同型之 `LayoutContentUsers.vue:1378`(`size !== 1` 分支, 可印多列使用者資料)為實際可外洩之站.
+- **盤點指令**: `node spec/evidence/tws1-20261123/inv206.mjs`(輸出每站 `檔:行 / FRONT|SRV / VALUE|ok / 文字`, 修後 `VALUE` 只剩 `fetchSsoMsg.mjs`); `Grep -n "console\." src --glob "*.{vue,js,mjs}"` 去註解.
+- **測試**: `test/unit-consoleNoValuesFront.test.mjs`(CNVF-001 站點不變式、002 站點全集、002b 掃描盲點、002c 掃描器自測、003 單一實作與閉包、004 摘要行為、005 範圍外例外; 修前碼鏡像根 CNVF-001 紅〔48 處違規〕)、`test/e2e-consoleNoValues.test.mjs`(E2E-CN-001, 真瀏覽器以登入表單〔先錯誤密碼再正確密碼〕登入後逐頁瀏覽, 收集全部 console 含物件引數展開, 斷言摘要形與不含使用者 email／主鍵、輸入之密碼、登入後之權杖; 純語意, 無標準圖)、`test/tools/srcScan.mjs`(掃描工具).
+- **已知限制**: ①`describeShape` 對「以資料為鍵名之物件」會印鍵名(現行 54 站皆非此類); ②字串錯誤只印 `(string)`(診斷取捨); ③第三方前端函式庫自身之 console 本套件無法關閉; ④`dist/`、`docs/` 為建置產物, 發布時重建(本輪未建).
 
 ### R-PERM-01: 需系統管理者之權限閘須同時宣告 app token 所需權限 `perm`(2026-09-25, ADR-069)
 

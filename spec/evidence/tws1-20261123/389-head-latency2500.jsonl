@@ -1,0 +1,12 @@
+[e2e-port] 埠 [11007, 8080](基準埠)
+[e2e-setup] starting backend (port 11007)...
+[e2e-setup] backend ready
+[e2e-setup] starting frontend (port 8080), first compile ~15-30s...
+[e2e-setup] frontend ready
+{"seq":1,"title":"AutoBlock E2E [eng] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":31912}
+{"seq":2,"title":"AutoBlock E2E [cht] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":31805}
+{"seq":3,"title":"AutoBlock E2E [eng] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":31658}
+{"seq":4,"title":"AutoBlock E2E [cht] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":31587}
+{"seq":5,"title":"AutoBlock E2E [eng] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":31523}
+{"seq":6,"title":"AutoBlock E2E [cht] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":31534}
+{"summary":true,"pass":6,"fail":0}

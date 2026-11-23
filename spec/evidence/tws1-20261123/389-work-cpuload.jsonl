@@ -1,0 +1,26 @@
+[e2e-port] 埠 [11007, 8080](基準埠)
+[e2e-setup] starting backend (port 11007)...
+[e2e-setup] backend ready
+[e2e-setup] starting frontend (port 8080), first compile ~15-30s...
+[e2e-setup] frontend ready
+{"seq":1,"title":"AutoBlock E2E [eng] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18494}
+{"seq":2,"title":"AutoBlock E2E [cht] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18421}
+{"seq":3,"title":"AutoBlock E2E [eng] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18179}
+{"seq":4,"title":"AutoBlock E2E [cht] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18473}
+{"seq":5,"title":"AutoBlock E2E [eng] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18052}
+{"seq":6,"title":"AutoBlock E2E [cht] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":17978}
+{"seq":7,"title":"AutoBlock E2E [eng] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18662}
+{"seq":8,"title":"AutoBlock E2E [cht] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18379}
+{"seq":9,"title":"AutoBlock E2E [eng] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":17928}
+{"seq":10,"title":"AutoBlock E2E [cht] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18125}
+{"seq":11,"title":"AutoBlock E2E [eng] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":17986}
+{"seq":12,"title":"AutoBlock E2E [cht] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18066}
+{"seq":13,"title":"AutoBlock E2E [eng] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18283}
+{"seq":14,"title":"AutoBlock E2E [cht] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":17860}
+{"seq":15,"title":"AutoBlock E2E [eng] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18319}
+{"seq":16,"title":"AutoBlock E2E [cht] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":17941}
+{"seq":17,"title":"AutoBlock E2E [eng] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18070}
+{"seq":18,"title":"AutoBlock E2E [cht] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18416}
+{"seq":19,"title":"AutoBlock E2E [eng] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18103}
+{"seq":20,"title":"AutoBlock E2E [cht] — 自動封鎖機制完整覆蓋 ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單","state":"pass","ms":18527}
+{"summary":true,"pass":20,"fail":0}

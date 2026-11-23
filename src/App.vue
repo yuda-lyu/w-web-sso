@@ -46,6 +46,7 @@ import LayoutState from './components/LayoutState.vue'
 import PageLogin from './components/PageLogin.vue'
 import Layout from './components/Layout.vue'
 import PageUser from './components/PageUser.vue'
+import { describeShape, describeErr } from './describeShape.mjs'
 
 
 export default {
@@ -104,7 +105,7 @@ export default {
                     //提交變更viewState前往指定功能頁
                     vo.$ui.updateViewState(view)
                     vo.autoLogining = false
-                    console.log(`autoLogin, goto view[${view}] page`)
+                    console.log(`autoLogin, goto view[${describeShape(view)}] page`)
 
                 })
                 .catch((err) => {
@@ -112,7 +113,7 @@ export default {
                     //錯誤發生時提交變更viewState返回登入頁
                     vo.$ui.updateViewState('login')
                     vo.autoLogining = false
-                    console.log(`autoLogin err[${err}], goto view['login'] page`)
+                    console.log(`autoLogin err[${describeErr(err)}], goto view['login'] page`)
 
                 })
         }

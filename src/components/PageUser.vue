@@ -212,6 +212,7 @@ import WTextSelect from 'w-component-vue/src/components/WTextSelect.vue'
 import WIcon from 'w-component-vue/src/components/WIcon.vue'
 import WText from 'w-component-vue/src/components/WText.vue'
 import { mdiAccountCircle, mdiAccount, mdiEmail, mdiKey, mdiFileDocumentOutline, mdiWeb, mdiShieldAccount, mdiToggleSwitch, mdiEye, mdiEyeOff } from '@mdi/js/mdi.js'
+import { describeShape, describeErr } from '../describeShape.mjs'
 
 export default {
     components: {
@@ -473,12 +474,12 @@ export default {
                             vo.chPwNewError = vo.$tErr(res.key)
                         }
                         else {
-                            console.log('error[res]', res)
+                            console.log('error[res]', describeShape(res))
                             vo.chPwNewError = vo.$t('userChangePasswordForNetError')
                         }
                     })
                     .catch((err) => {
-                        console.log('catch', err)
+                        console.log('catch', describeErr(err))
                         vo.chPwNewError = vo.$t('userChangePasswordForNetError')
                     })
                 if (!okCkPw) {
@@ -492,7 +493,7 @@ export default {
                         okChPw = true
                     })
                     .catch((err) => {
-                        console.log('catch', err)
+                        console.log('catch', describeErr(err))
                         //變更失敗（incorrect old password / token 失效等）統一訊息顯示於舊密碼下方
                         //最常見原因為舊密碼錯，放此位置最直覺；其他原因（如 token 失效）顯示同一訊息
                         vo.chPwOldError = vo.$t('userChangePasswordFail')
@@ -522,7 +523,7 @@ export default {
             return vo.$ui.runSubmit('changeUserPassword', () => {
                 return core()
                     .catch((err) => {
-                        console.log('catch', err)
+                        console.log('catch', describeErr(err))
                         vo.$alert(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
                     })
                     .finally(() => {
@@ -564,7 +565,7 @@ export default {
 
                     })
                     .catch((err) => {
-                        console.log(`logout err[${err}]`)
+                        console.log(`logout err[${describeErr(err)}]`)
                     })
             }, opt)
 

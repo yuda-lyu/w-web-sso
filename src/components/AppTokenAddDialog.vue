@@ -171,6 +171,7 @@ import WInputCheckbox from 'w-component-vue/src/components/WInputCheckbox.vue'
 import WButtonChip from 'w-component-vue/src/components/WButtonChip.vue'
 import { keysAppPerm, keysAppPermBase, keysAppPermHigh, normAppPerms } from '../appPerms.mjs'
 import { keysAppUsage } from '../appUsage.mjs'
+import { describeErr } from '../describeShape.mjs'
 
 
 //新增應用系統金鑰對話框 (ADR-095): 名稱、用途(使用者用途 / 系統服務用途)、使用者用途之所綁使用者、系統服務用途之權限; 權杖字串由伺服端產生(createAppToken),
@@ -264,7 +265,7 @@ export default {
                     vo.users = filter(res, (u) => get(u, 'isActive', '') === 'y')
                 })
                 .catch((err) => {
-                    console.log('getUsersList catch', err)
+                    console.log('getUsersList catch', describeErr(err))
                     vo.errMsg = vo.$t('getDataError')
                 })
         },
@@ -352,7 +353,7 @@ export default {
                         ok = true
                     })
                     .catch((err) => {
-                        console.log('createAppToken', err)
+                        console.log('createAppToken', describeErr(err))
                         vo.errMsg = isestr(err) ? vo.$tErr(err) : vo.$t('anUnexpectedErrorOccurred')
                     })
                 if (!ok) {
@@ -370,7 +371,7 @@ export default {
             return vo.$ui.runSubmit('createAppToken', () => {
                 return core()
                     .catch((err) => {
-                        console.log('catch', err)
+                        console.log('catch', describeErr(err))
                         return vo.$dg.showCheckYes(vo.$t('anUnexpectedErrorOccurred'), { type: 'error' })
                     })
                     .finally(() => {

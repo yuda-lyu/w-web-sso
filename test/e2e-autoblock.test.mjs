@@ -223,9 +223,11 @@ async function makeXForwardedForContext(browser, virtIp) {
 //gotoCleanLogin: 進登入頁 + 設指定語系 + 等表單 mount
 //?lang= URL 參數為 SPA 最高優先語系設定來源 (詳 src/plugins/mUI.mjs:137)
 async function gotoCleanLogin(page, lang) {
-    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 })
+    //第 1 次進入只為取得 origin 以清 localStorage: networkidle 為盡力等候(逾時不失敗, 其後清除與第 2 次進入照做; 原 15 秒上限於負載高時使整案紅, 排程第 389 項同根)
+    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {})
     await page.evaluate(() => localStorage.clear())
-    await page.goto(`${baseUrl}/?lang=${lang}`, { waitUntil: 'networkidle', timeout: 15000 })
+    //第 2 次進入只等 DOM 載入, 就緒由下方登入表單偵測(60 秒)判定
+    await page.goto(`${baseUrl}/?lang=${lang}`, { waitUntil: 'domcontentloaded', timeout: 60000 })
     await page.waitForFunction(() => {
         let inps = document.querySelectorAll('input')
         return inps.length >= 2
@@ -433,7 +435,8 @@ async function execIpBlockTrigger(browserRef, lang, u, virtIp) {
     let ctx = await makeXForwardedForContext(browserRef.current, virtIp)
     let page = await ctx.newPage()
 
-    await page.goto(`${baseUrl}/?lang=${lang}`, { waitUntil: 'networkidle', timeout: 15000 })
+    //只等 DOM 載入; 就緒由其後之 $fapi 偵測(60 秒)判定(原 networkidle 加 15 秒上限, 負載高時逾時, 排程第 389 項同根)
+    await page.goto(`${baseUrl}/?lang=${lang}`, { waitUntil: 'domcontentloaded', timeout: 60000 })
     await page.waitForFunction(() => {
         let el = null
         document.querySelectorAll('*').forEach((e) => {
@@ -521,7 +524,7 @@ async function execIpBlockedRejected(browserRef, lang, virtIp) {
 
     //網路層確認伺服器確實拒絕(同 E2E-006, 2026-09-28 補); spec 之 10s 使用者觀察期照等
     let denied = page.waitForResponse((r) => r.url().includes('/api') && r.headers()['return-msg'] === 'permission denied', { timeout: 60000 }).then(() => true, (err) => err)
-    await page.goto(`${baseUrl}/?lang=${lang}`, { waitUntil: 'networkidle', timeout: 15000 })
+    await page.goto(`${baseUrl}/?lang=${lang}`, { waitUntil: 'domcontentloaded', timeout: 60000 }) //只等 DOM 載入(原 networkidle 加 15 秒上限, 排程第 389 項同根); spec 之 10 秒使用者觀察期於其後照等
     await page.waitForTimeout(10000)
     let d = await denied
     assert.strict.equal(d, true, `進登入頁後應收到連線層拒絕(Return-Msg: permission denied), 實際: ${d && d.message ? d.message : d}`)
@@ -532,6 +535,18 @@ async function execIpBlockedRejected(browserRef, lang, virtIp) {
 
     await deleteIpRecord(virtIp)
     return { buf, pageText, hasConnecting: pageText.includes(t.connecting), hasLogin: pageText.includes(t.login) }
+}
+
+
+//waitIpUnblocked: 輪詢至連線層不再以 permission denied 拒絕指定來源 IP(封鎖時效已過期之可觀察結果; 逾時 60 秒拋錯, 代表真實異常而非等待不夠)
+//  探測請求本身為一般連線(計入該 IP 之呼叫次數 1 次/輪, 遠低於封鎖門檻 numForIpCallApi); 網路錯誤視為尚未成立而重試
+async function waitIpUnblocked(virtIp) {
+    return await pollUntil(`來源 IP ${virtIp} 之封鎖時效過期(連線層放行)`, async () => {
+        //單次探測自帶 5 秒上限(pollUntil 只在兩次嘗試之間檢查逾時, 探測卡住時須由本處中止), 並讀完本體釋放連線
+        let r = await fetch(`${apiUrl}/api/main`, { method: 'POST', headers: { 'X-Forwarded-For': virtIp }, body: 'x', signal: AbortSignal.timeout(5000) })
+        await r.arrayBuffer().catch(() => {})
+        return (r.headers.get('return-msg') || '') !== 'permission denied'
+    }, { timeout: 60000, interval: 500 })
 }
 
 
@@ -546,9 +561,15 @@ async function execIpExpiryImplicitUnlock(browserRef, lang, virtIp) {
     let ctx = await makeXForwardedForContext(browserRef.current, virtIp)
     let page = await ctx.newPage()
 
-    await page.waitForTimeout(12000)
+    //等封鎖時效過期: 以「連線層放行該 IP」此一事件為同步點(排程第 389 項, R-E2E-WAIT-01).
+    //原固定 12 秒自瀏覽器建立後起算, 與 timeBlocked(寫入時 + 10 秒)之關係只靠「兩者相加必大於 10 秒」, 且瀏覽器啟動耗時含在內; 改為輪詢伺服器之真實判定(spec「含 buffer」之 buffer 由輪詢間隔涵蓋):
+    //帶同一 X-Forwarded-For 對 /api/main 發探測請求(node fetch, 不經瀏覽器), 回應標頭 Return-Msg 為 permission denied 即仍在封鎖, 其他即連線層已放行(與 E2E-006 / 007 以同一標頭確認「伺服器確實拒絕」同源)
+    await waitIpUnblocked(virtIp)
+    //正向對照: 探測判定放行時, 封鎖時效(timeBlocked)確已過; 若探測端點或判定標頭失效(回應恆非 permission denied), 此處以明確訊息失敗, 不讓等待實質消失後才於下游逾時
+    assert.strict.ok(Date.now() > new Date(timeBlocked).getTime(), `探測於封鎖時效(${timeBlocked})前即判定放行, 探測端點或 Return-Msg 判定失效`)
 
-    await page.goto(`${baseUrl}/?lang=${lang}`, { waitUntil: 'networkidle', timeout: 15000 })
+    //goto 只等 DOM 載入; 就緒由其後之登入表單偵測判定(原 networkidle 加 15 秒上限, 負載高時資源載入拖長即於此逾時, 與「過期後可進登入頁」之判斷無關)
+    await page.goto(`${baseUrl}/?lang=${lang}`, { waitUntil: 'domcontentloaded', timeout: 60000 })
 
     await page.waitForFunction(() => {
         let inps = document.querySelectorAll('input')
@@ -764,6 +785,7 @@ let cases = [
     {
         name: 'E2E-008-ip-expiry-implicit-unlock',
         title: 'ip-expiry-implicit-unlock: ips.timeBlocked=10s 後 → 等過期 → 進登入頁可見表單',
+        timeout: 300000, //內層偵測上限合計: 放行輪詢 60 秒 + goto 60 秒 + 登入表單 60 秒 = 180 秒, 案例上限須大於之(R-E2E-WAIT-01)
         //回傳 { buf, pageText, hasLogin }
         run: (page, lang, ctx) => execIpExpiryImplicitUnlock(ctx.browserRef, lang, `1.2.3.${ipSufOf(lang) + 2}`),
         stages: ['E2E-008-ip-expiry-implicit-unlock'],

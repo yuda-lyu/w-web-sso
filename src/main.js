@@ -10,6 +10,7 @@ import store from './store/index.mjs'
 import ui from './plugins/mUI.mjs'
 import * as s from './plugins/mShare.mjs'
 import ds from './schema/index.mjs'
+import { describeShape, describeErr } from './describeShape.mjs'
 // console.log('ds', ds)
 
 
@@ -19,7 +20,7 @@ Vue.config.productionTip = false
 //$alert
 Vue.prototype.$alert = function() {
     let [msg, type] = arguments
-    console.log(msg, type)
+    console.log('$alert', describeShape(msg), describeShape(type))
     if (msg !== 'close') {
         WAlert(msg, type)
     }
@@ -70,7 +71,7 @@ WServHapiClient({
 
             })
             .catch((err) => {
-                console.log(err)
+                console.log(describeErr(err))
                 ui.updateConnState('csErrConn')
             })
 
