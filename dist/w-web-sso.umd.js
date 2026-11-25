@@ -1,5 +1,5 @@
 /*!
- * w-web-sso v1.1.68
+ * w-web-sso v1.1.69
  * (c) 2018-2021 yuda-lyu(semisphere)
  * Released under the MIT License.
  */
