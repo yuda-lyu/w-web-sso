@@ -42,7 +42,7 @@ async function staUserAccountLogin(timeLength = 7, timeInterval = 'hr', opt = {}
     // console.log('kpTime', kpTime)
 
     //vpfs
-    let vpfs = fsTreeFolder(fdLog)
+    let vpfs = fsTreeFolder(fdLog, { levelLimit: 1 }) //wsemi 1.9.80 起須明給第 1 層(未給即窮舉), 保留原只掃第 1 層之語意
     vpfs = filterVpfsByWindow(vpfs, tStart, fmt) //開檔前剔除窗外檔, 見該模組註解
     // console.log('vpfs', vpfs)
 

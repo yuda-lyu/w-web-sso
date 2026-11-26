@@ -58,6 +58,23 @@
 - **為何子行程**: 修前之無效值使 `genPlan` 為同步無窮迴圈, 同行程內 mocha 之逾時計時器亦無法觸發; 父行程以 `spawnSync` 之 `timeout`(`TL_CHILD_TIMEOUT_MS`, 預設 15 秒)終止, 逾時即判該層卡住.
 - **已知限制**: 與 w-web-api 之寬嚴不同(本套件收數字字串、w-web-api 之 `Number.isInteger` 拒字串), 收斂列主控待辦; 上限 3650 對 `hr` 仍可建約 8.8 萬桶(約 1～3 秒).
 
+## R-FS-LEVEL-01: wsemi 列舉函數(1.9.80 起第 2 參數為 `opt`, 未給 `opt.levelLimit` 即窮舉)於本庫之呼叫點, 層數一律於呼叫處明給(2026-11-26 m667c3, 任務 20261126180310, 排程第 667 項; 對應 wsemi 破壞性變更紀錄第 83 項; 與 w-web-perm、w-web-api 同型)
+
+軸: 呼叫形(省略第 2 參數、數字、`{ levelLimit: n }`、`{ levelLimit: <變數> }`、窮舉) × 函數(`fsTreeFolder`、`fsTreeFolderWithHash`、`fsGetFilesInFolder`、`fsGetFilesWithHashInFolder`、`fsGetFoldersInFolder` 及各 `*Core`) × 站點類別(src、test).
+
+- **規則**: 修前形(省略第 2 參數)於 1.9.80 靜默變為窮舉(無拋錯、無警告); 舊版 wsemi 遇物件之第 2 參數亦視為無效層數而取 1 層, 故遷移改寫不必與升版同時發生, 唯「只升版不改寫」會靜默窮舉.
+  1. 統計日誌掃描只列 `fdLog` 下第 1 層(子資料夾內之檔不掃; 資料夾項目於其後剔除): 呼叫寫 `fsTreeFolder(fdLog, { levelLimit: 1 })`. 本庫目前無窮舉之站點; 日後要窮舉者省略 opt 並於註解寫明「窮舉」.
+  2. 不得以數字為第 2 參數(1.9.80 起拋 `invalid opt: must be an object`), 不得傳第 3 個引數(拋 `invalid arguments: must be fd and opt only`), 不得把未檢測之變數傳入 `{ levelLimit: v }`(`null`／無效值於新版為窮舉, 舊版為 1 層).
+  3. 守護: 子資料夾夾具之案(下表)須對「省略 opt(窮舉)」與「`levelLimit: 2`」兩種變異皆轉紅.
+- **站點全集(2026-11-26; 指令: `git grep -nE "\b(fsTreeFolder|fsTreeFolderWithHash|fsGetFilesInFolder|fsGetFilesWithHashInFolder|fsGetFoldersInFolder)(Core)?\s*\(" -- . ':!dist' ':!docs'`; 本庫 4 處呼叫, 皆為 `fsTreeFolder`, 原省略第 2 參數)**:
+
+| 站點 | 類別 | 呼叫 | 判定 | 層數鑑別之測試 |
+|---|---|---|---|---|
+| `server/staLogs/staLogsCore.mjs:128` `listFiles` | src | `fsTreeFolder(fdLog, { levelLimit: 1 })` | 已套(第 1 層) | `unit-staLogs-golden` GOLD-020-subfolder-ignored(`fdLog` 之副本內建子資料夾 `sub`, 其內放一檔 `2026-08-28T01.log`〔事件 `verifyConn`, ip `6.6.6.6`〕, staIp 之輸出須與 expectedHr 相同); 變異「省略 opt」「`levelLimit: 2`」皆紅(2026-11-26) |
+| `test/staLogs-golden/legacy/staIp.mjs:44`、`staToken.mjs:44`、`staUserAccountLogin.mjs:45` | test(改造前原碼留存, golden 產生器用) | 同上 | 已套(第 1 層) | 無: 夾具 `logs/` 無子資料夾, 只證重產 `expected-hr.json`／`expected-day.json` 逐位不變(sha256 相同, 2026-11-26) |
+
+- **不得**: 把省略 opt 之呼叫當作「第 1 層」; 於 `listFiles` 後以過濾層數代替 `levelLimit`(會先窮舉整棵樹); 於測試端以 `legacy/` 之輸出當層數之真理(夾具無子資料夾).
+
 ## 專案特有機制(補充)
 
 - email 信件文字(標題/內文)統一存於 `server/procLang.mjs`(`regVerifyEm*` / `chpwEm*` / `resetPwEm*` 等鍵), settings 之 `kpLangExtEmail` 逐語系覆寫、`kpLangExt` 最終覆寫(2026-08-20 `2f03bc5` 起, 原 `server/template/*.html` 信件模板已移除); `procLang({})` 回傳形狀為 `r[lang][key]`.

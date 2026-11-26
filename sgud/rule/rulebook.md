@@ -9,7 +9,7 @@
 | 要查什麼 | 檔 | 內容 |
 |---|---|---|
 | 測試配置全節、**R-E2E-SHARD-01**、**R-TEST-SNAP-01**、**R-E2E-SCROLL-01** | `rulebook_test.md` | 測試配置全節: 執行入口、spec→測試檔對照、unit / api / e2e 各層、工具層、目錄與資產、seed、e2e 契約映射; **R-E2E-SCROLL-01**(e2e 就緒訊號: 頁面平滑捲動須等 `scrollend` 終態才進入截圖或會自動捲入之動作; 2026-11-17 sso492, 排程第 503 項); **R-TEST-SNAP-01**(api 層整份資料快照比對須先等來源 IP 登錄: 後端 `ipDetectNew` 計時器之系統寫入不得落在兩次快照之間; 2026-11-12 ds-sso2, 排程第 425 項); **R-E2E-SHARD-01**(e2e 分組多開: 基準埠 + `E2E_PORT_OFFSET` 位移、畫面含埠之檔列 `officialOnly`、全套跑法; 2026-11-04 ws302, 排程第 302 項); **R-E2E-PORT-01**(e2e 單開自動換埠: 基準埠被他人占用時整組位移、只殺身分已確認屬本實例者、畫面含埠由比對端覆蓋; 2026-11-05 ws309, 排程第 309 項, ADR-104); **R-E2E-PROXY-01**(dev server `/api` proxy 以 keep-alive agent 重用連線, 免每請求兩段各留 TIME_WAIT; 判讀 TIME_WAIT 本機埠 / 遠端埠兩欄都看; 2026-11-07 ss324, 排程第 324 項, ADR-105) |
-| 專案特有機制(含補充)、R-STA-01、R-STA-TIMELENGTH-01 | `rulebook_mechanism.md` | 專案特有機制(含補充): 統計頁確定性資料、XFF 本機注入、雙擊 / 並發契約、app token、email、語系、對外查詢 helper 等; **R-STA-01**(統計之桶輸出以「現在」所屬桶為上界, 未來時間桶不輸出; 2026-11-03 ss56, ADR-102); **R-STA-TIMELENGTH-01**(統計核心之 `timeLength` 以 `parseTimeLength` 單一擁有者檢測、無效拒絕 `errTimeLengthInvalid`、`opt.timeNow` 限 1970～2100 年; 2026-11-23 tws1 第 301 項, ADR-106) |
+| 專案特有機制(含補充)、R-STA-01、R-STA-TIMELENGTH-01、R-FS-LEVEL-01 | `rulebook_mechanism.md` | 專案特有機制(含補充): 統計頁確定性資料、XFF 本機注入、雙擊 / 並發契約、app token、email、語系、對外查詢 helper 等; **R-STA-01**(統計之桶輸出以「現在」所屬桶為上界, 未來時間桶不輸出; 2026-11-03 ss56, ADR-102); **R-STA-TIMELENGTH-01**(統計核心之 `timeLength` 以 `parseTimeLength` 單一擁有者檢測、無效拒絕 `errTimeLengthInvalid`、`opt.timeNow` 限 1970～2100 年; 2026-11-23 tws1 第 301 項, ADR-106); **R-FS-LEVEL-01**(wsemi 列舉函數 1.9.80 起省略第 2 參數即窮舉, 統計日誌掃描於呼叫處明給 `{ levelLimit: 1 }`; 2026-11-26 m667c3 第 667 項) |
 | R-VUE-01、R-VUE-02、R-UI-01、R-UI-02、R-UI-03 | `rulebook_ui.md` | R-VUE-01、R-VUE-02、R-UI-01、R-UI-02、R-UI-03 |
 | R-SEC-01、R-LOG-01、R-LOG-02、R-PERM-01、R-SESS-01、R-APPTOK-01、R-SYS-01、R-IP-01、R-QKEY-01 | `rulebook_security.md` | R-SEC-01、R-LOG-01(console 診斷不輸出資料值, 2026-10-31 第 191 項, ADR-101; 取代 R-SEC-01 之 console 處置)、R-LOG-02(前端瀏覽器 console 不輸出資料值, 摘要函數 2026-11-23 起一律 wsemi `getDiagShape`／`getDiagBriefErr`〔tws2 第 603 項, ADR-109; 原暫放之 `src/describeShape.mjs` 與伺服端 `logType` 已刪〕, 2026-11-23 tws1 第 206 項, ADR-107)、R-PERM-01、R-SESS-01(改密碼後之 session 處置, 2026-10-23 第 117 項)、R-APPTOK-01(應用系統金鑰兩種用途與身分驗證缺口 S-1~S-6, 2026-10-24 sso-run01)、R-SYS-01(框架系統函數之身分關卡 `sysFuncsPublic`, 2026-10-25 sso-run01, ADR-096)、R-IP-01、R-QKEY-01 |
 | R-OBJ-ITER-01、R-KEY-01、R-CNT-01 | `rulebook_inputkeys.md` | R-OBJ-ITER-01、R-KEY-01、R-CNT-01 |
@@ -28,7 +28,7 @@
 
 遮罩與診斷輸出**一律用 wsemi 之共用函數**(`getDiag`、`getDiagSecrets`、`maskDiagText`、`maskDiagCopy`、`maskDiagErr`、`maskDiagUrl`、`getDiagBriefErr`、`genDiagFunLog`), 本套件**不得另寫等價實作**; 各套件只宣告「本套件之秘密來源、呼叫點」. 規則全文見:
 
-- 跨套件規格: `C:\opensrcOper\dspec\診斷輸出與遮罩.md`(原則 D1~D5、使用者裁定 Q1~Q4 與 P1~P9、已知限制 §5; 本套件適用 **Q1**: sso 之 orm-diag 只寫安全摘要).
+- 跨套件規格: `dspec/診斷輸出與遮罩.md`(原則 D1~D5、使用者裁定 Q1~Q4 與 P1~P9、已知限制 §5; 本套件適用 **Q1**: sso 之 orm-diag 只寫安全摘要).
 - wsemi 規則: R-DIAG-01(`node_modules/wsemi` 之來源 repo `sgud/rule/rulebook_diag.md`, 唯讀參考); 共用測試語料 `wsemi/src/_diagCases.mjs`(各套件接線測試以其適用子集重跑呼叫點).
 
 本套件須宣告與做到者(逐條對應 `rulebook_orm.md` R-ORM-04 與 `test/unit-diaglog.test.mjs` SITE-DG-001~009):

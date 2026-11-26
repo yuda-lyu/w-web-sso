@@ -6,6 +6,11 @@
 
 2026-10-22 依全域設定 §14 把標題內首個日期 <= 2026-10-12 之經驗(共 42 節)抽出至 `experience_20261022.md`(原 79276 位元組); 常駐規則(套件身分與升級相容紀律、語系字典與信件文字架構)與 2026-10-14 起之經驗留於本檔. 抽出之節標題以 Grep `^## ` 於該檔檢索(含 e2e 標準圖 / 截圖穩定性、UI 元件陷阱、三方審查、w-serv-orm 1.1.7 / 1.1.8 適配等).
 
+## m667c3(2026-11-26; 排程第 667 項 w-web-sso 部分; R-FS-LEVEL-01)之經驗
+
+- **省略第 2 參數之站點於 wsemi 1.9.80 靜默變窮舉**: 無拋錯、無警告, 全套不一定紅; 唯一攔截法是以呼叫形盤點(`git grep` 之呼叫式正規式, 含 md 與範例)加「子資料夾夾具」之測試. 本庫之核心 `listFiles` 已有 GOLD-020-subfolder-ignored(子資料夾內放一檔), 實測對「省略 opt」「`levelLimit: 2`」兩變異皆紅, 故未另補測試; 反之 `test/staLogs-golden/legacy/` 為 golden 產生器, 夾具無子資料夾, 無層數鑑別力, 只能以「鏡像根重產 `expected-hr.json`／`expected-day.json` 逐位相同」證不退化(勿誤記為已驗層數).
+- **舊版 wsemi 遇物件之第 2 參數視為無效層數而取 1 層**: `{ levelLimit: 1 }` 於 1.9.79 以前與 1.9.80 以後皆為第 1 層; 唯一不安全的是「只升版不改寫」.
+
 ## 套件身分與升級相容紀律(最高優先, 違反即擋)
 
 本專案是**發佈到 npm 供外部專案安裝引用的套件**(已知引用方: `使用端`), 不是只服務自己的應用程式.任何改動先想「引用方原封升級會發生什麼」.鐵則(完整版與根因事證見 `spec/設計要點與取捨.md` ADR-050 與 `z修正規劃書.md` 升級破壞事件節):
@@ -111,7 +116,7 @@
 - **只驗「曾經等待」的鎖測試抓不到『先空取鎖再釋放、於鎖外做事』(外審 sol#12)**: `assertWaits` 驗他人持鎖時站點不完成, 但站點若先 `withTabLocks(t, async () => {})` 再在鎖外做原讀寫, 一樣會等待而通過. 補一支不另持鎖的案: `mkEnvSso({ trackLocks: true })` 包裝 `withTabLocks / guardWrite` 計算站點自己持有的表鎖、包裝資料表的 `insert / save / del`, 寫入發生時該表鎖未被持有即記入 `env.outsideWrites`; 變異 M47 / M48 只有這一案抓得到.
 - **接線錯誤用靜態守護先擋、行為另證**: 鎖管理器接錯(procProtect 拿到另一組)或清單頁漏帶第 4 參數, 單元層的 `mkServ` 共用鎖與 API 層皆不會發現(前者自行注入正確的鎖, 後者進程分離). 以讀原始碼的 `WC-09 / WC-10` 當最快的一層警報(去掉行尾註解後數 `withTabLocks` 出現次數與注入形式), 並明說它只證接線; 真正的行為證明是 `e2e-concurrency`(舊畫面存檔被拒必須經頁面真送基準才成立).
 - **採納外審修補後必須重跑相關 api/e2e 全檔, 不能只跑自己新增的單元測試**: sol#8(不帶基準以送入原值比對有無編輯, 令 null / 缺欄 perms 原樣重送零寫入)與 sol#5(perms 只驗將寫入之列)兩項修補, 單元層全綠, 全跑 `api-apptoken-perms` 才發現與 ADR-069 既有行為衝突(PERM-A-005:DB 既有毀損 / 缺欄 perms 存回時須正規化為空陣列;PERM-A-004:字串 perms 即使正規化後與庫內相同亦須 `tokenPermsInvalid`)。#8 撤回、#5 改為「帶基準時略過摘要同基準之列」。教訓: 審查者提議的『更嚴 / 更少寫入』常與既有規格化行為衝突, 先查既有測試與 ADR 再採納; 採納後以受影響層全檔驗證。
-- **web 測試鎖(`quiet-run --lock`)非 FIFO、每 20 秒輪詢, 兩槽被他專案長期占用時排隊可達 1 小時**: 取得後要在**單一鎖持有期間**串完所有需瀏覽器之步驟(寫成 `chain-*.mjs` 逐步 `spawnSync`: 產標準圖 → 比對 → 重跑受影響 e2e), 不要每步各自排隊; api 層(無瀏覽器)不需鎖, 但與排隊中的 e2e 共用 11007 埠, 排隊期間勿跑 api(鎖一到手兩者撞埠). 若須中途放棄持鎖行程: 殺 quiet-run 會**留下殘留鎖目錄**(`C:/opensrcOper/tmp/locks/<槽>/owner.txt` 之 pid 已死), 確認 owner 為自己之 pid 後才可自行 `rm -rf` 該槽目錄(只釋放自己建立者).
+- **web 測試鎖(`quiet-run --lock`)非 FIFO、每 20 秒輪詢, 兩槽被他專案長期占用時排隊可達 1 小時**: 取得後要在**單一鎖持有期間**串完所有需瀏覽器之步驟(寫成 `chain-*.mjs` 逐步 `spawnSync`: 產標準圖 → 比對 → 重跑受影響 e2e), 不要每步各自排隊; api 層(無瀏覽器)不需鎖, 但與排隊中的 e2e 共用 11007 埠, 排隊期間勿跑 api(鎖一到手兩者撞埠). 若須中途放棄持鎖行程: 殺 quiet-run 會**留下殘留鎖目錄**(`tmp/locks/<槽>/owner.txt` 之 pid 已死), 確認 owner 為自己之 pid 後才可自行 `rm -rf` 該槽目錄(只釋放自己建立者).
 - **新案例標準圖若含隨機值先固定資料**: `ds.tokens.funNew` 產生之 token 為隨機 UUID, 系統管理者 session 列顯示於金鑰清單畫面, 使 `E2E-CC-002` 比對差 127~130 px(> maxDiffPixels 100); 固定 token 字串後只重產該案兩張(`--baseline --names E2E-CC-002`)即可, 不需遮罩.
 - **e2e 檔間隔離: `ips` 表之列不只來自 DB, 清庫不等於回到固定種子(sso-run02, 2026-10-23; 主控全套 759 / 2 失敗 `E2E-CC-003` 差 134 px)**: `procProtect` 之 `ipDetectNew` 計時器(每 2 秒)把 `kpIpCallApi` 內「`ips` 表尚無」之 IP 補登進表; `e2e-autoblock` 以 `X-Forwarded-For` 登記之 `1.2.3.x`(最後一案 E2E-010 為 `1.2.3.203`)留在後端記憶體, 其 `afterCase` 只清 DB 不清計數(原註解載「由下一案 prepare 重置」, 但最後一案之後沒有下一案), 之後任一檔重設 `ips` 表, 數秒內殘留 IP 即被補登回來, `e2e-concurrency` 之 IP 清單畫面因此多一列(標準圖 4 列、全套 5 列). 單獨跑無前序測試故綠, 單一 mocha 行程依序跑 autoblock → concurrency 即可穩定重現(修前 6 綠 2 紅, 皆 `diff=134px`); 計數留 10 分鐘(`minForIpCallApi`)才因無新請求被剪枝, 故中間隔著幾個檔仍中. 處置三層: ①`test/tools/e2e-setup.mjs` 收斂 `cleanKpIpCallApi` / `cleanKpAccountLoginFailed`(原只在 autoblock 內, 補丁堆積); ②殘留來源(autoblock `afterCase`)**先清記憶體計數、再清 DB**(反之計時器可於兩者之間補登回已清空之表); ③受害檔(concurrency `prepare`)同序處理, 並以 `assertSeedOnly` 守門: users / tokens / ips 三表主鍵集合須恰為「base seed + 本檔種子」(多出者連 ip 一併列入錯誤訊息), 把隔離被破壞報成明確隔離錯誤而非事後像素差. 不重產標準圖(標準圖正確, 錯在輸入狀態). 規則: **凡顯示 `ips` 清單畫面之 e2e 檔, `prepare` 須先清 `kpIpCallApi` 再重設; 凡以 `X-Forwarded-For` 登記虛擬 IP 之檔, `afterCase` 須清計數**——「前序檔之 server 記憶體殘留」與「前序檔之 DB 殘留」是兩種獨立之隔離缺口, 重設 DB 只擋後者. 驗證法: 單一 mocha 行程依序跑「殘留來源 + 受害檔」之最小組合, 而非各檔單跑(單跑永遠綠).
 - **審查者說「已讀碼確認」仍須自己追**: sol 14 條中 4 條採納(#3、#4、#5、#10, 皆有可重現測試且修前紅)、1 條採納後撤回(#8)、4 條屬測試缺口(補測試)、5 條為不帶基準固有限制或 HEAD 既有行為(#1、#2、#6、#7、#9). 判斷是否採納的三問: ①是本輪引入還是 HEAD 既有(`git show HEAD:<檔>` 對照)? ②修了會不會改變不得改變的流程語意(封鎖 / 登入 / 既有 UI)? ③審查者假設的前提是否成立(例如『不帶基準不能覆蓋 session』是審查者對任務的解讀, 與規格 §6 / §8 不符)?
@@ -270,7 +275,7 @@
 - **桶標籤字串比較之陷阱**: 標籤 `YYYY-MM-DDTHH` / `YYYY-MM-DD` 字典序即時間序, 但只在 4 位數年成立; 垃圾 `time` 年份達 5 位數(如 12000 年)時 `'12000-…' < '2026-…'`, 單用 `label > labelEnd` 會把它當過去而漏擋。加 `^\d{4}-` 守門並以 FUT-006 + 變異 M4 證明其必要。
 - **上界之來源**: 不從 `kpTime` 末項推, 由 `genPlan` 另算 `labelEnd`(現在所屬桶)——`timeLength` 為負時 `kpTime` 為空, 推不出上界而輸出未來桶(FUT-005); 窗非空時兩者相同。`buildOutputs` 第三參數省略時才退回 `kpTime` 末項(`unit-iterClientObj` 之直接呼叫相容)。
 - **消費端判準**: 盤點「使用輸出之處」逐一判定而非一律加上界——`conn24h` 無上界加總(源頭過濾後即正確, 以真 worker 之 FUT-008 驗)、前端 `calcUsageSummary` 之 `diff <= N` 負差仍計入(容忍瀏覽器時鐘落後, 刻意不套)、`filterVpfsByWindow` 為掃描層(不動)。
-- **取鎖**: 修前紅(HEAD 副本 + 新測試與更新後 golden)、修後綠(unit 全跑)與變異(現行碼副本逐項改上界判定)併在同一支腳本、同一次取鎖; 被 `TaskStop` 終止之排隊中 `quiet-run` 會留下失效之排隊檔(`C:\opensrcOper\tmp\locks\queue`), `--release-stale` 不處理它(只回收槽), 不得手刪, 由排隊機制自行略過。Bash 工具內傳 Windows 路徑給 `decision-log.mjs` 須用正斜線(反斜線被 shell 吃掉)。
+- **取鎖**: 修前紅(HEAD 副本 + 新測試與更新後 golden)、修後綠(unit 全跑)與變異(現行碼副本逐項改上界判定)併在同一支腳本、同一次取鎖; 被 `TaskStop` 終止之排隊中 `quiet-run` 會留下失效之排隊檔(`tmp/locks/queue`), `--release-stale` 不處理它(只回收槽), 不得手刪, 由排隊機制自行略過。Bash 工具內傳 Windows 路徑給 `decision-log.mjs` 須用正斜線(反斜線被 shell 吃掉)。
 
 ## e2e 分組多開導入: 「畫面含埠」要以位移實跑對標準圖逐張比對才找得全, 全綠不等於沒有影響; 導入清單是調查結果不是定論(2026-11-04, ws302, 排程第 302 項, R-E2E-SHARD-01)
 

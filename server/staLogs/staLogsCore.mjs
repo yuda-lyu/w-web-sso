@@ -124,8 +124,8 @@ function genPlan(timeLength = 7, timeInterval = 'hr', opt = {}) {
 
 function listFiles(fdLog, tStart, fmt) {
 
-    //vpfs
-    let vpfs = fsTreeFolder(fdLog)
+    //vpfs, 只列 fdLog 下第 1 層 (wsemi 1.9.80 起列舉函數第 2 參數為 opt, 未給 opt.levelLimit 即窮舉全部層級, 故須明給 levelLimit: 1 以保留既有只掃第 1 層之語意)
+    let vpfs = fsTreeFolder(fdLog, { levelLimit: 1 })
 
     //剔除資料夾項目 (fsTreeFolder 會列出子資料夾, 對其開讀取串流會 throw)
     vpfs = vpfs.filter((vpf) => {
